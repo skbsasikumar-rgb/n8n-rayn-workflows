@@ -1,0 +1,99 @@
+# STATE: RAYN Sales Engine
+
+**Last updated:** 2026-03-24
+**Session:** Roadmap initialisation
+
+---
+
+## Project Reference
+
+**Core Value:** Every discovered lead gets a personalised, compliance-context-aware cold email sent without manual intervention.
+
+**Current Focus:** Phase 1 — Workflow Reliability (fix all bugs in wf-latest and wf-discovery before any outreach channel is built)
+
+---
+
+## Current Position
+
+**Phase:** 1 — Workflow Reliability
+**Plan:** Not started
+**Status:** Pre-execution (roadmap created, no plans written yet)
+
+**Progress bar:**
+```
+Phase 1 [----------] 0%
+Phase 2 [----------] 0%
+Phase 3 [----------] 0%
+Phase 4 [----------] 0%
+```
+
+---
+
+## Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| Phases total | 4 |
+| Requirements total | 26 |
+| Requirements mapped | 26 |
+| Plans created | 0 |
+| Plans complete | 0 |
+
+---
+
+## Accumulated Context
+
+### Key Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Phase 1 starts with Railway env vars (INFRA-01, INFRA-02) | No workflow changes needed; instant effect; unblocks all other fixes safely |
+| Batch processing fix (FIX-02) requires OpenRouter backoff (FIX-03) first | 5x throughput increase without backoff will hit OpenRouter rate limits |
+| No2Bounce polling redesigned as separate workflow (FIX-05) | Inline polling risks the 300s n8n task runner timeout; Wait node approach is the only safe pattern |
+| WhatsApp scope is post-engagement nurture only, not cold outreach | Meta policy enforcement makes cold WhatsApp to scraped contacts a permanent-ban risk; REQUIREMENTS.md already captures this |
+| Hunter fallback triggered on OR logic (FIX-04) | AND logic means a lead with a name but no email never triggers Hunter, leaving email field empty |
+
+### Critical Pre-Conditions Before Phase 2
+
+- NocoDB row cap validated: confirm actual row count vs. n8n Get All today
+- OpenRouter balance confirmed above $10 before batch fix deployment
+- Instantly plan confirmed as Hypergrowth (API access minimum)
+- NocoDB backend confirmed (SQLite vs PostgreSQL) — PostgreSQL migration recommended before v2 launch to prevent SQLite write contention
+
+### Blockers
+
+None currently. Phase 1 can begin immediately.
+
+### Todos
+
+- [ ] Check actual NocoDB leads table row count vs. n8n Get All output (validates urgency of INFRA-02 and pagination fix)
+- [ ] Confirm OpenRouter balance and current tier before deploying batch fix
+- [ ] Confirm Instantly plan tier before v2 planning
+
+---
+
+## Session Continuity
+
+### To Resume Work
+
+1. Read `/Users/sasikumar/Documents/n8n/.planning/ROADMAP.md` — current phase and plan status
+2. Read `/Users/sasikumar/Documents/n8n/.planning/REQUIREMENTS.md` — requirement traceability
+3. Run `/gsd:plan-phase 1` to create the Phase 1 execution plan
+
+### Workflow Files
+
+| File | Purpose |
+|------|---------|
+| `wf-latest.json` | Lead enrichment workflow (3-min trigger, wf-latest) — primary target for Phase 1 fixes |
+| `wf-discovery.json` | Lead discovery workflow (weekly trigger) — pagination fix target in Phase 1 |
+
+### Context Notes
+
+- wf-latest currently uses `limit=10000` in a single HTTP GET (no pagination) — NocoDB server default may cap at 100 rows
+- wf-latest uses `.first()` equivalent pattern (Code node `unique.slice(0, 5)` feeds into single-item processing — the loop structure needs confirmation from full workflow read)
+- wf-discovery uses weekly trigger, fires all 589 search combos in one run
+- All Railway env vars must be applied to both the n8n service AND the NocoDB service (separate Railway services)
+
+---
+
+*State initialised: 2026-03-24*
