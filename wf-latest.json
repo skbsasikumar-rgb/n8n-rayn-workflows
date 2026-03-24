@@ -1102,7 +1102,7 @@
               }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         },
         "options": {}
       },
@@ -1304,7 +1304,7 @@
               }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         },
         "options": {}
       },
@@ -2214,7 +2214,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const r = $json;\n\n// Final poll - accept whatever we have\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\nconst status = isValid ? 'valid' : 'invalid';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: true\n} }];"
+        "jsCode": "const r = $json;\n\n// Final poll - use isReady to distinguish completed vs still-processing\nconst isReady = r.overallStatus === 'Completed' || r.percent >= 100;\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\n\nconst status = isReady\n  ? (isValid ? 'valid' : 'invalid')\n  : 'verification_timeout';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: isReady\n} }];"
       },
       "id": "e51b9dfe-196f-4298-baea-2a7e94ff9fd9",
       "name": "Parse Poll 4",
@@ -2590,6 +2590,65 @@
         2272
       ],
       "parameters": {}
+    },
+    {
+      "id": "if-ready-4-001",
+      "name": "IF Ready 4",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -25120,
+        4280
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-ready-4",
+              "leftValue": "={{ $json.is_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "status-vt-001",
+      "name": "Status - verification timeout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25120,
+        4600
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Filter WF2').first().json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"verification_timeout\", \"email_status\": \"verification_timeout\"}",
+        "options": {},
+        "continueOnFail": true
+      }
     }
   ],
   "pinData": {},
@@ -3523,7 +3582,7 @@
       "main": [
         [
           {
-            "node": "IF Email Valid",
+            "node": "IF Ready 4",
             "type": "main",
             "index": 0
           }
@@ -3842,6 +3901,24 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ready 4": {
+      "main": [
+        [
+          {
+            "node": "IF Email Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - verification timeout",
             "type": "main",
             "index": 0
           }
