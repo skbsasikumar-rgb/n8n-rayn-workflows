@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-03-PLAN.md — OpenRouter backoff Wait nodes and Loop Over Items end-to-end fix
-last_updated: "2026-03-24T03:55:38.454Z"
+stopped_at: Completed 01-04-PLAN.md — OR contact fallback, verification_timeout, NocoDB pagination
+last_updated: "2026-03-24T04:03:54.992Z"
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # STATE: RAYN Sales Engine
@@ -48,6 +48,7 @@ Plan: 5 of 5
 | Phase 01 P05 | 15min | 2 tasks | 2 files |
 | Phase 01 P02 | 12min | 2 tasks | 1 files |
 | Phase 01 P03 | 4min | 2 tasks | 1 files |
+| Phase 01 P04 | 6min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -64,6 +65,9 @@ Plan: 5 of 5
 | DB_QUERY_LIMIT_DEFAULT=1000 as NocoDB page size; DB_QUERY_LIMIT_MAX=100000 removes silent row cap (INFRA-02) | 1000 rows/page minimises loop iterations; 100k max ensures all leads visible to wf-latest and wf-discovery |
 | Used 6 Wait nodes (one before each OpenRouter call) not minimum 3 (FIX-03) | Vendor Enrichment1 and Enrichment both active depending on HIA classification path — all need backoff |
 | Loop-back connections from all terminal status nodes were missing after Plan 02 (FIX-02) | Without loop-back, the splitInBatches loop only processed lead #1 despite batchSize=1 — terminal nodes must connect back to Loop Over Items input |
+| Changed IF Still No Contact combinator to OR (Plan 04, FIX-04) | Consistent post-Hunter contact-check: name OR email empty triggers no-contact status, not only when both are empty |
+| Added IF Ready 4 + Status - verification timeout node pair after Parse Poll 4 (Plan 04, FIX-05) | Explicit routing of still-processing No2Bounce results to verification_timeout; cleaner than reusing IF Email Valid which checks email validity |
+| Pagination Code nodes bypass Parse list-expansion nodes (Plan 04, FIX-06) | Pagination Code nodes return individual items natively via allRecords.map; Parse nodes doing $json.list expansion are redundant |
 
 ### Critical Pre-Conditions Before Phase 2
 
@@ -92,7 +96,7 @@ None currently. Phase 1 can begin immediately.
 2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-01-SUMMARY.md` — completed INFRA-01/INFRA-02 context
 3. Execute `01-02-PLAN.md` — race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
 
-**Stopped at:** Completed 01-03-PLAN.md — OpenRouter backoff Wait nodes and Loop Over Items end-to-end fix
+**Stopped at:** Completed 01-04-PLAN.md — OR contact fallback, verification_timeout, NocoDB pagination
 
 ### Workflow Files
 
