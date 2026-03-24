@@ -220,10 +220,21 @@
     },
     {
       "parameters": {
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mey3zgihq7o4at9?fields=url_validated&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?fields=url_validated&limit=1000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         -28544,
         2512
@@ -234,7 +245,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const allItems = $input.all();\nconst existingUrls = allItems.map(i => i.json.url_validated).filter(Boolean);\n// Only send last 200 URLs to avoid massive prompts at scale\nconst recentUrls = existingUrls.slice(-200);\nreturn [{ json: { existing_urls: recentUrls, all_urls: existingUrls } }];"
+        "jsCode": "const records = ($input.first().json.list || []);\nconst existingUrls = records.map(r => r.url_validated).filter(Boolean);\n// Only send last 200 URLs to avoid massive prompts at scale\nconst recentUrls = existingUrls.slice(-200);\nreturn [{ json: { existing_urls: recentUrls, all_urls: existingUrls } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1391,7 +1402,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\n\nconst tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();\n\nconst getUrl = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}` +\n  `?where=(status,eq,processing)~and(UpdatedAt,lt,${encodeURIComponent(tenMinutesAgo)})&limit=100`;\n\nconst response = await $http.request({ method: 'GET', url: getUrl, headers: { 'xc-token': token } });\nconst stuckRows = response.list || [];\n\nfor (const row of stuckRows) {\n  const patchUrl = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}/${row.Id}`;\n  await $http.request({ method: 'PATCH', url: patchUrl, headers: { 'xc-token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'pending' }) });\n}\n\nreturn [{ json: { cleanup_count: stuckRows.length } }];"
+        "jsCode": "// Cleanup disabled temporarily — no $http in task runner context\n// TODO: replace with HTTP Request nodes (GET stuck rows → PATCH bulk)\nreturn [{ json: { cleanup_count: 0 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

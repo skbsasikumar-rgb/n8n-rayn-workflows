@@ -26,7 +26,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const areas = [\n  'Bishan','Bukit Merah','Bukit Timah','Downtown Core','Geylang','Kallang',\n  'Marina East','Marina South','Marine Parade','Museum','Newton','Novena',\n  'Orchard','Outram','Queenstown','River Valley','Rochor','Singapore River',\n  'Southern Islands','Straits View','Tanglin','Toa Payoh','Bedok','Changi',\n  'Changi Bay','Pasir Ris','Paya Lebar','Tampines','Central Water Catchment',\n  'Lim Chu Kang','Mandai','Sembawang','Simpang','Sungei Kadut','Woodlands',\n  'Yishun','Ang Mo Kio','Hougang','North-Eastern Islands','Punggol','Seletar',\n  'Sengkang','Serangoon','Boon Lay','Bukit Batok','Bukit Panjang',\n  'Choa Chu Kang','Clementi','Jurong East','Jurong West','Pioneer','Tengah',\n  'Tuas','Western Islands','Western Water Catchment'\n];\n\nconst categories = [\n  {q: 'GP clinic', batch: 'Batch 1 - Sep 2027'},\n  {q: 'acute hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'clinical laboratory', batch: 'Batch 1 - Sep 2027'},\n  {q: 'radiology centre', batch: 'Batch 1 - Sep 2027'},\n  {q: 'nursing home', batch: 'Batch 1 - Sep 2027'},\n  {q: 'community hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'specialist outpatient clinic', batch: 'Batch 2 - Sep 2028'},\n  {q: 'ambulatory surgical centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dialysis centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dental clinic', batch: 'Batch 3 - Mar 2030'},\n  {q: 'retail pharmacy', batch: 'Batch 3 - Mar 2030'},\n  {q: 'assisted reproduction centre', batch: 'Batch 3 - Mar 2030'}\n];\n\nconst combos = [];\nfor (const cat of categories) {\n  for (const area of areas) {\n    combos.push({\n      search_query: cat.q + ' ' + area + ' Singapore',\n      category: cat.q,\n      hia_batch: cat.batch,\n      area: area\n    });\n  }\n}\n\ncombos.push({\n  search_query: 'healthcare IT Singapore',\n  category: 'healthcare IT Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\ncombos.push({\n  search_query: 'medical software Singapore',\n  category: 'medical software Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\n\nreturn combos.map(c => ({json: c}));"
+        "jsCode": "const areas = [\n  'Bishan','Bukit Merah','Bukit Timah','Downtown Core','Geylang','Kallang',\n  'Marina East','Marina South','Marine Parade','Museum','Newton','Novena',\n  'Orchard','Outram','Queenstown','River Valley','Rochor','Singapore River',\n  'Southern Islands','Straits View','Tanglin','Toa Payoh','Bedok','Changi',\n  'Changi Bay','Pasir Ris','Paya Lebar','Tampines','Central Water Catchment',\n  'Lim Chu Kang','Mandai','Sembawang','Simpang','Sungei Kadut','Woodlands',\n  'Yishun','Ang Mo Kio','Hougang','North-Eastern Islands','Punggol','Seletar',\n  'Sengkang','Serangoon','Boon Lay','Bukit Batok','Bukit Panjang',\n  'Choa Chu Kang','Clementi','Jurong East','Jurong West','Pioneer','Tengah',\n  'Tuas','Western Islands','Western Water Catchment'\n];\n\nconst categories = [\n  {q: 'GP clinic', batch: 'Batch 1 - Sep 2027'},\n  {q: 'acute hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'clinical laboratory', batch: 'Batch 1 - Sep 2027'},\n  {q: 'radiology centre', batch: 'Batch 1 - Sep 2027'},\n  {q: 'nursing home', batch: 'Batch 1 - Sep 2027'},\n  {q: 'community hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'specialist outpatient clinic', batch: 'Batch 2 - Sep 2028'},\n  {q: 'ambulatory surgical centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dialysis centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dental clinic', batch: 'Batch 3 - Mar 2030'},\n  {q: 'retail pharmacy', batch: 'Batch 3 - Mar 2030'},\n  {q: 'assisted reproduction centre', batch: 'Batch 3 - Mar 2030'}\n];\n\nconst combos = [];\nfor (const cat of categories) {\n  for (const area of areas) {\n    combos.push({\n      search_query: cat.q + ' ' + area + ' Singapore',\n      category: cat.q,\n      hia_batch: cat.batch,\n      area: area\n    });\n  }\n}\n\ncombos.push({\n  search_query: 'healthcare IT Singapore',\n  category: 'healthcare IT Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\ncombos.push({\n  search_query: 'medical software Singapore',\n  category: 'medical software Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\n\nreturn combos.slice(0, 5).map(c => ({json: c}));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -174,11 +174,21 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mp36f8mgk115qse&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mp36f8mgk115qse?limit=1000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1960,
         300
@@ -188,11 +198,21 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mey3zgihq7o4at9&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?limit=1000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         2240,
         300
@@ -203,7 +223,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const discoveryRows = $('Paginate Read Discovery').all();\nconst leadsRows = $('Paginate Read Leads').all();\n\n// Dedup by website_url (canonical dedup key)\nconst existingUrls = new Set(\n  leadsRows.map(r => String(r.json.website_url || r.json.url || '').toLowerCase().trim()).filter(u => u)\n);\n\nconst batchUrls = new Set();\nconst newLeads = [];\n\nfor (const row of discoveryRows) {\n  const url = String(row.json.website_url || row.json.url || '').toLowerCase().trim();\n  if (!url || existingUrls.has(url) || batchUrls.has(url)) continue;\n  batchUrls.add(url);\n  newLeads.push({\n    json: {\n      company_name: row.json.company_name,\n      website_url: row.json.website_url || ''\n    }\n  });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
+        "jsCode": "const discoveryRows = ($('Paginate Read Discovery').first().json.list || []).map(r => ({ json: r }));\nconst leadsRows = ($('Paginate Read Leads').first().json.list || []).map(r => ({ json: r }));\n\n// Dedup by website_url (canonical dedup key)\nconst existingUrls = new Set(\n  leadsRows.map(r => String(r.json.website_url || r.json.url || '').toLowerCase().trim()).filter(u => u)\n);\n\nconst batchUrls = new Set();\nconst newLeads = [];\n\nfor (const row of discoveryRows) {\n  const url = String(row.json.website_url || row.json.url || '').toLowerCase().trim();\n  if (!url || existingUrls.has(url) || batchUrls.has(url)) continue;\n  batchUrls.add(url);\n  newLeads.push({\n    json: {\n      company_name: row.json.company_name,\n      website_url: row.json.website_url || ''\n    }\n  });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
