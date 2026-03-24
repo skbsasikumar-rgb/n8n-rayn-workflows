@@ -1,0 +1,346 @@
+{
+  "name": "RAYN No2Bounce Retry - verification_timeout",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 30 }]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "id": "n2b-retry-0001",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,verification_timeout)&limit=50",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 0],
+      "id": "n2b-retry-0002",
+      "name": "GET Timeout Leads"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.first().json.list || [];\nif (rows.length === 0) return [{ json: { _skip: true } }];\nreturn rows.map(r => ({ json: r }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 0],
+      "id": "n2b-retry-0003",
+      "name": "Parse Timeout Leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-skip-empty",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 0],
+      "id": "n2b-retry-0004",
+      "name": "IF No Leads"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, -200],
+      "id": "n2b-retry-0005",
+      "name": "NoOp - No Leads"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1120, 200],
+      "id": "n2b-retry-0006",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://connect.no2bounce.com/v2/n2b_validate_bulk",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({emailList: [$json.email]}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1400, 200],
+      "id": "n2b-retry-0007",
+      "name": "No2Bounce Submit",
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "resume": "timeInterval",
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1680, 200],
+      "id": "n2b-retry-0008",
+      "name": "Wait 15s",
+      "webhookId": "n2b-retry-wait-15s"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://connect.no2bounce.com/v2/n2b_validate_bulk?trackingId={{ $('No2Bounce Submit').first().json.data.trackingId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1960, 200],
+      "id": "n2b-retry-0009",
+      "name": "No2Bounce Poll",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\nconst lead = $('Loop Over Items').item.json;\n\n// Check if completed\nconst isReady = r.overallStatus === 'Completed' || r.percent >= 100;\n\n// Count valid emails (Deliverable + any AcceptAll variants)\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\n\nconst email_status = isReady\n  ? (isValid ? 'valid' : 'invalid')\n  : 'verification_timeout';\n\nreturn [{ json: { ...lead, email_status } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 200],
+      "id": "n2b-retry-0010",
+      "name": "Parse Poll Result"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: $json.email_status === 'valid' ? 'enriched' : ($json.email_status === 'invalid' ? 'email invalid' : 'verification_timeout') }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2520, 200],
+      "id": "n2b-retry-0011",
+      "name": "PATCH NocoDB Status",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2800, 0],
+      "id": "n2b-retry-0012",
+      "name": "NoOp - Done"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GET Timeout Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Timeout Leads": {
+      "main": [
+        [
+          {
+            "node": "Parse Timeout Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Timeout Leads": {
+      "main": [
+        [
+          {
+            "node": "IF No Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Leads": {
+      "main": [
+        [
+          {
+            "node": "NoOp - No Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "NoOp - Done",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No2Bounce Submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce Submit": {
+      "main": [
+        [
+          {
+            "node": "Wait 15s",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15s": {
+      "main": [
+        [
+          {
+            "node": "No2Bounce Poll",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce Poll": {
+      "main": [
+        [
+          {
+            "node": "Parse Poll Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Poll Result": {
+      "main": [
+        [
+          {
+            "node": "PATCH NocoDB Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH NocoDB Status": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
