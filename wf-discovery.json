@@ -1,0 +1,414 @@
+{
+  "name": "RAYN Lead Discovery - NocoDB",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": 1,
+              "triggerAtHour": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300],
+      "id": "disc-0001",
+      "name": "Weekly Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const areas = [\n  'Bishan','Bukit Merah','Bukit Timah','Downtown Core','Geylang','Kallang',\n  'Marina East','Marina South','Marine Parade','Museum','Newton','Novena',\n  'Orchard','Outram','Queenstown','River Valley','Rochor','Singapore River',\n  'Southern Islands','Straits View','Tanglin','Toa Payoh','Bedok','Changi',\n  'Changi Bay','Pasir Ris','Paya Lebar','Tampines','Central Water Catchment',\n  'Lim Chu Kang','Mandai','Sembawang','Simpang','Sungei Kadut','Woodlands',\n  'Yishun','Ang Mo Kio','Hougang','North-Eastern Islands','Punggol','Seletar',\n  'Sengkang','Serangoon','Boon Lay','Bukit Batok','Bukit Panjang',\n  'Choa Chu Kang','Clementi','Jurong East','Jurong West','Pioneer','Tengah',\n  'Tuas','Western Islands','Western Water Catchment'\n];\n\nconst categories = [\n  {q: 'GP clinic', batch: 'Batch 1 - Sep 2027'},\n  {q: 'acute hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'clinical laboratory', batch: 'Batch 1 - Sep 2027'},\n  {q: 'radiology centre', batch: 'Batch 1 - Sep 2027'},\n  {q: 'nursing home', batch: 'Batch 1 - Sep 2027'},\n  {q: 'community hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'specialist outpatient clinic', batch: 'Batch 2 - Sep 2028'},\n  {q: 'ambulatory surgical centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dialysis centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dental clinic', batch: 'Batch 3 - Mar 2030'},\n  {q: 'retail pharmacy', batch: 'Batch 3 - Mar 2030'},\n  {q: 'assisted reproduction centre', batch: 'Batch 3 - Mar 2030'}\n];\n\nconst combos = [];\nfor (const cat of categories) {\n  for (const area of areas) {\n    combos.push({\n      search_query: cat.q + ' ' + area + ' Singapore',\n      category: cat.q,\n      hia_batch: cat.batch,\n      area: area\n    });\n  }\n}\n\ncombos.push({\n  search_query: 'healthcare IT Singapore',\n  category: 'healthcare IT Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\ncombos.push({\n  search_query: 'medical software Singapore',\n  category: 'medical software Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\n\nreturn combos.map(c => ({json: c}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 300],
+      "id": "disc-0002",
+      "name": "Generate Search Combos"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/places",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({q: $json.search_query, gl: 'sg', num: 20}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 300],
+      "id": "disc-0005",
+      "name": "Serper Places",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Get ALL Serper responses and ALL original combos\nconst serperItems = $input.all();\nconst combos = $('Generate Search Combos').all();\nconst now = new Date().toISOString();\n\nconst results = [];\n\nfor (let i = 0; i < serperItems.length; i++) {\n  const serper = serperItems[i].json;\n  const places = serper.places || [];\n  const combo = (i < combos.length) ? combos[i].json : {};\n\n  for (const p of places) {\n    const name = (p.title || '').trim();\n    if (!name) continue;\n\n    let website = (p.website || p.link || '').trim();\n    if (website && !website.startsWith('http')) website = 'https://' + website;\n    website = website.replace(/\\/+$/, '');\n\n    results.push({\n      json: {\n        company_name: name,\n        website_url: website,\n        category: combo.category || '',\n        hia_batch: combo.hia_batch || '',\n        area: combo.area || '',\n        discovered_at: now\n      }\n    });\n  }\n}\n\nreturn results.length ? results : [{json: {company_name: '_NO_RESULTS_', _skip: true}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 300],
+      "id": "disc-0006",
+      "name": "Parse Places"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-skip-empty",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300],
+      "id": "disc-filter-empty",
+      "name": "IF No Results"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1400, 540],
+      "id": "disc-noop-empty",
+      "name": "No Results - Stop"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const allItems = $input.all();\nconst all = allItems.map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 100) {\n  chunks.push({json: {rows: all.slice(i, i + 100)}});\n}\nreturn chunks.length ? chunks : [{json: {rows: []}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300],
+      "id": "disc-prep-discovery",
+      "name": "Prep Discovery Bulk"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mp36f8mgk115qse",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify($json.rows) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, 300],
+      "id": "disc-write-discovery",
+      "name": "Write Discovery"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mp36f8mgk115qse'; // discovery table\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}` +\n    `?limit=${pageSize}&page=${page}`;\n  const response = await $http.request({\n    method: 'GET',\n    url,\n    headers: { 'xc-token': token }\n  });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1960, 300],
+      "id": "disc-read-discovery",
+      "name": "Paginate Read Discovery"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9'; // leads table\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}` +\n    `?limit=${pageSize}&page=${page}`;\n  const response = await $http.request({\n    method: 'GET',\n    url,\n    headers: { 'xc-token': token }\n  });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2240, 300],
+      "id": "disc-read-leads",
+      "name": "Paginate Read Leads"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const discoveryRows = $('Paginate Read Discovery').all();\nconst leadsRows = $('Paginate Read Leads').all();\n\n// Dedup by website_url (canonical dedup key)\nconst existingUrls = new Set(\n  leadsRows.map(r => String(r.json.website_url || r.json.url || '').toLowerCase().trim()).filter(u => u)\n);\n\nconst batchUrls = new Set();\nconst newLeads = [];\n\nfor (const row of discoveryRows) {\n  const url = String(row.json.website_url || row.json.url || '').toLowerCase().trim();\n  if (!url || existingUrls.has(url) || batchUrls.has(url)) continue;\n  batchUrls.add(url);\n  newLeads.push({\n    json: {\n      company_name: row.json.company_name,\n      website_url: row.json.website_url || ''\n    }\n  });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2520, 300],
+      "id": "disc-0011",
+      "name": "Dedup Against Leads"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-skip",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2800, 300],
+      "id": "disc-0012",
+      "name": "IF No New Leads"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [3080, 540],
+      "id": "disc-0013",
+      "name": "No New Leads - Stop"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const allItems = $input.all();\nconst all = allItems.map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 100) {\n  chunks.push({json: {rows: all.slice(i, i + 100)}});\n}\nreturn chunks.length ? chunks : [{json: {rows: []}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3080, 300],
+      "id": "disc-prep-leads",
+      "name": "Prep Leads Bulk"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "string",
+        "body": "={{ JSON.stringify($json.rows) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [3360, 300],
+      "id": "disc-push-leads",
+      "name": "Push to Leads"
+    }
+  ],
+  "connections": {
+    "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Combos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Search Combos": {
+      "main": [
+        [
+          {
+            "node": "Serper Places",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper Places": {
+      "main": [
+        [
+          {
+            "node": "Parse Places",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Places": {
+      "main": [
+        [
+          {
+            "node": "IF No Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Results": {
+      "main": [
+        [
+          {
+            "node": "No Results - Stop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Discovery Bulk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Discovery Bulk": {
+      "main": [
+        [
+          {
+            "node": "Write Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Discovery": {
+      "main": [
+        [
+          {
+            "node": "Paginate Read Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paginate Read Discovery": {
+      "main": [
+        [
+          {
+            "node": "Paginate Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paginate Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Dedup Against Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup Against Leads": {
+      "main": [
+        [
+          {
+            "node": "IF No New Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No New Leads": {
+      "main": [
+        [
+          {
+            "node": "No New Leads - Stop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Leads Bulk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Leads Bulk": {
+      "main": [
+        [
+          {
+            "node": "Push to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}
