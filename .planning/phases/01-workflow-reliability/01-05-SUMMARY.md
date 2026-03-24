@@ -69,7 +69,7 @@ Each task was committed atomically:
 1. **Task 1: Create standalone No2Bounce retry workflow** - `07682ff` (feat)
 2. **Task 2: Add NocoDB pagination + URL-based dedup to wf-discovery** - `b9e3b9e` (feat)
 
-**Plan metadata:** (docs commit follows)
+**Plan metadata:** `04b6e36` (docs: complete plan)
 
 ## Files Created/Modified
 
