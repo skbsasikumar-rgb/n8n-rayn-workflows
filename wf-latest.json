@@ -2467,6 +2467,96 @@
       ],
       "id": "get-full-record-001",
       "name": "GET Full Record"
+    },
+    {
+      "id": "wait-before-clean-name-001",
+      "name": "Wait Before OpenRouter - Clean Name",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -29254,
+        2512
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "wait-before-url-dedup-001",
+      "name": "Wait Before OpenRouter - URL Dedup",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -28184,
+        2512
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "wait-before-url-validate-001",
+      "name": "Wait Before OpenRouter - URL Validate",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -26984,
+        2512
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "wait-before-hia-gate-001",
+      "name": "Wait Before OpenRouter - HIA Gate",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -26024,
+        2512
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "wait-before-enrichment-001",
+      "name": "Wait Before OpenRouter - Enrichment",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -25064,
+        2512
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
+    },
+    {
+      "id": "wait-before-vendor-enrichment-001",
+      "name": "Wait Before OpenRouter - Vendor Enrichment1",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -24264,
+        2080
+      ],
+      "parameters": {
+        "resume": "timeInterval",
+        "interval": 1,
+        "unit": "seconds"
+      }
     }
   ],
   "pinData": {},
@@ -2617,7 +2707,7 @@
       "main": [
         [
           {
-            "node": "OpenRouter - URL Dedup",
+            "node": "Wait Before OpenRouter - URL Dedup",
             "type": "main",
             "index": 0
           }
@@ -2733,7 +2823,7 @@
       "main": [
         [
           {
-            "node": "OpenRouter - HIA Gate",
+            "node": "Wait Before OpenRouter - HIA Gate",
             "type": "main",
             "index": 0
           }
@@ -2802,7 +2892,7 @@
       "main": [
         [
           {
-            "node": "OpenRouter - Enrichment",
+            "node": "Wait Before OpenRouter - Enrichment",
             "type": "main",
             "index": 0
           }
@@ -2893,7 +2983,7 @@
       "main": [
         [
           {
-            "node": "OpenRouter - Vendor Enrichment1",
+            "node": "Wait Before OpenRouter - Vendor Enrichment1",
             "type": "main",
             "index": 0
           }
@@ -3440,7 +3530,7 @@
         ],
         [
           {
-            "node": "OpenRouter - URL Validate",
+            "node": "Wait Before OpenRouter - URL Validate",
             "type": "main",
             "index": 0
           }
@@ -3525,7 +3615,73 @@
       "main": [
         [
           {
+            "node": "Wait Before OpenRouter - Clean Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - Clean Name": {
+      "main": [
+        [
+          {
             "node": "OpenRouter - Clean Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - URL Dedup": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - URL Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - URL Validate": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - URL Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - HIA Gate": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - HIA Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - Enrichment": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before OpenRouter - Vendor Enrichment1": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Vendor Enrichment1",
             "type": "main",
             "index": 0
           }
