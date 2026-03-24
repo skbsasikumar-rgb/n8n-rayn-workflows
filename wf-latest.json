@@ -23,29 +23,16 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?limit=10000",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 60000
-        }
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}?limit=${pageSize}&page=${page}`;\n  const response = await $http.request({\n    method: 'GET',\n    url,\n    headers: { 'xc-token': token }\n  });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         -30224,
         2512
       ],
       "id": "90b8fd61-de65-4fc7-9888-af42730ec5e9",
-      "name": "Read All Rows"
+      "name": "Paginate Read All Rows"
     },
     {
       "parameters": {
@@ -314,29 +301,16 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?fields=url_validated&limit=10000",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 60000
-        }
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\nconst fields = 'url_validated';\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}?fields=${fields}&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({\n    method: 'GET',\n    url,\n    headers: { 'xc-token': token }\n  });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
       },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         -28544,
         2512
       ],
       "id": "60be1b05-ba29-4f7a-9426-f43013b311f1",
-      "name": "Read Column E",
+      "name": "Paginate Read Column E",
       "continueOnFail": true
     },
     {
@@ -1434,25 +1408,12 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?limit=10000",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 60000
-        }
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}?limit=${pageSize}&page=${page}`;\n  const response = await $http.request({\n    method: 'GET',\n    url,\n    headers: { 'xc-token': token }\n  });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
       },
       "id": "2f08a655-2183-4688-8d2d-2431714dd815",
-      "name": "Read All Rows WF2",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
+      "name": "Paginate Read All Rows WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         -28720,
         3280
@@ -2664,17 +2625,6 @@
         ]
       ]
     },
-    "Read All Rows": {
-      "main": [
-        [
-          {
-            "node": "Parse Read Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Parse Read Items": {
       "main": [
         [
@@ -2766,18 +2716,7 @@
         ],
         [
           {
-            "node": "Read Column E",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read Column E": {
-      "main": [
-        [
-          {
-            "node": "Parse Read Column E",
+            "node": "Paginate Read Column E",
             "type": "main",
             "index": 0
           }
@@ -3203,18 +3142,7 @@
       "main": [
         [
           {
-            "node": "Read All Rows WF2",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read All Rows WF2": {
-      "main": [
-        [
-          {
-            "node": "Parse Read Items WF2",
+            "node": "Paginate Read All Rows WF2",
             "type": "main",
             "index": 0
           }
@@ -3919,6 +3847,39 @@
         [
           {
             "node": "Status - verification timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paginate Read All Rows": {
+      "main": [
+        [
+          {
+            "node": "Parse Read Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paginate Read Column E": {
+      "main": [
+        [
+          {
+            "node": "Prep URL Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Paginate Read All Rows WF2": {
+      "main": [
+        [
+          {
+            "node": "Filter WF2",
             "type": "main",
             "index": 0
           }
