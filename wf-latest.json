@@ -1133,7 +1133,11 @@
             },
             {
               "name": "department",
-              "value": "it,management,finance,operations"
+              "value": "executive,it,management,finance,operations"
+            },
+            {
+              "name": "seniority",
+              "value": "senior,executive"
             },
             {
               "name": "required_field",
@@ -1157,7 +1161,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const emails = ($json?.data?.emails || []);\n// Priority: management > it > finance > operations\nconst priority = ['management', 'it', 'finance', 'operations'];\nlet best = null;\nfor (const dept of priority) {\n  best = emails.find(e => e.department === dept && e.type === 'personal');\n  if (best) break;\n}\nif (!best) best = emails.find(e => e.type === 'personal');\nif (!best) best = emails[0];\nif (!best) return [{ json: { first_name: '', role: '', email: '', linkedin_url: '', source: 'hunter' } }];\nreturn [{ json: {\n  first_name: best.first_name || '',\n  role: best.position || '',\n  email: best.value || '',\n  linkedin_url: best.linkedin || '',\n  source: 'hunter'\n} }];"
+        "jsCode": "const emails = ($json?.data?.emails || []);\n// Priority: executive > management > it > finance > operations\nconst priority = ['executive', 'management', 'it', 'finance', 'operations'];\nlet best = null;\nfor (const dept of priority) {\n  best = emails.find(e => e.department === dept && e.type === 'personal');\n  if (best) break;\n}\nif (!best) best = emails.find(e => e.type === 'personal');\nif (!best) best = emails[0];\nif (!best) return [{ json: { first_name: '', role: '', email: '', linkedin_url: '', source: 'hunter' } }];\nreturn [{ json: {\n  first_name: best.first_name || '',\n  role: best.position || '',\n  email: best.value || '',\n  linkedin_url: best.linkedin || '',\n  source: 'hunter'\n} }];"
       },
       "id": "601985e9-7b46-4c34-b9a0-1d8fba4109e5",
       "name": "Parse Hunter Contact",
