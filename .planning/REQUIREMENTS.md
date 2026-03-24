@@ -14,7 +14,7 @@ Fix all bugs preventing the engine from running reliably at volume. These are pr
 
 ### wf-latest Fixes
 
-- [ ] **FIX-01**: Fix race condition — set lead status to `processing` immediately after fetching (before any API call), so overlapping 3-min runs cannot grab the same lead
+- [x] **FIX-01**: Fix race condition — set lead status to `processing` immediately after fetching (before any API call), so overlapping 3-min runs cannot grab the same lead
 - [ ] **FIX-02**: Fix batch processing — replace `.first()` pattern with Loop Over Items (batch size 1) so all 5 filtered leads are processed per run, not just the first
 - [ ] **FIX-03**: Add OpenRouter backoff — add retry delay between LLM calls before enabling 5× throughput from FIX-02, to avoid rate limit spikes
 - [ ] **FIX-04**: Fix contact fallback logic — change IF No Contact condition from AND to OR (Anymail returning name-but-no-email currently blocks Hunter fallback)
@@ -86,7 +86,7 @@ Parallel LinkedIn outreach channel for HIA:YES leads, running alongside the emai
 |-------------|-------|--------|
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
-| FIX-01 | Phase 1 | Pending |
+| FIX-01 | Phase 1 | Complete |
 | FIX-02 | Phase 1 | Pending |
 | FIX-03 | Phase 1 | Pending |
 | FIX-04 | Phase 1 | Pending |

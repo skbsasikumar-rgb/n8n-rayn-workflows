@@ -1,0 +1,3548 @@
+{
+  "name": "RAYN Lead Enrichment - NocoDB",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -30464,
+        2512
+      ],
+      "id": "a3f8e87b-0e9c-4696-85c2-51aac2d7c4c3",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?limit=10000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -30224,
+        2512
+      ],
+      "id": "90b8fd61-de65-4fc7-9888-af42730ec5e9",
+      "name": "Read All Rows"
+    },
+    {
+      "parameters": {
+        "jsCode": "return $json.list.map(r => ({json: r}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -30044,
+        2512
+      ],
+      "id": "f0a1b2c3-d4e5-6789-abcd-100000000001",
+      "name": "Parse Read Items"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allRows = $('Parse Read Items').all();\n\n// Filter to unprocessed rows (status column is empty/blank)\nconst unprocessed = allRows.filter(r => {\n  const status = String(r.json.status || '').trim();\n  return !status && String(r.json.company_name || '').trim() !== '';\n});\n\n// Check for duplicates within the unprocessed set\nconst seen = new Set();\nconst unique = [];\nfor (const row of unprocessed) {\n  const name = String(row.json.company_name || '').toLowerCase().trim();\n  if (!name || seen.has(name)) continue;\n  seen.add(name);\n  unique.push(row);\n}\n\n// Take first 5 rows for this batch\nconst batch = unique.slice(0, 5);\n\nif (batch.length === 0) {\n  return [{ json: { _skip: true, company_name: '' } }];\n}\n\nreturn batch.map(r => ({ json: { ...r.json, is_duplicate: false } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29984,
+        2512
+      ],
+      "id": "485fff1d-f859-44e9-b006-5d1bca060516",
+      "name": "Filter Unprocessed"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-skip-1",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -29744,
+        2512
+      ],
+      "id": "284f2a1b-8db3-4227-83a0-41ad20b23cb0",
+      "name": "IF No Rows"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -29504,
+        2736
+      ],
+      "id": "b2c57621-7f65-4113-8130-0d1abb2a4cd7",
+      "name": "No Rows - Stop"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Clean up this company name for a web search: ' + $json.company_name + '\\n\\nRules:\\n- Remove legal suffixes: Pte Ltd, Ltd, Pte. Ltd., LLP, Inc, Corp, Sdn Bhd\\n- Remove special characters: /, &, @\\n- Expand common abbreviations only if obvious\\n- Keep proper nouns and brand names exactly as-is\\n- If already clean, return as-is\\n- Do not add any extra words\\n\\nExamples:\\n- Pacific Healthcare Holdings Pte. Ltd. -> Pacific Healthcare Holdings\\n- NKF (Singapore) -> NKF Singapore\\n- St. Andrew\\'s Mission Hospital -> St Andrews Mission Hospital\\n\\nOutput: cleaned name only, one line.'}]}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29504,
+        2512
+      ],
+      "id": "fe96459e-0322-426e-883f-d4682ce7909b",
+      "name": "OpenRouter - Clean Name",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-clean-1",
+              "leftValue": "={{ ($json.choices[0].message.content || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -29264,
+        2512
+      ],
+      "id": "95be02d4-f40c-4abb-a6b5-7048bab1efb2",
+      "name": "IF Clean Failed"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"clean failed\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29024,
+        2736
+      ],
+      "id": "f419fa01-a60f-47bc-9c75-588b772f9e65",
+      "name": "Status - clean failed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({q: $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim() + ' Singapore official website', num: 5}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29024,
+        2512
+      ],
+      "id": "fe508761-32d3-4bff-b7e9-49064f6a746d",
+      "name": "Serper - Search",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-serper-1",
+              "leftValue": "={{ ($json.organic || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -28784,
+        2512
+      ],
+      "id": "23bbbeff-ed43-42a2-b15d-622435f713bc",
+      "name": "IF Serper Failed"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"serper failed\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28544,
+        2736
+      ],
+      "id": "e52665d1-07bf-480b-b5fa-1d6b8890245d",
+      "name": "Status - serper failed"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?fields=url_validated&limit=10000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28544,
+        2512
+      ],
+      "id": "60be1b05-ba29-4f7a-9426-f43013b311f1",
+      "name": "Read Column E"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $json.list.map(r => ({json: r}));\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -28394,
+        2512
+      ],
+      "id": "f0a1b2c3-d4e5-6789-abcd-100000000002",
+      "name": "Parse Read Column E"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allItems = $input.all();\nconst existingUrls = allItems.map(i => i.json.url_validated).filter(Boolean);\n// Only send last 200 URLs to avoid massive prompts at scale\nconst recentUrls = existingUrls.slice(-200);\nreturn [{ json: { existing_urls: recentUrls, all_urls: existingUrls } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -28304,
+        2512
+      ],
+      "id": "25bad941-99bb-4e77-a794-827166414fe3",
+      "name": "Prep URL Data"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Serper - Search').first().json.organic || []).map(function(r){return r.title + ' | ' + r.link}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').first().json.existing_urls.join(', ') + '\\n\\nPick the single best official URL for ' + $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer .com.sg, .org.sg, .sg domains\\n- A parent company or group holding URL is acceptable\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28064,
+        2512
+      ],
+      "id": "c75394b2-750d-400e-a626-47f2746624be",
+      "name": "OpenRouter - URL Dedup",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-urldup-1",
+              "leftValue": "={{ String($json.best_url || '').toLowerCase() }}",
+              "rightValue": "duplicate",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -27824,
+        2512
+      ],
+      "id": "befde88b-8232-4477-9e49-479edacc3434",
+      "name": "IF URL Duplicate"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"url duplicate - same org\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -27584,
+        2736
+      ],
+      "id": "4ce96ba7-8df7-4e51-87c1-d66c9c9fa720",
+      "name": "Status - url duplicate"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-urlnone-1",
+              "leftValue": "={{ String($json.best_url || '').toLowerCase() }}",
+              "rightValue": "none",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "cond-urlnone-2",
+              "leftValue": "={{ ($json.best_url || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -27584,
+        2512
+      ],
+      "id": "a1990fd5-efcb-4237-9e52-a4f0730e3442",
+      "name": "IF URL None"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"no url found\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -27344,
+        2736
+      ],
+      "id": "4ab1bdae-4776-40a8-8a8b-7bc462a29718",
+      "name": "Status - no url found"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim() + '\\nURL: ' + ($json.best_url || '').trim() + '\\n\\nIs this URL the official website of ' + $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim() + ' or a legitimate parent/group company?\\n\\nAccept if:\\n- Domain clearly matches company name or known parent brand\\n- It is a real business homepage (.com, .org, .sg, .com.sg, .net)\\n\\nReject if:\\n- Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directory, aggregator, news article, government listing\\n- URL is none\\n\\nOutput rules:\\n- If accepted: output the URL exactly as given\\n- If rejected: output empty string\\n\\nOutput: URL or empty.'}]}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -27344,
+        2512
+      ],
+      "id": "3a227517-97fa-48c1-bbf1-21e4870e3ee3",
+      "name": "OpenRouter - URL Validate",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-urlrej-1",
+              "leftValue": "={{ ($json.choices[0].message.content || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -27104,
+        2512
+      ],
+      "id": "e4580f97-216e-40b1-b98d-5c8613be4ebe",
+      "name": "IF URL Rejected"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"url rejected\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26864,
+        2736
+      ],
+      "id": "b9c9bfa0-d550-4b9b-a03e-f5929bc9e56b",
+      "name": "Status - url rejected"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://scrape.serper.dev",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({url: $('OpenRouter - URL Validate').first().json.choices[0].message.content.trim()}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26864,
+        2512
+      ],
+      "id": "a1f37d37-d37a-4ae8-9984-ab4f2a8f337e",
+      "name": "Serper - Scrape",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-scrape-1",
+              "leftValue": "={{ ($json.text || '').length }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -26624,
+        2512
+      ],
+      "id": "f767a61e-1660-4b5d-ac13-e42d6463aa15",
+      "name": "IF Scrape Failed"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"scrape failed\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26384,
+        2736
+      ],
+      "id": "9bba2aa4-94f3-4feb-856a-e1cf1a3f8e9a",
+      "name": "Status - scrape failed"
+    },
+    {
+      "parameters": {
+        "jsCode": "const websiteContent = ($('Serper - Scrape').first().json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Based on this website content: ${websiteContent}\n\nIs ${companyClean} HIA-relevant in Singapore?\n\nClassify as:\n- YES: Licensed healthcare service provider: GP clinic, hospital, nursing home, pharmacy, lab, radiology, dialysis, dental, community care, social service org serving healthcare\n- VENDOR: Tech/SaaS vendor, AI platform, cybersecurity firm, or consultant whose clients are Singapore healthcare providers\n- NO: Finance, retail, F&B, pure logistics, education, real estate - no healthcare client base\n\nOutput: one word only: YES / VENDOR / NO`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -26144,
+        2512
+      ],
+      "id": "08db30d6-dce0-499b-9bbf-19d7a756a7b3",
+      "name": "Prep HIA Gate"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25904,
+        2512
+      ],
+      "id": "68df1b8c-ed4f-4ebc-b13a-68fdd5a88961",
+      "name": "OpenRouter - HIA Gate",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-hia-no",
+              "leftValue": "={{ String(($json.choices[0].message.content || '').trim()).toUpperCase() }}",
+              "rightValue": "NO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -25664,
+        2512
+      ],
+      "id": "f7078f30-7cac-42c8-a166-bfee5e74038f",
+      "name": "IF Not HIA"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"not HIA relevant\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25424,
+        2752
+      ],
+      "id": "0b4bfac6-f41b-48b7-8c1e-96febf66d921",
+      "name": "Status - not HIA relevant"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-vendor",
+              "leftValue": "={{ String(($json.choices[0].message.content || '').trim()).toUpperCase() }}",
+              "rightValue": "VENDOR",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -25424,
+        2512
+      ],
+      "id": "a21368bc-4d9b-4dca-9b85-8e9e2b9e0042",
+      "name": "IF Is Vendor"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  compliance_lead: 'CS/DS vendor readiness',\n  hia_relevant: 'VENDOR'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24624,
+        2080
+      ],
+      "id": "87afa965-c016-463d-badb-c78d4be869dc",
+      "name": "Set Vendor Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "const websiteContent = ($('Serper - Scrape').first().json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, corporate dental provider]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 (GP clinics, acute hospitals, labs, radiology, nursing homes, community hospitals) / Batch 2 - Sep 2028 (specialist outpatient, ambulatory surgical, dialysis, other HCSA licensees) / Batch 3 - Mar 2030 (dental, retail pharmacy, assisted reproduction) / Vendor to HIA clients (tech vendors, SaaS platforms)]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic, single-location, <200 staff signals. Mid = multi-location group, regional presence. Enterprise = hospital system, listed company, large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words. Examples: AI scribe for clinic documentation / RTLS hospital tracking system / cloud HIMS for GP clinics]\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25184,
+        2512
+      ],
+      "id": "9d6ba226-0eed-4978-b239-5eb049d3ce9c",
+      "name": "Prep Enrichment"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24944,
+        2512
+      ],
+      "id": "8bc6ead4-f1b8-477d-8da1-461b1ee51fe4",
+      "name": "OpenRouter - Enrichment",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = ($json.choices[0].message.content || '').trim();\nlet data;\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {\n  data = {};\n}\nreturn [{ json: {\n  industry_segment: data.industry_segment || '',\n  hia_batch: data.hia_batch || '',\n  company_size: data.company_size || '',\n  product_descriptor: data.product_descriptor || '',\n  hia_relevant: 'YES'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24704,
+        2512
+      ],
+      "id": "b8f9566d-e229-4548-835b-24a3846a7630",
+      "name": "Parse Enrichment"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-enrich-seg",
+              "leftValue": "={{ $json.industry_segment }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            },
+            {
+              "id": "cond-enrich-batch",
+              "leftValue": "={{ $json.hia_batch }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -24464,
+        2512
+      ],
+      "id": "2d92a9ee-ba26-47e3-bc12-91ad7a7dd835",
+      "name": "IF Enrichment Failed"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"enrichment failed\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24224,
+        2752
+      ],
+      "id": "b9f31008-2c14-4b68-a17c-6d3354ed565e",
+      "name": "Status - enrichment failed"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anymailfinder.com/v5.1/find-email/decision-maker",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: $json.clean_domain, decision_maker_category: [\"ceo\",\"engineering\",\"finance\",\"it\",\"operations\"] }) }}",
+        "options": {
+          "timeout": 45000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -23984,
+        2512
+      ],
+      "id": "ed620ed6-5850-4283-833a-dd045cfcf64c",
+      "name": "Anymail - Contact",
+      "retryOnFail": false,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "iThicAIVRbK0FBBl",
+          "name": "Header Auth account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $json;\nconst fullName = data?.person_full_name || '';\nconst firstName = fullName.split(' ')[0] || '';\nreturn [{ json: {\n  first_name: firstName,\n  role: data?.person_job_title || '',\n  email: data?.valid_email || data?.email || '',\n  linkedin_url: data?.person_linkedin_url || ''\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23744,
+        2512
+      ],
+      "id": "ea5f2362-d119-4d1c-a015-e3364251d584",
+      "name": "Parse Contact"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-nocontact-name",
+              "leftValue": "={{ $json.first_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            },
+            {
+              "id": "cond-nocontact-email",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -23504,
+        2512
+      ],
+      "id": "f8e0ec97-1d87-46b4-9160-ebebdba9b5c8",
+      "name": "IF No Contact"
+    },
+    {
+      "parameters": {
+        "jsCode": "const websiteContent = ($('Serper - Scrape').first().json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').first().json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24384,
+        2080
+      ],
+      "id": "3407d839-0ca4-4e2a-90cb-f79f007a7875",
+      "name": "Prep Vendor Enrichment1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24144,
+        2080
+      ],
+      "id": "7c2b6652-0757-4e63-b2ab-e23c12cfd00f",
+      "name": "OpenRouter - Vendor Enrichment1",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = ($json.choices[0].message.content || '').trim();\nlet data;\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {\n  data = {};\n}\nreturn [{ json: {\n  industry_segment: data.industry_segment || '',\n  hia_batch: 'Vendor to HIA clients',\n  company_size: data.company_size || '',\n  product_descriptor: data.product_descriptor || '',\n  compliance_lead: 'CS/DS vendor readiness',\n  hia_relevant: 'VENDOR'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23904,
+        2080
+      ],
+      "id": "d61684f7-796f-4220-81d9-75690f72483a",
+      "name": "Parse Vendor Enrichment1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract clean domain from URL Validate response\nconst raw = String($('OpenRouter - URL Validate').first().json.choices[0].message.content || '').trim();\n\n// Strip quotes, markdown, and whitespace the LLM may have added\nconst cleaned = raw.replace(/[`'\"\\[\\]()]/g, '').replace(/\\s+/g, '').trim();\n\n// Extract domain: remove protocol, www, trailing path\nlet domain = cleaned\n  .replace(/^https?:\\/\\//i, '')\n  .replace(/^www\\./i, '')\n  .split('/')[0]\n  .split('?')[0]\n  .split('#')[0];\n\n// Validate it looks like a domain\nif (!domain || !domain.includes('.')) {\n  domain = '';\n}\n\nreturn [{ json: { clean_domain: domain } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24224,
+        2512
+      ],
+      "id": "1d811006-9b95-4ebd-9877-6034f0878c7c",
+      "name": "Prep Anymail Domain"
+    },
+    {
+      "parameters": {
+        "jsCode": "const picked = ($json.choices[0].message.content || '').trim();\nconst lower = String(picked).toLowerCase();\n\n// Check if it's duplicate/none first\nif (lower === 'duplicate' || lower === 'none' || !picked) {\n  return [{ json: { best_url: picked } }];\n}\n\n// Check against ALL existing URLs (not just the 200 sent to LLM)\nconst allUrls = $('Prep URL Data').first().json.all_urls || [];\nconst pickedClean = picked.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n\nconst isDuplicate = allUrls.some(function(u) {\n  const existing = String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n  return existing === pickedClean;\n});\n\nif (isDuplicate) {\n  return [{ json: { best_url: 'duplicate' } }];\n}\n\nreturn [{ json: { best_url: picked } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -27824,
+        2512
+      ],
+      "id": "27312d17-5c2a-4466-8a6f-761d058ff998",
+      "name": "Check URL Against All"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.hunter.io/v2/domain-search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-KEY",
+              "value": "YOUR_HUNTER_API_KEY"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "domain",
+              "value": "={{ $('Prep Anymail Domain').first().json.clean_domain }}"
+            },
+            {
+              "name": "limit",
+              "value": "5"
+            },
+            {
+              "name": "type",
+              "value": "personal"
+            },
+            {
+              "name": "department",
+              "value": "it,management,finance,operations"
+            },
+            {
+              "name": "required_field",
+              "value": "full_name"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ef208871-8b6d-4a67-a4cb-c59fa6401b07",
+      "name": "Hunter - Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -23264,
+        2992
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = ($json?.data?.emails || []);\n// Priority: management > it > finance > operations\nconst priority = ['management', 'it', 'finance', 'operations'];\nlet best = null;\nfor (const dept of priority) {\n  best = emails.find(e => e.department === dept && e.type === 'personal');\n  if (best) break;\n}\nif (!best) best = emails.find(e => e.type === 'personal');\nif (!best) best = emails[0];\nif (!best) return [{ json: { first_name: '', role: '', email: '', linkedin_url: '', source: 'hunter' } }];\nreturn [{ json: {\n  first_name: best.first_name || '',\n  role: best.position || '',\n  email: best.value || '',\n  linkedin_url: best.linkedin || '',\n  source: 'hunter'\n} }];"
+      },
+      "id": "601985e9-7b46-4c34-b9a0-1d8fba4109e5",
+      "name": "Parse Hunter Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23024,
+        2992
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-still-1",
+              "leftValue": "={{ $json.first_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            },
+            {
+              "id": "cond-still-2",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d48604da-666e-49a2-b6ba-c89f028c634d",
+      "name": "IF Still No Contact",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -22784,
+        2992
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"no contact found\"}",
+        "options": {}
+      },
+      "id": "9f023ec1-dce4-440c-919b-925b0db86cb3",
+      "name": "Status - no contact found (stop)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -22544,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const enrichment = $('Normalize Enrichment').first().json;\nconst contact = $('Parse Contact').first().json;\nconst cleanName = ($('OpenRouter - Clean Name').first().json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').first().json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').first().json.text || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').first().json.choices[0].message.content || '').trim();\nconst trigger = $('GET Full Record').first().json;\nconst serperResults = JSON.stringify(($('Serper - Search').first().json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status:             'pending_verification'\n}}];"
+      },
+      "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
+      "name": "Prep Partial Anymail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23264,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const enrichment = $('Normalize Enrichment').first().json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').first().json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').first().json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').first().json.text || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').first().json.choices[0].message.content || '').trim();\nconst trigger = $('GET Full Record').first().json;\nconst serperResults = JSON.stringify(($('Serper - Search').first().json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status:             'pending_verification'\n}}];"
+      },
+      "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
+      "name": "Prep Partial Hunter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -22544,
+        2992
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
+        "options": {}
+      },
+      "id": "6c7b4c7e-c7cd-417c-8790-d7e9627fd885",
+      "name": "Write Partial & Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -22064,
+        2752
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24224,
+        2512
+      ],
+      "id": "eaf29c39-825c-4e77-8276-c3b7be19659e",
+      "name": "Normalize Enrichment"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 20
+            }
+          ]
+        }
+      },
+      "id": "d190301e-d1e4-419f-aec6-3e776695ae10",
+      "name": "Schedule Trigger WF2",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -28960,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?limit=10000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "2f08a655-2183-4688-8d2d-2431714dd815",
+      "name": "Read All Rows WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28720,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return $json.list.map(r => ({json: r}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -28600,
+        3280
+      ],
+      "id": "f0a1b2c3-d4e5-6789-abcd-100000000003",
+      "name": "Parse Read Items WF2"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $('Parse Read Items WF2').all();\nconst pending = rows.filter(r => String(r.json.status||'').trim() === 'pending_verification' && (r.json.email||'').trim() !== '');\nif (!pending.length) return [{ json: { _skip: true, company_name: '' } }];\nreturn [{ json: pending[0].json }];"
+      },
+      "id": "9f2aa72e-d327-42ca-8408-014763e911ae",
+      "name": "Filter WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -28480,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-pend",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "85d01e13-68fa-4e0d-9900-ddeb25ef73ec",
+      "name": "IF No Pending",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -28240,
+        3280
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "81acc6e5-aa4e-4f65-bd5e-6c2bec451608",
+      "name": "No Pending - Stop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -28000,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://connect.no2bounce.com/v2/n2b_validate_bulk",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({emailList: [$('Filter WF2').first().json.email]}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "807588c8-cbbf-4422-bb2d-85e5247267bb",
+      "name": "No2Bounce - Submit",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28000,
+        3280
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-valid",
+              "leftValue": "={{ $json.email_valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ce600cc5-4f97-4982-97d3-be70a30bb8fc",
+      "name": "IF Email Valid",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -27040,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Filter WF2').first().json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"email invalid\"}",
+        "options": {}
+      },
+      "id": "024fb8e7-b5b0-4997-bbe2-ca6e1f62bf19",
+      "name": "Status - email invalid",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26800,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Filter WF2').first().json;\nconst body = {\n  model: 'minimax/minimax-m2.7', temperature: 0.1,\n  messages: [{ role: 'user', content:\n    'Industry: ' + (row.industry_segment||'N/A') +\n    '\\nHIA batch: ' + (row.hia_batch||'N/A') +\n    '\\nHIA relevant: ' + (row.hia_relevant||'N/A') +\n    '\\nRole: ' + (row.role||'N/A') +\n    '\\nCompany size: ' + (row.company_size||'N/A') +\n    '\\nProduct: ' + (row.product_descriptor||'N/A') +\n    '\\nCompany: ' + (row.company_name_clean||row.company_name||'N/A') +\n    '\\n\\nReturn a JSON object with exactly these 3 keys:\\n' +\n    '{\\n  \"compliance_lead\": \"[one of: CS/DS vendor readiness / NEHR contribution / CS/DS certification / grant co-funding / CS/DS + NCSS TSS grant]\",\\n' +\n    '  \"vendor_pain\": \"[1 sentence, max 20 words. Role-specific HIA compliance pain tied to compliance_lead.]\",\\n' +\n    '  \"grant_eligibility\": \"[one of: PSG + CSA/CTOaaS / CSA/CTOaaS only / NCSS TSS / PSG only / Verify eligibility]\"\\n}' +\n    '\\n\\nValid JSON only. No markdown. No explanation.'\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      },
+      "id": "a7d46a05-7a86-4c2e-80a7-d118265761e5",
+      "name": "Prep Pain Logic WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -26800,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "4064069e-22c0-4c31-9108-b66c3f9ecbf3",
+      "name": "OpenRouter - Pain Logic WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26560,
+        3280
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = ($json.choices[0].message.content||'').trim();\nlet data;\ntry { const c = response.replace(/```json\\n?/g,'').replace(/```\\n?/g,'').trim(); data=JSON.parse(c); } catch(e){ data={}; }\nreturn [{ json: { compliance_lead: data.compliance_lead||'', vendor_pain: data.vendor_pain||'', grant_eligibility: data.grant_eligibility||'' } }];"
+      },
+      "id": "c4b15f55-552e-4cf1-9289-6b1e59e051b0",
+      "name": "Parse Pain WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -26320,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-pain",
+              "leftValue": "={{ $json.vendor_pain }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4a169360-89aa-48a8-bf7a-a1954d2b892c",
+      "name": "IF Pain Failed WF2",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -26080,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Filter WF2').first().json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"pain gen failed\"}",
+        "options": {}
+      },
+      "id": "eddebe78-646d-4d91-a77d-b82294daf7bd",
+      "name": "Status - pain failed WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25840,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Filter WF2').first().json;\nconst pain = $('Parse Pain WF2').first().json;\nconst websiteContent = (row.website_content || '').substring(0,800);\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6', temperature: 0.4,\n  messages: [{ role: 'user', content:\n    'You are writing 4 cold outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure.\\n\\nRAYN Secure helps Singapore healthcare organisations and their vendors attain CS/DS Essentials certification and comply with HIA 2027.\\n\\n---\\n\\nPROSPECT DETAILS:\\n- First name: ' + (row.first_name||'there') +\n    '\\n- Company: ' + (row.company_name_clean||row.company_name) +\n    '\\n- Industry: ' + (row.industry_segment||'N/A') +\n    '\\n- HIA batch: ' + (row.hia_batch||'N/A') +\n    '\\n- Product/service: ' + (row.product_descriptor||'N/A') +\n    '\\n- Role: ' + (row.role||'N/A') +\n    '\\n- Pain point: ' + (pain.vendor_pain||'N/A') +\n    '\\n- Compliance lead: ' + (pain.compliance_lead||'N/A') +\n    '\\n- Grant eligibility: ' + (pain.grant_eligibility||'N/A') +\n    '\\n- Website summary: ' + websiteContent +\n    '\\n\\n---\\n\\nCREDIBILITY REFERENCES: Pick 2 most relevant to the prospect sector:\\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\\n\\n---\\n\\nGENERATE 4 EMAILS matching the structure: short hook subject, 60-80 word body, role-aware CTA, arrows for lists in Email 2 and 4.\\n\\nEmail 2 subject: Up to 70% co-funded for ' + (row.company_name_clean||row.company_name) + '\\'s HIA compliance\\nEmail 4 subject: Should I close the loop, ' + (row.first_name||'there') + '?\\n\\nSign off: Best,\\\\nSasikumar\\n\\nOutput JSON with keys: subject_line_1, email_body_1, subject_line_2, email_body_2, subject_line_3, email_body_3, subject_line_4, email_body_4\\n\\nValid JSON only. No markdown.'\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      },
+      "id": "0bfd4099-73f5-4020-8358-ad10fa2f289c",
+      "name": "Prep Email Gen WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25840,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 90000
+        }
+      },
+      "id": "d39768ed-dfc6-45c0-8599-54d53c5cfa01",
+      "name": "OpenRouter - Email Gen WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25600,
+        3280
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = ($json.choices[0].message.content||'').trim();\nlet data;\ntry { const c = response.replace(/```json\\n?/g,'').replace(/```\\n?/g,'').trim(); data=JSON.parse(c); } catch(e){ data={}; }\nreturn [{ json: {\n  subject_line_1: data.subject_line_1||'', email_body_1: data.email_body_1||'',\n  subject_line_2: data.subject_line_2||'', email_body_2: data.email_body_2||'',\n  subject_line_3: data.subject_line_3||'', email_body_3: data.email_body_3||'',\n  subject_line_4: data.subject_line_4||'', email_body_4: data.email_body_4||''\n} }];"
+      },
+      "id": "83f5277e-e22b-4c3d-8e4d-492d66edb3f1",
+      "name": "Parse Emails WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25360,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-email",
+              "leftValue": "={{ $json.email_body_1 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c913ebc7-75dd-40d6-b6b5-03982b93899a",
+      "name": "IF Email Gen Failed WF2",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -25120,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Filter WF2').first().json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"email gen failed\"}",
+        "options": {}
+      },
+      "id": "365dd633-9750-4fe9-af47-17684eef15ec",
+      "name": "Status - email gen failed WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24880,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $('Filter WF2').first().json;\nconst pain  = $('Parse Pain WF2').first().json;\nconst emails= $('Parse Emails WF2').first().json;\n// verification_status comes from the IF Email Valid path\nconst now   = new Date().toISOString();\nreturn [{ json: {\n  company_name:       row.company_name,\n  company_name_clean: row.company_name_clean || '',\n  serper_results:     row.serper_results || '',\n  best_url:           row.best_url || '',\n  url_validated:      row.url_validated || '',\n  website_content:    row.website_content || '',\n  hia_relevant:       row.hia_relevant || '',\n  industry_segment:   row.industry_segment || '',\n  hia_batch:          row.hia_batch || '',\n  company_size:       row.company_size || '',\n  product_descriptor: row.product_descriptor || '',\n  first_name:         row.first_name || '',\n  role:               row.role || '',\n  email:              row.email || '',\n  linkedin_url:       row.linkedin_url || '',\n  contact_source:     row.contact_source || '',\n  compliance_lead:    pain.compliance_lead || '',\n  vendor_pain:        pain.vendor_pain || '',\n  grant_eligibility:  pain.grant_eligibility || '',\n  subject_line_1:     emails.subject_line_1 || '',\n  email_body_1:       emails.email_body_1 || '',\n  subject_line_2:     emails.subject_line_2 || '',\n  email_body_2:       emails.email_body_2 || '',\n  subject_line_3:     emails.subject_line_3 || '',\n  email_body_3:       emails.email_body_3 || '',\n  subject_line_4:     emails.subject_line_4 || '',\n  email_body_4:       emails.email_body_4 || '',\n  verification_status:'valid',\n  status:             'enriched',\n  enriched_at:        now\n}}];"
+      },
+      "id": "a06f4854-6988-47d9-b62b-ee78b0a9d2b4",
+      "name": "Assemble Final WF2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24880,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Filter WF2').first().json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, first_name: $json.first_name, role: $json.role, email: $json.email, compliance_lead: $json.compliance_lead, vendor_pain: $json.vendor_pain, grant_eligibility: $json.grant_eligibility, subject_line_1: $json.subject_line_1, email_body_1: $json.email_body_1, subject_line_2: $json.subject_line_2, email_body_2: $json.email_body_2, subject_line_3: $json.subject_line_3, email_body_3: $json.email_body_3, subject_line_4: $json.subject_line_4, email_body_4: $json.email_body_4, status: $json.status, enriched_at: $json.enriched_at, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, verification_status: $json.verification_status }) }}",
+        "options": {}
+      },
+      "id": "4538f5b6-643a-495e-a0a1-f9ffb2b9caa5",
+      "name": "Write All Columns WF2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24640,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 15,
+        "unit": "seconds"
+      },
+      "id": "e7fe975b-890a-4c0b-bb5e-624c46e43477",
+      "name": "Wait 1min",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "99a20c1e-ff5f-46e3-8709-0807553264f5",
+      "position": [
+        -27760,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://connect.no2bounce.com/v2/n2b_validate_bulk?trackingId={{ $('No2Bounce - Submit').first().json.data.trackingId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2919d612-7695-4946-9753-aea805f84c4f",
+      "name": "No2Bounce - Poll 1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -27520,
+        3280
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\n\n// Check if completed\nconst isReady = r.overallStatus === 'Completed' || r.percent >= 100;\n\n// Count valid emails (Deliverable + any AcceptAll variants)\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\n\nconst status = isReady\n  ? (isValid ? 'valid' : 'invalid')\n  : 'processing';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: isReady\n} }];"
+      },
+      "id": "9641a09c-5e6c-4a1c-ba2d-7faf79027931",
+      "name": "Parse Poll 1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -27280,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-ready-1",
+              "leftValue": "={{ $json.is_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "9fe48458-7f83-4b08-b4c2-8cd8dea1192d",
+      "name": "IF Ready 1",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -27040,
+        3280
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "816049b8-5614-4265-90df-e7716814ef90",
+      "name": "Wait 5min-A",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "14b428d6-4da0-411e-ac70-8adca178277a",
+      "position": [
+        -27040,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://connect.no2bounce.com/v2/n2b_validate_bulk?trackingId={{ $('No2Bounce - Submit').first().json.data.trackingId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "ccb7f6b5-c54e-4076-b736-099376ec61e2",
+      "name": "No2Bounce - Poll 2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26800,
+        3504
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\n\n// Check if completed\nconst isReady = r.overallStatus === 'Completed' || r.percent >= 100;\n\n// Count valid emails (Deliverable + any AcceptAll variants)\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\n\nconst status = isReady\n  ? (isValid ? 'valid' : 'invalid')\n  : 'processing';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: isReady\n} }];"
+      },
+      "id": "a8c93f69-33c4-4b93-8e69-2a7d7e0ef423",
+      "name": "Parse Poll 2",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -26560,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-ready-2",
+              "leftValue": "={{ $json.is_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "8ae4a161-dfa8-4be2-8876-08df39ab51bd",
+      "name": "IF Ready 2",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -26320,
+        3504
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "3f810206-e0eb-418a-9600-23478812beb2",
+      "name": "Wait 5min-B",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "aded1876-4da7-424d-9db8-00f0b4f50c57",
+      "position": [
+        -26320,
+        3728
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://connect.no2bounce.com/v2/n2b_validate_bulk?trackingId={{ $('No2Bounce - Submit').first().json.data.trackingId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2a0add29-b850-47fa-b04b-9146987a38ce",
+      "name": "No2Bounce - Poll 3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26080,
+        3728
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\n\n// Check if completed\nconst isReady = r.overallStatus === 'Completed' || r.percent >= 100;\n\n// Count valid emails (Deliverable + any AcceptAll variants)\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\n\nconst status = isReady\n  ? (isValid ? 'valid' : 'invalid')\n  : 'processing';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: isReady\n} }];"
+      },
+      "id": "4ead25e8-6393-4bda-9f7c-d6b0e71e2325",
+      "name": "Parse Poll 3",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25840,
+        3728
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-ready-3",
+              "leftValue": "={{ $json.is_ready }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4bf659ab-107c-45c0-a27c-86a0d178bfbc",
+      "name": "IF Ready 3",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -25600,
+        3728
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 30,
+        "unit": "seconds"
+      },
+      "id": "2f38736c-e846-443d-a5e3-8d7030571175",
+      "name": "Wait 5min-C",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "webhookId": "49331ffc-7f01-41e8-a929-3322a2056ca7",
+      "position": [
+        -25600,
+        3952
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://connect.no2bounce.com/v2/n2b_validate_bulk?trackingId={{ $('No2Bounce - Submit').first().json.data.trackingId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apitoken",
+              "value": "264b139b091fad9c4330803c3f97c2f7"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "515c95d1-fc89-4817-aea8-7d62bf430775",
+      "name": "No2Bounce - Poll 4",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -25360,
+        3952
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const r = $json;\n\n// Final poll - accept whatever we have\nconst deliverable = (r['Deliverable'] || 0) + (r['Deliverable/AcceptAll'] || 0);\nconst isValid = deliverable > 0;\nconst status = isValid ? 'valid' : 'invalid';\n\nreturn [{ json: {\n  verification_status: status,\n  email_valid: isValid,\n  is_ready: true\n} }];"
+      },
+      "id": "e51b9dfe-196f-4298-baea-2a7e94ff9fd9",
+      "name": "Parse Poll 4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -25120,
+        3952
+      ]
+    },
+    {
+      "name": "HTTP Status Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "http-status-check-001",
+      "position": [
+        -27104,
+        2512
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "HEAD",
+        "url": "={{ $json.best_url }}",
+        "options": {
+          "timeout": 10000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Parse HTTP Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "id": "parse-http-status-001",
+      "position": [
+        -26864,
+        2512
+      ],
+      "parameters": {
+        "jsCode": "const best_url = $('IF URL None').item.json.best_url;\nconst statusCode = $json.statusCode;\nconst hasNetworkError = !!$json.error || statusCode === undefined;\n\n// Network error (connection refused, DNS fail, timeout) -> unreachable\nif (hasNetworkError) {\n  return [{ json: { best_url, _unreachable: true, http_reason: 'connection_error' } }];\n}\n\n// 5xx server errors -> unreachable\nif (statusCode >= 500) {\n  return [{ json: { best_url, _unreachable: true, http_reason: 'server_error_' + statusCode } }];\n}\n\n// 403/429 = site is up but blocking bots -> proceed\n// 2xx/3xx (n8n follows redirects to final URL) -> proceed\n// 404 = specific page missing but domain exists -> proceed (URL validate will judge)\nreturn [{ json: { best_url, _unreachable: false, http_status: statusCode } }];"
+      }
+    },
+    {
+      "name": "IF Unreachable",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "id": "if-unreachable-001",
+      "position": [
+        -26624,
+        2512
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-unreach-1",
+              "leftValue": "={{ $json._unreachable }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "name": "Status - url unreachable",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "status-url-unreachable-001",
+      "position": [
+        -26624,
+        2272
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"url unreachable\"}",
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst tableId = 'mey3zgihq7o4at9';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\n\nconst tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();\n\n// Fetch all rows with status=processing\nconst getUrl = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}` +\n  `?where=(status,eq,processing)~and(UpdatedAt,lt,${encodeURIComponent(tenMinutesAgo)})&limit=100`;\n\nlet stuckRows = [];\ntry {\n  const response = await $http.request({ method: 'GET', url: getUrl, headers: { 'xc-token': token } });\n  stuckRows = (response.list || []);\n} catch (e) {\n  // If filter fails (field name mismatch), fall back to fetching all processing rows and filtering by date client-side\n  try {\n    const fallbackUrl = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}?where=(status,eq,processing)&limit=100`;\n    const fallbackResponse = await $http.request({ method: 'GET', url: fallbackUrl, headers: { 'xc-token': token } });\n    const allProcessing = (fallbackResponse.list || []);\n    stuckRows = allProcessing.filter(row => {\n      const updatedAt = row.UpdatedAt || row.updated_at || row['Updated At'] || '';\n      if (!updatedAt) return true; // If no timestamp, treat as stuck\n      return new Date(updatedAt) < new Date(tenMinutesAgo);\n    });\n  } catch (e2) {\n    stuckRows = [];\n  }\n}\n\nfor (const row of stuckRows) {\n  const patchUrl = `${baseUrl}/api/v1/db/data/noco/${projectId}/${tableId}/${row.Id}`;\n  try {\n    await $http.request({\n      method: 'PATCH',\n      url: patchUrl,\n      headers: { 'xc-token': token, 'Content-Type': 'application/json' },\n      body: JSON.stringify({ status: 'pending' })\n    });\n  } catch (e) {\n    // Continue even if one patch fails\n  }\n}\n\nreturn [{ json: { cleanup_count: stuckRows.length } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -30344,
+        2512
+      ],
+      "id": "cleanup-stuck-processing-001",
+      "name": "Cleanup Stuck Processing"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,pending)&limit=5&fields=Id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -30104,
+        2512
+      ],
+      "id": "get-pending-ids-001",
+      "name": "Get Pending IDs"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const list = $json.list || [];\nif (list.length === 0) {\n  return [{ json: { _skip: true, count: 0 } }];\n}\n// Return all pending IDs as separate items\nreturn list.map(row => ({ json: { Id: row.Id } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29884,
+        2512
+      ],
+      "id": "parse-pending-ids-001",
+      "name": "Parse Pending IDs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-nopending-1",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -29664,
+        2512
+      ],
+      "id": "if-no-pending-001",
+      "name": "IF No Pending Leads"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -29444,
+        2732
+      ],
+      "id": "no-pending-stop-001",
+      "name": "No Pending - Stop"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -29444,
+        2512
+      ],
+      "id": "loop-over-items-001",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"processing\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29224,
+        2512
+      ],
+      "id": "patch-status-processing-001",
+      "name": "PATCH Status Processing"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29004,
+        2512
+      ],
+      "id": "get-full-record-001",
+      "name": "GET Full Record"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Stuck Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Rows": {
+      "main": [
+        [
+          {
+            "node": "Parse Read Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Read Items": {
+      "main": [
+        [
+          {
+            "node": "Filter Unprocessed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Unprocessed": {
+      "main": [
+        [
+          {
+            "node": "IF No Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Rows": {
+      "main": [
+        [
+          {
+            "node": "No Rows - Stop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenRouter - Clean Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Clean Name": {
+      "main": [
+        [
+          {
+            "node": "IF Clean Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Clean Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - clean failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Serper - Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper - Search": {
+      "main": [
+        [
+          {
+            "node": "IF Serper Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Serper Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - serper failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Column E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Column E": {
+      "main": [
+        [
+          {
+            "node": "Parse Read Column E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Read Column E": {
+      "main": [
+        [
+          {
+            "node": "Prep URL Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep URL Data": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - URL Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - URL Dedup": {
+      "main": [
+        [
+          {
+            "node": "Check URL Against All",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Status - url duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF URL None",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL None": {
+      "main": [
+        [
+          {
+            "node": "Status - no url found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Status Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - URL Validate": {
+      "main": [
+        [
+          {
+            "node": "IF URL Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL Rejected": {
+      "main": [
+        [
+          {
+            "node": "Status - url rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Serper - Scrape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper - Scrape": {
+      "main": [
+        [
+          {
+            "node": "IF Scrape Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Scrape Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - scrape failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep HIA Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep HIA Gate": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - HIA Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - HIA Gate": {
+      "main": [
+        [
+          {
+            "node": "IF Not HIA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Not HIA": {
+      "main": [
+        [
+          {
+            "node": "Status - not HIA relevant",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Is Vendor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Is Vendor": {
+      "main": [
+        [
+          {
+            "node": "Set Vendor Fields",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Vendor Fields": {
+      "main": [
+        [
+          {
+            "node": "Prep Vendor Enrichment1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Enrichment": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Parse Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Enrichment": {
+      "main": [
+        [
+          {
+            "node": "IF Enrichment Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Enrichment Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - enrichment failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normalize Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anymail - Contact": {
+      "main": [
+        [
+          {
+            "node": "Parse Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Contact": {
+      "main": [
+        [
+          {
+            "node": "IF No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Contact": {
+      "main": [
+        [
+          {
+            "node": "Hunter - Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Partial Anymail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Vendor Enrichment1": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Vendor Enrichment1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Vendor Enrichment1": {
+      "main": [
+        [
+          {
+            "node": "Parse Vendor Enrichment1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Vendor Enrichment1": {
+      "main": [
+        [
+          {
+            "node": "Normalize Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Anymail Domain": {
+      "main": [
+        [
+          {
+            "node": "Anymail - Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check URL Against All": {
+      "main": [
+        [
+          {
+            "node": "IF URL Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunter - Contact": {
+      "main": [
+        [
+          {
+            "node": "Parse Hunter Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Hunter Contact": {
+      "main": [
+        [
+          {
+            "node": "IF Still No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Still No Contact": {
+      "main": [
+        [
+          {
+            "node": "Status - no contact found (stop)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Partial Hunter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Partial Anymail": {
+      "main": [
+        [
+          {
+            "node": "Write Partial & Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Partial Hunter": {
+      "main": [
+        [
+          {
+            "node": "Write Partial & Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Prep Anymail Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger WF2": {
+      "main": [
+        [
+          {
+            "node": "Read All Rows WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Rows WF2": {
+      "main": [
+        [
+          {
+            "node": "Parse Read Items WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Read Items WF2": {
+      "main": [
+        [
+          {
+            "node": "Filter WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter WF2": {
+      "main": [
+        [
+          {
+            "node": "IF No Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Pending": {
+      "main": [
+        [
+          {
+            "node": "No Pending - Stop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No2Bounce - Submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce - Submit": {
+      "main": [
+        [
+          {
+            "node": "Wait 1min",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Email Valid": {
+      "main": [
+        [
+          {
+            "node": "Prep Pain Logic WF2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - email invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Pain Logic WF2": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Pain Logic WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Pain Logic WF2": {
+      "main": [
+        [
+          {
+            "node": "Parse Pain WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pain WF2": {
+      "main": [
+        [
+          {
+            "node": "IF Pain Failed WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Pain Failed WF2": {
+      "main": [
+        [
+          {
+            "node": "Status - pain failed WF2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep Email Gen WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Email Gen WF2": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Email Gen WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Email Gen WF2": {
+      "main": [
+        [
+          {
+            "node": "Parse Emails WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Emails WF2": {
+      "main": [
+        [
+          {
+            "node": "IF Email Gen Failed WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Email Gen Failed WF2": {
+      "main": [
+        [
+          {
+            "node": "Status - email gen failed WF2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Assemble Final WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Final WF2": {
+      "main": [
+        [
+          {
+            "node": "Write All Columns WF2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 1min": {
+      "main": [
+        [
+          {
+            "node": "No2Bounce - Poll 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce - Poll 1": {
+      "main": [
+        [
+          {
+            "node": "Parse Poll 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Poll 1": {
+      "main": [
+        [
+          {
+            "node": "IF Ready 1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ready 1": {
+      "main": [
+        [
+          {
+            "node": "IF Email Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 5min-A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5min-A": {
+      "main": [
+        [
+          {
+            "node": "No2Bounce - Poll 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce - Poll 2": {
+      "main": [
+        [
+          {
+            "node": "Parse Poll 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Poll 2": {
+      "main": [
+        [
+          {
+            "node": "IF Ready 2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ready 2": {
+      "main": [
+        [
+          {
+            "node": "IF Email Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 5min-B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5min-B": {
+      "main": [
+        [
+          {
+            "node": "No2Bounce - Poll 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce - Poll 3": {
+      "main": [
+        [
+          {
+            "node": "Parse Poll 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Poll 3": {
+      "main": [
+        [
+          {
+            "node": "IF Ready 3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Ready 3": {
+      "main": [
+        [
+          {
+            "node": "IF Email Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait 5min-C",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5min-C": {
+      "main": [
+        [
+          {
+            "node": "No2Bounce - Poll 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No2Bounce - Poll 4": {
+      "main": [
+        [
+          {
+            "node": "Parse Poll 4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Poll 4": {
+      "main": [
+        [
+          {
+            "node": "IF Email Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Status Check": {
+      "main": [
+        [
+          {
+            "node": "Parse HTTP Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse HTTP Status": {
+      "main": [
+        [
+          {
+            "node": "IF Unreachable",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Unreachable": {
+      "main": [
+        [
+          {
+            "node": "Status - url unreachable",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenRouter - URL Validate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cleanup Stuck Processing": {
+      "main": [
+        [
+          {
+            "node": "Get Pending IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Pending IDs": {
+      "main": [
+        [
+          {
+            "node": "Parse Pending IDs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pending IDs": {
+      "main": [
+        [
+          {
+            "node": "IF No Pending Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF No Pending Leads": {
+      "main": [
+        [
+          {
+            "node": "No Pending - Stop",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [],
+        [
+          {
+            "node": "PATCH Status Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH Status Processing": {
+      "main": [
+        [
+          {
+            "node": "GET Full Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Full Record": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Clean Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6c87d3ca-d1b2-47c1-b3b7-93eda75198ad",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b78381ec16e7beefcb107e875e8eea12c33a1dbcd8fb6b17e3970e1a503cab3e"
+  },
+  "id": "dxdjHo8QCPLoTGPa",
+  "tags": []
+}
