@@ -15,7 +15,10 @@
       },
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 300],
+      "position": [
+        0,
+        300
+      ],
       "id": "disc-0001",
       "name": "Weekly Trigger"
     },
@@ -25,7 +28,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [280, 300],
+      "position": [
+        280,
+        300
+      ],
       "id": "disc-0002",
       "name": "Generate Search Combos"
     },
@@ -44,7 +50,10 @@
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [560, 300],
+      "position": [
+        560,
+        300
+      ],
       "id": "disc-0005",
       "name": "Serper Places",
       "credentials": {
@@ -65,7 +74,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [840, 300],
+      "position": [
+        840,
+        300
+      ],
       "id": "disc-0006",
       "name": "Parse Places"
     },
@@ -93,7 +105,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [1120, 300],
+      "position": [
+        1120,
+        300
+      ],
       "id": "disc-filter-empty",
       "name": "IF No Results"
     },
@@ -101,7 +116,10 @@
       "parameters": {},
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1400, 540],
+      "position": [
+        1400,
+        540
+      ],
       "id": "disc-noop-empty",
       "name": "No Results - Stop"
     },
@@ -112,7 +130,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1400, 300],
+      "position": [
+        1400,
+        300
+      ],
       "id": "disc-prep-discovery",
       "name": "Prep Discovery Bulk"
     },
@@ -134,15 +155,18 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify($json.rows) }}",
+        "specifyBody": "json",
+        "body": "={{ $json.rows }}",
         "options": {
           "timeout": 120000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1680, 300],
+      "position": [
+        1680,
+        300
+      ],
       "id": "disc-write-discovery",
       "name": "Write Discovery"
     },
@@ -153,7 +177,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1960, 300],
+      "position": [
+        1960,
+        300
+      ],
       "id": "disc-read-discovery",
       "name": "Paginate Read Discovery"
     },
@@ -164,7 +191,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2240, 300],
+      "position": [
+        2240,
+        300
+      ],
       "id": "disc-read-leads",
       "name": "Paginate Read Leads"
     },
@@ -175,7 +205,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2520, 300],
+      "position": [
+        2520,
+        300
+      ],
       "id": "disc-0011",
       "name": "Dedup Against Leads"
     },
@@ -203,7 +236,10 @@
       },
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [2800, 300],
+      "position": [
+        2800,
+        300
+      ],
       "id": "disc-0012",
       "name": "IF No New Leads"
     },
@@ -211,7 +247,10 @@
       "parameters": {},
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [3080, 540],
+      "position": [
+        3080,
+        540
+      ],
       "id": "disc-0013",
       "name": "No New Leads - Stop"
     },
@@ -222,7 +261,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [3080, 300],
+      "position": [
+        3080,
+        300
+      ],
       "id": "disc-prep-leads",
       "name": "Prep Leads Bulk"
     },
@@ -244,15 +286,18 @@
           ]
         },
         "sendBody": true,
-        "specifyBody": "string",
-        "body": "={{ JSON.stringify($json.rows) }}",
+        "specifyBody": "json",
+        "body": "={{ $json.rows }}",
         "options": {
           "timeout": 120000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [3360, 300],
+      "position": [
+        3360,
+        300
+      ],
       "id": "disc-push-leads",
       "name": "Push to Leads"
     }
