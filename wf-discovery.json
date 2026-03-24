@@ -237,7 +237,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Items that passed the discovery dedup\nconst newDiscoveries = $('Dedup vs Discovery').all().filter(i => !i.json._skip);\n// Existing names in leads table\nconst existingLeads = ($input.first().json.list || []);\nconst existingNames = new Set(existingLeads.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newLeads = [];\n\nfor (const item of newDiscoveries) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newLeads.push({ json: { company_name: item.json.company_name } });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
+        "jsCode": "// Items that passed the discovery dedup\nconst newDiscoveries = $('Dedup vs Discovery').all().filter(i => !i.json._skip);\n// Existing names in leads table\nconst existingLeads = ($input.first().json.list || []);\nconst existingNames = new Set(existingLeads.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newLeads = [];\n\nfor (const item of newDiscoveries) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newLeads.push({ json: { company_name: item.json.company_name, status: 'pending' } });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
