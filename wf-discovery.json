@@ -158,10 +158,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "body": "={{ $json.rows }}",
         "options": {
           "timeout": 120000
-        }
+        },
+        "jsonBody": "={{ $json.rows }}"
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
@@ -289,10 +289,10 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "body": "={{ $json.rows }}",
         "options": {
           "timeout": 120000
-        }
+        },
+        "jsonBody": "={{ $json.rows }}"
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
