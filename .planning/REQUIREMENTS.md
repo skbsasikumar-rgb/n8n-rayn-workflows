@@ -9,8 +9,8 @@ Fix all bugs preventing the engine from running reliably at volume. These are pr
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: Set `N8N_CONCURRENCY_PRODUCTION_LIMIT=1` on Railway n8n env vars — prevents new concurrent trigger overlaps while other fixes are applied
-- [ ] **INFRA-02**: Raise `DB_QUERY_LIMIT_MAX` on Railway NocoDB env vars — default cap may be 100 rows, silently stopping the pipeline as the table grows
+- [x] **INFRA-01**: Set `N8N_CONCURRENCY_PRODUCTION_LIMIT=1` on Railway n8n env vars — prevents new concurrent trigger overlaps while other fixes are applied
+- [x] **INFRA-02**: Raise `DB_QUERY_LIMIT_MAX` on Railway NocoDB env vars — default cap may be 100 rows, silently stopping the pipeline as the table grows
 
 ### wf-latest Fixes
 
@@ -84,8 +84,8 @@ Parallel LinkedIn outreach channel for HIA:YES leads, running alongside the emai
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Pending |
-| INFRA-02 | Phase 1 | Pending |
+| INFRA-01 | Phase 1 | Complete |
+| INFRA-02 | Phase 1 | Complete |
 | FIX-01 | Phase 1 | Pending |
 | FIX-02 | Phase 1 | Pending |
 | FIX-03 | Phase 1 | Pending |

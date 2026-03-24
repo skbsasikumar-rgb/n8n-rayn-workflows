@@ -27,7 +27,7 @@
 **Plans:** 5 plans
 
 Plans:
-- [ ] 01-01-PLAN.md -- Railway env var hardening on n8n and NocoDB services (INFRA-01, INFRA-02)
+- [x] 01-01-PLAN.md -- Railway env var hardening on n8n and NocoDB services (INFRA-01, INFRA-02)
 - [ ] 01-02-PLAN.md -- Race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
 - [ ] 01-03-PLAN.md -- OpenRouter backoff + batch processing loop verification in wf-latest (FIX-02, FIX-03)
 - [ ] 01-04-PLAN.md -- Contact fallback OR fix + No2Bounce timeout + NocoDB pagination in wf-latest (FIX-04, FIX-05 Part A, FIX-06)

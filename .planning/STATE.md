@@ -1,7 +1,20 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+last_updated: "2026-03-24T03:36:48.243Z"
+progress:
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 1
+---
+
 # STATE: RAYN Sales Engine
 
 **Last updated:** 2026-03-24
-**Session:** Roadmap initialisation
+**Session:** Plan 01-01 complete — Railway env vars set on n8n and NocoDB
 
 ---
 
@@ -9,25 +22,14 @@
 
 **Core Value:** Every discovered lead gets a personalised, compliance-context-aware cold email sent without manual intervention.
 
-**Current Focus:** Phase 1 — Workflow Reliability (fix all bugs in wf-latest and wf-discovery before any outreach channel is built)
+**Current Focus:** Phase 01 — workflow-reliability
 
 ---
 
 ## Current Position
 
-**Phase:** 1 — Workflow Reliability
-**Plan:** Not started
-**Status:** Pre-execution (roadmap created, no plans written yet)
-
-**Progress bar:**
-```
-Phase 1 [----------] 0%
-Phase 2 [----------] 0%
-Phase 3 [----------] 0%
-Phase 4 [----------] 0%
-```
-
----
+Phase: 01 (workflow-reliability) — EXECUTING
+Plan: 2 of 5
 
 ## Performance Metrics
 
@@ -36,10 +38,12 @@ Phase 4 [----------] 0%
 | Phases total | 4 |
 | Requirements total | 26 |
 | Requirements mapped | 26 |
-| Plans created | 0 |
-| Plans complete | 0 |
+| Plans created | 5 |
+| Plans complete | 1 |
 
----
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | human-action | 2 tasks | 0 files |
 
 ## Accumulated Context
 
@@ -52,6 +56,8 @@ Phase 4 [----------] 0%
 | No2Bounce polling redesigned as separate workflow (FIX-05) | Inline polling risks the 300s n8n task runner timeout; Wait node approach is the only safe pattern |
 | WhatsApp scope is post-engagement nurture only, not cold outreach | Meta policy enforcement makes cold WhatsApp to scraped contacts a permanent-ban risk; REQUIREMENTS.md already captures this |
 | Hunter fallback triggered on OR logic (FIX-04) | AND logic means a lead with a name but no email never triggers Hunter, leaving email field empty |
+| N8N_CONCURRENCY_PRODUCTION_LIMIT=1 applied to worker service (INFRA-01) | Worker service executes production workflows; primary/UI service does not need this constraint |
+| DB_QUERY_LIMIT_DEFAULT=1000 as NocoDB page size; DB_QUERY_LIMIT_MAX=100000 removes silent row cap (INFRA-02) | 1000 rows/page minimises loop iterations; 100k max ensures all leads visible to wf-latest and wf-discovery |
 
 ### Critical Pre-Conditions Before Phase 2
 
@@ -77,8 +83,10 @@ None currently. Phase 1 can begin immediately.
 ### To Resume Work
 
 1. Read `/Users/sasikumar/Documents/n8n/.planning/ROADMAP.md` — current phase and plan status
-2. Read `/Users/sasikumar/Documents/n8n/.planning/REQUIREMENTS.md` — requirement traceability
-3. Run `/gsd:plan-phase 1` to create the Phase 1 execution plan
+2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-01-SUMMARY.md` — completed INFRA-01/INFRA-02 context
+3. Execute `01-02-PLAN.md` — race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
+
+**Stopped at:** Completed 01-01-PLAN.md — next is 01-02-PLAN.md
 
 ### Workflow Files
 
