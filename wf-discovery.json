@@ -128,7 +128,21 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const allItems = $input.all();\nconst all = allItems.map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 100) {\n  chunks.push({json: {rows: all.slice(i, i + 100)}});\n}\nreturn chunks.length ? chunks : [{json: {rows: []}}];"
+        "jsCode": "// Serper results from Places\nconst serperItems = $('Parse Places').all();\n// Existing companies in discovery table\nconst existing = ($input.first().json.list || []);\nconst existingNames = new Set(existing.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newItems = [];\n\nfor (const item of serperItems) {\n  if (item.json._skip) continue;\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newItems.push(item);\n}\n\nif (!newItems.length) return [{ json: { _skip: true } }];\nreturn newItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2200,
+        300
+      ],
+      "id": "disc-dedup-vs-discovery",
+      "name": "Dedup vs Discovery"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const allItems = $input.all().filter(i => !i.json._skip);\nif (!allItems.length) return [{ json: { rows: [] } }];\nconst all = allItems.map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 100) {\n  chunks.push({json: {rows: all.slice(i, i + 100)}});\n}\nreturn chunks;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -223,7 +237,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const discoveryRows = ($('Paginate Read Discovery').first().json.list || []).map(r => ({ json: r }));\nconst leadsRows = ($('Paginate Read Leads').first().json.list || []).map(r => ({ json: r }));\n\n// Dedup by website_url (canonical dedup key)\nconst existingUrls = new Set(\n  leadsRows.map(r => String(r.json.website_url || r.json.url || '').toLowerCase().trim()).filter(u => u)\n);\n\nconst batchUrls = new Set();\nconst newLeads = [];\n\nfor (const row of discoveryRows) {\n  const url = String(row.json.website_url || row.json.url || '').toLowerCase().trim();\n  if (!url || existingUrls.has(url) || batchUrls.has(url)) continue;\n  batchUrls.add(url);\n  newLeads.push({\n    json: {\n      company_name: row.json.company_name,\n      website_url: row.json.website_url || ''\n    }\n  });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
+        "jsCode": "// Items that passed the discovery dedup\nconst newDiscoveries = $('Dedup vs Discovery').all().filter(i => !i.json._skip);\n// Existing names in leads table\nconst existingLeads = ($input.first().json.list || []);\nconst existingNames = new Set(existingLeads.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newLeads = [];\n\nfor (const item of newDiscoveries) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newLeads.push({ json: { company_name: item.json.company_name } });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -380,7 +394,7 @@
         ],
         [
           {
-            "node": "Prep Discovery Bulk",
+            "node": "Paginate Read Discovery",
             "type": "main",
             "index": 0
           }
@@ -402,7 +416,7 @@
       "main": [
         [
           {
-            "node": "Paginate Read Discovery",
+            "node": "Paginate Read Leads",
             "type": "main",
             "index": 0
           }
@@ -413,7 +427,18 @@
       "main": [
         [
           {
-            "node": "Paginate Read Leads",
+            "node": "Dedup vs Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dedup vs Discovery": {
+      "main": [
+        [
+          {
+            "node": "Prep Discovery Bulk",
             "type": "main",
             "index": 0
           }
