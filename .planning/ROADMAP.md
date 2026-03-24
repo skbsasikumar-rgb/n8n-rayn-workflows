@@ -24,12 +24,12 @@
 **Goal**: The enrichment pipeline runs continuously, processes all 5 leads per trigger, never races on the same lead, paginates across the full NocoDB table, and handles verification timeouts without manual intervention.
 **Depends on**: Nothing (first phase)
 **Requirements**: INFRA-01, INFRA-02, FIX-01, FIX-02, FIX-03, FIX-04, FIX-05, FIX-06, FIX-07
-**Plans:** 2/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 - [x] 01-01-PLAN.md -- Railway env var hardening on n8n and NocoDB services (INFRA-01, INFRA-02)
-- [ ] 01-02-PLAN.md -- Race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
-- [ ] 01-03-PLAN.md -- OpenRouter backoff + batch processing loop verification in wf-latest (FIX-02, FIX-03)
+- [x] 01-02-PLAN.md -- Race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
+- [x] 01-03-PLAN.md -- OpenRouter backoff + batch processing loop verification in wf-latest (FIX-02, FIX-03)
 - [ ] 01-04-PLAN.md -- Contact fallback OR fix + No2Bounce timeout + NocoDB pagination in wf-latest (FIX-04, FIX-05 Part A, FIX-06)
 - [x] 01-05-PLAN.md -- No2Bounce retry workflow + NocoDB pagination and URL dedup in wf-discovery (FIX-05 Part B, FIX-07)
 
@@ -104,7 +104,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Workflow Reliability | 2/5 | In Progress|  |
+| 1. Workflow Reliability | 4/5 | In Progress|  |
 | 2. Instantly Email Push | 0/4 | Not started | - |
 | 3. LinkedIn Outreach | 0/4 | Not started | - |
 | 4. WhatsApp Nurture | 0/4 | Not started | - |

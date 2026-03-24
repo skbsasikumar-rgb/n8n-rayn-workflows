@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-02-PLAN.md — race condition fix and stuck lead cleanup in wf-latest
-last_updated: "2026-03-24T03:44:24.334Z"
+stopped_at: Completed 01-03-PLAN.md — OpenRouter backoff Wait nodes and Loop Over Items end-to-end fix
+last_updated: "2026-03-24T03:55:38.454Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 4
 ---
 
 # STATE: RAYN Sales Engine
@@ -30,7 +30,7 @@ progress:
 ## Current Position
 
 Phase: 01 (workflow-reliability) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Plan: 4 of 5
 | Phase 01 P01 | human-action | 2 tasks | 0 files |
 | Phase 01 P05 | 15min | 2 tasks | 2 files |
 | Phase 01 P02 | 12min | 2 tasks | 1 files |
+| Phase 01 P03 | 4min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,8 @@ Plan: 4 of 5
 | Hunter fallback triggered on OR logic (FIX-04) | AND logic means a lead with a name but no email never triggers Hunter, leaving email field empty |
 | N8N_CONCURRENCY_PRODUCTION_LIMIT=1 applied to worker service (INFRA-01) | Worker service executes production workflows; primary/UI service does not need this constraint |
 | DB_QUERY_LIMIT_DEFAULT=1000 as NocoDB page size; DB_QUERY_LIMIT_MAX=100000 removes silent row cap (INFRA-02) | 1000 rows/page minimises loop iterations; 100k max ensures all leads visible to wf-latest and wf-discovery |
+| Used 6 Wait nodes (one before each OpenRouter call) not minimum 3 (FIX-03) | Vendor Enrichment1 and Enrichment both active depending on HIA classification path — all need backoff |
+| Loop-back connections from all terminal status nodes were missing after Plan 02 (FIX-02) | Without loop-back, the splitInBatches loop only processed lead #1 despite batchSize=1 — terminal nodes must connect back to Loop Over Items input |
 
 ### Critical Pre-Conditions Before Phase 2
 
@@ -89,7 +92,7 @@ None currently. Phase 1 can begin immediately.
 2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-01-SUMMARY.md` — completed INFRA-01/INFRA-02 context
 3. Execute `01-02-PLAN.md` — race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
 
-**Stopped at:** Completed 01-02-PLAN.md — race condition fix and stuck lead cleanup in wf-latest
+**Stopped at:** Completed 01-03-PLAN.md — OpenRouter backoff Wait nodes and Loop Over Items end-to-end fix
 
 ### Workflow Files
 
