@@ -45,7 +45,7 @@
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({q: $json.search_query, gl: 'sg', num: 20}) }}",
+        "jsonBody": "={{ JSON.stringify({q: $json.search_query, gl: 'sg', num: 3}) }}",
         "options": {
           "timeout": 30000
         }
@@ -175,7 +175,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mp36f8mgk115qse&limit=${pageSize}&page=${page}`;\n  const response = await $helpers.httpRequest({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mp36f8mgk115qse&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -189,7 +189,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mey3zgihq7o4at9&limit=${pageSize}&page=${page}`;\n  const response = await $helpers.httpRequest({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
+        "jsCode": "const baseUrl = 'https://nocodb-production-f802.up.railway.app';\nconst projectId = 'pb7f1zou786xyqc';\nconst token = 'SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN';\nconst pageSize = 1000;\n\nlet page = 1;\nlet allRecords = [];\nlet isLastPage = false;\n\nwhile (!isLastPage) {\n  const url = `${baseUrl}/api/v1/db/data/noco/${projectId}/mey3zgihq7o4at9&limit=${pageSize}&page=${page}`;\n  const response = await $http.request({ method: 'GET', url, headers: { 'xc-token': token } });\n  allRecords = allRecords.concat(response.list || []);\n  isLastPage = response.pageInfo?.isLastPage ?? true;\n  page += 1;\n}\n\nreturn allRecords.map(r => ({ json: r }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
