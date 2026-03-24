@@ -14,16 +14,16 @@ Fix all bugs preventing the engine from running reliably at volume. These are pr
 
 ### wf-latest Fixes
 
-- [ ] **FIX-01**: Fix race condition — set lead status to `processing` immediately after fetching (before any API call), so overlapping 3-min runs cannot grab the same lead
+- [x] **FIX-01**: Fix race condition — set lead status to `processing` immediately after fetching (before any API call), so overlapping 3-min runs cannot grab the same lead
 - [ ] **FIX-02**: Fix batch processing — replace `.first()` pattern with Loop Over Items (batch size 1) so all 5 filtered leads are processed per run, not just the first
 - [ ] **FIX-03**: Add OpenRouter backoff — add retry delay between LLM calls before enabling 5× throughput from FIX-02, to avoid rate limit spikes
 - [ ] **FIX-04**: Fix contact fallback logic — change IF No Contact condition from AND to OR (Anymail returning name-but-no-email currently blocks Hunter fallback)
-- [ ] **FIX-05**: Fix email validation final poll — replace Poll 4 forced verdict with `verification_timeout` status; add a separate retry path for timed-out leads instead of incorrectly marking them invalid
+- [x] **FIX-05**: Fix email validation final poll — replace Poll 4 forced verdict with `verification_timeout` status; add a separate retry path for timed-out leads instead of incorrectly marking them invalid
 - [ ] **FIX-06**: Fix NocoDB row pagination in wf-latest — paginate all GET requests using offset/limit loop until `pageInfo.isLastPage === true`
 
 ### wf-discovery Fixes
 
-- [ ] **FIX-07**: Fix NocoDB row pagination in wf-discovery — same pagination fix for the Read Discovery and Read Leads GET requests
+- [x] **FIX-07**: Fix NocoDB row pagination in wf-discovery — same pagination fix for the Read Discovery and Read Leads GET requests
 
 ## v2 Requirements — Instantly Email Push
 
@@ -86,13 +86,13 @@ Parallel LinkedIn outreach channel for HIA:YES leads, running alongside the emai
 |-------------|-------|--------|
 | INFRA-01 | Phase 1 | Complete |
 | INFRA-02 | Phase 1 | Complete |
-| FIX-01 | Phase 1 | Pending |
+| FIX-01 | Phase 1 | Complete |
 | FIX-02 | Phase 1 | Pending |
 | FIX-03 | Phase 1 | Pending |
 | FIX-04 | Phase 1 | Pending |
-| FIX-05 | Phase 1 | Pending |
+| FIX-05 | Phase 1 | Complete |
 | FIX-06 | Phase 1 | Pending |
-| FIX-07 | Phase 1 | Pending |
+| FIX-07 | Phase 1 | Complete |
 | INST-01 | Phase 2 | Pending |
 | INST-02 | Phase 2 | Pending |
 | INST-03 | Phase 2 | Pending |
