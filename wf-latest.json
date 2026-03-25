@@ -534,13 +534,17 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://scrape.serper.dev",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({url: $('OpenRouter - URL Validate').item.json.choices[0].message.content.trim()}) }}",
+        "method": "GET",
+        "url": "={{ 'https://r.jina.ai/' + $('Parse HTTP Status').item.json.best_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer jina_5408bb8f548642a59e53e0a686360dc8jqDaeiJjzkOpkEJpHnIciFoCpg_z"
+            }
+          ]
+        },
         "options": {
           "timeout": 30000
         }
@@ -556,12 +560,6 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "rNWf15tU6OmVJqMC",
-          "name": "serper"
-        }
-      },
       "continueOnFail": true
     },
     {
@@ -574,15 +572,24 @@
           "conditions": [
             {
               "id": "cond-scrape-1",
-              "leftValue": "={{ ($json.text || '').length }}",
+              "leftValue": "={{ ($json.data || '').length }}",
               "rightValue": 300,
               "operator": {
                 "type": "number",
                 "operation": "lt"
               }
+            },
+            {
+              "id": "cond-scrape-2",
+              "leftValue": "={{ ($json.data || '').toLowerCase().includes('robot challenge') || ($json.data || '').toLowerCase().includes('checking the site connection') || ($json.data || '').toLowerCase().includes('please make sure you are authorized') }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
             }
           ],
-          "combinator": "and"
+          "combinator": "or"
         },
         "options": {}
       },
@@ -625,7 +632,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Based on this website content: ${websiteContent}\n\nIs ${companyClean} HIA-relevant in Singapore?\n\nClassify as:\n- YES: Licensed healthcare service provider: GP clinic, hospital, nursing home, pharmacy, lab, radiology, dialysis, dental, community care, social service org serving healthcare\n- VENDOR: Tech/SaaS vendor, AI platform, cybersecurity firm, or consultant whose clients are Singapore healthcare providers\n- NO: Finance, retail, F&B, pure logistics, education, real estate - no healthcare client base\n\nOutput: one word only: YES / VENDOR / NO`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Based on this website content: ${websiteContent}\n\nIs ${companyClean} HIA-relevant in Singapore?\n\nClassify as:\n- YES: Licensed healthcare service provider: GP clinic, hospital, nursing home, pharmacy, lab, radiology, dialysis, dental, community care, social service org serving healthcare\n- VENDOR: Tech/SaaS vendor, AI platform, cybersecurity firm, or consultant whose clients are Singapore healthcare providers\n- NO: Finance, retail, F&B, pure logistics, education, real estate - no healthcare client base\n\nOutput: one word only: YES / VENDOR / NO`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -786,7 +793,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, corporate dental provider]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 (GP clinics, acute hospitals, labs, radiology, nursing homes, community hospitals) / Batch 2 - Sep 2028 (specialist outpatient, ambulatory surgical, dialysis, other HCSA licensees) / Batch 3 - Mar 2030 (dental, retail pharmacy, assisted reproduction) / Vendor to HIA clients (tech vendors, SaaS platforms)]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic, single-location, <200 staff signals. Mid = multi-location group, regional presence. Enterprise = hospital system, listed company, large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words. Examples: AI scribe for clinic documentation / RTLS hospital tracking system / cloud HIMS for GP clinics]\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nReturn a JSON object with exactly these 5 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, corporate dental provider]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 (GP clinics, acute hospitals, labs, radiology, nursing homes, community hospitals) / Batch 2 - Sep 2028 (specialist outpatient, ambulatory surgical, dialysis, other HCSA licensees) / Batch 3 - Mar 2030 (dental, retail pharmacy, assisted reproduction) / Vendor to HIA clients (tech vendors, SaaS platforms)]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic, single-location, <200 staff signals. Mid = multi-location group, regional presence. Enterprise = hospital system, listed company, large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words. Examples: AI scribe for clinic documentation / RTLS hospital tracking system / cloud HIMS for GP clinics]\",\n  \"compliance_lead\": \"[specific HIA compliance path. One of: Batch 1 CSDS Essentials - Sep 2027 (GP clinic, hospital, lab, nursing home) / Batch 2 CSDS Essentials - Sep 2028 (specialist, dialysis, ambulatory) / Batch 3 CSDS Essentials - Mar 2030 (dental, pharmacy, ART) / NCSS TSS + CSDS Essentials (social service org, community care) / CSDS Essentials - batch unconfirmed]\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -844,7 +851,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const response = ($json.choices[0].message.content || '').trim();\nlet data;\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {\n  data = {};\n}\nreturn [{ json: {\n  industry_segment: data.industry_segment || '',\n  hia_batch: data.hia_batch || '',\n  company_size: data.company_size || '',\n  product_descriptor: data.product_descriptor || '',\n  hia_relevant: 'YES'\n} }];"
+        "jsCode": "const response = ($json.choices[0].message.content || '').trim();\nlet data;\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {\n  data = {};\n}\nreturn [{ json: {\n  industry_segment: data.industry_segment || '',\n  hia_batch: data.hia_batch || '',\n  company_size: data.company_size || '',\n  product_descriptor: data.product_descriptor || '',\n  compliance_lead: data.compliance_lead || '',\n  hia_relevant: 'YES'\n} }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1008,7 +1015,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.text || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1112,7 +1119,7 @@
           "parameters": [
             {
               "name": "X-API-KEY",
-              "value": "YOUR_HUNTER_API_KEY"
+              "value": "30f1b25815a3bbf659f0db204795dc95fecac58b"
             }
           ]
         },
@@ -1142,6 +1149,10 @@
             {
               "name": "required_field",
               "value": "full_name"
+            },
+            {
+              "name": "company",
+              "value": "={{ $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() }}"
             }
           ]
         },
@@ -1242,7 +1253,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.text || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('GET Full Record').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status:             'pending_verification'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
       },
       "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
       "name": "Prep Partial Anymail",
@@ -1255,7 +1266,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.text || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('GET Full Record').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status:             'pending_verification'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
       },
       "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
       "name": "Prep Partial Hunter",
@@ -1281,7 +1292,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
         "options": {}
       },
       "id": "6c7b4c7e-c7cd-417c-8790-d7e9627fd885",
@@ -1406,7 +1417,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Cleanup disabled temporarily — no $http in task runner context\n// TODO: replace with HTTP Request nodes (GET stuck rows → PATCH bulk)\nreturn [{ json: { cleanup_count: 0 } }];"
+        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst formatted = `${cutoff.getUTCFullYear()}-${pad(cutoff.getUTCMonth()+1)}-${pad(cutoff.getUTCDate())} ${pad(cutoff.getUTCHours())}:${pad(cutoff.getUTCMinutes())}:${pad(cutoff.getUTCSeconds())}`;\nreturn [{ json: { cutoff: formatted } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1418,9 +1429,107 @@
       "name": "Cleanup Stuck Processing"
     },
     {
+      "id": "get-stuck-leads-001",
+      "name": "GET Stuck Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -30104,
+        2752
+      ],
+      "continueOnFail": true,
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,pending)&limit=5&fields=Id",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)~and(UpdatedAt,lt,{{ $json.cutoff }})&fields=Id&limit=100",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "build-bulk-reset-001",
+      "name": "Build Bulk Reset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29864,
+        2752
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const list = ($json.list || []);\nif (list.length === 0) {\n  return [{ json: { _skip: true, cleanup_count: 0 } }];\n}\nconst payload = list.map(r => ({ Id: r.Id, status: 'pending' }));\nreturn [{ json: { _skip: false, cleanup_count: list.length, payload } }];"
+      }
+    },
+    {
+      "id": "if-has-stuck-001",
+      "name": "IF Has Stuck",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -29624,
+        2752
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-stuck-skip",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "patch-bulk-reset-001",
+      "name": "PATCH Bulk Reset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29384,
+        2752
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/bulk",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,pending)&limit=5",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -1446,7 +1555,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const list = $json.list || [];\nif (list.length === 0) {\n  return [{ json: { _skip: true, count: 0 } }];\n}\n// Return all pending IDs as separate items\nreturn list.map(row => ({ json: { Id: row.Id } }));"
+        "jsCode": "const list = $json.list || [];\nif (list.length === 0) {\n  return [{ json: { _skip: true, count: 0 } }];\n}\nreturn list.map(row => ({ json: row }));"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1514,40 +1623,197 @@
       "name": "Loop Over Items"
     },
     {
+      "id": "loop-done-noop-001",
+      "name": "Loop Done",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -29444,
+        2272
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "prep-outreach-ctx-001",
+      "name": "Prep Outreach Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -22300,
+        2752
+      ],
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $json.Id }}",
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all();"
+      }
+    },
+    {
+      "id": "prep-pain-logic-001",
+      "name": "Prep Pain Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20384,
+        2752
+      ],
+      "parameters": {
+        "jsCode": "const d = $('Prep Outreach Context').item.json;\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Company: ${d.company_name_clean}\\nIndustry: ${d.industry_segment}\\nHIA batch: ${d.hia_batch}\\nCompliance lead: ${d.compliance_lead}\\nCompany size: ${d.company_size}\\nRole: ${d.role}\\nHIA relevant: ${d.hia_relevant} (YES = healthcare provider, VENDOR = tech/SaaS vendor selling to healthcare)\\n\\nDetermine:\\n1. vendor_pain: The specific compliance or operational pain this company faces in the context of Singapore HIA 2027. Max 15 words.\\n   - YES (healthcare provider): their internal compliance challenge (e.g. \"no internal cybersecurity resource to drive CSDS certification\")\\n   - VENDOR: the pain their healthcare clients face that creates demand for their product (e.g. \"AI scribe clients need CSDS Essentials evidence for HIA renewal\")\\n\\n2. grant_eligibility: Most applicable Singapore HIA co-funding grants. Must be exactly one of:\\n   NCG + CSA CISOaaS + PSG — SME GP clinic, dental, pharmacy, nursing home, dialysis, lab, radiology (full stack: MOH 40% HIMS + CSA 70% consultancy + PSG 50% tools)\\n   NCG + CSA CISOaaS — SME HIA licensee where PSG eligibility is uncertain\\n   CSA CISOaaS + PSG — VENDOR company whose healthcare SME clients qualify (CSA 70% consultancy + PSG 50% tools)\\n   NCSS TSS — Community care or social service organisation that is an NCSS member\\n   NCG only — Enterprise or large hospital (not SME-eligible for PSG/CISOaaS)\\n   Verify eligibility — Unknown, niche, or complex eligibility\\n\\nGrant rules:\\n- SME GP / dental / pharmacy / nursing home / lab / radiology → NCG + CSA CISOaaS + PSG\\n- VENDOR (tech selling to healthcare clients) → CSA CISOaaS + PSG\\n- Social service org / community care / eldercare under NCSS → NCSS TSS\\n- Enterprise hospital system / listed company → NCG only\\n- Unknown or niche → Verify eligibility\\n\\nOutput JSON: {\"vendor_pain\": \"...\", \"grant_eligibility\": \"\"}\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d } }];"
+      }
+    },
+    {
+      "id": "openrouter-pain-logic-001",
+      "name": "OpenRouter - Pain Logic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -20144,
+        2752
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
             },
             {
-              "name": "Content-Type",
-              "value": "application/json"
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
             }
           ]
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"processing\"}",
-        "options": {}
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 60000
+        }
       },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "id": "parse-pain-logic-001",
+      "name": "Parse Pain Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -19904,
+        2752
+      ],
+      "parameters": {
+        "jsCode": "const response = (($json.choices || [])[0] || {}).message?.content || '';\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst prev = $('Prep Pain Logic').item.json;\nreturn [{ json: {\n  _ctx: prev._ctx,\n  vendor_pain: data.vendor_pain || '',\n  grant_eligibility: data.grant_eligibility || 'Verify eligibility'\n} }];"
+      }
+    },
+    {
+      "id": "prep-email-gen-001",
+      "name": "Prep Email Gen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -19664,
+        2752
+      ],
+      "parameters": {
+        "jsCode": "const d = $json._ctx;\nconst pain = $json;\nconst firstName = d.first_name || 'there';\nconst rawContent = (d.website_content || '');\nconst cleanLines = rawContent.split('\\n').filter(line => {\n  const l = line.trim();\n  return l.length > 40 && !l.startsWith('![') && !l.startsWith('* [') && !l.startsWith('*   [') && !l.startsWith('- [') && !l.includes('](http') && !l.startsWith('#');\n}).join(' ');\nconst websiteSummary = cleanLines.substring(0, 600) || (d.serper_results || '').substring(0, 600);\nconst techRoles = ['cto','ciso','it director','technical','engineer','developer','architect','infosec','head of it','vp engineering','chief information'];\nconst isTechnical = techRoles.some(t => (d.role || '').toLowerCase().includes(t));\nconst email1cta = isTechnical\n  ? 'Want me to send it across?'\n  : 'Could you forward this to your IT, security, or compliance team?';\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6',\n  temperature: 0.4,\n  messages: [{\n    role: 'user',\n    content: `You are a cold email expert. Write 4 personalized outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure. RAYN Secure helps Singapore healthcare organisations and their vendors attain CSDS Essentials certification and comply with HIA 2027.\\n\\n--- DETAILS\\n- First name: ${firstName}\\n- Company: ${d.company_name_clean}\\n- Industry: ${d.industry_segment || 'N/A'}\\n- HIA batch: ${d.hia_batch || 'N/A'}\\n- Product/service: ${d.product_descriptor || 'N/A'}\\n- Role: ${d.role || 'N/A'}\\n- Pain point: ${pain.vendor_pain || 'N/A'}\\n- Compliance lead: ${d.compliance_lead || 'N/A'}\\n- Grant eligibility: ${pain.grant_eligibility || 'N/A'}\\n- Grant context: NCG = MOH grant (40% HIMS costs), CSA CISOaaS = CSA/IMDA grant (70% of CS/DS Essentials consultancy), PSG = EnterpriseSG (50% cybersecurity tools up to \\$30k), NCSS TSS = NCSS scheme for community care orgs\\n- Website summary: ${websiteSummary}\\n\\n# EMAIL SPECIFICATIONS\\n\\n## Email 1 — TIMELINE HOOK\\n- Subject: <first_name>, days until HIA deadline\\n- 75-100 words\\n- Open with HIA deadline → Empathy → Proof: grant funding → Low-ask CTA\\n\\n## Email 2 — ROLE-SPECIFIC PAIN\\n- 60-90 words\\n- Role-aware pain → Pressure → Proof: grant % → CTA\\n\\n## Email 3 — SOCIAL PROOF\\n- 70-100 words\\n- Named reference → Acknowledge → Proof: outcome → CTA\\n\\n## Email 4 — LOW-FRICTION\\n- 40-60 words\\n- Direct, yes/no ask\\n\\n# ROLE-AWARE\\n- Tech (CISO/IT): CSDS controls\\n- Exec: budget/timeline\\n- Finance: ROI/grant\\n- Ops: continuity/license\\n\\nOutput: JSON sube prospect's sector)\\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\\n\\n--- RULES\\n1. 60-80 words per email body — count carefully\\n2. Match the exact paragraph structure of the examples\\n3. Use arrows → for lists (Email 2 and Email 4)\\n4. Email 1 CTA: \"${email1cta}\"\\n5. Email 2 subject locked to: \"Up to 70% co-funded for ${d.company_name_clean}'s HIA compliance\"\\n6. Email 4 subject locked to: \"Should I close the loop, ${firstName}?\"\\n7. Do NOT use sycophantic openers\\n8. Do NOT add adjectives: rapidly, seamlessly, comprehensive, robust\\n9. Sign off every email: Best, — no variation, no titles\\n\\nOutput format: JSON with exactly 8 keys — subject_line1, email_body1, subject_line2, email_body2, subject_line3, email_body3, subject_line4, email_body4\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d, _pain: pain } }];"
+      }
+    },
+    {
+      "id": "openrouter-email-gen-001",
+      "name": "OpenRouter - Email Gen",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -29224,
-        2512
+        -19424,
+        2752
       ],
-      "id": "patch-status-processing-001",
-      "name": "PATCH Status Processing",
-      "continueOnFail": true
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": false,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
     },
     {
+      "id": "parse-email-gen-001",
+      "name": "Parse Email Gen",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -19184,
+        2752
+      ],
       "parameters": {
-        "method": "GET",
+        "jsCode": "const response = (($json.choices || [])[0] || {}).message?.content || '';\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst prev = $('Prep Email Gen').item.json;\nconst pain = prev._pain || {};\nreturn [{ json: {\n  status:            'enriched',\n  vendor_pain:       pain.vendor_pain || '',\n  grant_eligibility: pain.grant_eligibility || '',\n  subject_line_1: data.subject_line1 || '',\n  email_body_1:   data.email_body1 || '',\n  subject_line_2: data.subject_line2 || '',\n  email_body_2:   data.email_body2 || '',\n  subject_line_3: data.subject_line3 || '',\n  email_body_3:   data.email_body3 || '',\n  subject_line_4: data.subject_line4 || '',\n  email_body_4:   data.email_body4 || ''\n} }];"
+      }
+    },
+    {
+      "id": "prep-write-final-001",
+      "name": "Prep Write Final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -18944,
+        2752
+      ],
+      "parameters": {
+        "jsCode": "const d = $json;\nreturn [{ json: {\n  status:            d.status,\n  vendor_pain:       d.vendor_pain,\n  grant_eligibility: d.grant_eligibility,\n  subject_line_1: d.subject_line_1,\n  email_body_1:   d.email_body_1,\n  subject_line_2: d.subject_line_2,\n  email_body_2:   d.email_body_2,\n  subject_line_3: d.subject_line_3,\n  email_body_3:   d.email_body_3,\n  subject_line_4: d.subject_line_4,\n  email_body_4:   d.email_body_4\n} }];"
+      }
+    },
+    {
+      "id": "write-final-001",
+      "name": "Write Final",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -18704,
+        2752
+      ],
+      "continueOnFail": false,
+      "parameters": {
+        "method": "PATCH",
         "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
         "sendHeaders": true,
         "headerParameters": {
@@ -1558,120 +1824,64 @@
             }
           ]
         },
-        "options": {
-          "timeout": 60000
-        }
-      },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {},
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      }
+    },
+    {
+      "id": "prep-bulk-processing",
+      "name": "Prep Bulk Processing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29444,
+        2352
+      ],
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst payload = items.map(i => ({ Id: i.json.Id, status: 'processing' }));\nreturn [{ json: { payload } }];"
+      }
+    },
+    {
+      "id": "patch-all-processing",
+      "name": "PATCH All Processing",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
+        -29224,
+        2352
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "options": {},
+        "jsonBody": "={{ JSON.stringify($json.payload) }}"
+      }
+    },
+    {
+      "id": "restore-items",
+      "name": "Restore Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
         -29004,
-        2512
-      ],
-      "id": "get-full-record-001",
-      "name": "GET Full Record",
-      "continueOnFail": true
-    },
-    {
-      "id": "wait-before-clean-name-001",
-      "name": "Wait Before OpenRouter - Clean Name",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -29254,
-        2512
+        2352
       ],
       "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
+        "jsCode": "return $('Parse Pending IDs').all();"
       }
-    },
-    {
-      "id": "wait-before-url-dedup-001",
-      "name": "Wait Before OpenRouter - URL Dedup",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -28184,
-        2512
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
-      }
-    },
-    {
-      "id": "wait-before-url-validate-001",
-      "name": "Wait Before OpenRouter - URL Validate",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -26984,
-        2512
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
-      }
-    },
-    {
-      "id": "wait-before-hia-gate-001",
-      "name": "Wait Before OpenRouter - HIA Gate",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -26024,
-        2512
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
-      }
-    },
-    {
-      "id": "wait-before-enrichment-001",
-      "name": "Wait Before OpenRouter - Enrichment",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -25064,
-        2512
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
-      }
-    },
-    {
-      "id": "wait-before-vendor-enrichment-001",
-      "name": "Wait Before OpenRouter - Vendor Enrichment1",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1,
-      "position": [
-        -24264,
-        2080
-      ],
-      "parameters": {
-        "resume": "timeInterval",
-        "interval": 1,
-        "unit": "seconds"
-      }
-    },
-    {
-      "id": "loop-done-noop-001",
-      "name": "Loop Done",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        -29444,
-        2272
-      ],
-      "parameters": {}
     }
   ],
   "pinData": {},
@@ -1749,7 +1959,7 @@
       "main": [
         [
           {
-            "node": "Wait Before OpenRouter - URL Dedup",
+            "node": "OpenRouter - URL Dedup",
             "type": "main",
             "index": 0
           }
@@ -1865,7 +2075,7 @@
       "main": [
         [
           {
-            "node": "Wait Before OpenRouter - HIA Gate",
+            "node": "OpenRouter - HIA Gate",
             "type": "main",
             "index": 0
           }
@@ -1934,7 +2144,7 @@
       "main": [
         [
           {
-            "node": "Wait Before OpenRouter - Enrichment",
+            "node": "OpenRouter - Enrichment",
             "type": "main",
             "index": 0
           }
@@ -2025,7 +2235,7 @@
       "main": [
         [
           {
-            "node": "Wait Before OpenRouter - Vendor Enrichment1",
+            "node": "OpenRouter - Vendor Enrichment1",
             "type": "main",
             "index": 0
           }
@@ -2120,7 +2330,7 @@
       "main": [
         [
           {
-            "node": "Write Partial & Pending",
+            "node": "Prep Outreach Context",
             "type": "main",
             "index": 0
           }
@@ -2131,7 +2341,7 @@
       "main": [
         [
           {
-            "node": "Write Partial & Pending",
+            "node": "Prep Outreach Context",
             "type": "main",
             "index": 0
           }
@@ -2182,7 +2392,7 @@
         ],
         [
           {
-            "node": "Wait Before OpenRouter - URL Validate",
+            "node": "OpenRouter - URL Validate",
             "type": "main",
             "index": 0
           }
@@ -2190,6 +2400,57 @@
       ]
     },
     "Cleanup Stuck Processing": {
+      "main": [
+        [
+          {
+            "node": "GET Stuck Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Stuck Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Bulk Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Bulk Reset": {
+      "main": [
+        [
+          {
+            "node": "IF Has Stuck",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Stuck": {
+      "main": [
+        [
+          {
+            "node": "Get Pending IDs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PATCH Bulk Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH Bulk Reset": {
       "main": [
         [
           {
@@ -2233,7 +2494,7 @@
         ],
         [
           {
-            "node": "Loop Over Items",
+            "node": "Prep Bulk Processing",
             "type": "main",
             "index": 0
           }
@@ -2251,95 +2512,7 @@
         ],
         [
           {
-            "node": "PATCH Status Processing",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PATCH Status Processing": {
-      "main": [
-        [
-          {
-            "node": "GET Full Record",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "GET Full Record": {
-      "main": [
-        [
-          {
-            "node": "Wait Before OpenRouter - Clean Name",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - Clean Name": {
-      "main": [
-        [
-          {
             "node": "OpenRouter - Clean Name",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - URL Dedup": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - URL Dedup",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - URL Validate": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - URL Validate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - HIA Gate": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - HIA Gate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - Enrichment": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - Enrichment",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait Before OpenRouter - Vendor Enrichment1": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - Vendor Enrichment1",
             "type": "main",
             "index": 0
           }
@@ -2460,7 +2633,106 @@
       "main": [
         [
           {
+            "node": "Prep Pain Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Pain Logic": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Pain Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Pain Logic": {
+      "main": [
+        [
+          {
+            "node": "Parse Pain Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Pain Logic": {
+      "main": [
+        [
+          {
+            "node": "Prep Email Gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Email Gen": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Email Gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Email Gen": {
+      "main": [
+        [
+          {
+            "node": "Parse Email Gen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email Gen": {
+      "main": [
+        [
+          {
+            "node": "Prep Write Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Write Final": {
+      "main": [
+        [
+          {
+            "node": "Write Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Final": {
+      "main": [
+        [
+          {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Outreach Context": {
+      "main": [
+        [
+          {
+            "node": "Write Partial & Pending",
             "type": "main",
             "index": 0
           }
@@ -2472,6 +2744,39 @@
         [
           {
             "node": "Prep URL Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Bulk Processing": {
+      "main": [
+        [
+          {
+            "node": "PATCH All Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH All Processing": {
+      "main": [
+        [
+          {
+            "node": "Restore Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Items": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
