@@ -604,6 +604,66 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://scrape.serper.dev/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "67dd1864cc37667b86fb461e80008530146f3ba1"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $(\"Parse HTTP Status\").item.json.best_url }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26624,
+        2656
+      ],
+      "name": "Serper - Scrape Fallback",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "id": "serper-fallback-1774513506691"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ ($json.result || $json.text || \"\").length }}",
+              "rightValue": 300,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -26384,
+        2656
+      ],
+      "name": "IF Serper Fallback Failed",
+      "id": "if-serper-fallback-1774513506697"
+    },
+    {
+      "parameters": {
         "method": "PATCH",
         "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
         "sendHeaders": true,
@@ -627,7 +687,7 @@
         2736
       ],
       "id": "9bba2aa4-94f3-4feb-856a-e1cf1a3f8e9a",
-      "name": "Status - scrape failed",
+      "name": "Status - scrape failed (Jina)",
       "continueOnFail": true
     },
     {
@@ -2057,7 +2117,7 @@
       "main": [
         [
           {
-            "node": "Status - scrape failed",
+            "node": "Serper - Scrape Fallback",
             "type": "main",
             "index": 0
           }
@@ -2777,6 +2837,35 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper - Scrape Fallback": {
+      "main": [
+        [
+          {
+            "node": "IF Serper Fallback Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Serper Fallback Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - scrape failed (Jina)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prep HIA Gate",
             "type": "main",
             "index": 0
           }
