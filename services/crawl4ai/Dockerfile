@@ -5,12 +5,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY services/crawl4ai/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt \
     && crawl4ai-setup \
     && crawl4ai-doctor
 
-COPY app.py .
+COPY services/crawl4ai/app.py ./app.py
 
 EXPOSE 8080
 
