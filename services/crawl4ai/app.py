@@ -7,7 +7,10 @@ from typing import Any
 SERVICE_DIR = Path(__file__).resolve().parent
 ORIGINAL_HOME = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
 DEFAULT_RUNTIME_HOME = SERVICE_DIR / "runtime-home"
-DEFAULT_PLAYWRIGHT_BROWSERS = ORIGINAL_HOME / "Library" / "Caches" / "ms-playwright"
+if os.name == "posix" and "darwin" in os.sys.platform:
+    DEFAULT_PLAYWRIGHT_BROWSERS = ORIGINAL_HOME / "Library" / "Caches" / "ms-playwright"
+else:
+    DEFAULT_PLAYWRIGHT_BROWSERS = ORIGINAL_HOME / ".cache" / "ms-playwright"
 
 runtime_home = Path(os.environ.get("CRAWL4AI_RUNTIME_HOME", str(DEFAULT_RUNTIME_HOME))).expanduser()
 runtime_home.mkdir(parents=True, exist_ok=True)

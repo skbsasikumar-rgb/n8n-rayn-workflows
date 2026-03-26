@@ -78,8 +78,10 @@ uvicorn app:app --host 0.0.0.0 --port 8080
 
 Runtime notes:
 
-- The service defaults its Crawl4AI runtime home to `/Users/sasikumar/Documents/n8n/services/crawl4ai/runtime-home`
-- It defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/Library/Caches/ms-playwright`
+- The service defaults its Crawl4AI runtime home to `services/crawl4ai/runtime-home` when not explicitly set
+- On macOS it defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/Library/Caches/ms-playwright`
+- On Linux it defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/.cache/ms-playwright`
+- Railway/Docker now sets `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` and `CRAWL4AI_RUNTIME_HOME=/app/runtime-home`
 - Override either with environment variables if needed
 
 ## n8n URL
