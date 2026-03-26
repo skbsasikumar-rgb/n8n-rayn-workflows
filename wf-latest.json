@@ -1212,7 +1212,7 @@
             },
             {
               "name": "company",
-              "value": "={{ $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() }}"
+              "value": "={{ $('Parse Parent Company').item.json.parent_company }}"
             }
           ]
         },
@@ -1313,7 +1313,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
       },
       "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
       "name": "Prep Partial Anymail",
@@ -1326,7 +1326,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
       },
       "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
       "name": "Prep Partial Hunter",
@@ -1352,7 +1352,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, parent_company: $json.parent_company, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
         "options": {}
       },
       "id": "6c7b4c7e-c7cd-417c-8790-d7e9627fd885",
@@ -1942,6 +1942,77 @@
       "parameters": {
         "jsCode": "return $('Parse Pending IDs').all();"
       }
+    },
+    {
+      "id": "prep-parent-company-001",
+      "name": "Prep Parent Company",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23504,
+        3432
+      ],
+      "parameters": {
+        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 8000);\nconst clinicName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\\nClinic name: ${clinicName}\\n\\nThis is a Singapore clinic that may belong to a parent medical group.\\nIdentify the PARENT COMPANY or MEDICAL GROUP NAME from the website content.\\nLook for: brand name, group name, copyright holder, or navigation header.\\n\\nRules:\\n- Return ONLY the parent company/group name\\n- Do NOT return the clinic name\\n- If no parent company found, return the clinic name as-is\\n\\nExamples:\\n- 1 Bishan Medical Clinic on 1medical.sg → 1 Medical\\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg → Qualitas Health\\n- Raffles Medical Clinic → Raffles Medical\\n\\nOutput: company name only, one line.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+      }
+    },
+    {
+      "id": "openrouter-parent-company-001",
+      "name": "OpenRouter - Parent Company",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -23264,
+        3432
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      },
+      "continueOnFail": true,
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Secure Enrichment"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "parse-parent-company-001",
+      "name": "Parse Parent Company",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23024,
+        3432
+      ],
+      "parameters": {
+        "jsCode": "const response = ($json.choices?.[0]?.message?.content || '').trim();\nconst clinicName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = response || clinicName;\nreturn [{ json: { parent_company: parentCompany } }];"
+      }
     }
   ],
   "pinData": {},
@@ -2277,7 +2348,7 @@
       "main": [
         [
           {
-            "node": "Hunter - Contact",
+            "node": "Prep Parent Company",
             "type": "main",
             "index": 0
           }
@@ -2866,6 +2937,39 @@
         [
           {
             "node": "Prep HIA Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Parent Company": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Parent Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Parent Company": {
+      "main": [
+        [
+          {
+            "node": "Parse Parent Company",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Parent Company": {
+      "main": [
+        [
+          {
+            "node": "Hunter - Contact",
             "type": "main",
             "index": 0
           }
