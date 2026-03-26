@@ -1,0 +1,9 @@
+services:
+  crawl4ai-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crawl4ai-scraper
+    ports:
+      - "8080:8080"
+    restart: unless-stopped

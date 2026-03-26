@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-04-PLAN.md — OR contact fallback, verification_timeout, NocoDB pagination
-last_updated: "2026-03-25T12:32:33.991Z"
+stopped_at: Updated wf-latest with parent_company enrichment path and NocoDB write field
+last_updated: "2026-03-26T13:45:00.000Z"
 progress:
   total_phases: 4
   completed_phases: 1
@@ -14,8 +14,8 @@ progress:
 
 # STATE: RAYN Sales Engine
 
-**Last updated:** 2026-03-24
-**Session:** Plan 01-01 complete — Railway env vars set on n8n and NocoDB
+**Last updated:** 2026-03-26
+**Session:** wf-latest updated with parent-company enrichment before Hunter lookup
 
 ---
 
@@ -68,6 +68,7 @@ Plan: Not started
 | Changed IF Still No Contact combinator to OR (Plan 04, FIX-04) | Consistent post-Hunter contact-check: name OR email empty triggers no-contact status, not only when both are empty |
 | Added IF Ready 4 + Status - verification timeout node pair after Parse Poll 4 (Plan 04, FIX-05) | Explicit routing of still-processing No2Bounce results to verification_timeout; cleaner than reusing IF Email Valid which checks email validity |
 | Pagination Code nodes bypass Parse list-expansion nodes (Plan 04, FIX-06) | Pagination Code nodes return individual items natively via allRecords.map; Parse nodes doing $json.list expansion are redundant |
+| Hunter company lookup now uses `parent_company` derived from website content | Clinic/branch names are weaker search keys than the parent medical group; `Prep Parent Company` → `OpenRouter - Parent Company` → `Parse Parent Company` normalizes this before Hunter runs |
 
 ### Critical Pre-Conditions Before Phase 2
 
@@ -93,22 +94,25 @@ None currently. Phase 1 can begin immediately.
 ### To Resume Work
 
 1. Read `/Users/sasikumar/Documents/n8n/.planning/ROADMAP.md` — current phase and plan status
-2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-01-SUMMARY.md` — completed INFRA-01/INFRA-02 context
-3. Execute `01-02-PLAN.md` — race condition status lock + stuck-processing cleanup in wf-latest (FIX-01)
+2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-05-SUMMARY.md` — completed Phase 1 workflow reliability context
+3. Start Phase 2 planning for Instantly push, keeping the new `parent_company` field in scope for downstream sync and schema work
 
-**Stopped at:** Completed 01-04-PLAN.md — OR contact fallback, verification_timeout, NocoDB pagination
+**Stopped at:** Updated wf-latest with `parent_company` enrichment and NocoDB persistence
 
 ### Workflow Files
 
 | File | Purpose |
 |------|---------|
-| `wf-latest.json` | Lead enrichment workflow (3-min trigger, wf-latest) — primary target for Phase 1 fixes |
+| `wf-latest.json` | Lead enrichment workflow (3-min trigger, wf-latest) — now includes parent-company derivation before Hunter contact lookup |
 | `wf-discovery.json` | Lead discovery workflow (weekly trigger) — pagination fix target in Phase 1 |
 
 ### Context Notes
 
 - wf-latest currently uses `limit=10000` in a single HTTP GET (no pagination) — NocoDB server default may cap at 100 rows
 - wf-latest uses `.first()` equivalent pattern (Code node `unique.slice(0, 5)` feeds into single-item processing — the loop structure needs confirmation from full workflow read)
+- wf-latest now adds `Prep Parent Company` → `OpenRouter - Parent Company` → `Parse Parent Company`; Hunter's `company` param reads `$('Parse Parent Company').item.json.parent_company`
+- `Prep Partial Hunter` writes parsed `parent_company`; `Prep Partial Anymail` currently seeds `parent_company` from `cleanName`; `Write Partial & Pending` PATCH now includes `parent_company`
+- NocoDB needs a `parent_company` text column for the new field to persist visibly in the leads table
 - wf-discovery uses weekly trigger, fires all 589 search combos in one run
 - All Railway env vars must be applied to both the n8n service AND the NocoDB service (separate Railway services)
 

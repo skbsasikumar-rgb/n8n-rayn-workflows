@@ -129,13 +129,26 @@
     },
     {
       "parameters": {
+        "jsCode": "const cleanName = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || '').trim();\nconst lower = cleanName.toLowerCase();\nconst hints = [];\n\nif (/(clinic|medical|hospital|healthcare|surgery|specialist|gp)\\b/i.test(lower)) {\n  hints.push('clinic medical');\n}\nif (/(dental|dentist|orthodontic)\\b/i.test(lower)) {\n  hints.push('dental');\n}\nif (/(lab|laboratory|diagnostic|radiology|imaging)\\b/i.test(lower)) {\n  hints.push('lab diagnostic radiology');\n}\nif (/(tcm|traditional chinese medicine|chinese medicine|acupuncture)\\b/i.test(lower)) {\n  hints.push('TCM chinese medicine');\n}\nif (/(pharmacy|dialysis|nursing|eldercare|rehab)\\b/i.test(lower)) {\n  const match = cleanName.match(/(pharmacy|dialysis|nursing|eldercare|rehab)/i);\n  if (match) hints.push(match[0]);\n}\nif (/(software|systems|tech|technology|digital|cloud|ai|cyber|security|informatics|platform)\\b/i.test(lower)) {\n  hints.push('healthcare technology singapore');\n}\n\nconst seen = new Set();\nconst queries = [];\nconst addQuery = (q) => {\n  const key = String(q || '').trim().toLowerCase();\n  if (!key || seen.has(key)) return;\n  seen.add(key);\n  queries.push(String(q).trim());\n};\n\naddQuery(`\"${cleanName}\" Singapore official website`);\naddQuery(`\"${cleanName}\" Singapore`);\nfor (const hint of hints) {\n  addQuery(`\"${cleanName}\" Singapore ${hint} official website`);\n}\n\nreturn queries.slice(0, 3).map((query, i) => ({ json: { query, query_index: i + 1 } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29264,
+        2512
+      ],
+      "id": "prep-search-queries-001",
+      "name": "Prep Search Queries"
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "https://google.serper.dev/search",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({q: $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website', num: 5}) }}",
+        "jsonBody": "={{ JSON.stringify({q: $json.query, num: 5}) }}",
         "options": {
           "timeout": 30000
         }
@@ -161,62 +174,17 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-serper-1",
-              "leftValue": "={{ ($json.organic || []).length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
+        "mode": "runOnceForAllItems",
+        "jsCode": "const items = $input.all();\nconst organic = [];\nconst seen = new Set();\n\nfor (const item of items) {\n  const results = item.json?.organic || [];\n  for (const r of results) {\n    const link = String(r.link || '').trim();\n    if (!link) continue;\n    const key = link.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n    if (seen.has(key)) continue;\n    seen.add(key);\n    organic.push(r);\n  }\n}\n\nreturn [{ json: { organic, result_count: organic.length } }];"
       },
-      "type": "n8n-nodes-base.if",
+      "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
         -28784,
         2512
       ],
       "id": "23bbbeff-ed43-42a2-b15d-622435f713bc",
-      "name": "IF Serper Failed"
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\": \"serper failed\"}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -28544,
-        2736
-      ],
-      "id": "e52665d1-07bf-480b-b5fa-1d6b8890245d",
-      "name": "Status - serper failed",
-      "continueOnFail": true
+      "name": "Merge Serper Results"
     },
     {
       "parameters": {
@@ -277,7 +245,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Serper - Search').item.json.organic || []).map(function(r){return r.title + ' | ' + r.link}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer .com.sg, .org.sg, .sg domains\\n- A parent company or group holding URL is acceptable\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Merge Serper Results').item.json.organic || []).map(function(r){return (r.title || '') + ' | ' + (r.link || '') + (r.snippet ? ' | ' + r.snippet : '');}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official website URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer exact company-name matches\\n- Prefer Singapore entity pages or Singapore-relevant pages when available\\n- .com, .org, .net are acceptable if the page clearly belongs to the Singapore business\\n- Reject overseas or country-mismatched sites when a Singapore candidate exists\\n- A parent company or group holding URL is acceptable only if it clearly corresponds to the same Singapore entity\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
         "options": {
           "timeout": 60000
         }
@@ -534,19 +502,13 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ 'https://r.jina.ai/' + $('Parse HTTP Status').item.json.best_url }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Authorization",
-              "value": "Bearer jina_5408bb8f548642a59e53e0a686360dc8jqDaeiJjzkOpkEJpHnIciFoCpg_z"
-            }
-          ]
-        },
+        "method": "POST",
+        "url": "={{ $env.CRAWL4AI_SCRAPER_URL || 'http://127.0.0.1:8080/scrape' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $('Parse HTTP Status').item.json.best_url, company_name: $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim(), market: 'Singapore' }) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 120000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -556,7 +518,7 @@
         2512
       ],
       "id": "a1f37d37-d37a-4ae8-9984-ab4f2a8f337e",
-      "name": "Serper - Scrape",
+      "name": "Crawl4AI - Scrape",
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -571,17 +533,26 @@
           },
           "conditions": [
             {
-              "id": "cond-scrape-1",
-              "leftValue": "={{ ($json.data || '').length }}",
-              "rightValue": 300,
+              "id": "cond-scrape-ok",
+              "leftValue": "={{ $json.ok !== true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            },
+            {
+              "id": "cond-scrape-short",
+              "leftValue": "={{ ($json.website_content || \"\").length }}",
+              "rightValue": 500,
               "operator": {
                 "type": "number",
                 "operation": "lt"
               }
             },
             {
-              "id": "cond-scrape-2",
-              "leftValue": "={{ ($json.data || '').toLowerCase().includes('robot challenge') || ($json.data || '').toLowerCase().includes('checking the site connection') || ($json.data || '').toLowerCase().includes('please make sure you are authorized') }}",
+              "id": "cond-scrape-errorpage",
+              "leftValue": "={{ $json.quality?.looks_like_error_page || false }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -601,66 +572,6 @@
       ],
       "id": "f767a61e-1660-4b5d-ac13-e42d6463aa15",
       "name": "IF Scrape Failed"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://scrape.serper.dev/search",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-API-Key",
-              "value": "67dd1864cc37667b86fb461e80008530146f3ba1"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ url: $(\"Parse HTTP Status\").item.json.best_url }) }}",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -26624,
-        2656
-      ],
-      "name": "Serper - Scrape Fallback",
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 5000,
-      "id": "serper-fallback-1774513506691"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ ($json.result || $json.text || \"\").length }}",
-              "rightValue": 300,
-              "operator": {
-                "type": "number",
-                "operation": "lt"
-              }
-            }
-          ],
-          "combinator": "or"
-        }
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -26384,
-        2656
-      ],
-      "name": "IF Serper Fallback Failed",
-      "id": "if-serper-fallback-1774513506697"
     },
     {
       "parameters": {
@@ -687,12 +598,12 @@
         2736
       ],
       "id": "9bba2aa4-94f3-4feb-856a-e1cf1a3f8e9a",
-      "name": "Status - scrape failed (Jina)",
+      "name": "Status - scrape failed",
       "continueOnFail": true
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Based on this website content: ${websiteContent}\n\nIs ${companyClean} HIA-relevant in Singapore?\n\nClassify as:\n- YES: Licensed healthcare service provider: GP clinic, hospital, nursing home, pharmacy, lab, radiology, dialysis, dental, community care, social service org serving healthcare\n- VENDOR: Tech/SaaS vendor, AI platform, cybersecurity firm, or consultant whose clients are Singapore healthcare providers\n- NO: Finance, retail, F&B, pure logistics, education, real estate - no healthcare client base\n\nOutput: one word only: YES / VENDOR / NO`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Based on this website content: ${websiteContent}\n\nIs ${companyClean} HIA-relevant in Singapore?\n\nClassify as:\n- YES: Licensed healthcare service provider: GP clinic, hospital, nursing home, pharmacy, lab, radiology, dialysis, dental, community care, social service org serving healthcare\n- VENDOR: Tech/SaaS vendor, AI platform, cybersecurity firm, or consultant whose clients are Singapore healthcare providers\n- NO: Finance, retail, F&B, pure logistics, education, real estate - no healthcare client base\n\nOutput: one word only: YES / VENDOR / NO`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -853,7 +764,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nReturn a JSON object with exactly these 5 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, corporate dental provider]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 (GP clinics, acute hospitals, labs, radiology, nursing homes, community hospitals) / Batch 2 - Sep 2028 (specialist outpatient, ambulatory surgical, dialysis, other HCSA licensees) / Batch 3 - Mar 2030 (dental, retail pharmacy, assisted reproduction) / Vendor to HIA clients (tech vendors, SaaS platforms)]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic, single-location, <200 staff signals. Mid = multi-location group, regional presence. Enterprise = hospital system, listed company, large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words. Examples: AI scribe for clinic documentation / RTLS hospital tracking system / cloud HIMS for GP clinics]\",\n  \"compliance_lead\": \"[specific HIA compliance path. One of: Batch 1 CSDS Essentials - Sep 2027 (GP clinic, hospital, lab, nursing home) / Batch 2 CSDS Essentials - Sep 2028 (specialist, dialysis, ambulatory) / Batch 3 CSDS Essentials - Mar 2030 (dental, pharmacy, ART) / NCSS TSS + CSDS Essentials (social service org, community care) / CSDS Essentials - batch unconfirmed]\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nReturn a JSON object with exactly these 5 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, corporate dental provider]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 (GP clinics, acute hospitals, labs, radiology, nursing homes, community hospitals) / Batch 2 - Sep 2028 (specialist outpatient, ambulatory surgical, dialysis, other HCSA licensees) / Batch 3 - Mar 2030 (dental, retail pharmacy, assisted reproduction) / Vendor to HIA clients (tech vendors, SaaS platforms)]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic, single-location, <200 staff signals. Mid = multi-location group, regional presence. Enterprise = hospital system, listed company, large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words. Examples: AI scribe for clinic documentation / RTLS hospital tracking system / cloud HIMS for GP clinics]\",\n  \"compliance_lead\": \"[specific HIA compliance path. One of: Batch 1 CSDS Essentials - Sep 2027 (GP clinic, hospital, lab, nursing home) / Batch 2 CSDS Essentials - Sep 2028 (specialist, dialysis, ambulatory) / Batch 3 CSDS Essentials - Mar 2030 (dental, pharmacy, ART) / NCSS TSS + CSDS Essentials (social service org, community care) / CSDS Essentials - batch unconfirmed]\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1075,7 +986,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 15000);\nconst companyClean = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1146,7 +1057,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Extract clean domain from URL Validate response\nconst raw = String($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\n\n// Strip quotes, markdown, and whitespace the LLM may have added\nconst cleaned = raw.replace(/[`'\"\\[\\]()]/g, '').replace(/\\s+/g, '').trim();\n\n// Extract domain: remove protocol, www, trailing path\nlet domain = cleaned\n  .replace(/^https?:\\/\\//i, '')\n  .replace(/^www\\./i, '')\n  .split('/')[0]\n  .split('?')[0]\n  .split('#')[0];\n\n// Validate it looks like a domain\nif (!domain || !domain.includes('.')) {\n  domain = '';\n}\n\nreturn [{ json: { clean_domain: domain } }];"
+        "jsCode": "const raw = String($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\n\nconst cleaned = raw\n  .replace(/[`'\"\\[\\]()]/g, '')\n  .replace(/\\s+/g, '')\n  .trim();\n\nlet domain = cleaned\n  .replace(/^https?:\\/\\//i, '')\n  .replace(/^www\\./i, '')\n  .split('/')[0]\n  .split('?')[0]\n  .split('#')[0]\n  .trim();\n\nif (!domain || !domain.includes('.')) {\n  domain = '';\n}\n\nreturn [{ json: { clean_domain: domain } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1159,7 +1070,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const picked = ($json.choices[0].message.content || '').trim();\nconst lower = String(picked).toLowerCase();\n\n// Check if it's duplicate/none first\nif (lower === 'duplicate' || lower === 'none' || !picked) {\n  return [{ json: { best_url: picked } }];\n}\n\n// Check against ALL existing URLs (not just the 200 sent to LLM)\nconst allUrls = $('Prep URL Data').item.json.all_urls || [];\nconst pickedClean = picked.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n\nconst isDuplicate = allUrls.some(function(u) {\n  const existing = String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n  return existing === pickedClean;\n});\n\nif (isDuplicate) {\n  return [{ json: { best_url: 'duplicate' } }];\n}\n\nreturn [{ json: { best_url: picked } }];"
+        "jsCode": "const picked = String($json.choices?.[0]?.message?.content || '').trim();\nconst lower = picked.toLowerCase();\n\nif (lower === 'duplicate' || lower === 'none' || !picked) {\n  return [{ json: { best_url: lower || 'none' } }];\n}\n\nconst tokens = picked.split(/\\s+/).map(t => t.trim()).filter(Boolean);\nconst stripEdge = (s) => String(s || '').replace(/^[`'\"<({\\[]+/, '').replace(/[`'\">)}\\],.]+$/, '');\n\nlet normalized = '';\n\nconst urlToken = tokens.find(t => /^https?:\\/\\//i.test(stripEdge(t)));\nif (urlToken) {\n  normalized = stripEdge(urlToken);\n} else {\n  const domainToken = tokens.find(t => {\n    const v = stripEdge(t).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '');\n    return v.includes('.') && /^[a-z0-9.-]+(?:\\/[^^\\s]*)?$/i.test(v);\n  });\n  if (domainToken) {\n    normalized = 'https://' + stripEdge(domainToken).replace(/^https?:\\/\\//i, '');\n  }\n}\n\nif (!normalized) {\n  return [{ json: { best_url: 'none' } }];\n}\n\nconst allUrls = $('Prep URL Data').item.json.all_urls || [];\nconst pickedClean = normalized.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n\nconst isDuplicate = allUrls.some(function(u) {\n  const existing = String(u).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n  return existing === pickedClean;\n});\n\nif (isDuplicate) {\n  return [{ json: { best_url: 'duplicate' } }];\n}\n\nreturn [{ json: { best_url: normalized } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1212,7 +1123,7 @@
             },
             {
               "name": "company",
-              "value": "={{ $('Parse Parent Company').item.json.parent_company }}"
+              "value": "={{ $('Prep Anymail Domain').item.json.clean_domain ? $('Parse Parent Company').item.json.parent_company : $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() }}"
             }
           ]
         },
@@ -1313,7 +1224,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     cleanName,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Merge Serper Results').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
       },
       "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
       "name": "Prep Partial Anymail",
@@ -1326,7 +1237,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst urlValidated = ($('OpenRouter - URL Validate').item.json.choices[0].message.content || '').trim();\nconst scrapeContent = $('Serper - Scrape').item.json.data || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => r.title + ' | ' + r.link).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           urlValidated,\n  url_validated:      urlValidated,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Merge Serper Results').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
       },
       "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
       "name": "Prep Partial Hunter",
@@ -1953,7 +1864,7 @@
         3432
       ],
       "parameters": {
-        "jsCode": "const websiteContent = ($('Serper - Scrape').item.json.data || '').substring(0, 8000);\nconst clinicName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\\nClinic name: ${clinicName}\\n\\nThis is a Singapore clinic that may belong to a parent medical group.\\nIdentify the PARENT COMPANY or MEDICAL GROUP NAME from the website content.\\nLook for: brand name, group name, copyright holder, or navigation header.\\n\\nRules:\\n- Return ONLY the parent company/group name\\n- Do NOT return the clinic name\\n- If no parent company found, return the clinic name as-is\\n\\nExamples:\\n- 1 Bishan Medical Clinic on 1medical.sg → 1 Medical\\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg → Qualitas Health\\n- Raffles Medical Clinic → Raffles Medical\\n\\nOutput: company name only, one line.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 8000);\nconst companyName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\\nCompany name: ${companyName}\\n\\nThis is a Singapore healthcare company, clinic, medical group, or healthcare vendor that may belong to a parent brand or medical group.\\nIdentify the PARENT COMPANY, MEDICAL GROUP, or PRIMARY BRAND NAME from the website content.\\nLook for: brand name, group name, copyright holder, company footer, legal entity, or navigation header.\\n\\nRules:\\n- Return ONLY the parent company/group/brand name\\n- If the company itself is the top-level brand, return the company name as-is\\n- If no better parent company is found, return the company name as-is\\n- Prefer the Singapore entity/brand shown on the official site\\n\\nExamples:\\n- 1 Bishan Medical Clinic on 1medical.sg → 1 Medical\\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg → Qualitas Health\\n- Raffles Medical Clinic → Raffles Medical\\n\\nOutput: company name only, one line.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       }
     },
     {
@@ -2050,6 +1961,17 @@
         ],
         [
           {
+            "node": "Prep Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Search Queries": {
+      "main": [
+        [
+          {
             "node": "Serper - Search",
             "type": "main",
             "index": 0
@@ -2061,22 +1983,15 @@
       "main": [
         [
           {
-            "node": "IF Serper Failed",
+            "node": "Merge Serper Results",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "IF Serper Failed": {
+    "Merge Serper Results": {
       "main": [
-        [
-          {
-            "node": "Status - serper failed",
-            "type": "main",
-            "index": 0
-          }
-        ],
         [
           {
             "node": "Paginate Read Column E",
@@ -2166,18 +2081,7 @@
         ],
         [
           {
-            "node": "Serper - Scrape",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Serper - Scrape": {
-      "main": [
-        [
-          {
-            "node": "IF Scrape Failed",
+            "node": "Crawl4AI - Scrape",
             "type": "main",
             "index": 0
           }
@@ -2188,7 +2092,7 @@
       "main": [
         [
           {
-            "node": "Serper - Scrape Fallback",
+            "node": "Status - scrape failed",
             "type": "main",
             "index": 0
           }
@@ -2348,7 +2252,7 @@
       "main": [
         [
           {
-            "node": "Prep Parent Company",
+            "node": "Hunter - Contact",
             "type": "main",
             "index": 0
           }
@@ -2483,7 +2387,7 @@
       "main": [
         [
           {
-            "node": "Prep Anymail Domain",
+            "node": "Prep Parent Company",
             "type": "main",
             "index": 0
           }
@@ -2651,17 +2555,6 @@
       ]
     },
     "Status - clean failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - serper failed": {
       "main": [
         [
           {
@@ -2914,35 +2807,6 @@
         ]
       ]
     },
-    "Serper - Scrape Fallback": {
-      "main": [
-        [
-          {
-            "node": "IF Serper Fallback Failed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Serper Fallback Failed": {
-      "main": [
-        [
-          {
-            "node": "Status - scrape failed (Jina)",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prep HIA Gate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Prep Parent Company": {
       "main": [
         [
@@ -2969,7 +2833,18 @@
       "main": [
         [
           {
-            "node": "Hunter - Contact",
+            "node": "Prep Anymail Domain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl4AI - Scrape": {
+      "main": [
+        [
+          {
+            "node": "IF Scrape Failed",
             "type": "main",
             "index": 0
           }
