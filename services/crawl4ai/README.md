@@ -91,3 +91,34 @@ The workflow uses:
 ```
 
 Set `CRAWL4AI_SCRAPER_URL` if your n8n runtime cannot reach `127.0.0.1:8080`.
+
+## Railway
+
+Railway should deploy this service from the `services/crawl4ai` directory using the included `Dockerfile`.
+
+Per Railway's Dockerfile docs, if the service source root is still the repo root, set:
+
+```text
+RAILWAY_DOCKERFILE_PATH=services/crawl4ai/Dockerfile
+```
+
+Recommended Railway service variables:
+
+```text
+PORT=8080
+CRAWL4AI_HEADLESS=true
+CRAWL4AI_VERBOSE=false
+CRAWL4AI_PAGE_TIMEOUT_MS=45000
+```
+
+Then set this variable on your Railway n8n service:
+
+```text
+CRAWL4AI_SCRAPER_URL=https://<your-crawl4ai-service-domain>/scrape
+```
+
+Health endpoint:
+
+```text
+GET /health
+```
