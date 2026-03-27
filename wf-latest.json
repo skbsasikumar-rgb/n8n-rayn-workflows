@@ -129,26 +129,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const cleanName = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || '').trim();\nconst lower = cleanName.toLowerCase();\nconst hints = [];\n\nif (/(clinic|medical|hospital|healthcare|surgery|specialist|gp)\\b/i.test(lower)) {\n  hints.push('clinic medical');\n}\nif (/(dental|dentist|orthodontic)\\b/i.test(lower)) {\n  hints.push('dental');\n}\nif (/(lab|laboratory|diagnostic|radiology|imaging)\\b/i.test(lower)) {\n  hints.push('lab diagnostic radiology');\n}\nif (/(tcm|traditional chinese medicine|chinese medicine|acupuncture)\\b/i.test(lower)) {\n  hints.push('TCM chinese medicine');\n}\nif (/(pharmacy|dialysis|nursing|eldercare|rehab)\\b/i.test(lower)) {\n  const match = cleanName.match(/(pharmacy|dialysis|nursing|eldercare|rehab)/i);\n  if (match) hints.push(match[0]);\n}\nif (/(software|systems|tech|technology|digital|cloud|ai|cyber|security|informatics|platform)\\b/i.test(lower)) {\n  hints.push('healthcare technology singapore');\n}\n\nconst seen = new Set();\nconst queries = [];\nconst addQuery = (q) => {\n  const key = String(q || '').trim().toLowerCase();\n  if (!key || seen.has(key)) return;\n  seen.add(key);\n  queries.push(String(q).trim());\n};\n\naddQuery(`\"${cleanName}\" Singapore official website`);\naddQuery(`\"${cleanName}\" Singapore`);\nfor (const hint of hints) {\n  addQuery(`\"${cleanName}\" Singapore ${hint} official website`);\n}\n\nreturn queries.slice(0, 3).map((query, i) => ({ json: { query, query_index: i + 1 } }));"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -29264,
-        2512
-      ],
-      "id": "prep-search-queries-001",
-      "name": "Prep Search Queries"
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "https://google.serper.dev/search",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({q: $json.query, num: 5}) }}",
+        "jsonBody": "={{ JSON.stringify({q: $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website', num: 5}) }}",
         "options": {
           "timeout": 30000
         }
@@ -171,20 +158,6 @@
         }
       },
       "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all();\nconst organic = [];\nconst seen = new Set();\n\nfor (const item of items) {\n  const results = item.json?.organic || [];\n  for (const r of results) {\n    const link = String(r.link || '').trim();\n    if (!link) continue;\n    const key = link.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n    if (seen.has(key)) continue;\n    seen.add(key);\n    organic.push(r);\n  }\n}\n\nreturn [{ json: { organic, result_count: organic.length } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -28784,
-        2512
-      ],
-      "id": "23bbbeff-ed43-42a2-b15d-622435f713bc",
-      "name": "Merge Serper Results"
     },
     {
       "parameters": {
@@ -245,7 +218,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Merge Serper Results').item.json.organic || []).map(function(r){return (r.title || '') + ' | ' + (r.link || '') + (r.snippet ? ' | ' + r.snippet : '');}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official website URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer exact company-name matches\\n- Prefer Singapore entity pages or Singapore-relevant pages when available\\n- .com, .org, .net are acceptable if the page clearly belongs to the Singapore business\\n- Reject overseas or country-mismatched sites when a Singapore candidate exists\\n- A parent company or group holding URL is acceptable only if it clearly corresponds to the same Singapore entity\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Serper - Search').item.json.organic || []).map(function(r){return r.title + ' | ' + r.link}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer .com.sg, .org.sg, .sg domains\\n- A parent company or group holding URL is acceptable\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
         "options": {
           "timeout": 60000
         }
@@ -503,7 +476,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{ $env.CRAWL4AI_SCRAPER_URL || 'http://127.0.0.1:8080/scrape' }}",
+        "url": "https://n8n-rayn-workflows-production.up.railway.app/scrape",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ url: $('Parse HTTP Status').item.json.best_url, company_name: $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim(), market: 'Singapore' }) }}",
@@ -1224,7 +1197,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Merge Serper Results').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst serperOrganic = $('Serper - Search').item.json.organic || [];\nconst companyLinkedIn = (\n  serperOrganic.find(r => /linkedin\\.com\\/company\\//i.test(r.link || ''))\n)?.link || '';\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
       },
       "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
       "name": "Prep Partial Anymail",
@@ -1237,7 +1210,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Merge Serper Results').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst serperOrganic = $('Serper - Search').item.json.organic || [];\nconst companyLinkedIn = (\n  serperOrganic.find(r => /linkedin\\.com\\/company\\//i.test(r.link || ''))\n)?.link || '';\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
       },
       "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
       "name": "Prep Partial Hunter",
@@ -1263,7 +1236,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, parent_company: $json.parent_company, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, parent_company: $json.parent_company, company_linkedin_url: $json.company_linkedin_url, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
         "options": {}
       },
       "id": "6c7b4c7e-c7cd-417c-8790-d7e9627fd885",
@@ -1628,7 +1601,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const d = $('Prep Outreach Context').item.json;\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Company: ${d.company_name_clean}\\nIndustry: ${d.industry_segment}\\nHIA batch: ${d.hia_batch}\\nCompliance lead: ${d.compliance_lead}\\nCompany size: ${d.company_size}\\nRole: ${d.role}\\nHIA relevant: ${d.hia_relevant} (YES = healthcare provider, VENDOR = tech/SaaS vendor selling to healthcare)\\n\\nDetermine:\\n1. vendor_pain: The specific compliance or operational pain this company faces in the context of Singapore HIA 2027. Max 15 words.\\n   - YES (healthcare provider): their internal compliance challenge (e.g. \"no internal cybersecurity resource to drive CSDS certification\")\\n   - VENDOR: the pain their healthcare clients face that creates demand for their product (e.g. \"AI scribe clients need CSDS Essentials evidence for HIA renewal\")\\n\\n2. grant_eligibility: Most applicable Singapore HIA co-funding grants. Must be exactly one of:\\n   NCG + CSA CISOaaS + PSG — SME GP clinic, dental, pharmacy, nursing home, dialysis, lab, radiology (full stack: MOH 40% HIMS + CSA 70% consultancy + PSG 50% tools)\\n   NCG + CSA CISOaaS — SME HIA licensee where PSG eligibility is uncertain\\n   CSA CISOaaS + PSG — VENDOR company whose healthcare SME clients qualify (CSA 70% consultancy + PSG 50% tools)\\n   NCSS TSS — Community care or social service organisation that is an NCSS member\\n   NCG only — Enterprise or large hospital (not SME-eligible for PSG/CISOaaS)\\n   Verify eligibility — Unknown, niche, or complex eligibility\\n\\nGrant rules:\\n- SME GP / dental / pharmacy / nursing home / lab / radiology → NCG + CSA CISOaaS + PSG\\n- VENDOR (tech selling to healthcare clients) → CSA CISOaaS + PSG\\n- Social service org / community care / eldercare under NCSS → NCSS TSS\\n- Enterprise hospital system / listed company → NCG only\\n- Unknown or niche → Verify eligibility\\n\\nOutput JSON: {\"vendor_pain\": \"...\", \"grant_eligibility\": \"\"}\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d } }];"
+        "jsCode": "const d = $('Prep Outreach Context').item.json;\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Company: ${d.company_name_clean}\\nIndustry: ${d.industry_segment}\\nHIA batch: ${d.hia_batch}\\nCompliance lead: ${d.compliance_lead}\\nCompany size: ${d.company_size}\\nRole: ${d.role}\\nHIA relevant: ${d.hia_relevant} (YES = healthcare provider, VENDOR = tech/SaaS vendor selling to healthcare)\\n\\nDetermine:\\n1. vendor_pain: The specific compliance or operational pain this company faces in the context of Singapore HIA 2027. Max 15 words.\\n   - YES (healthcare provider): their internal compliance challenge (e.g. \"no internal cybersecurity resource to drive CSDS certification\")\\n   - VENDOR: the pain their healthcare clients face that creates demand for their product (e.g. \"AI scribe clients need CSDS Essentials evidence for HIA renewal\")\\n\\n2. grant_eligibility: Most applicable Singapore HIA co-funding grants. Must be exactly one of:\\n   NCG + CSA CISOaaS + PSG \u2014 SME GP clinic, dental, pharmacy, nursing home, dialysis, lab, radiology (full stack: MOH 40% HIMS + CSA 70% consultancy + PSG 50% tools)\\n   NCG + CSA CISOaaS \u2014 SME HIA licensee where PSG eligibility is uncertain\\n   CSA CISOaaS + PSG \u2014 VENDOR company whose healthcare SME clients qualify (CSA 70% consultancy + PSG 50% tools)\\n   NCSS TSS \u2014 Community care or social service organisation that is an NCSS member\\n   NCG only \u2014 Enterprise or large hospital (not SME-eligible for PSG/CISOaaS)\\n   Verify eligibility \u2014 Unknown, niche, or complex eligibility\\n\\nGrant rules:\\n- SME GP / dental / pharmacy / nursing home / lab / radiology \u2192 NCG + CSA CISOaaS + PSG\\n- VENDOR (tech selling to healthcare clients) \u2192 CSA CISOaaS + PSG\\n- Social service org / community care / eldercare under NCSS \u2192 NCSS TSS\\n- Enterprise hospital system / listed company \u2192 NCG only\\n- Unknown or niche \u2192 Verify eligibility\\n\\nOutput JSON: {\"vendor_pain\": \"...\", \"grant_eligibility\": \"\"}\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d } }];"
       }
     },
     {
@@ -1699,7 +1672,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const d = $json._ctx;\nconst pain = $json;\nconst firstName = d.first_name || 'there';\nconst rawContent = (d.website_content || '');\nconst cleanLines = rawContent.split('\\n').filter(line => {\n  const l = line.trim();\n  return l.length > 40 && !l.startsWith('![') && !l.startsWith('* [') && !l.startsWith('*   [') && !l.startsWith('- [') && !l.includes('](http') && !l.startsWith('#');\n}).join(' ');\nconst websiteSummary = cleanLines.substring(0, 600) || (d.serper_results || '').substring(0, 600);\nconst techRoles = ['cto','ciso','it director','technical','engineer','developer','architect','infosec','head of it','vp engineering','chief information'];\nconst isTechnical = techRoles.some(t => (d.role || '').toLowerCase().includes(t));\nconst email1cta = isTechnical\n  ? 'Want me to send it across?'\n  : 'Could you forward this to your IT, security, or compliance team?';\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6',\n  temperature: 0.4,\n  messages: [{\n    role: 'user',\n    content: `You are a cold email expert. Write 4 personalized outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure. RAYN Secure helps Singapore healthcare organisations and their vendors attain CSDS Essentials certification and comply with HIA 2027.\\n\\n--- DETAILS\\n- First name: ${firstName}\\n- Company: ${d.company_name_clean}\\n- Industry: ${d.industry_segment || 'N/A'}\\n- HIA batch: ${d.hia_batch || 'N/A'}\\n- Product/service: ${d.product_descriptor || 'N/A'}\\n- Role: ${d.role || 'N/A'}\\n- Pain point: ${pain.vendor_pain || 'N/A'}\\n- Compliance lead: ${d.compliance_lead || 'N/A'}\\n- Grant eligibility: ${pain.grant_eligibility || 'N/A'}\\n- Grant context: NCG = MOH grant (40% HIMS costs), CSA CISOaaS = CSA/IMDA grant (70% of CS/DS Essentials consultancy), PSG = EnterpriseSG (50% cybersecurity tools up to \\$30k), NCSS TSS = NCSS scheme for community care orgs\\n- Website summary: ${websiteSummary}\\n\\n# EMAIL SPECIFICATIONS\\n\\n## Email 1 — TIMELINE HOOK\\n- Subject: <first_name>, days until HIA deadline\\n- 75-100 words\\n- Open with HIA deadline → Empathy → Proof: grant funding → Low-ask CTA\\n\\n## Email 2 — ROLE-SPECIFIC PAIN\\n- 60-90 words\\n- Role-aware pain → Pressure → Proof: grant % → CTA\\n\\n## Email 3 — SOCIAL PROOF\\n- 70-100 words\\n- Named reference → Acknowledge → Proof: outcome → CTA\\n\\n## Email 4 — LOW-FRICTION\\n- 40-60 words\\n- Direct, yes/no ask\\n\\n# ROLE-AWARE\\n- Tech (CISO/IT): CSDS controls\\n- Exec: budget/timeline\\n- Finance: ROI/grant\\n- Ops: continuity/license\\n\\nOutput: JSON sube prospect's sector)\\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\\n\\n--- RULES\\n1. 60-80 words per email body — count carefully\\n2. Match the exact paragraph structure of the examples\\n3. Use arrows → for lists (Email 2 and Email 4)\\n4. Email 1 CTA: \"${email1cta}\"\\n5. Email 2 subject locked to: \"Up to 70% co-funded for ${d.company_name_clean}'s HIA compliance\"\\n6. Email 4 subject locked to: \"Should I close the loop, ${firstName}?\"\\n7. Do NOT use sycophantic openers\\n8. Do NOT add adjectives: rapidly, seamlessly, comprehensive, robust\\n9. Sign off every email: Best, — no variation, no titles\\n\\nOutput format: JSON with exactly 8 keys — subject_line1, email_body1, subject_line2, email_body2, subject_line3, email_body3, subject_line4, email_body4\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d, _pain: pain } }];"
+        "jsCode": "const d = $json._ctx;\nconst pain = $json;\nconst firstName = d.first_name || 'there';\nconst rawContent = (d.website_content || '');\nconst cleanLines = rawContent.split('\\n').filter(line => {\n  const l = line.trim();\n  return l.length > 40 && !l.startsWith('![') && !l.startsWith('* [') && !l.startsWith('*   [') && !l.startsWith('- [') && !l.includes('](http') && !l.startsWith('#');\n}).join(' ');\nconst websiteSummary = cleanLines.substring(0, 600) || (d.serper_results || '').substring(0, 600);\nconst techRoles = ['cto','ciso','it director','technical','engineer','developer','architect','infosec','head of it','vp engineering','chief information'];\nconst isTechnical = techRoles.some(t => (d.role || '').toLowerCase().includes(t));\nconst email1cta = isTechnical\n  ? 'Want me to send it across?'\n  : 'Could you forward this to your IT, security, or compliance team?';\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6',\n  temperature: 0.4,\n  messages: [{\n    role: 'user',\n    content: `You are a cold email expert. Write 4 personalized outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure. RAYN Secure helps Singapore healthcare organisations and their vendors attain CSDS Essentials certification and comply with HIA 2027.\\n\\n--- DETAILS\\n- First name: ${firstName}\\n- Company: ${d.company_name_clean}\\n- Industry: ${d.industry_segment || 'N/A'}\\n- HIA batch: ${d.hia_batch || 'N/A'}\\n- Product/service: ${d.product_descriptor || 'N/A'}\\n- Role: ${d.role || 'N/A'}\\n- Pain point: ${pain.vendor_pain || 'N/A'}\\n- Compliance lead: ${d.compliance_lead || 'N/A'}\\n- Grant eligibility: ${pain.grant_eligibility || 'N/A'}\\n- Grant context: NCG = MOH grant (40% HIMS costs), CSA CISOaaS = CSA/IMDA grant (70% of CS/DS Essentials consultancy), PSG = EnterpriseSG (50% cybersecurity tools up to \\$30k), NCSS TSS = NCSS scheme for community care orgs\\n- Website summary: ${websiteSummary}\\n\\n# EMAIL SPECIFICATIONS\\n\\n## Email 1 \u2014 TIMELINE HOOK\\n- Subject: <first_name>, days until HIA deadline\\n- 75-100 words\\n- Open with HIA deadline \u2192 Empathy \u2192 Proof: grant funding \u2192 Low-ask CTA\\n\\n## Email 2 \u2014 ROLE-SPECIFIC PAIN\\n- 60-90 words\\n- Role-aware pain \u2192 Pressure \u2192 Proof: grant % \u2192 CTA\\n\\n## Email 3 \u2014 SOCIAL PROOF\\n- 70-100 words\\n- Named reference \u2192 Acknowledge \u2192 Proof: outcome \u2192 CTA\\n\\n## Email 4 \u2014 LOW-FRICTION\\n- 40-60 words\\n- Direct, yes/no ask\\n\\n# ROLE-AWARE\\n- Tech (CISO/IT): CSDS controls\\n- Exec: budget/timeline\\n- Finance: ROI/grant\\n- Ops: continuity/license\\n\\nOutput: JSON sube prospect's sector)\\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\\n\\n--- RULES\\n1. 60-80 words per email body \u2014 count carefully\\n2. Match the exact paragraph structure of the examples\\n3. Use arrows \u2192 for lists (Email 2 and Email 4)\\n4. Email 1 CTA: \"${email1cta}\"\\n5. Email 2 subject locked to: \"Up to 70% co-funded for ${d.company_name_clean}'s HIA compliance\"\\n6. Email 4 subject locked to: \"Should I close the loop, ${firstName}?\"\\n7. Do NOT use sycophantic openers\\n8. Do NOT add adjectives: rapidly, seamlessly, comprehensive, robust\\n9. Sign off every email: Best, \u2014 no variation, no titles\\n\\nOutput format: JSON with exactly 8 keys \u2014 subject_line1, email_body1, subject_line2, email_body2, subject_line3, email_body3, subject_line4, email_body4\\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d, _pain: pain } }];"
       }
     },
     {
@@ -1864,7 +1837,7 @@
         3432
       ],
       "parameters": {
-        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 8000);\nconst companyName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\\nCompany name: ${companyName}\\n\\nThis is a Singapore healthcare company, clinic, medical group, or healthcare vendor that may belong to a parent brand or medical group.\\nIdentify the PARENT COMPANY, MEDICAL GROUP, or PRIMARY BRAND NAME from the website content.\\nLook for: brand name, group name, copyright holder, company footer, legal entity, or navigation header.\\n\\nRules:\\n- Return ONLY the parent company/group/brand name\\n- If the company itself is the top-level brand, return the company name as-is\\n- If no better parent company is found, return the company name as-is\\n- Prefer the Singapore entity/brand shown on the official site\\n\\nExamples:\\n- 1 Bishan Medical Clinic on 1medical.sg → 1 Medical\\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg → Qualitas Health\\n- Raffles Medical Clinic → Raffles Medical\\n\\nOutput: company name only, one line.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 8000);\nconst companyName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\\nCompany name: ${companyName}\\n\\nThis is a Singapore healthcare company, clinic, medical group, or healthcare vendor that may belong to a parent brand or medical group.\\nIdentify the PARENT COMPANY, MEDICAL GROUP, or PRIMARY BRAND NAME from the website content.\\nLook for: brand name, group name, copyright holder, company footer, legal entity, or navigation header.\\n\\nRules:\\n- Return ONLY the parent company/group/brand name\\n- If the company itself is the top-level brand, return the company name as-is\\n- If no better parent company is found, return the company name as-is\\n- Prefer the Singapore entity/brand shown on the official site\\n\\nExamples:\\n- 1 Bishan Medical Clinic on 1medical.sg \u2192 1 Medical\\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg \u2192 Qualitas Health\\n- Raffles Medical Clinic \u2192 Raffles Medical\\n\\nOutput: company name only, one line.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       }
     },
     {
@@ -1924,6 +1897,146 @@
       "parameters": {
         "jsCode": "const response = ($json.choices?.[0]?.message?.content || '').trim();\nconst clinicName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = response || clinicName;\nreturn [{ json: { parent_company: parentCompany } }];"
       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-serper-1",
+              "leftValue": "={{ ($json.organic || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -28784,
+        2512
+      ],
+      "id": "23bbbeff-ed43-42a2-b15d-622435f713bc",
+      "name": "IF Serper Failed"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"serper failed\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -28544,
+        2736
+      ],
+      "id": "e52665d1-07bf-480b-b5fa-1d6b8890245d",
+      "name": "Status - serper failed",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const enrichment = $('Normalize Enrichment').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || cleanName).trim();\nconst normalizedUrl = ($('Crawl4AI - Scrape').item.json.final_url || $('Check URL Against All').item.json.best_url || '').trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst serperOrganic = $('Serper - Search').item.json.organic || [];\nconst companyLinkedIn = (\n  serperOrganic.find(r => /linkedin\\.com\\/company\\//i.test(r.link || ''))\n)?.link || '';\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_name_clean: cleanName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         '',\n  role:               '',\n  email:              '',\n  linkedin_url:       '',\n  contact_source:     'none',\n  status:             'no contact found'\n}}];"
+      },
+      "id": "99ce32e0-3e30-4397-9b98-4bf85ed8a06a",
+      "name": "Prep Partial No Contact",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -22544,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "worth-url",
+              "leftValue": "={{ String($json.url_validated || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "worth-company-linkedin",
+              "leftValue": "={{ String($json.company_linkedin_url || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "4afbd845-95a8-43a4-9a27-afb0ae855873",
+      "name": "IF Worth Writing Partial",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -22304,
+        3216
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_name_clean: $json.company_name_clean, parent_company: $json.parent_company, company_linkedin_url: $json.company_linkedin_url, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, first_name: '', role: '', email: '', linkedin_url: '', contact_source: 'none', status: 'no contact found' }) }}",
+        "options": {}
+      },
+      "id": "87ec47b1-5d56-4d54-a96b-90c43dca80cd",
+      "name": "Write Partial No Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -22064,
+        3136
+      ],
+      "continueOnFail": true
     }
   ],
   "pinData": {},
@@ -1943,7 +2056,7 @@
       "main": [
         [
           {
-            "node": "IF Clean Failed",
+            "node": "Serper - Search",
             "type": "main",
             "index": 0
           }
@@ -1959,42 +2072,14 @@
             "index": 0
           }
         ],
-        [
-          {
-            "node": "Prep Search Queries",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prep Search Queries": {
-      "main": [
-        [
-          {
-            "node": "Serper - Search",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     },
     "Serper - Search": {
       "main": [
         [
           {
-            "node": "Merge Serper Results",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge Serper Results": {
-      "main": [
-        [
-          {
-            "node": "Paginate Read Column E",
+            "node": "IF Serper Failed",
             "type": "main",
             "index": 0
           }
@@ -2347,7 +2432,7 @@
       "main": [
         [
           {
-            "node": "Status - no contact found (stop)",
+            "node": "Prep Partial No Contact",
             "type": "main",
             "index": 0
           }
@@ -2845,6 +2930,75 @@
         [
           {
             "node": "IF Scrape Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Serper Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - serper failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Paginate Read Column E",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status - serper failed": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Partial No Contact": {
+      "main": [
+        [
+          {
+            "node": "IF Worth Writing Partial",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Worth Writing Partial": {
+      "main": [
+        [
+          {
+            "node": "Write Partial No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - no contact found (stop)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Partial No Contact": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }

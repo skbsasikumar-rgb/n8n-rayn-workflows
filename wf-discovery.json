@@ -85,6 +85,117 @@
     },
     {
       "parameters": {
+        "method": "POST",
+        "url": "https://scrape.serper.dev/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.website_url }) }}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        520
+      ],
+      "id": "0b0d4195-ded8-4f8c-a03e-73575ca0353e",
+      "name": "Crawl4AI - Discovery Scrape",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $('Parse Places').item.json || {};\nconst fetchResponse = $json || {};\nconst payload = fetchResponse.body && typeof fetchResponse.body === 'object' ? fetchResponse.body : fetchResponse;\nconst rawContent = typeof payload === 'string' ? payload : (payload.result || payload.text || payload.data || payload.markdown || '');\nconst websiteContent = String(rawContent || '').substring(0, 12000);\nconst statusCode = Number(fetchResponse.statusCode || 0);\nconst finalUrl = String(source.website_url || '').trim();\nconst companyName = String(source.company_name || '').trim();\n\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `You are determining whether a discovered Singapore healthcare entity belongs to a different parent company or group.\n\nDiscovered company: ${companyName}\nDiscovered website: ${finalUrl}\nFetch status: ${statusCode}\nWebsite content:\n${websiteContent}\n\nReturn STRICT JSON only in this exact shape:\n{\"parent_company\":\"\",\"parent_website\":\"\",\"parent_domain\":\"\",\"is_same_entity\":true}\n\nRules:\n- If the discovered company itself is the top-level company or brand, set is_same_entity to true and leave parent_* blank.\n- Only return a parent when the content clearly shows a distinct parent company, holding company, or medical group.\n- parent_website must be the official parent website when identifiable.\n- parent_domain must be a bare domain like sgpaincare.com with no protocol or path.\n- Do not invent a parent from weak hints.\n- If the fetch status is non-2xx or the content is too thin to support a parent conclusion, return is_same_entity true and leave parent_* blank.\n- Prefer the Singapore parent/group shown on the official site.\n- Examples:\n  - DR+ Medical & Paincare Bishan on drplus.com.sg with clear group branding for Singapore Paincare Holdings Limited -> is_same_entity false, parent_company Singapore Paincare Holdings Limited, parent_website https://sgpaincare.com/, parent_domain sgpaincare.com\n  - Raffles Medical Clinic on rafflesmedicalgroup.com -> is_same_entity true\n`\n  }]\n};\n\nreturn { json: { requestBody: body, source } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        520
+      ],
+      "id": "6935f797-141a-459c-b90a-32f4a8677e66",
+      "name": "Prep Discovery Parent"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "HTTP-Referer",
+              "value": "https://primary-production-a6441.up.railway.app"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAYN Discovery Parent Extraction"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1480,
+        520
+      ],
+      "id": "5820a9c8-1526-46c4-bb54-08324c57bfc1",
+      "name": "OpenRouter - Discovery Parent",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "kVt6l9PuADkn7yhu",
+          "name": "openrouter"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "function normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  return raw.startsWith('http') ? raw.replace(/\\/+$/, '') : `https://${raw}`.replace(/\\/+$/, '');\n}\n\nfunction extractDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return url.hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return raw.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0].toLowerCase();\n  }\n}\n\nconst responses = $input.all();\nconst output = [];\n\nfor (const item of responses) {\n  const source = { ...(item.json?.source || {}) };\n  if (!source.company_name) continue;\n\n  const response = String(item.json?.choices?.[0]?.message?.content || '').trim();\n  let parsed = {};\n  try {\n    parsed = JSON.parse(response);\n  } catch {\n    const match = response.match(/\\{[\\s\\S]*\\}/);\n    if (match) {\n      try {\n        parsed = JSON.parse(match[0]);\n      } catch {}\n    }\n  }\n\n  const operatingUrl = normalizeUrl(source.website_url);\n  const operatingDomain = extractDomain(operatingUrl);\n  const parentDomain = extractDomain(parsed.parent_domain || parsed.parent_website || '');\n  const parentWebsite = normalizeUrl(parsed.parent_website || (parentDomain ? `https://${parentDomain}` : ''));\n  const parentCompany = String(parsed.parent_company || '').trim();\n  const isSameEntity = parsed.is_same_entity !== false || !parentCompany || !parentDomain || parentDomain === operatingDomain;\n  const groupKey = parentDomain || operatingDomain || '';\n\n  output.push({\n    json: {\n      company_name: source.company_name || '',\n      website_url: operatingUrl,\n      category: source.category || '',\n      hia_batch: source.hia_batch || '',\n      area: source.area || '',\n      discovered_at: source.discovered_at || new Date().toISOString(),\n      entity_type: 'operating',\n      parent_company: isSameEntity ? '' : parentCompany,\n      parent_domain: isSameEntity ? '' : parentDomain,\n      parent_website: isSameEntity ? '' : parentWebsite,\n      group_key: groupKey\n    }\n  });\n\n  if (!isSameEntity) {\n    output.push({\n      json: {\n        company_name: parentCompany,\n        website_url: parentWebsite,\n        category: source.category || '',\n        hia_batch: source.hia_batch || '',\n        area: source.area || '',\n        discovered_at: source.discovered_at || new Date().toISOString(),\n        entity_type: 'parent',\n        parent_company: '',\n        parent_domain: '',\n        parent_website: '',\n        group_key: groupKey\n      }\n    });\n  }\n}\n\nreturn output.length ? output : [{ json: { _skip: true } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1700,
+        520
+      ],
+      "id": "981d95db-aaa0-4c35-b793-b5f43a21d15d",
+      "name": "Build Discovery Entities"
+    },
+    {
+      "parameters": {
         "conditions": {
           "options": {
             "caseSensitive": true,
@@ -128,7 +239,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Serper results from Places\nconst serperItems = $('Parse Places').all();\n// Existing companies in discovery table\nconst existing = ($input.first().json.list || []);\nconst existingNames = new Set(existing.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newItems = [];\n\nfor (const item of serperItems) {\n  if (item.json._skip) continue;\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newItems.push(item);\n}\n\nif (!newItems.length) return [{ json: { _skip: true } }];\nreturn newItems;"
+        "jsCode": "function normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  return raw.startsWith('http') ? raw : `https://${raw}`;\n}\n\nfunction extractDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return url.hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return raw.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0].toLowerCase();\n  }\n}\n\nfunction keyFor(row) {\n  const entityType = String(row.entity_type || 'operating').toLowerCase();\n  const domain = extractDomain(row.website_url || row.parent_domain || '');\n  const name = String(row.company_name || '').toLowerCase().trim();\n  return [entityType, domain, name].join('|');\n}\n\nconst candidates = $('Build Discovery Entities').all().filter(i => !i.json._skip);\nconst existing = ($input.first().json.list || []);\nconst existingKeys = new Set(existing.map(r => keyFor(r)).filter(Boolean));\n\nconst batchKeys = new Set();\nconst newItems = [];\n\nfor (const item of candidates) {\n  const key = keyFor(item.json);\n  if (!key || existingKeys.has(key) || batchKeys.has(key)) continue;\n  batchKeys.add(key);\n  newItems.push(item);\n}\n\nif (!newItems.length) return [{ json: { _skip: true } }];\nreturn newItems;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -237,7 +348,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Items that passed the discovery dedup\nconst newDiscoveries = $('Dedup vs Discovery').all().filter(i => !i.json._skip);\n// Existing names in leads table\nconst existingLeads = ($input.first().json.list || []);\nconst existingNames = new Set(existingLeads.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newLeads = [];\n\nfor (const item of newDiscoveries) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newLeads.push({ json: { company_name: item.json.company_name, status: 'pending' } });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
+        "jsCode": "const newDiscoveries = $('Dedup vs Discovery').all().filter(i => !i.json._skip);\nconst existingLeads = ($input.first().json.list || []);\nconst existingNames = new Set(existingLeads.map(r => (r.company_name || '').toLowerCase().trim()).filter(Boolean));\n\nconst batchNames = new Set();\nconst newLeads = [];\n\nfor (const item of newDiscoveries) {\n  const name = (item.json.company_name || '').toLowerCase().trim();\n  if (!name || existingNames.has(name) || batchNames.has(name)) continue;\n  batchNames.add(name);\n  newLeads.push({ json: { company_name: item.json.company_name, status: 'pending' } });\n}\n\nif (!newLeads.length) return [{ json: { _skip: true } }];\nreturn newLeads;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -394,7 +505,7 @@
         ],
         [
           {
-            "node": "Paginate Read Discovery",
+            "node": "Crawl4AI - Discovery Scrape",
             "type": "main",
             "index": 0
           }
@@ -490,6 +601,50 @@
         [
           {
             "node": "Push to Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl4AI - Discovery Scrape": {
+      "main": [
+        [
+          {
+            "node": "Prep Discovery Parent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Discovery Parent": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Discovery Parent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter - Discovery Parent": {
+      "main": [
+        [
+          {
+            "node": "Build Discovery Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Discovery Entities": {
+      "main": [
+        [
+          {
+            "node": "Paginate Read Discovery",
             "type": "main",
             "index": 0
           }

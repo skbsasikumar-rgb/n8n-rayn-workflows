@@ -1,3 +1,4 @@
+import asyncio
 import os
 import re
 from pathlib import Path
@@ -241,6 +242,8 @@ browser_config = BrowserConfig(
 
 
 app = FastAPI(title="Crawl4AI Scraper", version="1.0.1")
+SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
+scrape_semaphore = asyncio.Semaphore(SCRAPE_CONCURRENCY)
 
 
 @app.get("/health")
@@ -250,32 +253,55 @@ async def health() -> dict[str, str]:
 
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape(request: ScrapeRequest) -> ScrapeResponse:
-    try:
-        run_config = CrawlerRunConfig(
+    primary_timeout = int(os.getenv("CRAWL4AI_PAGE_TIMEOUT_MS", "45000"))
+    run_attempts = [
+        CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
-            page_timeout=int(os.getenv("CRAWL4AI_PAGE_TIMEOUT_MS", "45000")),
+            page_timeout=primary_timeout,
             wait_until="networkidle",
             word_count_threshold=1,
             scan_full_page=True,
             remove_overlay_elements=True,
             excluded_tags=["noscript", "svg"],
-        )
+        ),
+        CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+            page_timeout=min(primary_timeout, 20000),
+            wait_until="domcontentloaded",
+            word_count_threshold=1,
+            scan_full_page=False,
+            remove_overlay_elements=False,
+            excluded_tags=["noscript", "svg"],
+        ),
+    ]
 
-        async with AsyncWebCrawler(config=browser_config) as crawler:
-            result = await crawler.arun(url=str(request.url), config=run_config)
-    except Exception as exc:
-        return ScrapeResponse(
-            ok=False,
-            url=str(request.url),
-            error=f"crawl_error: {exc}",
-        )
+    last_error = ""
+    result = None
+
+    async with scrape_semaphore:
+        for idx, run_config in enumerate(run_attempts):
+            try:
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    result = await crawler.arun(url=str(request.url), config=run_config)
+                last_error = ""
+                break
+            except Exception as exc:
+                last_error = str(exc)
+                if idx == 0:
+                    await asyncio.sleep(1)
+                    continue
+                return ScrapeResponse(
+                    ok=False,
+                    url=str(request.url),
+                    error=f"crawl_error: {last_error}",
+                )
 
     if not getattr(result, "success", False):
         return ScrapeResponse(
             ok=False,
             url=str(request.url),
             final_url=compact_whitespace(getattr(result, "url", "")),
-            error=compact_whitespace(getattr(result, "error_message", "") or "crawl_failed"),
+            error=compact_whitespace(getattr(result, "error_message", "") or last_error or "crawl_failed"),
         )
 
     title = extract_title(result)
