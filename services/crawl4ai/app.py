@@ -1,6 +1,5 @@
 import os
 import re
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +16,7 @@ runtime_home.mkdir(parents=True, exist_ok=True)
 os.environ["HOME"] = str(runtime_home)
 os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(DEFAULT_PLAYWRIGHT_BROWSERS))
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel, Field, HttpUrl
 
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
@@ -241,14 +240,7 @@ browser_config = BrowserConfig(
 )
 
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        _.state.crawler = crawler
-        yield
-
-
-app = FastAPI(title="Crawl4AI Scraper", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Crawl4AI Scraper", version="1.0.1")
 
 
 @app.get("/health")
@@ -258,10 +250,6 @@ async def health() -> dict[str, str]:
 
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape(request: ScrapeRequest) -> ScrapeResponse:
-    crawler = getattr(app.state, "crawler", None)
-    if crawler is None:
-        raise HTTPException(status_code=503, detail="crawler_not_ready")
-
     try:
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
@@ -273,7 +261,8 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
             excluded_tags=["noscript", "svg"],
         )
 
-        result = await crawler.arun(url=str(request.url), config=run_config)
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            result = await crawler.arun(url=str(request.url), config=run_config)
     except Exception as exc:
         return ScrapeResponse(
             ok=False,
