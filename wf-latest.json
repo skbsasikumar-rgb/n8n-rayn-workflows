@@ -22,6 +22,17 @@
       "name": "Schedule Trigger"
     },
     {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -30464,
+        2672
+      ],
+      "id": "manual-trigger-latest-001",
+      "name": "Manual Trigger"
+    },
+    {
       "parameters": {
         "method": "POST",
         "url": "https://openrouter.ai/api/v1/chat/completions",
@@ -2087,6 +2098,17 @@
   "pinData": {},
   "connections": {
     "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Cleanup Stuck Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
       "main": [
         [
           {

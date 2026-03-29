@@ -25,6 +25,17 @@
       "name": "Weekly Trigger"
     },
     {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        460
+      ],
+      "id": "disc-manual-0001",
+      "name": "Manual Trigger"
+    },
+    {
       "parameters": {
         "jsCode": "const areas = [\n  'Bishan','Bukit Merah','Bukit Timah','Downtown Core','Geylang','Kallang',\n  'Marina East','Marina South','Marine Parade','Museum','Newton','Novena',\n  'Orchard','Outram','Queenstown','River Valley','Rochor','Singapore River',\n  'Southern Islands','Straits View','Tanglin','Toa Payoh','Bedok','Changi',\n  'Changi Bay','Pasir Ris','Paya Lebar','Tampines','Central Water Catchment',\n  'Lim Chu Kang','Mandai','Sembawang','Simpang','Sungei Kadut','Woodlands',\n  'Yishun','Ang Mo Kio','Hougang','North-Eastern Islands','Punggol','Seletar',\n  'Sengkang','Serangoon','Boon Lay','Bukit Batok','Bukit Panjang',\n  'Choa Chu Kang','Clementi','Jurong East','Jurong West','Pioneer','Tengah',\n  'Tuas','Western Islands','Western Water Catchment'\n];\n\nconst categories = [\n  {q: 'GP clinic', batch: 'Batch 1 - Sep 2027'},\n  {q: 'acute hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'clinical laboratory', batch: 'Batch 1 - Sep 2027'},\n  {q: 'radiology centre', batch: 'Batch 1 - Sep 2027'},\n  {q: 'nursing home', batch: 'Batch 1 - Sep 2027'},\n  {q: 'community hospital', batch: 'Batch 1 - Sep 2027'},\n  {q: 'specialist outpatient clinic', batch: 'Batch 2 - Sep 2028'},\n  {q: 'ambulatory surgical centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dialysis centre', batch: 'Batch 2 - Sep 2028'},\n  {q: 'dental clinic', batch: 'Batch 3 - Mar 2030'},\n  {q: 'retail pharmacy', batch: 'Batch 3 - Mar 2030'},\n  {q: 'assisted reproduction centre', batch: 'Batch 3 - Mar 2030'}\n];\n\nconst combos = [];\nfor (const cat of categories) {\n  for (const area of areas) {\n    combos.push({\n      search_query: cat.q + ' ' + area + ' Singapore',\n      category: cat.q,\n      hia_batch: cat.batch,\n      area: area\n    });\n  }\n}\n\ncombos.push({\n  search_query: 'healthcare IT Singapore',\n  category: 'healthcare IT Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\ncombos.push({\n  search_query: 'medical software Singapore',\n  category: 'medical software Singapore',\n  hia_batch: 'Vendor to HIA clients',\n  area: 'Singapore'\n});\n\nreturn combos.slice(0, 5).map(c => ({json: c}));"
       },
@@ -451,6 +462,17 @@
   ],
   "connections": {
     "Weekly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Search Combos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
       "main": [
         [
           {
