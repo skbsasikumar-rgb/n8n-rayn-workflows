@@ -2,24 +2,15 @@
   "name": "RAYN Lead Enrichment - NocoDB",
   "nodes": [
     {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 3
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
       "position": [
         -30464,
         2512
       ],
       "id": "a3f8e87b-0e9c-4696-85c2-51aac2d7c4c3",
-      "name": "Schedule Trigger"
+      "name": "Manual Trigger"
     },
     {
       "parameters": {
@@ -2086,7 +2077,7 @@
   ],
   "pinData": {},
   "connections": {
-    "Schedule Trigger": {
+    "Manual Trigger": {
       "main": [
         [
           {
