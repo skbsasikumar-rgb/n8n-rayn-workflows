@@ -237,17 +237,6 @@
       "name": "IF No Results"
     },
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        1400,
-        540
-      ],
-      "id": "disc-noop-empty",
-      "name": "No Results - Stop"
-    },
-    {
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "function normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  return raw.startsWith('http') ? raw : `https://${raw}`;\n}\n\nfunction extractDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return url.hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return raw.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').split('/')[0].toLowerCase();\n  }\n}\n\nfunction keyFor(row) {\n  const entityType = String(row.entity_type || 'operating').toLowerCase();\n  const domain = extractDomain(row.website_url || row.parent_domain || '');\n  const name = String(row.company_name || '').toLowerCase().trim();\n  return [entityType, domain, name].join('|');\n}\n\nconst candidates = $('Build Discovery Entities').all().filter(i => !i.json._skip);\nconst existing = ($input.first().json.list || []);\nconst existingKeys = new Set(existing.map(r => keyFor(r)).filter(Boolean));\n\nconst batchKeys = new Set();\nconst newItems = [];\n\nfor (const item of candidates) {\n  const key = keyFor(item.json);\n  if (!key || existingKeys.has(key) || batchKeys.has(key)) continue;\n  batchKeys.add(key);\n  newItems.push(item);\n}\n\nif (!newItems.length) return [{ json: { _skip: true } }];\nreturn newItems;"
@@ -402,17 +391,6 @@
       "name": "IF No New Leads"
     },
     {
-      "parameters": {},
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
-      "position": [
-        3080,
-        540
-      ],
-      "id": "disc-0013",
-      "name": "No New Leads - Stop"
-    },
-    {
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const allItems = $input.all();\nconst all = allItems.map(i => i.json);\nconst chunks = [];\nfor (let i = 0; i < all.length; i += 100) {\n  chunks.push({json: {rows: all.slice(i, i + 100)}});\n}\nreturn chunks.length ? chunks : [{json: {rows: []}}];"
@@ -518,13 +496,7 @@
     },
     "IF No Results": {
       "main": [
-        [
-          {
-            "node": "No Results - Stop",
-            "type": "main",
-            "index": 0
-          }
-        ],
+        [],
         [
           {
             "node": "Crawl4AI - Discovery Scrape",
@@ -602,13 +574,7 @@
     },
     "IF No New Leads": {
       "main": [
-        [
-          {
-            "node": "No New Leads - Stop",
-            "type": "main",
-            "index": 0
-          }
-        ],
+        [],
         [
           {
             "node": "Prep Leads Bulk",
