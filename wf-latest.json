@@ -141,7 +141,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const base = String($env.SEARXNG_SEARCH_URL || '').trim().replace(/\\/$/, ''); const query = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website'; return base ? base + '?format=json&q=' + encodeURIComponent(query) : ''; })() }}",
+        "url": "={{ 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent($('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website') }}",
         "options": {
           "timeout": 30000
         }
@@ -162,7 +162,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const base = String($env.SEARXNG_SEARCH_URL || '').trim().replace(/\\/$/, ''); const homepage = String($('Parse Parent Company').item.json.company_homepage_name || '').trim(); const parent = String($('Parse Parent Company').item.json.parent_company || '').trim(); const target = parent && parent !== homepage ? parent : homepage; const query = 'site:linkedin.com/company \"' + target + '\" linkedin Singapore'; return base ? base + '?format=json&q=' + encodeURIComponent(query) : ''; })() }}",
+        "url": "={{ (() => { const homepage = String($('Parse Parent Company').item.json.company_homepage_name || '').trim(); const parent = String($('Parse Parent Company').item.json.parent_company || '').trim(); const target = parent && parent !== homepage ? parent : homepage; const query = 'site:linkedin.com/company \"' + target + '\" linkedin Singapore'; return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query); })() }}",
         "options": {
           "timeout": 30000
         }
