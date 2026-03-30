@@ -140,13 +140,8 @@
     },
     {
       "parameters": {
-        "method": "POST",
-        "url": "https://google.serper.dev/search",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({q: $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website', num: 5}) }}",
+        "method": "GET",
+        "url": "={{ (() => { const base = String($env.SEARXNG_SEARCH_URL || '').trim().replace(/\\/$/, ''); const query = $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + ' Singapore official website'; return base ? base + '?format=json&q=' + encodeURIComponent(query) : ''; })() }}",
         "options": {
           "timeout": 30000
         }
@@ -158,17 +153,76 @@
         2512
       ],
       "id": "fe508761-32d3-4bff-b7e9-49064f6a746d",
-      "name": "Serper - Search",
+      "name": "SearXNG - Search",
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "rNWf15tU6OmVJqMC",
-          "name": "serper"
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (() => { const base = String($env.SEARXNG_SEARCH_URL || '').trim().replace(/\\/$/, ''); const homepage = String($('Parse Parent Company').item.json.company_homepage_name || '').trim(); const parent = String($('Parse Parent Company').item.json.parent_company || '').trim(); const target = parent && parent !== homepage ? parent : homepage; const query = 'site:linkedin.com/company \"' + target + '\" linkedin Singapore'; return base ? base + '?format=json&q=' + encodeURIComponent(query) : ''; })() }}",
+        "options": {
+          "timeout": 30000
         }
       },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -24640,
+        2720
+      ],
+      "id": "serper-company-linkedin-search-001",
+      "name": "SearXNG - Company LinkedIn Search",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
       "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalize(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenise(value) {\n  return normalize(value).split(/\\s+/).filter((token) => token.length > 1);\n}\n\nfunction overlapCount(a, b) {\n  const bSet = new Set(b);\n  return a.filter((token) => bSet.has(token)).length;\n}\n\nfunction linkedInSlugTokens(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/\\/company\\/([^/?#]+)/i);\n    if (!match) return [];\n    return tokenise(match[1].replace(/-/g, ' '));\n  } catch {\n    return [];\n  }\n}\n\nfunction canonicalLinkedIn(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/(\\/company\\/[^/?#]+)/i);\n    return match ? `${url.origin}${match[1]}/` : link;\n  } catch {\n    return link;\n  }\n}\n\nconst rawResults = Array.isArray($json.organic)\n  ? $json.organic\n  : Array.isArray($json.results)\n    ? $json.results\n    : [];\n\nconst results = rawResults.map((result) => ({\n  link: String(result.link || result.url || '').trim(),\n  title: String(result.title || '').trim(),\n  snippet: String(result.snippet || result.content || '').trim(),\n}));\n\nconst homepageName = String($('Parse Parent Company').item.json.company_homepage_name || '').trim();\nconst parentCompany = String($('Parse Parent Company').item.json.parent_company || '').trim();\nconst homepageNorm = normalize(homepageName);\nconst parentNorm = normalize(parentCompany);\nconst homepageTokens = tokenise(homepageName);\nconst parentTokens = tokenise(parentCompany);\n\nlet best = { score: 0, link: '' };\n\nfor (const result of results) {\n  const link = String(result.link || '').trim();\n  if (!/linkedin\\.com\\/company\\//i.test(link)) continue;\n\n  const haystack = normalize(`${result.title || ''} ${result.snippet || ''}`);\n  const slugTokens = linkedInSlugTokens(link);\n  let score = 0;\n\n  if (homepageNorm && haystack.includes(homepageNorm)) score += 5;\n  if (parentNorm && parentNorm !== homepageNorm && haystack.includes(parentNorm)) score += 4;\n\n  const homepageOverlap = overlapCount(homepageTokens, slugTokens);\n  const parentOverlap = overlapCount(parentTokens, slugTokens);\n\n  if (homepageOverlap >= Math.min(2, homepageTokens.length || 0) && homepageOverlap > 0) score += 3;\n  else if (homepageOverlap > 0) score += 1;\n\n  if (parentNorm && parentNorm !== homepageNorm) {\n    if (parentOverlap >= Math.min(2, parentTokens.length || 0) && parentOverlap > 0) score += 2;\n    else if (parentOverlap > 0) score += 1;\n  }\n\n  if (score > best.score) {\n    best = { score, link: canonicalLinkedIn(link) };\n  }\n}\n\nreturn [{ json: { company_linkedin_url: best.score >= 4 ? best.link : '' } }];"
+      },
+      "id": "validate-company-linkedin-001",
+      "name": "Validate Company LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -24416,
+        2720
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-company-linkedin-missing",
+              "leftValue": "={{ ($json.company_linkedin_url || '').trim() }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-company-linkedin-missing-001",
+      "name": "IF Company LinkedIn Missing",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -24192,
+        2720
+      ]
     },
     {
       "parameters": {
@@ -186,10 +240,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -24640,
-        2720
+        -23952,
+        2880
       ],
-      "id": "serper-company-linkedin-search-001",
+      "id": "serper-company-linkedin-search-fallback-001",
       "name": "Serper - Company LinkedIn Search",
       "retryOnFail": true,
       "maxTries": 3,
@@ -204,15 +258,28 @@
     },
     {
       "parameters": {
-        "jsCode": "function normalize(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenise(value) {\n  return normalize(value).split(/\\s+/).filter((token) => token.length > 1);\n}\n\nfunction overlapCount(a, b) {\n  const bSet = new Set(b);\n  return a.filter((token) => bSet.has(token)).length;\n}\n\nfunction linkedInSlugTokens(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/\\/company\\/([^/?#]+)/i);\n    if (!match) return [];\n    return tokenise(match[1].replace(/-/g, ' '));\n  } catch {\n    return [];\n  }\n}\n\nfunction canonicalLinkedIn(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/(\\/company\\/[^/?#]+)/i);\n    return match ? `${url.origin}${match[1]}/` : link;\n  } catch {\n    return link;\n  }\n}\n\nconst results = Array.isArray($json.organic) ? $json.organic : [];\nconst homepageName = String($('Parse Parent Company').item.json.company_homepage_name || '').trim();\nconst parentCompany = String($('Parse Parent Company').item.json.parent_company || '').trim();\nconst homepageNorm = normalize(homepageName);\nconst parentNorm = normalize(parentCompany);\nconst homepageTokens = tokenise(homepageName);\nconst parentTokens = tokenise(parentCompany);\n\nlet best = { score: 0, link: '' };\n\nfor (const result of results) {\n  const link = String(result.link || '').trim();\n  if (!/linkedin\\.com\\/company\\//i.test(link)) continue;\n\n  const haystack = normalize(`${result.title || ''} ${result.snippet || ''}`);\n  const slugTokens = linkedInSlugTokens(link);\n  let score = 0;\n\n  if (homepageNorm && haystack.includes(homepageNorm)) score += 5;\n  if (parentNorm && parentNorm !== homepageNorm && haystack.includes(parentNorm)) score += 4;\n\n  const homepageOverlap = overlapCount(homepageTokens, slugTokens);\n  const parentOverlap = overlapCount(parentTokens, slugTokens);\n\n  if (homepageOverlap >= Math.min(2, homepageTokens.length || 0) && homepageOverlap > 0) score += 3;\n  else if (homepageOverlap > 0) score += 1;\n\n  if (parentNorm && parentNorm !== homepageNorm) {\n    if (parentOverlap >= Math.min(2, parentTokens.length || 0) && parentOverlap > 0) score += 2;\n    else if (parentOverlap > 0) score += 1;\n  }\n\n  if (score > best.score) {\n    best = { score, link: canonicalLinkedIn(link) };\n  }\n}\n\nreturn [{ json: { company_linkedin_url: best.score >= 4 ? best.link : '' } }];"
+        "jsCode": "function normalize(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenise(value) {\n  return normalize(value).split(/\\s+/).filter((token) => token.length > 1);\n}\n\nfunction overlapCount(a, b) {\n  const bSet = new Set(b);\n  return a.filter((token) => bSet.has(token)).length;\n}\n\nfunction linkedInSlugTokens(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/\\/company\\/([^/?#]+)/i);\n    if (!match) return [];\n    return tokenise(match[1].replace(/-/g, ' '));\n  } catch {\n    return [];\n  }\n}\n\nfunction canonicalLinkedIn(link) {\n  try {\n    const url = new URL(link);\n    const match = url.pathname.match(/(\\/company\\/[^/?#]+)/i);\n    return match ? `${url.origin}${match[1]}/` : link;\n  } catch {\n    return link;\n  }\n}\n\nconst rawResults = Array.isArray($json.organic)\n  ? $json.organic\n  : Array.isArray($json.results)\n    ? $json.results\n    : [];\n\nconst results = rawResults.map((result) => ({\n  link: String(result.link || result.url || '').trim(),\n  title: String(result.title || '').trim(),\n  snippet: String(result.snippet || result.content || '').trim(),\n}));\n\nconst homepageName = String($('Parse Parent Company').item.json.company_homepage_name || '').trim();\nconst parentCompany = String($('Parse Parent Company').item.json.parent_company || '').trim();\nconst homepageNorm = normalize(homepageName);\nconst parentNorm = normalize(parentCompany);\nconst homepageTokens = tokenise(homepageName);\nconst parentTokens = tokenise(parentCompany);\n\nlet best = { score: 0, link: '' };\n\nfor (const result of results) {\n  const link = String(result.link || '').trim();\n  if (!/linkedin\\.com\\/company\\//i.test(link)) continue;\n\n  const haystack = normalize(`${result.title || ''} ${result.snippet || ''}`);\n  const slugTokens = linkedInSlugTokens(link);\n  let score = 0;\n\n  if (homepageNorm && haystack.includes(homepageNorm)) score += 5;\n  if (parentNorm && parentNorm !== homepageNorm && haystack.includes(parentNorm)) score += 4;\n\n  const homepageOverlap = overlapCount(homepageTokens, slugTokens);\n  const parentOverlap = overlapCount(parentTokens, slugTokens);\n\n  if (homepageOverlap >= Math.min(2, homepageTokens.length || 0) && homepageOverlap > 0) score += 3;\n  else if (homepageOverlap > 0) score += 1;\n\n  if (parentNorm && parentNorm !== homepageNorm) {\n    if (parentOverlap >= Math.min(2, parentTokens.length || 0) && parentOverlap > 0) score += 2;\n    else if (parentOverlap > 0) score += 1;\n  }\n\n  if (score > best.score) {\n    best = { score, link: canonicalLinkedIn(link) };\n  }\n}\n\nreturn [{ json: { company_linkedin_url: best.score >= 4 ? best.link : '' } }];"
       },
-      "id": "validate-company-linkedin-001",
-      "name": "Validate Company LinkedIn",
+      "id": "validate-company-linkedin-fallback-001",
+      "name": "Validate Company LinkedIn Fallback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -24416,
-        2720
+        -23728,
+        2880
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: { company_linkedin_url: String($json.company_linkedin_url || '').trim() } }];"
+      },
+      "id": "select-company-linkedin-001",
+      "name": "Select Company LinkedIn",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -23952,
+        2512
       ]
     },
     {
@@ -274,7 +341,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSerper results:\\n' + ($('Serper - Search').item.json.organic || []).map(function(r){return r.title + ' | ' + r.link}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer .com.sg, .org.sg, .sg domains\\n- A parent company or group holding URL is acceptable\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0.1,messages:[{role:'user',content:'Company: ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '\\nSearch results:\\n' + ($('SearXNG - Search').item.json.results || []).map(function(r){return (r.title || '') + ' | ' + (r.url || r.link || '')}).join('\\n') + '\\nAlready used URLs in sheet: ' + $('Prep URL Data').item.json.existing_urls.join(', ') + '\\n\\nPick the single best official URL for ' + $('OpenRouter - Clean Name').item.json.choices[0].message.content.trim() + '.\\n\\nRules:\\n- Must not already exist in the already used URLs list\\n- If all valid URLs are already in the list, output: duplicate\\n- Prefer .com.sg, .org.sg, .sg domains\\n- A parent company or group holding URL is acceptable\\n- Reject: Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, government listing pages\\n- If no valid match exists, output: none\\n\\nOutput: URL only, or duplicate, or none. One line.'}]}) }}",
         "options": {
           "timeout": 60000
         }
@@ -1253,7 +1320,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst companyLinkedIn = String($('Validate Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst contact = $('Parse Contact').item.json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('SearXNG - Search').item.json.results || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.url || r.link || '')).join('; '));\nconst companyLinkedIn = String($('Select Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'anymail',\n  status: 'processing'\n}}];"
       },
       "id": "ed68a87b-2a95-4522-8b2f-57f7237b8ca7",
       "name": "Prep Partial Anymail",
@@ -1266,7 +1333,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst companyLinkedIn = String($('Validate Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
+        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst contact = $json;\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('SearXNG - Search').item.json.results || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.url || r.link || '')).join('; '));\nconst companyLinkedIn = String($('Select Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         contact.first_name || '',\n  role:               contact.role || '',\n  email:              contact.email || '',\n  linkedin_url:       contact.linkedin_url || '',\n  contact_source:     contact.source || 'hunter',\n  status: 'processing'\n}}];"
       },
       "id": "75d511b2-3cf4-4786-9dc9-074a5bab1ad1",
       "name": "Prep Partial Hunter",
@@ -1929,7 +1996,7 @@
           "conditions": [
             {
               "id": "cond-serper-1",
-              "leftValue": "={{ ($json.organic || []).length }}",
+                "leftValue": "={{ ($json.results || []).length }}",
               "rightValue": 0,
               "operator": {
                 "type": "number",
@@ -1980,7 +2047,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('Serper - Search').item.json.organic || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.link || '')).join('; '));\nconst companyLinkedIn = String($('Validate Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         '',\n  role:               '',\n  email:              '',\n  linkedin_url:       '',\n  contact_source:     'none',\n  status:             'no contact found'\n}}];"
+        "jsCode": "const enrichment = $('Prep Parent Company').item.json._enrichment || {};\nconst cleanName = ($('OpenRouter - Clean Name').item.json.choices[0].message.content || '').trim();\nconst homepageName = ($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = ($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim();\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst hiaGate = ($('OpenRouter - HIA Gate').item.json.choices[0].message.content || '').trim();\nconst trigger = $('Loop Over Items').item.json;\nconst serperResults = JSON.stringify(($('SearXNG - Search').item.json.results || []).slice(0,3).map(r => (r.title || '') + ' | ' + (r.url || r.link || '')).join('; '));\nconst companyLinkedIn = String($('Select Company LinkedIn').item.json.company_linkedin_url || '').trim();\nreturn [{ json: {\n  company_name:       trigger.company_name,\n  company_homepage_name: homepageName,\n  parent_company:     parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results:     serperResults,\n  best_url:           normalizedUrl,\n  url_validated:      normalizedUrl,\n  website_content:    scrapeContent,\n  hia_relevant:       hiaGate,\n  industry_segment:   enrichment.industry_segment || '',\n  hia_batch:          enrichment.hia_batch || '',\n  company_size:       enrichment.company_size || '',\n  product_descriptor: enrichment.product_descriptor || '',\n  compliance_lead:    enrichment.compliance_lead || '',\n  first_name:         '',\n  role:               '',\n  email:              '',\n  linkedin_url:       '',\n  contact_source:     'none',\n  status:             'no contact found'\n}}];"
       },
       "id": "99ce32e0-3e30-4397-9b98-4bf85ed8a06a",
       "name": "Prep Partial No Contact",
@@ -2088,7 +2155,7 @@
       "main": [
         [
           {
-            "node": "Serper - Search",
+            "node": "SearXNG - Search",
             "type": "main",
             "index": 0
           }
@@ -2107,7 +2174,7 @@
         []
       ]
     },
-    "Serper - Search": {
+    "SearXNG - Search": {
       "main": [
         [
           {
@@ -2927,14 +2994,14 @@
       "main": [
         [
           {
-            "node": "Serper - Company LinkedIn Search",
+            "node": "SearXNG - Company LinkedIn Search",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Serper - Company LinkedIn Search": {
+    "SearXNG - Company LinkedIn Search": {
       "main": [
         [
           {
@@ -2946,6 +3013,57 @@
       ]
     },
     "Validate Company LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "IF Company LinkedIn Missing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Company LinkedIn Missing": {
+      "main": [
+        [
+          {
+            "node": "Serper - Company LinkedIn Search",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Select Company LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Serper - Company LinkedIn Search": {
+      "main": [
+        [
+          {
+            "node": "Validate Company LinkedIn Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Company LinkedIn Fallback": {
+      "main": [
+        [
+          {
+            "node": "Select Company LinkedIn",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Company LinkedIn": {
       "main": [
         [
           {
