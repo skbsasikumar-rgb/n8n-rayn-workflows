@@ -555,7 +555,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return `${url.protocol}//${url.hostname}/`;\n  } catch {\n    return '';\n  }\n}\n\nconst picked = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || '').trim());\nconst fallback = String($('Check URL Against All').item.json.best_url || '').trim();\nconst homepageUrl = toHomepageUrl(picked || fallback);\n\nreturn [{ json: { homepage_url: homepageUrl, best_url: homepageUrl, url_validated: homepageUrl } }];"
+        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return `${url.protocol}//${url.hostname}/`;\n  } catch {\n    return '';\n  }\n}\n\nconst picked = String(($json.choices?.[0]?.message?.content || '').trim());\nconst fallback = String($('Check URL Against All').item.json.best_url || '').trim();\nconst homepageUrl = toHomepageUrl(picked || fallback);\n\nreturn [{ json: { homepage_url: homepageUrl, best_url: homepageUrl, url_validated: homepageUrl } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
