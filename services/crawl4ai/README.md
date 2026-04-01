@@ -1,4 +1,4 @@
-# Crawl4AI Scraper Service
+# Browser Scraper Service
 
 This service gives `wf-latest.json` one normalized scrape endpoint:
 
@@ -9,6 +9,13 @@ This service gives `wf-latest.json` one normalized scrape endpoint:
 ## Why this exists
 
 The workflow currently depends on scraper-specific response shapes. This service isolates that dependency and always returns the same payload to n8n.
+
+Current implementation:
+
+- Playwright for browser rendering and navigation
+- Beautiful Soup + `lxml` for deterministic HTML parsing
+- no autonomous agent loop
+- same `/scrape` contract used by n8n
 
 ## Request
 
@@ -71,17 +78,17 @@ cd /Users/sasikumar/Documents/n8n/services/crawl4ai
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-crawl4ai-setup
-crawl4ai-doctor
+playwright install chromium
 uvicorn app:app --host 0.0.0.0 --port 8080
 ```
 
 Runtime notes:
 
-- The service defaults its Crawl4AI runtime home to `services/crawl4ai/runtime-home` when not explicitly set
+- The service keeps the `services/crawl4ai` path and `CRAWL4AI_*` env names for deployment compatibility
+- The service defaults its runtime home to `services/crawl4ai/runtime-home` when not explicitly set
 - On macOS it defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/Library/Caches/ms-playwright`
 - On Linux it defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/.cache/ms-playwright`
-- Railway/Docker now sets `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` and `CRAWL4AI_RUNTIME_HOME=/app/runtime-home`
+- Railway/Docker sets `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` and `CRAWL4AI_RUNTIME_HOME=/app/runtime-home`
 - Override either with environment variables if needed
 
 ## n8n URL

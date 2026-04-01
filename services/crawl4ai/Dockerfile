@@ -8,9 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY services/crawl4ai/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
-    && crawl4ai-setup \
-    && crawl4ai-doctor
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/crawl4ai/app.py ./app.py
 
