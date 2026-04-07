@@ -1568,7 +1568,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst formatted = `${cutoff.getUTCFullYear()}-${pad(cutoff.getUTCMonth()+1)}-${pad(cutoff.getUTCDate())} ${pad(cutoff.getUTCHours())}:${pad(cutoff.getUTCMinutes())}:${pad(cutoff.getUTCSeconds())}`;\nreturn [{ json: { cutoff: formatted } }];"
+        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nreturn [{ json: { cutoff: cutoff.toISOString() } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
