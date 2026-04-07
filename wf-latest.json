@@ -1750,6 +1750,7 @@
     },
     {
       "parameters": {
+        "language": "javaScript",
         "mode": "runOnceForAllItems",
         "jsCode": "return $input.all();"
       },
@@ -1772,6 +1773,7 @@
         2752
       ],
       "parameters": {
+        "language": "javaScript",
         "mode": "runOnceForAllItems",
         "jsCode": "return $input.all();"
       }
