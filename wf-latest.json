@@ -1750,11 +1750,11 @@
     },
     {
       "parameters": {
-        "batchSize": 1,
-        "options": {}
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all();"
       },
-      "type": "n8n-nodes-base.splitInBatches",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
         -29444,
         2512
@@ -3016,72 +3016,6 @@
         ]
       ]
     },
-    "Status - url duplicate": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - no url found": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - url rejected": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - scrape failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - no contact found (stop)": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - enrichment failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Write Partial & Pending": {
       "main": [
         [
@@ -3164,17 +3098,6 @@
         [
           {
             "node": "Write Final",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write Final": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
@@ -3371,17 +3294,6 @@
         ]
       ]
     },
-    "Status - serper failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Prep Partial No Contact": {
       "main": [
         [
@@ -3405,17 +3317,6 @@
         [
           {
             "node": "Status - no contact found (stop)",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write Partial No Contact": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
@@ -3540,13 +3441,6 @@
         [
           {
             "node": "Prep Pain Logic",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
