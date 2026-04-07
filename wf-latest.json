@@ -1568,7 +1568,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nreturn [{ json: { cutoff: cutoff.toISOString() } }];"
+        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst formatted = `${cutoff.getUTCFullYear()}-${pad(cutoff.getUTCMonth() + 1)}-${pad(cutoff.getUTCDate())} ${pad(cutoff.getUTCHours())}:${pad(cutoff.getUTCMinutes())}:${pad(cutoff.getUTCSeconds())}+00:00`;\nreturn [{ json: { cutoff: formatted } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1591,7 +1591,7 @@
       "continueOnFail": true,
       "parameters": {
         "method": "GET",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)~and(UpdatedAt,lt,{{ $json.cutoff }})&fields=Id&limit=100",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)~and(UpdatedAt,lt,{{ encodeURIComponent($json.cutoff) }})&fields=Id&limit=100",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
