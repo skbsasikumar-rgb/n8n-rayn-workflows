@@ -757,109 +757,6 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-hia-no",
-              "leftValue": "={{ !['YES', 'VENDOR'].includes(String(($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim()).toUpperCase()) }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -25664,
-        2512
-      ],
-      "id": "f7078f30-7cac-42c8-a166-bfee5e74038f",
-      "name": "IF Not HIA"
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\": \"not HIA relevant\"}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -25424,
-        2752
-      ],
-      "id": "0b4bfac6-f41b-48b7-8c1e-96febf66d921",
-      "name": "Status - not HIA relevant",
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-vendor",
-              "leftValue": "={{ String(($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim()).toUpperCase() }}",
-              "rightValue": "VENDOR",
-              "operator": {
-                "type": "string",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -25424,
-        2512
-      ],
-      "id": "a21368bc-4d9b-4dca-9b85-8e9e2b9e0042",
-      "name": "IF Is Vendor"
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{ json: {\n  compliance_lead: 'CS/DS vendor readiness',\n  hia_relevant: 'VENDOR'\n} }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -24624,
-        2080
-      ],
-      "id": "87afa965-c016-463d-badb-c78d4be869dc",
-      "name": "Set Vendor Fields"
-    },
-    {
-      "parameters": {
         "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 15000);\nconst companyClean = (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim();\nconst hiaGate = String(($('OpenRouter - HIA Gate').item.json.choices?.[0]?.message?.content || $('OpenRouter - HIA Gate').item.json.body?.choices?.[0]?.message?.content || '').trim()).toUpperCase();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\nCurrent healthcare gate: ${hiaGate}\n\nReturn a JSON object with exactly these 5 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they do in Singapore. Examples: GP clinic chain, eldercare social service, AI scribe for clinics, social welfare provider, SME finance consultancy]\",\n  \"hia_batch\": \"[one of: Batch 1 - Sep 2027 / Batch 2 - Sep 2028 / Batch 3 - Mar 2030 / Vendor to HIA clients / NCSS or social service / PDPA or non-HIA / Unknown]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = small clinic or local company. Mid = multi-location or regional. Enterprise = listed or large group]\",\n  \"product_descriptor\": \"[core product or service in max 6 words]\",\n  \"compliance_lead\": \"[one of: Batch 1 CSDS Essentials - Sep 2027 / Batch 2 CSDS Essentials - Sep 2028 / Batch 3 CSDS Essentials - Mar 2030 / CS/DS vendor readiness / NCSS TSS + data protection readiness / PDPA / data protection readiness / Verify compliance path]\"\n}\n\nRules:\n- If healthcare gate is YES, classify as a healthcare provider/operator path.\n- If healthcare gate is VENDOR, classify as a healthcare vendor path.\n- If healthcare gate is NO, still classify the company using the website content.\n- For clear social service, welfare, community care, or NCSS-style organisations, use hia_batch = \"NCSS or social service\".\n- For clear non-healthcare businesses that still handle personal data, use hia_batch = \"PDPA or non-HIA\".\n- For unclear companies, use hia_batch = \"Unknown\" and compliance_lead = \"Verify compliance path\".\n- Output valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
       },
       "type": "n8n-nodes-base.code",
@@ -1079,77 +976,6 @@
       ],
       "id": "f8e0ec97-1d87-46b4-9160-ebebdba9b5c8",
       "name": "IF No Contact"
-    },
-    {
-      "parameters": {
-        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 15000);\nconst companyClean = (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0.1,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany: ${companyClean}\n\nThis company is a VENDOR selling products or services to Singapore healthcare providers subject to HIA 2027.\n\nReturn a JSON object with exactly these 4 keys:\n\n{\n  \"industry_segment\": \"[5 words max - what they sell to healthcare. Examples: AI scribe for clinics, cybersecurity for hospitals, cloud HIMS platform, telehealth SaaS vendor]\",\n  \"company_size\": \"[one of: SME / Mid / Enterprise / Unknown. SME = startup, single product. Mid = regional, multi-product. Enterprise = global, listed]\",\n  \"product_descriptor\": \"[core product or service in max 6 words targeting healthcare clients]\",\n  \"hia_batch\": \"Vendor to HIA clients\"\n}\n\nOutput: valid JSON only. No markdown. No explanation.`\n  }]\n};\nreturn [{ json: { requestBody: body } }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -24384,
-        2080
-      ],
-      "id": "3407d839-0ca4-4e2a-90cb-f79f007a7875",
-      "name": "Prep Vendor Enrichment1"
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://openrouter.ai/api/v1/chat/completions",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "HTTP-Referer",
-              "value": "https://primary-production-a6441.up.railway.app"
-            },
-            {
-              "name": "X-Title",
-              "value": "RAYN Secure Enrichment"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -24144,
-        2080
-      ],
-      "id": "7c2b6652-0757-4e63-b2ab-e23c12cfd00f",
-      "name": "OpenRouter - Vendor Enrichment1",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "kVt6l9PuADkn7yhu",
-          "name": "openrouter"
-        }
-      },
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const response = ($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nlet data;\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {\n  data = {};\n}\nreturn [{ json: {\n  industry_segment: data.industry_segment || '',\n  hia_batch: 'Vendor to HIA clients',\n  company_size: data.company_size || '',\n  product_descriptor: data.product_descriptor || '',\n  compliance_lead: 'CS/DS vendor readiness',\n  hia_relevant: 'VENDOR'\n} }];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -23904,
-        2080
-      ],
-      "id": "d61684f7-796f-4220-81d9-75690f72483a",
-      "name": "Parse Vendor Enrichment1"
     },
     {
       "parameters": {
@@ -1801,34 +1627,6 @@
       }
     },
     {
-      "name": "Status - url unreachable",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "id": "status-url-unreachable-001",
-      "position": [
-        -26624,
-        2272
-      ],
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\": \"url unreachable\"}",
-        "options": {}
-      },
-      "continueOnFail": true
-    },
-    {
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst formatted = `${cutoff.getUTCFullYear()}-${pad(cutoff.getUTCMonth()+1)}-${pad(cutoff.getUTCDate())} ${pad(cutoff.getUTCHours())}:${pad(cutoff.getUTCMinutes())}:${pad(cutoff.getUTCSeconds())}`;\nreturn [{ json: { cutoff: formatted } }];"
@@ -2120,7 +1918,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const d = $json._ctx;\nconst pain = $json;\nconst firstName = d.first_name || 'there';\nconst companyName = d.company_homepage_name || d.company_name_clean || d.company_name || '';\nconst websiteUrl = d.url_validated || d.best_url || '';\nconst rawContent = (d.website_content || '');\nconst cleanLines = rawContent.split('\\n').filter(line => {\n  const l = line.trim();\n  return l.length > 40 && !l.startsWith('![') && !l.startsWith('* [') && !l.startsWith('*   [') && !l.startsWith('- [') && !l.includes('](http') && !l.startsWith('#');\n}).join(' ');\nconst websiteSummary = cleanLines.substring(0, 600) || (d.serper_results || '').substring(0, 600);\nconst techRoles = ['cto','ciso','it director','technical','engineer','developer','architect','infosec','head of it','vp engineering','chief information'];\nconst isTechnical = techRoles.some(t => (d.role || '').toLowerCase().includes(t));\nconst email1cta = isTechnical ? 'Want me to send it across?' : 'Could you forward this to your IT, security, or compliance team?';\nconst messageTrack = String(d.message_track || '').trim();\nconst email2Subject = messageTrack === 'NCSS'\n  ? `Funding support for ${companyName}'s data protection readiness`\n  : messageTrack === 'PDPA_OTHER'\n    ? `Up to 70% co-funded for ${companyName}'s CEM readiness`\n    : `Up to 70% co-funded for ${companyName}'s compliance readiness`;\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6',\n  temperature: 0.4,\n  messages: [{\n    role: 'user',\n    content: `You are a cold email expert. Write 4 personalized outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure. RAYN Secure helps Singapore organisations improve cybersecurity, data protection, and compliance readiness, including HIA/CSDS, NCSS-funded data protection work, CSA CISOaaS support for Cyber Essentials / CEM readiness, and broader personal-data governance.\n\n--- DETAILS\n- First name: ${firstName}\n- Company: ${companyName}\n- Website URL: ${websiteUrl}\n- Message track: ${d.message_track || 'N/A'}\n- Regulatory track: ${d.regulatory_track || 'N/A'}\n- Industry: ${d.industry_segment || 'N/A'}\n- HIA batch: ${d.hia_batch || 'N/A'}\n- Product/service: ${d.product_descriptor || 'N/A'}\n- Role: ${d.role || 'N/A'}\n- Pain point: ${pain.vendor_pain || 'N/A'}\n- Compliance lead: ${d.compliance_lead || 'N/A'}\n- Funding track primary: ${d.funding_track_primary || 'N/A'}\n- Funding track secondary: ${d.funding_track_secondary || 'N/A'}\n- Grant eligibility: ${pain.grant_eligibility || 'N/A'}\n- Classification evidence: ${d.classification_evidence || 'N/A'}\n- Website summary: ${websiteSummary}\n\n# EMAIL SPECIFICATIONS\n\n## Email 1 \u2014 URGENCY HOOK\n- Subject should reflect the current timing, ownership, or funding pressure for this message track\n- 75-100 words\n- Open with urgency/opportunity \u2192 empathy \u2192 proof or funding relief \u2192 low-ask CTA\n\n## Email 2 \u2014 ROLE-SPECIFIC PAIN\n- 60-90 words\n- Role-aware pain \u2192 pressure \u2192 proof/funding \u2192 CTA\n\n## Email 3 \u2014 SOCIAL PROOF OR SECTOR OBSERVATION\n- 70-100 words\n- Use named proof when it fits the track; otherwise use a credible sector observation \u2192 proof \u2192 CTA\n\n## Email 4 \u2014 LOW-FRICTION\n- 40-60 words\n- Direct, yes/no ask\n\n# TRACK-AWARE\n- HIA_PROVIDER: HIA / CSDS controls, audit evidence, renewal timing, internal ownership\n- HIA_VENDOR: healthcare buyer scrutiny, vendor readiness, sales-cycle proof\n- NCSS: beneficiary/client data protection, limited bandwidth, funding support\n- PDPA_OTHER: personal-data governance, ownership, evidence gathering, customer/client trust\n\nNamed proof examples by sector:\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\n- For PDPA_OTHER, do not force healthcare proof if it does not fit; use a sector-specific observation instead\n\n--- RULES\n1. 60-80 words per email body \u2014 count carefully\n2. Match the exact paragraph structure of the examples\n3. Use arrows \u2192 for lists (Email 2 and Email 4)\n4. Email 1 CTA: \"${email1cta}\"\n5. Email 2 subject locked to: \"${email2Subject}\"\n6. Email 4 subject locked to: \"Should I close the loop, ${firstName}?\"\n7. Do NOT use sycophantic openers\n8. Do NOT add adjectives: rapidly, seamlessly, comprehensive, robust\n9. Sign off every email: Best, \u2014 no variation, no titles\n\nOutput format: JSON with exactly 8 keys \u2014 subject_line1, email_body1, subject_line2, email_body2, subject_line3, email_body3, subject_line4, email_body4\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d, _pain: pain } }];"
+        "jsCode": "const d = $json._ctx;\nconst pain = $json;\nconst firstName = d.first_name || 'there';\nconst companyName = d.company_homepage_name || d.company_name_clean || d.company_name || '';\nconst websiteUrl = d.url_validated || d.best_url || '';\nconst rawContent = (d.website_content || '');\nconst cleanLines = rawContent.split('\\n').filter(line => {\n  const l = line.trim();\n  return l.length > 40 && !l.startsWith('![') && !l.startsWith('* [') && !l.startsWith('*   [') && !l.startsWith('- [') && !l.includes('](http') && !l.startsWith('#');\n}).join(' ');\nconst websiteSummary = cleanLines.substring(0, 600) || (d.serper_results || '').substring(0, 600);\nconst techRoles = ['cto','ciso','it director','technical','engineer','developer','architect','infosec','head of it','vp engineering','chief information'];\nconst isTechnical = techRoles.some(t => (d.role || '').toLowerCase().includes(t));\nconst email1cta = isTechnical ? 'Want me to send it across?' : 'Could you forward this to your IT, security, or compliance team?';\nconst messageTrack = String(d.message_track || '').trim();\nconst email2Subject = messageTrack === 'NCSS'\n  ? `Funding support for ${companyName}'s data protection readiness`\n  : messageTrack === 'PDPA_OTHER'\n    ? `Up to 70% co-funded for ${companyName}'s CEM readiness`\n    : `Up to 70% co-funded for ${companyName}'s compliance readiness`;\nconst body = {\n  model: 'anthropic/claude-sonnet-4.6',\n  temperature: 0.4,\n  messages: [{\n    role: 'user',\n    content: `You are a cold email expert. Write 4 personalized outreach emails on behalf of Sasikumar, Account Executive at RAYN Secure. RAYN Secure helps Singapore organisations improve cybersecurity, data protection, and compliance readiness, including HIA/CSDS, NCSS-funded data protection work, CSA CISOaaS support for Cyber Essentials / CEM readiness, and broader personal-data governance.\n\n--- DETAILS\n- First name: ${firstName}\n- Company: ${companyName}\n- Website URL: ${websiteUrl}\n- Message track: ${d.message_track || 'N/A'}\n- Regulatory track: ${d.regulatory_track || 'N/A'}\n- Industry: ${d.industry_segment || 'N/A'}\n- HIA batch: ${d.hia_batch || 'N/A'}\n- Product/service: ${d.product_descriptor || 'N/A'}\n- Role: ${d.role || 'N/A'}\n- Pain point: ${pain.vendor_pain || 'N/A'}\n- Compliance lead: ${d.compliance_lead || 'N/A'}\n- Funding track primary: ${d.funding_track_primary || 'N/A'}\n- Funding track secondary: ${d.funding_track_secondary || 'N/A'}\n- Grant eligibility: ${pain.grant_eligibility || 'N/A'}\n- Classification evidence: ${d.classification_evidence || 'N/A'}\n- Website summary: ${websiteSummary}\n\n# EMAIL SPECIFICATIONS\n\n## Email 1 — URGENCY HOOK\n- Subject should reflect the current timing, ownership, or funding pressure for this message track\n- 75-100 words\n- Open with urgency/opportunity → empathy → proof or funding relief → low-ask CTA\n\n## Email 2 — ROLE-SPECIFIC PAIN\n- 60-90 words\n- Role-aware pain → pressure → proof/funding → CTA\n\n## Email 3 — SOCIAL PROOF OR SECTOR OBSERVATION\n- 70-100 words\n- Use named proof when it fits the track; otherwise use a credible sector observation → proof → CTA\n\n## Email 4 — LOW-FRICTION\n- 40-60 words\n- Direct, yes/no ask\n\n# TRACK-AWARE\n- HIA_PROVIDER: HIA / CSDS controls, audit evidence, renewal timing, internal ownership\n- HIA_VENDOR: healthcare buyer scrutiny, vendor readiness, sales-cycle proof\n- NCSS: beneficiary/client data protection, limited bandwidth, funding support\n- PDPA_OTHER: personal-data governance, ownership, evidence gathering, customer/client trust\n\nNamed proof examples by sector:\n- Eldercare/social service: Sree Narayana Mission, Society for the Aged Sick, Caring Fleet, CFS Centre for Seniors\n- Clinic/hospital/AI vendor: Ren Ci Hospital, Tsao Foundation\n- For PDPA_OTHER, do not force healthcare proof if it does not fit; use a sector-specific observation instead\n\n--- RULES\n1. 60-80 words per email body — count carefully\n2. Match the exact paragraph structure of the examples\n3. Use arrows → for lists (Email 2 and Email 4)\n4. Email 1 CTA: \"${email1cta}\"\n5. Email 2 subject locked to: \"${email2Subject}\"\n6. Email 4 subject locked to: \"Should I close the loop, ${firstName}?\"\n7. Do NOT use sycophantic openers\n8. Do NOT add adjectives: rapidly, seamlessly, comprehensive, robust\n9. Sign off every email: Best, — no variation, no titles\n\nOutput format: JSON with exactly 8 keys — subject_line1, email_body1, subject_line2, email_body2, subject_line3, email_body3, subject_line4, email_body4\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _ctx: d, _pain: pain } }];"
       }
     },
     {
@@ -2285,7 +2083,7 @@
         3432
       ],
       "parameters": {
-        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 8000);\nconst companyName = ((($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')) || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany name: ${companyName}\n\nThis is a Singapore organisation that may use a branch or location suffix and may belong to a parent brand or group.\nReturn a JSON object with exactly these two keys:\n{\"company_homepage_name\":\"\",\"parent_company\":\"\"}\n\nDefinitions:\n- company_homepage_name = the clean operating brand or organisation name shown on the site. Remove branch, estate, or location suffixes like Bishan, Bedok, Hougang, Bukit Merah, etc. Keep the operating brand shown on the site.\n- parent_company = a distinct higher-level parent/group/holding company only if clearly different from company_homepage_name. If no distinct parent exists, return company_homepage_name again.\n\nRules:\n- Works for healthcare, social service, SaaS, and other private organisations\n- Prefer the Singapore operating brand shown on the official site\n- Do not return a specific branch/location name if a cleaner homepage brand is evident\n- Do not invent a parent company\n- If the company itself is the top-level brand, set parent_company equal to company_homepage_name\n\nExamples:\n- HMI OneCare Clinic Bishan on onecaremedical.com.sg \u2192 {\"company_homepage_name\":\"HMI OneCare Clinic\",\"parent_company\":\"HMI OneCare Clinic\"}\n- 1 Bishan Medical Clinic on 1medical.sg \u2192 {\"company_homepage_name\":\"1 Medical\",\"parent_company\":\"1 Medical\"}\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg \u2192 {\"company_homepage_name\":\"YSL Clinic & Surgery\",\"parent_company\":\"Qualitas Health\"}\n- Acme Learning Centre Bishan \u2192 {\"company_homepage_name\":\"Acme Learning Centre\",\"parent_company\":\"Acme Learning Centre\"}\n\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _enrichment: $json } }];"
+        "jsCode": "const websiteContent = ($('Crawl4AI - Scrape').item.json.website_content || '').substring(0, 8000);\nconst companyName = ((($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')) || '').trim();\nconst body = {\n  model: 'minimax/minimax-m2.7',\n  temperature: 0,\n  messages: [{\n    role: 'user',\n    content: `Website content: ${websiteContent}\nCompany name: ${companyName}\n\nThis is a Singapore organisation that may use a branch or location suffix and may belong to a parent brand or group.\nReturn a JSON object with exactly these two keys:\n{\"company_homepage_name\":\"\",\"parent_company\":\"\"}\n\nDefinitions:\n- company_homepage_name = the clean operating brand or organisation name shown on the site. Remove branch, estate, or location suffixes like Bishan, Bedok, Hougang, Bukit Merah, etc. Keep the operating brand shown on the site.\n- parent_company = a distinct higher-level parent/group/holding company only if clearly different from company_homepage_name. If no distinct parent exists, return company_homepage_name again.\n\nRules:\n- Works for healthcare, social service, SaaS, and other private organisations\n- Prefer the Singapore operating brand shown on the official site\n- Do not return a specific branch/location name if a cleaner homepage brand is evident\n- Do not invent a parent company\n- If the company itself is the top-level brand, set parent_company equal to company_homepage_name\n\nExamples:\n- HMI OneCare Clinic Bishan on onecaremedical.com.sg → {\"company_homepage_name\":\"HMI OneCare Clinic\",\"parent_company\":\"HMI OneCare Clinic\"}\n- 1 Bishan Medical Clinic on 1medical.sg → {\"company_homepage_name\":\"1 Medical\",\"parent_company\":\"1 Medical\"}\n- YSL Bedok Clinic & Surgery on qualitashealth.com.sg → {\"company_homepage_name\":\"YSL Clinic & Surgery\",\"parent_company\":\"Qualitas Health\"}\n- Acme Learning Centre Bishan → {\"company_homepage_name\":\"Acme Learning Centre\",\"parent_company\":\"Acme Learning Centre\"}\n\nOutput: valid JSON only. No markdown.`\n  }]\n};\nreturn [{ json: { requestBody: body, _enrichment: $json } }];"
       }
     },
     {
@@ -2707,8 +2505,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "SearXNG - Search": {
@@ -2842,54 +2639,7 @@
       "main": [
         [
           {
-            "node": "IF Not HIA",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Not HIA": {
-      "main": [
-        [
-          {
             "node": "Prep Enrichment",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "IF Is Vendor",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Is Vendor": {
-      "main": [
-        [
-          {
-            "node": "Set Vendor Fields",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prep Enrichment",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Set Vendor Fields": {
-      "main": [
-        [
-          {
-            "node": "Prep Vendor Enrichment1",
             "type": "main",
             "index": 0
           }
@@ -2981,39 +2731,6 @@
         [
           {
             "node": "Prep Partial Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prep Vendor Enrichment1": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - Vendor Enrichment1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenRouter - Vendor Enrichment1": {
-      "main": [
-        [
-          {
-            "node": "Parse Vendor Enrichment1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Vendor Enrichment1": {
-      "main": [
-        [
-          {
-            "node": "Prep Parent Company",
             "type": "main",
             "index": 0
           }
@@ -3350,7 +3067,6 @@
     },
     "IF No Pending Leads": {
       "main": [
-        [],
         [
           {
             "node": "Prep Bulk Processing",
@@ -3362,7 +3078,6 @@
     },
     "Loop Over Items": {
       "main": [
-        [],
         [
           {
             "node": "OpenRouter - Clean Name",
@@ -3405,17 +3120,6 @@
         ]
       ]
     },
-    "Status - url unreachable": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Status - url rejected": {
       "main": [
         [
@@ -3428,17 +3132,6 @@
       ]
     },
     "Status - scrape failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - not HIA relevant": {
       "main": [
         [
           {
