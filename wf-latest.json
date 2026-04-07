@@ -79,67 +79,6 @@
     },
     {
       "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 1
-          },
-          "conditions": [
-            {
-              "id": "cond-clean-1",
-              "leftValue": "={{ ($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim() }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "empty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -29264,
-        2512
-      ],
-      "id": "95be02d4-f40c-4abb-a6b5-7048bab1efb2",
-      "name": "IF Clean Failed"
-    },
-    {
-      "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\": \"clean failed\"}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -29024,
-        2736
-      ],
-      "id": "f419fa01-a60f-47bc-9c75-588b772f9e65",
-      "name": "Status - clean failed",
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
         "method": "GET",
         "url": "={{ 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent((($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim() + ' Singapore official website') }}",
         "options": {
@@ -2497,17 +2436,6 @@
         ]
       ]
     },
-    "IF Clean Failed": {
-      "main": [
-        [
-          {
-            "node": "Status - clean failed",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "SearXNG - Search": {
       "main": [
         [
@@ -3067,7 +2995,6 @@
     },
     "IF No Pending Leads": {
       "main": [
-        [],
         [
           {
             "node": "Prep Bulk Processing",
@@ -3082,17 +3009,6 @@
         [
           {
             "node": "OpenRouter - Clean Name",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Status - clean failed": {
-      "main": [
-        [
-          {
-            "node": "Loop Over Items",
             "type": "main",
             "index": 0
           }
