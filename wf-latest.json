@@ -1568,7 +1568,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const cutoff = new Date(Date.now() - 10 * 60 * 1000);\nconst pad = n => String(n).padStart(2, '0');\nconst formatted = `${cutoff.getUTCFullYear()}-${pad(cutoff.getUTCMonth() + 1)}-${pad(cutoff.getUTCDate())} ${pad(cutoff.getUTCHours())}:${pad(cutoff.getUTCMinutes())}:${pad(cutoff.getUTCSeconds())}+00:00`;\nreturn [{ json: { cutoff: formatted } }];"
+        "jsCode": "return [{ json: { cutoff_ms: Date.now() - 10 * 60 * 1000 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1591,7 +1591,7 @@
       "continueOnFail": true,
       "parameters": {
         "method": "GET",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)~and(UpdatedAt,lt,{{ encodeURIComponent($json.cutoff) }})&fields=Id&limit=100",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)&fields=Id,UpdatedAt&limit=100",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -1615,7 +1615,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const list = ($json.list || []);\nif (list.length === 0) {\n  return [{ json: { _skip: true, cleanup_count: 0 } }];\n}\nconst payload = list.map(r => ({ Id: r.Id, status: 'pending' }));\nreturn [{ json: { _skip: false, cleanup_count: list.length, payload } }];"
+        "jsCode": "const list = ($json.list || []);\nconst cutoffMs = Number($('Cleanup Stuck Processing').first().json.cutoff_ms || 0);\nfunction parseUpdatedAt(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return NaN;\n  const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');\n  const ts = Date.parse(iso);\n  return Number.isNaN(ts) ? NaN : ts;\n}\nconst stale = list.filter(row => {\n  const ts = parseUpdatedAt(row.UpdatedAt);\n  return Number.isFinite(ts) && ts < cutoffMs;\n});\nif (stale.length === 0) {\n  return [{ json: { _skip: true, cleanup_count: 0 } }];\n}\nconst payload = stale.map(r => ({ Id: r.Id, status: 'pending' }));\nreturn [{ json: { _skip: false, cleanup_count: stale.length, payload } }];"
       }
     },
     {
