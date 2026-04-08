@@ -3011,6 +3011,7 @@
     },
     "Loop Over Items": {
       "main": [
+        [],
         [
           {
             "node": "OpenRouter - Clean Name",
