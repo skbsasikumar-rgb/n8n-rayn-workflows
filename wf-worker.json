@@ -1988,81 +1988,6 @@
       "continueOnFail": true
     },
     {
-      "parameters": {
-        "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "where",
-              "value": "={{ (() => { const raw = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || '')).trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && /^https?:\\/\\//i.test(raw) ? raw : ''; return url ? '(url_validated,eq,' + url + ')~and(Id,neq,' + $('Loop Over Items').item.json.Id + ')' : '(Id,eq,-1)'; })() }}"
-            },
-            {
-              "name": "fields",
-              "value": "Id"
-            },
-            {
-              "name": "limit",
-              "value": "1"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 10000
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -26960,
-        2512
-      ],
-      "id": "check-existing-url-live-001",
-      "name": "Check Existing URL Live",
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-live-url-dup-1",
-              "leftValue": "={{ ($json.list || []).length }}",
-              "rightValue": 0,
-              "operator": {
-                "type": "number",
-                "operation": "gt"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -26720,
-        2512
-      ],
-      "id": "if-live-url-duplicate-001",
-      "name": "IF Live URL Duplicate"
-    },
-    {
       "id": "prep-classification-001",
       "name": "Prep Classification",
       "type": "n8n-nodes-base.code",
@@ -2167,6 +2092,132 @@
         },
         "options": {}
       }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const raw = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || '')).trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return { best_url: url, url_validated: url }; })()) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -26980,
+        2512
+      ],
+      "id": "claim-candidate-url-001",
+      "name": "Claim Candidate URL",
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "name": "List URL Claims",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "list-url-claims-001",
+      "position": [
+        -26760,
+        2512
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "where",
+              "value": "={{ (() => { const raw = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || '')).trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return url ? '(url_validated,eq,' + url + ')' : '(Id,eq,-1)'; })() }}"
+            },
+            {
+              "name": "fields",
+              "value": "Id,url_validated,UpdatedAt,status"
+            },
+            {
+              "name": "limit",
+              "value": "20"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst currentId = Number($('Loop Over Items').item.json.Id || 0);\nconst currentUrl = normalizeWorkflowUrl($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || '');\nconst list = Array.isArray($json.list) ? $json.list : [];\nconst matches = list\n  .filter((row) => normalizeWorkflowUrl(row.url_validated) === currentUrl)\n  .sort((a, b) => Number(a.Id || 0) - Number(b.Id || 0));\nconst ownerId = matches.length ? Number(matches[0].Id || 0) : currentId;\nreturn {\n  json: {\n    current_url: currentUrl,\n    owner_id: ownerId,\n    claim_count: matches.length || (currentUrl ? 1 : 0),\n    winner: !!currentUrl && ownerId === currentId,\n  },\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -26540,
+        2512
+      ],
+      "id": "resolve-url-claim-001",
+      "name": "Resolve URL Claim"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-url-claim-winner-1",
+              "leftValue": "={{ $json.winner }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -26300,
+        2512
+      ],
+      "id": "if-url-claim-winner-001",
+      "name": "IF URL Claim Winner"
     }
   ],
   "pinData": {},
@@ -2262,7 +2313,7 @@
         ],
         [
           {
-            "node": "Check Existing URL Live",
+            "node": "Claim Candidate URL",
             "type": "main",
             "index": 0
           }
@@ -2969,35 +3020,6 @@
         ]
       ]
     },
-    "Check Existing URL Live": {
-      "main": [
-        [
-          {
-            "node": "IF Live URL Duplicate",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Live URL Duplicate": {
-      "main": [
-        [
-          {
-            "node": "Status - url duplicate",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Crawl4AI - Scrape",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Prep Classification": {
       "main": [
         [
@@ -3093,6 +3115,57 @@
         [
           {
             "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Candidate URL": {
+      "main": [
+        [
+          {
+            "node": "List URL Claims",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List URL Claims": {
+      "main": [
+        [
+          {
+            "node": "Resolve URL Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve URL Claim": {
+      "main": [
+        [
+          {
+            "node": "IF URL Claim Winner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL Claim Winner": {
+      "main": [
+        [
+          {
+            "node": "Crawl4AI - Scrape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - url duplicate",
             "type": "main",
             "index": 0
           }
