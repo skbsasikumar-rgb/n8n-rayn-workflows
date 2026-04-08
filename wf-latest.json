@@ -931,7 +931,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return `${url.protocol}//${url.hostname}/`;\n  } catch {\n    return raw;\n  }\n}\n\nfunction normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nconst GENERIC_TOKENS = new Set(['and','the','pte','ltd','limited','private','singapore','sg','health','healthcare','care','centre','center']);\nconst LOCATION_TOKENS = new Set(['bishan','aljunied','toa','payoh','bedok','hougang','yishun','woodlands','serangoon','tampines','jurong','bukit','merah','ang','mo','kio','sin','ming','novena','geylang','katong','marine','parade','punggol','sengkang','choa','chu','kang','pasir','ris','queenstown','outram','orchard','clementi','jalan','besar']);\nconst SOFT_GENERIC_TOKENS = new Set(['medical','clinic','clinics','family','doctor','doctors']);\n\nfunction tokenize(value) {\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter(token => token.length > 1 || /^[0-9]$/.test(token))\n    .filter(token => !GENERIC_TOKENS.has(token));\n}\n\nfunction extractDomain(value) {\n  const homepage = toHomepageUrl(value);\n  if (!homepage) return '';\n  return homepage.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n}\n\nfunction weightedOverlap(needleTokens, haystackTokens) {\n  const haystack = new Set(haystackTokens);\n  let score = 0;\n  for (const token of needleTokens) {\n    if (!haystack.has(token)) continue;\n    if (/^[0-9]$/.test(token)) score += 5;\n    else if (LOCATION_TOKENS.has(token)) score += 0;\n    else if (SOFT_GENERIC_TOKENS.has(token)) score += 1;\n    else score += 4;\n  }\n  return score;\n}\n\nfunction strongBrandTokens(value) {\n  return tokenize(value).filter(token => !SOFT_GENERIC_TOKENS.has(token) && !LOCATION_TOKENS.has(token));\n}\n\nfunction scoreResults(results, companyName) {\n  const blocked = ['facebook.com','instagram.com','linkedin.com','recordowl.com','healthhub.sg','moh.gov.sg','findhealthclinics.com','wikipedia.org'];\n  const companyTokens = tokenize(companyName);\n  const brandTokens = strongBrandTokens(companyName);\n  const companyNorm = normalizeText(companyName);\n  return (Array.isArray(results) ? results : []).map((r, index) => {\n    const link = String(r.url || r.link || '').trim();\n    if (!link) return null;\n    const homepage = toHomepageUrl(link);\n    const domain = extractDomain(homepage);\n    if (!domain || blocked.some(host => domain === host || domain.endsWith('.' + host))) return null;\n    const title = normalizeText(r.title || '');\n    const content = normalizeText(r.content || r.snippet || '');\n    const haystack = `${title} ${content}`.trim();\n    const domainTokens = tokenize(domain.replace(/\\.(com|org|net)(\\.sg)?$/i, '').replace(/\\.sg$/i, '').replace(/[-.]/g, ' '));\n    const titleTokens = tokenize(title);\n    const haystackTokens = tokenize(haystack);\n    const brandOverlap = weightedOverlap(brandTokens, [...domainTokens, ...titleTokens, ...haystackTokens]);\n    const totalOverlap = weightedOverlap(companyTokens, [...domainTokens, ...titleTokens, ...haystackTokens]);\n    let score = brandOverlap * 3 + totalOverlap;\n    if (companyNorm && title.includes(companyNorm)) score += 8;\n    else if (companyNorm && haystack.includes(companyNorm)) score += 4;\n    if (/\\.(com\\.sg|org\\.sg|sg)$/i.test(domain)) score += 2;\n    if (homepage === link || /^https?:\\/\\/[^/]+\\/?$/i.test(link)) score += 1;\n    const strong = brandTokens.length > 0 ? brandOverlap >= 4 : totalOverlap >= 5;\n    return { homepage, score, index, strong };\n  }).filter(Boolean).sort((a, b) => b.score - a.score || a.index - b.index);\n}\n\nconst results = $('SearXNG - Search').item.json.results || [];\nconst companyName = $('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '';\nconst scoredResults = scoreResults(results, companyName);\nconst topCandidate = scoredResults[0] || null;\n\nconst picked = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nconst lower = picked.toLowerCase();\n\nif (lower === 'duplicate' || lower === 'none') {\n  if (lower === 'none' && topCandidate && topCandidate.strong) {\n    // ignore weak LLM none if deterministic candidate is clearly better\n  } else {\n    return [{ json: { best_url: lower } }];\n  }\n}\n\nconst tokens = picked.split(/\\s+/).map(t => t.trim()).filter(Boolean);\nconst stripEdge = (s) => String(s || '').replace(/^[`'\"<({\\[]+/, '').replace(/[`'\">)}\\],.]+$/, '');\n\nlet normalized = '';\nconst urlToken = tokens.find(t => /^https?:\\/\\//i.test(stripEdge(t)));\nif (urlToken) {\n  normalized = stripEdge(urlToken);\n} else {\n  const domainToken = tokens.find(t => {\n    const v = stripEdge(t).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '');\n    return v.includes('.') && /^[a-z0-9.-]+(?:\\/[^\\s]*)?$/i.test(v);\n  });\n  if (domainToken) {\n    normalized = 'https://' + stripEdge(domainToken).replace(/^https?:\\/\\//i, '');\n  }\n}\n\nconst normalizedHomepage = normalized ? toHomepageUrl(normalized) : '';\nconst normalizedDomain = normalizedHomepage ? extractDomain(normalizedHomepage) : '';\nconst chosenScore = normalizedDomain\n  ? (scoredResults.find(candidate => extractDomain(candidate.homepage) === normalizedDomain) || null)\n  : null;\n\nif (!normalizedHomepage || !chosenScore || !chosenScore.strong) {\n  normalized = topCandidate && topCandidate.strong ? topCandidate.homepage : '';\n} else {\n  normalized = normalizedHomepage;\n}\n\nif (!normalized) {\n  return [{ json: { best_url: 'none' } }];\n}\n\nconst homepageUrl = toHomepageUrl(normalized);\nconst allUrls = $('Prep URL Data').item.json.all_urls || [];\nconst pickedHomepage = extractDomain(homepageUrl);\n\nconst isDuplicate = allUrls.some(function(u) {\n  return extractDomain(u) === pickedHomepage;\n});\n\nif (isDuplicate) {\n  return [{ json: { best_url: 'duplicate' } }];\n}\n\nreturn [{ json: { best_url: homepageUrl } }];"
+        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return `${url.protocol}//${url.hostname}/`;\n  } catch {\n    return raw;\n  }\n}\n\nfunction normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nconst GENERIC_TOKENS = new Set(['and','the','pte','ltd','limited','private','singapore','sg','health','healthcare','care','centre','center']);\nconst LOCATION_TOKENS = new Set(['bishan','aljunied','toa','payoh','bedok','hougang','yishun','woodlands','serangoon','tampines','jurong','bukit','merah','ang','mo','kio','sin','ming','novena','geylang','katong','marine','parade','punggol','sengkang','choa','chu','kang','pasir','ris','queenstown','outram','orchard','clementi','jalan','besar']);\nconst SOFT_GENERIC_TOKENS = new Set(['medical','clinic','clinics','family','doctor','doctors']);\nconst BLOCKED_HOSTS = ['facebook.com','instagram.com','linkedin.com','recordowl.com','healthhub.sg','moh.gov.sg','findhealthclinics.com','wikipedia.org'];\n\nfunction tokenize(value) {\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter(token => token.length > 1 || /^[0-9]$/.test(token))\n    .filter(token => !GENERIC_TOKENS.has(token));\n}\n\nfunction extractDomain(value) {\n  const homepage = toHomepageUrl(value);\n  if (!homepage) return '';\n  return homepage.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n}\n\nfunction weightedOverlap(needleTokens, haystackTokens) {\n  const haystack = new Set(haystackTokens);\n  let score = 0;\n  for (const token of needleTokens) {\n    if (!haystack.has(token)) continue;\n    if (/^[0-9]$/.test(token)) score += 5;\n    else if (LOCATION_TOKENS.has(token)) score += 0;\n    else if (SOFT_GENERIC_TOKENS.has(token)) score += 1;\n    else score += 4;\n  }\n  return score;\n}\n\nfunction strongBrandTokens(value) {\n  return tokenize(value).filter(token => !SOFT_GENERIC_TOKENS.has(token) && !LOCATION_TOKENS.has(token));\n}\n\nfunction scoreResults(results, companyName) {\n  const companyTokens = tokenize(companyName);\n  const brandTokens = strongBrandTokens(companyName);\n  const companyNorm = normalizeText(companyName);\n  return (Array.isArray(results) ? results : []).map((r, index) => {\n    const link = String(r.url || r.link || '').trim();\n    if (!link) return null;\n    const homepage = toHomepageUrl(link);\n    const domain = extractDomain(homepage);\n    if (!domain || BLOCKED_HOSTS.some(host => domain === host || domain.endsWith('.' + host))) return null;\n    const title = normalizeText(r.title || '');\n    const content = normalizeText(r.content || r.snippet || '');\n    const haystack = `${title} ${content}`.trim();\n    const domainTokens = tokenize(domain.replace(/\\.(com|org|net)(\\.sg)?$/i, '').replace(/\\.sg$/i, '').replace(/[-.]/g, ' '));\n    const titleTokens = tokenize(title);\n    const haystackTokens = tokenize(haystack);\n    const brandOverlap = weightedOverlap(brandTokens, [...domainTokens, ...titleTokens, ...haystackTokens]);\n    const totalOverlap = weightedOverlap(companyTokens, [...domainTokens, ...titleTokens, ...haystackTokens]);\n    let score = brandOverlap * 3 + totalOverlap;\n    if (companyNorm && title.includes(companyNorm)) score += 8;\n    else if (companyNorm && haystack.includes(companyNorm)) score += 4;\n    if (/\\.(com\\.sg|org\\.sg|sg)$/i.test(domain)) score += 2;\n    if (homepage === link || /^https?:\\/\\/[^/]+\\/?$/i.test(link)) score += 1;\n    const strong = brandTokens.length > 0 ? brandOverlap >= 4 : totalOverlap >= 2;\n    return { homepage, score, index, strong };\n  }).filter(Boolean).sort((a, b) => b.score - a.score || a.index - b.index);\n}\n\nconst results = $('SearXNG - Search').item.json.results || [];\nconst companyName = $('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '';\nconst scoredResults = scoreResults(results, companyName);\nconst topCandidate = scoredResults[0] || null;\n\nconst picked = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nconst lower = picked.toLowerCase();\n\nif (lower === 'duplicate' || lower === 'none') {\n  if (lower === 'none' && topCandidate && topCandidate.strong) {\n    // ignore weak LLM none if deterministic candidate is clearly better\n  } else {\n    return [{ json: { best_url: lower } }];\n  }\n}\n\nconst tokens = picked.split(/\\s+/).map(t => t.trim()).filter(Boolean);\nconst stripEdge = (s) => String(s || '').replace(/^[`'\"<({\\[]+/, '').replace(/[`'\">)}\\],.]+$/, '');\n\nlet normalized = '';\nconst urlToken = tokens.find(t => /^https?:\\/\\//i.test(stripEdge(t)));\nif (urlToken) {\n  normalized = stripEdge(urlToken);\n} else {\n  const domainToken = tokens.find(t => {\n    const v = stripEdge(t).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '');\n    return v.includes('.') && /^[a-z0-9.-]+(?:\\/[^\\s]*)?$/i.test(v);\n  });\n  if (domainToken) {\n    normalized = 'https://' + stripEdge(domainToken).replace(/^https?:\\/\\//i, '');\n  }\n}\n\nconst normalizedHomepage = normalized ? toHomepageUrl(normalized) : '';\nconst normalizedDomain = normalizedHomepage ? extractDomain(normalizedHomepage) : '';\nconst chosenScore = normalizedDomain\n  ? (scoredResults.find(candidate => extractDomain(candidate.homepage) === normalizedDomain) || null)\n  : null;\nconst llmPickedAllowed = normalizedDomain && !BLOCKED_HOSTS.some(host => normalizedDomain === host || normalizedDomain.endsWith('.' + host));\nconst llmPickedGoodEnough = chosenScore ? (chosenScore.strong || chosenScore.score >= 2) : llmPickedAllowed;\n\nif (!normalizedHomepage) {\n  normalized = topCandidate && topCandidate.strong ? topCandidate.homepage : '';\n} else if (llmPickedGoodEnough) {\n  normalized = normalizedHomepage;\n} else if (topCandidate && topCandidate.strong) {\n  normalized = topCandidate.homepage;\n} else if (llmPickedAllowed) {\n  normalized = normalizedHomepage;\n} else {\n  normalized = '';\n}\n\nif (!normalized) {\n  return [{ json: { best_url: 'none' } }];\n}\n\nconst homepageUrl = toHomepageUrl(normalized);\nconst allUrls = $('Prep URL Data').item.json.all_urls || [];\nconst pickedHomepage = extractDomain(homepageUrl);\n\nconst isDuplicate = allUrls.some(function(u) {\n  return extractDomain(u) === pickedHomepage;\n});\n\nif (isDuplicate) {\n  return [{ json: { best_url: 'duplicate' } }];\n}\n\nreturn [{ json: { best_url: homepageUrl } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1751,12 +1751,11 @@
     },
     {
       "parameters": {
-        "language": "javaScript",
-        "mode": "runOnceForAllItems",
-        "jsCode": "return $input.all().map((item, index) => ({\n  json: item.json,\n  pairedItem: { item: index }\n}));"
+        "batchSize": 1,
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
       "position": [
         -29444,
         2512
@@ -3450,35 +3449,113 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Status - url duplicate": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - no url found": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - url rejected": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - scrape failed": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - no contact found (stop)": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - enrichment failed": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Write Final": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Status - serper failed": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Write Partial No Contact": {
-      "main": []
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
