@@ -36,7 +36,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { cutoff_ms: Date.now() - 45 * 60 * 1000, max_in_flight: 50 } }];"
+        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 15 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 50 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -49,7 +49,7 @@
     },
     {
       "id": "get-stuck-leads-001",
-      "name": "GET Stuck Leads",
+      "name": "GET Processing Leads",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -59,7 +59,7 @@
       "continueOnFail": true,
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)&fields=Id,UpdatedAt&limit=5000",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)&fields=Id,UpdatedAt,status&limit=1000",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -74,7 +74,7 @@
     },
     {
       "id": "build-bulk-reset-001",
-      "name": "Build Bulk Reset",
+      "name": "Build Processing Reset",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -83,12 +83,12 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const list = ($json.list || []);\nconst cutoffMs = Number($('Cleanup Stuck Processing').first().json.cutoff_ms || 0);\nfunction parseUpdatedAt(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return NaN;\n  const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');\n  const ts = Date.parse(iso);\n  return Number.isNaN(ts) ? NaN : ts;\n}\nconst stale = list.filter(row => {\n  const ts = parseUpdatedAt(row.UpdatedAt);\n  return Number.isFinite(ts) && ts < cutoffMs;\n});\nif (stale.length === 0) {\n  return [{ json: { _skip: true, cleanup_count: 0 } }];\n}\nconst payload = stale.map(r => ({ Id: r.Id, status: 'pending' }));\nreturn [{ json: { _skip: false, cleanup_count: stale.length, payload } }];"
+        "jsCode": "const list = ($json.list || []);\nconst cutoffMs = Number($('Cleanup Stuck Processing').first().json.processing_cutoff_ms || 0);\nfunction parseUpdatedAt(value) { const raw = String(value || '').trim(); if (!raw) return NaN; const iso = raw.includes('T') ? raw : raw.replace(' ', 'T'); const ts = Date.parse(iso); return Number.isNaN(ts) ? NaN : ts; }\nconst stale = list.filter(row => { const ts = parseUpdatedAt(row.UpdatedAt); return Number.isFinite(ts) && ts < cutoffMs; });\nif (stale.length === 0) return [{ json: { _skip: true, cleanup_count: 0 } }];\nreturn [{ json: { _skip: false, cleanup_count: stale.length, payload: stale.map(r => ({ Id: r.Id, status: 'pending' })) } }];"
       }
     },
     {
       "id": "if-has-stuck-001",
-      "name": "IF Has Stuck",
+      "name": "IF Has Stuck Processing",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
       "position": [
@@ -119,7 +119,7 @@
     },
     {
       "id": "patch-bulk-reset-001",
-      "name": "PATCH Bulk Reset",
+      "name": "PATCH Processing Reset",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -227,7 +227,7 @@
         2352
       ],
       "parameters": {
-        "jsCode": "const items = $input.all();\nconst payload = items.map(i => ({ Id: i.json.Id, status: 'processing' }));\nreturn [{ json: { payload } }];"
+        "jsCode": "const rows = $input.all().map(item => item.json).filter(row => row && row.Id);\nreturn [{ json: { payload: rows.map(r => ({ Id: r.Id, status: 'queued' })) } }];"
       }
     },
     {
@@ -275,7 +275,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)&fields=Id&limit=1000",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=((status,eq,queued)~or(status,eq,processing))&fields=Id,status&limit=1000",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -440,6 +440,104 @@
         "options": {},
         "jsonBody": "={{ JSON.stringify($json.payload) }}"
       }
+    },
+    {
+      "id": "get-queued-leads-001",
+      "name": "GET Queued Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -30084,
+        2672
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,queued)&fields=Id,UpdatedAt,status&limit=1000",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "build-queued-reset-001",
+      "name": "Build Queued Reset",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -29844,
+        2672
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const list = ($json.list || []);\nconst cutoffMs = Number($('Cleanup Stuck Processing').first().json.queued_cutoff_ms || 0);\nfunction parseUpdatedAt(value) { const raw = String(value || '').trim(); if (!raw) return NaN; const iso = raw.includes('T') ? raw : raw.replace(' ', 'T'); const ts = Date.parse(iso); return Number.isNaN(ts) ? NaN : ts; }\nconst stale = list.filter(row => { const ts = parseUpdatedAt(row.UpdatedAt); return Number.isFinite(ts) && ts < cutoffMs; });\nif (stale.length === 0) return [{ json: { _skip: true, cleanup_count: 0 } }];\nreturn [{ json: { _skip: false, cleanup_count: stale.length, payload: stale.map(r => ({ Id: r.Id, status: 'pending' })) } }];"
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-nopending-1",
+              "leftValue": "={{ $json._skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -29604,
+        2672
+      ],
+      "id": "if-has-stuck-queued-001",
+      "name": "IF Has Stuck Queued"
+    },
+    {
+      "id": "patch-queued-reset-001",
+      "name": "PATCH Queued Reset",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29364,
+        2752
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/bulk",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {}
+      }
     }
   ],
   "pinData": {},
@@ -470,58 +568,7 @@
       "main": [
         [
           {
-            "node": "GET Stuck Leads",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "GET Stuck Leads": {
-      "main": [
-        [
-          {
-            "node": "Build Bulk Reset",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build Bulk Reset": {
-      "main": [
-        [
-          {
-            "node": "IF Has Stuck",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Has Stuck": {
-      "main": [
-        [
-          {
-            "node": "Get In Flight",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "PATCH Bulk Reset",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PATCH Bulk Reset": {
-      "main": [
-        [
-          {
-            "node": "Get In Flight",
+            "node": "GET Processing Leads",
             "type": "main",
             "index": 0
           }
@@ -666,6 +713,108 @@
     "PATCH Dispatch Failures": {
       "main": [
         []
+      ]
+    },
+    "GET Processing Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Processing Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Processing Reset": {
+      "main": [
+        [
+          {
+            "node": "IF Has Stuck Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Stuck Processing": {
+      "main": [
+        [
+          {
+            "node": "GET Queued Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PATCH Processing Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH Processing Reset": {
+      "main": [
+        [
+          {
+            "node": "GET Queued Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Queued Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Queued Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Queued Reset": {
+      "main": [
+        [
+          {
+            "node": "IF Has Stuck Queued",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Has Stuck Queued": {
+      "main": [
+        [
+          {
+            "node": "Get In Flight",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PATCH Queued Reset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PATCH Queued Reset": {
+      "main": [
+        [
+          {
+            "node": "Get In Flight",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     }
   },

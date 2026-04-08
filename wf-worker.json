@@ -2218,6 +2218,39 @@
       ],
       "id": "if-url-claim-winner-001",
       "name": "IF URL Claim Winner"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"status\": \"processing\"}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29900,
+        2512
+      ],
+      "id": "mark-row-processing-001",
+      "name": "Mark Row Processing",
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 500
     }
   ],
   "pinData": {},
@@ -2699,7 +2732,7 @@
       "main": [
         [
           {
-            "node": "OpenRouter - Clean Name",
+            "node": "Mark Row Processing",
             "type": "main",
             "index": 0
           }
@@ -3166,6 +3199,17 @@
         [
           {
             "node": "Status - url duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Row Processing": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter - Clean Name",
             "type": "main",
             "index": 0
           }
