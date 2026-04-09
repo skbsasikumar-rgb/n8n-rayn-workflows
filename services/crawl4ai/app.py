@@ -126,6 +126,17 @@ CONTACT_KEYWORDS = (
     "services",
 )
 
+COMMON_FOLLOW_PATHS = (
+    "/about",
+    "/about-us",
+    "/contact",
+    "/contact-us",
+    "/team",
+    "/leadership",
+    "/our-story",
+    "/who-we-are",
+)
+
 SKIP_LINK_PREFIXES = ("mailto:", "tel:", "javascript:", "#")
 
 
@@ -393,7 +404,19 @@ def pick_follow_links(base_url: str, links: list[dict[str, str]], limit: int = 3
         scored.append((score, href))
 
     scored.sort(key=lambda item: (-item[0], item[1]))
-    return [href for _, href in scored[:limit]]
+    selected = [href for _, href in scored[:limit]]
+
+    if len(selected) < limit:
+        for path in COMMON_FOLLOW_PATHS:
+            href = make_absolute_url(base_url, path)
+            if not href or href in seen or href.rstrip("/") == base_url.rstrip("/"):
+                continue
+            selected.append(href)
+            seen.add(href)
+            if len(selected) >= limit:
+                break
+
+    return selected[:limit]
 
 
 def render_page_section(page_data: dict[str, Any], include_blocks: int) -> str:
