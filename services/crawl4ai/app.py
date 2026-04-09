@@ -346,11 +346,12 @@ async def auto_scroll(page: Page) -> None:
 async def extract_page(page: Page, url: str, timeout_ms: int) -> dict[str, Any]:
     await page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
     try:
-        await page.wait_for_load_state("networkidle", timeout=min(timeout_ms, 5000))
+        await page.wait_for_load_state("networkidle", timeout=min(timeout_ms, 10000))
     except Exception:
         pass
 
     await auto_scroll(page)
+    await page.wait_for_timeout(1200)
 
     final_url = compact_whitespace(page.url)
     title = compact_whitespace(await page.title())[:300]
