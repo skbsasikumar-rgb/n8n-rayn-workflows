@@ -36,7 +36,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 15 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 10 } }];"
+        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 3 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 10 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -278,7 +278,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=((status,eq,queued)~or(status,eq,processing))&fields=Id,status&limit=1000",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,processing)&fields=Id,status&limit=1000",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
