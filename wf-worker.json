@@ -1728,7 +1728,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const d = $json;\nreturn { json: {\n  Id: $('Loop Over Items').item.json.Id,\n  status:            d.status,\n  vendor_pain:       d.vendor_pain,\n  grant_eligibility: d.grant_eligibility,\n  compliance_trigger: d.compliance_trigger,\n  evidence_gap:      d.evidence_gap,\n  executive_angle:   d.executive_angle,\n  cta_style:         d.cta_style,\n  subject_line_1: d.subject_line_1,\n  email_body_1:   d.email_body_1,\n  subject_line_2: d.subject_line_2,\n  email_body_2:   d.email_body_2,\n  subject_line_3: d.subject_line_3,\n  email_body_3:   d.email_body_3,\n  subject_line_4: d.subject_line_4,\n  email_body_4:   d.email_body_4,\n  url_debug_validate_output: ''\n} };",
+        "jsCode": "const d = $json;\nreturn { json: {\n  Id: $('Loop Over Items').item.json.Id,\n  status:            d.status,\n  vendor_pain:       d.vendor_pain,\n  grant_eligibility: d.grant_eligibility,\n  compliance_trigger: d.compliance_trigger,\n  evidence_gap:      d.evidence_gap,\n  executive_angle:   d.executive_angle,\n  cta_style:         d.cta_style,\n  subject_line_1: d.subject_line_1,\n  email_body_1:   d.email_body_1,\n  subject_line_2: d.subject_line_2,\n  email_body_2:   d.email_body_2,\n  subject_line_3: d.subject_line_3,\n  email_body_3:   d.email_body_3,\n  subject_line_4: d.subject_line_4,\n  email_body_4:   d.email_body_4\n} };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       }
@@ -1834,7 +1834,7 @@
         3432
       ],
       "parameters": {
-        "jsCode": "const response = ($json.choices?.[0]?.message?.content || '').trim();\nconst fallbackName = ((($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')) || '').trim();\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst companyHomepageName = String(data.company_homepage_name || fallbackName).trim() || fallbackName;\nconst parentCompany = String(data.parent_company || companyHomepageName).trim() || companyHomepageName;\nreturn { json: { company_homepage_name: companyHomepageName, parent_company: parentCompany } };",
+        "jsCode": "function cleanText(value) {\n  const raw = String(value ?? '').trim();\n  if (!raw) return '';\n  const lowered = raw.toLowerCase();\n  if (['undefined', 'null', 'n/a', 'na', 'none'].includes(lowered)) return '';\n  return raw;\n}\nconst response = ($json.choices?.[0]?.message?.content || '').trim();\nconst fallbackName = cleanText(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || ''));\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst companyHomepageName = cleanText(data.company_homepage_name) || fallbackName;\nconst parentCompany = cleanText(data.parent_company) || companyHomepageName;\nreturn { json: { company_homepage_name: companyHomepageName, parent_company: parentCompany } };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       }
