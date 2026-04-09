@@ -66,7 +66,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const raw = String($('Loop Over Items').item.json.company_name || '').trim(); const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim(); const rawLoose = raw.replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim(); const negatives = ['-site:facebook.com','-site:linkedin.com','-site:instagram.com','-site:healthhub.sg','-site:moh.gov.sg','-site:findhealthclinics.com','-site:recordowl.com','-site:wherecrowded.sg','-site:yellowpages.com.sg','-site:gobusiness.gov.sg','-site:straitstimes.com','-site:channelnewsasia.com','-site:todayonline.com']; const query = [clean ? '\"' + clean + '\"' : '', rawLoose && rawLoose.toLowerCase() !== clean.toLowerCase() ? '\"' + rawLoose + '\"' : '', 'Singapore official website clinic medical', ...negatives].filter(Boolean).join(' '); return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query); })() }}",
+        "url": "={{ (() => {\n  const raw = String($('Loop Over Items').item.json.company_name || '').trim();\n  const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim();\n  const query = [clean ? '\"' + clean + '\"' : '', clean ? 'Singapore' : ''].filter(Boolean).join(' ');\n  return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query);\n})() }}",
         "options": {
           "timeout": 30000
         }
