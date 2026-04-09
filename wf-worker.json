@@ -66,7 +66,7 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "={{ (() => { const raw = String($('Loop Over Items').item.json.company_name || '').trim(); const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim(); const rawLoose = raw.replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim(); const negatives = ['-site:facebook.com','-site:linkedin.com','-site:instagram.com','-site:healthhub.sg','-site:moh.gov.sg','-site:findhealthclinics.com','-site:recordowl.com']; const query = [clean ? '\"' + clean + '\"' : '', rawLoose && rawLoose.toLowerCase() !== clean.toLowerCase() ? '\"' + rawLoose + '\"' : '', 'Singapore official website clinic medical', ...negatives].filter(Boolean).join(' '); return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query); })() }}",
+        "url": "={{ (() => { const raw = String($('Loop Over Items').item.json.company_name || '').trim(); const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim(); const rawLoose = raw.replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim(); const negatives = ['-site:facebook.com','-site:linkedin.com','-site:instagram.com','-site:healthhub.sg','-site:moh.gov.sg','-site:findhealthclinics.com','-site:recordowl.com','-site:wherecrowded.sg','-site:yellowpages.com.sg','-site:gobusiness.gov.sg','-site:straitstimes.com','-site:channelnewsasia.com','-site:todayonline.com']; const query = [clean ? '\"' + clean + '\"' : '', rawLoose && rawLoose.toLowerCase() !== clean.toLowerCase() ? '\"' + rawLoose + '\"' : '', 'Singapore official website clinic medical', ...negatives].filter(Boolean).join(' '); return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query); })() }}",
         "options": {
           "timeout": 30000
         }
@@ -234,7 +234,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0,messages:[{role:'user',content:'Original company input: ' + String($('Loop Over Items').item.json.company_name || '').trim() + '\\nSearch name: ' + (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim() + '\\nSearch results:\\n' + ($('SearXNG - Search').item.json.results || []).map(function(r){return (r.title || '') + ' | ' + (r.url || r.link || '')}).join('\\n') + '\\n\\nPick the single best official URL for this company.\\n\\nRules:\\n- Prefer exact matches to the original company input when present\\n- Do not map one clinic, practice, or provider to a different clinic, practice, or provider in the same area\\n- Treat location-bearing clinic names as potentially exact brands; do not discard the location unless the results clearly show a better official brand\\n- A legitimate parent/group homepage is acceptable only if the results clearly show the company belongs to that parent/group\\n- Prefer .com.sg, .org.sg, .sg domains when relevant, but accept any legitimate business domain\\n- Reject Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directories, news articles, and government listing pages\\n- If results are only listings or ambiguous alternatives and no official site is clear, output: none\\n\\nOutput: URL only, or none. One line.'}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0,messages:[{role:'user',content:'Original company input: ' + String($('Loop Over Items').item.json.company_name || '').trim() + '\\nSearch name: ' + (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim() + '\\nTop scored candidates:\\n' + String($json.candidate_summary || '').trim() + '\\n\\nChoose the single best official website only from the candidates listed above.\\n\\nRules:\\n- Return none when uncertain.\\n- Prefer exact entity matches to the original company input.\\n- Do not map one clinic or provider to a different clinic or provider in the same area.\\n- A parent/group homepage is acceptable only if the candidate list clearly shows the company belongs to that group.\\n- Reject directories, aggregators, news, government listings, and social profiles.\\n- Output only the homepage root (origin only).\\n\\nOutput: URL only, or none. One line.'}]}) }}",
         "options": {
           "timeout": 60000
         }
@@ -406,7 +406,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0,messages:[{role:'user',content:'Original company input: ' + String($('Loop Over Items').item.json.company_name || '').trim() + '\\nSearch name: ' + (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim() + '\\nCurrent candidate URL: ' + ($json.best_url || '').trim() + '\\nCurrent candidate reachability: ' + (($json._unreachable === true ? 'unreachable (' + ($json.http_reason || 'connection_error') + ')' : 'reachable or unknown')) + '\\nSearch results:\\n' + (($('SearXNG - Search').item.json.results || []).map(function(r,i){ return (i+1) + '. ' + (r.title || '') + ' | ' + (r.url || r.link || '') + ' | ' + (r.content || r.snippet || ''); }).join('\\n')) + '\\n\\nChoose the single best official website for this company from the current candidate plus the search results.\\n\\nCritical rules:\\n- Go through the full list. If the first/current candidate is wrong, continue down the list and choose the best valid official site instead.\\n- Prefer exact matches to the original company input.\\n- Do not map one clinic, practice, or provider to a different clinic, practice, or provider in the same area.\\n- Treat location-bearing clinic names as potentially exact brands; keep the location when it helps identify the right organisation.\\n- A parent/group site is acceptable only if the results clearly show the company belongs to that parent/group.\\n- If the results are only listings, directories, or ambiguous alternatives and no official site is clear, output empty string.\\n\\nAccept if:\\n- Domain clearly matches the original company input, the search name, or a clearly related parent brand\\n- It is a real business homepage (.com, .org, .sg, .com.sg, .net, or another plausible business TLD)\\n- Uncommon TLDs like .one, .clinic, .care, .health, .medical are acceptable if the domain token strongly matches the company\\n\\nReject if:\\n- Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directory, aggregator, news article, government listing\\n- URL is none, duplicate, or obviously unrelated\\n\\nExamples:\\n- Dr Panda Medical Centre + https://www.drpanda.one/ => accept\\n- Raffles Medical Bishan + https://www.rafflesmedicalgroup.com/ => accept\\n- The Bishan Family Doctors + https://www.onecaremedical.com.sg/ => reject unless the results clearly show they are the same organisation\\n- DR+ Medical & Paincare Bishan + https://sgpaincare.com/ => accept if the results clearly show DR+ belongs to SG Paincare\\n\\nOutput rules:\\n- Output only the homepage root for the accepted domain (for example https://drplus.com.sg/)\\n- If no acceptable result exists in the candidate or search results, output empty string\\n\\nOutput: homepage URL or empty.'}]}) }}",
+        "jsonBody": "={{ JSON.stringify({model:'minimax/minimax-m2.7',temperature:0,messages:[{role:'user',content:'Original company input: ' + String($('Loop Over Items').item.json.company_name || '').trim() + '\\nSearch name: ' + (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim() + '\\nCurrent candidate URL: ' + ($json.best_url || '').trim() + '\\nCurrent candidate reachability: ' + (($json._unreachable === true ? 'unreachable (' + ($json.http_reason || 'connection_error') + ')' : 'reachable or unknown')) + '\\nSearch results:\\n' + (($('SearXNG - Search').item.json.results || []).map(function(r,i){ return (i+1) + '. ' + (r.title || '') + ' | ' + (r.url || r.link || '') + ' | ' + (r.content || r.snippet || ''); }).join('\\n')) + '\\n\\nChoose the single best official website for this company from the current candidate plus the search results.\\n\\nCritical rules:\\n- Go through the full list. If the first/current candidate is wrong, continue down the list and choose the best valid official site instead.\\n- Prefer exact matches to the original company input.\\n- Do not map one clinic, practice, or provider to a different clinic, practice, or provider in the same area.\\n- Treat location-bearing clinic names as potentially exact brands; keep the location when it helps identify the right organisation.\\n- A parent/group site is acceptable only if the results clearly show the company belongs to that parent/group.\\n- If the results are only listings, directories, or ambiguous alternatives and no official site is clear, output empty string.\\n\\nAccept if:\\n- Domain clearly matches the original company input, the search name, or a clearly related parent brand\\n- It is a real business homepage (.com, .org, .sg, .com.sg, .net, or another plausible business TLD)\\n- Uncommon TLDs like .one, .clinic, .care, .health, .medical are acceptable if the domain token strongly matches the company\\n\\nReject if:\\n- Facebook, Instagram, LinkedIn, Recordowl, Healthhub, directory, aggregator, news article, government listing\\n- URL is none, duplicate, or obviously unrelated\\n- Reject any URL whose path has more than 2 segments\\n- Reject any URL with directory-style paths such as /at/place/, /listing/, /review/, /venue/, /places/, /directory/, /business/, /find/, /search/, or /location/\\n\\nExamples:\\n- Dr Panda Medical Centre + https://www.drpanda.one/ => accept\\n- Raffles Medical Bishan + https://www.rafflesmedicalgroup.com/ => accept\\n- The Bishan Family Doctors + https://www.onecaremedical.com.sg/ => reject unless the results clearly show they are the same organisation\\n- DR+ Medical & Paincare Bishan + https://sgpaincare.com/ => accept if the results clearly show DR+ belongs to SG Paincare\\n- https://wherecrowded.sg/at/place/frontier-medical-geylang => reject\\n\\nOutput rules:\\n- Output only the homepage root for the accepted domain (for example https://drplus.com.sg/)\\n- If no acceptable result exists in the candidate or search results, output empty string\\n\\nOutput: homepage URL or empty.'}]}) }}",
         "options": {
           "timeout": 60000
         }
@@ -886,7 +886,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL(`https://${raw}`);\n    return `${url.protocol}//${url.hostname}/`;\n  } catch {\n    return raw;\n  }\n}\n\nfunction normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nconst GENERIC_TOKENS = new Set(['and','the','pte','ltd','limited','private','singapore','sg','health','healthcare','care','centre','center']);\nconst LOCATION_TOKENS = new Set(['bishan','aljunied','toa','payoh','bedok','hougang','yishun','woodlands','serangoon','tampines','jurong','bukit','merah','ang','mo','kio','sin','ming','novena','geylang','katong','marine','parade','punggol','sengkang','choa','chu','kang','pasir','ris','queenstown','outram','orchard','clementi','jalan','besar']);\nconst SOFT_GENERIC_TOKENS = new Set(['medical','clinic','clinics','family','doctor','doctors','surgery']);\nconst BLOCKED_HOSTS = ['facebook.com','instagram.com','linkedin.com','recordowl.com','healthhub.sg','moh.gov.sg','findhealthclinics.com','wikipedia.org'];\n\nfunction tokenize(value, options = {}) {\n  const keepSingles = options.keepSingles === true;\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter((token) => {\n      if (/^[0-9]$/.test(token)) return true;\n      if (keepSingles && /^[a-z]$/.test(token)) return true;\n      return token.length > 1;\n    })\n    .filter((token) => !GENERIC_TOKENS.has(token));\n}\n\nfunction extractDomain(value) {\n  const homepage = toHomepageUrl(value);\n  if (!homepage) return '';\n  return homepage.replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '').replace(/\\/+$/, '').toLowerCase();\n}\n\nfunction buildProfile(value) {\n  const tokens = tokenize(value, { keepSingles: true });\n  return {\n    exact: normalizeText(value),\n    tokens,\n    strong: tokens.filter((token) => !SOFT_GENERIC_TOKENS.has(token) && !LOCATION_TOKENS.has(token) && !/^[a-z]$/.test(token)),\n  };\n}\n\nfunction overlapDetails(profile, haystackTokens, preserveLocation) {\n  const haystack = new Set(haystackTokens);\n  let score = 0;\n  let strong = 0;\n  let soft = 0;\n  let location = 0;\n  let initials = 0;\n\n  for (const token of profile.tokens) {\n    if (!haystack.has(token)) continue;\n    if (/^[0-9]$/.test(token)) {\n      score += 5;\n      strong += 1;\n      continue;\n    }\n    if (/^[a-z]$/.test(token)) {\n      score += 2.5;\n      initials += 1;\n      continue;\n    }\n    if (LOCATION_TOKENS.has(token)) {\n      score += preserveLocation ? 2 : 0.5;\n      location += 1;\n      continue;\n    }\n    if (SOFT_GENERIC_TOKENS.has(token)) {\n      score += 1;\n      soft += 1;\n      continue;\n    }\n    score += 4;\n    strong += 1;\n  }\n\n  return { score, strong, soft, location, initials };\n}\n\nfunction scoreResults(results, rawCompanyName, cleanCompanyName) {\n  const rawProfile = buildProfile(rawCompanyName || cleanCompanyName);\n  const cleanProfile = buildProfile(cleanCompanyName || rawCompanyName);\n  const rawNorm = rawProfile.exact;\n  const cleanNorm = cleanProfile.exact;\n  const preserveLocation = rawProfile.strong.length <= 1 && cleanProfile.strong.length <= 1;\n\n  return (Array.isArray(results) ? results : [])\n    .map((r, index) => {\n      const link = String(r.url || r.link || '').trim();\n      if (!link) return null;\n      const homepage = toHomepageUrl(link);\n      const domain = extractDomain(homepage);\n      if (!domain || BLOCKED_HOSTS.some((host) => domain === host || domain.endsWith('.' + host))) return null;\n\n      const title = normalizeText(r.title || '');\n      const content = normalizeText(r.content || r.snippet || '');\n      const haystack = `${title} ${content}`.trim();\n      const domainTokens = tokenize(domain.replace(/\\.(com|org|net)(\\.sg)?$/i, '').replace(/\\.sg$/i, '').replace(/[-.]/g, ' '), { keepSingles: true });\n      const haystackTokens = tokenize(haystack, { keepSingles: true });\n      const combinedTokens = [...domainTokens, ...haystackTokens];\n\n      const rawOverlap = overlapDetails(rawProfile, combinedTokens, preserveLocation);\n      const cleanOverlap = overlapDetails(cleanProfile, combinedTokens, preserveLocation);\n\n      let score = rawOverlap.score * 1.4 + cleanOverlap.score;\n      let exactPhrase = false;\n\n      if (rawNorm && title.includes(rawNorm)) {\n        score += 14;\n        exactPhrase = true;\n      } else if (rawNorm && haystack.includes(rawNorm)) {\n        score += 8;\n        exactPhrase = true;\n      }\n\n      if (cleanNorm && cleanNorm !== rawNorm) {\n        if (title.includes(cleanNorm)) {\n          score += 10;\n          exactPhrase = true;\n        } else if (haystack.includes(cleanNorm)) {\n          score += 5;\n        }\n      }\n\n      if (/\\.(com\\.sg|org\\.sg|sg)$/i.test(domain)) score += 2;\n      if (homepage === link || /^https?:\\/\\/[^/]+\\/?$/i.test(link)) score += 1;\n\n      const genericOnly = rawOverlap.strong + cleanOverlap.strong + rawOverlap.initials + cleanOverlap.initials === 0;\n      if (genericOnly) score -= 4;\n      if (genericOnly && rawOverlap.location + cleanOverlap.location === 0) score -= 3;\n\n      const strong =\n        exactPhrase ||\n        rawOverlap.strong > 0 ||\n        cleanOverlap.strong > 0 ||\n        rawOverlap.initials > 0 ||\n        cleanOverlap.initials > 0 ||\n        (preserveLocation && (rawOverlap.location + cleanOverlap.location) > 0 && (rawOverlap.soft + cleanOverlap.soft) > 0);\n\n      return { homepage, score, index, strong, exactPhrase };\n    })\n    .filter(Boolean)\n    .sort((a, b) => b.score - a.score || a.index - b.index);\n}\n\nconst results = $('SearXNG - Search').item.json.results || [];\nconst rawCompanyName = String($('Loop Over Items').item.json.company_name || '').trim();\nconst cleanCompanyName = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || rawCompanyName).trim();\nconst scoredResults = scoreResults(results, rawCompanyName, cleanCompanyName);\nconst topCandidate = scoredResults[0] || null;\n\nconst picked = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nconst lower = picked.toLowerCase();\n\nif (lower === 'none') {\n  if (!topCandidate || (!topCandidate.strong && !topCandidate.exactPhrase && topCandidate.score < 6)) {\n    return { json: { best_url: 'none' } };\n  }\n}\n\nconst tokens = picked.split(/\\s+/).map((t) => t.trim()).filter(Boolean);\nconst stripEdge = (s) => String(s || '').replace(/^[`'\"<({\\[]+/, '').replace(/[`'\">)}\\],.]+$/, '');\n\nlet normalized = '';\nconst urlToken = tokens.find((t) => /^https?:\\/\\//i.test(stripEdge(t)));\nif (urlToken) {\n  normalized = stripEdge(urlToken);\n} else {\n  const domainToken = tokens.find((t) => {\n    const v = stripEdge(t).replace(/^https?:\\/\\//i, '').replace(/^www\\./i, '');\n    return v.includes('.') && /^[a-z0-9.-]+(?:\\/[^\\s]*)?$/i.test(v);\n  });\n  if (domainToken) {\n    normalized = 'https://' + stripEdge(domainToken).replace(/^https?:\\/\\//i, '');\n  }\n}\n\nconst normalizedHomepage = normalized ? toHomepageUrl(normalized) : '';\nconst normalizedDomain = normalizedHomepage ? extractDomain(normalizedHomepage) : '';\nconst chosenScore = normalizedDomain ? (scoredResults.find((candidate) => extractDomain(candidate.homepage) === normalizedDomain) || null) : null;\nconst llmPickedAllowed = normalizedDomain && !BLOCKED_HOSTS.some((host) => normalizedDomain === host || normalizedDomain.endsWith('.' + host));\nconst llmPickedGoodEnough = chosenScore ? (chosenScore.exactPhrase || chosenScore.strong || chosenScore.score >= 6) : false;\n\nif (!normalizedHomepage) {\n  normalized = topCandidate && (topCandidate.strong || topCandidate.exactPhrase || topCandidate.score >= 6) ? topCandidate.homepage : '';\n} else if (llmPickedAllowed && llmPickedGoodEnough) {\n  normalized = normalizedHomepage;\n} else if (topCandidate && (topCandidate.strong || topCandidate.exactPhrase || topCandidate.score >= 6)) {\n  normalized = topCandidate.homepage;\n} else {\n  normalized = '';\n}\n\nif (!normalized) {\n  return { json: { best_url: 'none' } };\n}\n\nreturn { json: { best_url: toHomepageUrl(normalized) } };",
+        "jsCode": "function toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL('https://' + raw);\n    return url.origin + '/';\n  } catch {\n    return '';\n  }\n}\n\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg'\n];\nconst BLOCKED_PATH_PATTERNS = [\n  '/at/place/','/listing/','/review/','/venue/','/places/','/directory/','/business/','/find/','/search/','/location/'\n];\n\nfunction isAllowedUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return false;\n  try {\n    const original = new URL(raw.startsWith('http') ? raw : 'https://' + raw);\n    const hostname = original.hostname.replace(/^www\\./i, '').toLowerCase();\n    if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith('.' + host))) return false;\n    const path = (original.pathname || '/').toLowerCase();\n    const depth = path.split('/').filter(Boolean).length;\n    if (depth > 2) return false;\n    if (BLOCKED_PATH_PATTERNS.some((pattern) => path.includes(pattern))) return false;\n    return true;\n  } catch {\n    return false;\n  }\n}\n\nconst scoreResult = $('Score URL Candidates').item.json || {};\nconst candidates = Array.isArray(scoreResult.candidates) ? scoreResult.candidates : [];\nconst top = candidates[0] || null;\n\nif (scoreResult.skipllm === true) {\n  const direct = String(scoreResult.best_url || '').trim();\n  return { json: { best_url: direct || 'none' } };\n}\n\nconst pickedRaw = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nif (!pickedRaw || pickedRaw.toLowerCase() === 'none') {\n  return { json: { best_url: 'none' } };\n}\n\nconst normalizedPicked = toHomepageUrl(pickedRaw);\nconst matched = normalizedPicked ? candidates.find((candidate) => candidate.homepage === normalizedPicked) : null;\nif (matched && isAllowedUrl(matched.url || matched.homepage)) {\n  return { json: { best_url: matched.homepage } };\n}\n\nif (top && top.score >= 18 && isAllowedUrl(top.url || top.homepage)) {\n  return { json: { best_url: top.homepage } };\n}\n\nreturn { json: { best_url: 'none' } };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
@@ -1638,7 +1638,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const response = (($json.choices || [])[0] || {}).message?.content || '';\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst prev = $('Prep Pain Logic').item.json;\nreturn { json: {\n  _ctx: prev._ctx,\n  vendor_pain: data.vendor_pain || '',\n  grant_eligibility: data.grant_eligibility || 'Verify eligibility',\n  compliance_trigger: data.compliance_trigger || '',\n  evidence_gap: data.evidence_gap || '',\n  executive_angle: data.executive_angle || '',\n  cta_style: data.cta_style || ''\n} };",
+        "jsCode": "const response = (\n  $json.choices?.[0]?.message?.content ||\n  $json.body?.choices?.[0]?.message?.content ||\n  ''\n).trim();\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = cleaned ? JSON.parse(cleaned) : {};\n} catch (e) {}\nconst prev = $('Prep Pain Logic').item.json;\nreturn { json: {\n  _ctx: prev._ctx,\n  vendor_pain: data.vendor_pain || '',\n  grant_eligibility: data.grant_eligibility || 'Verify eligibility',\n  compliance_trigger: data.compliance_trigger || '',\n  evidence_gap: data.evidence_gap || '',\n  executive_angle: data.executive_angle || '',\n  cta_style: data.cta_style || ''\n} };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       }
@@ -1713,7 +1713,7 @@
         2752
       ],
       "parameters": {
-        "jsCode": "const response = (($json.choices || [])[0] || {}).message?.content || '';\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = JSON.parse(cleaned);\n} catch(e) {}\nconst prev = $('Prep Email Gen').item.json;\nconst pain = prev._pain || {};\nreturn { json: {\n  status:            'enriched',\n  vendor_pain:       pain.vendor_pain || '',\n  grant_eligibility: pain.grant_eligibility || '',\n  compliance_trigger: pain.compliance_trigger || '',\n  evidence_gap:      pain.evidence_gap || '',\n  executive_angle:   pain.executive_angle || '',\n  cta_style:         pain.cta_style || '',\n  subject_line_1: data.subject_line1 || '',\n  email_body_1:   data.email_body1 || '',\n  subject_line_2: data.subject_line2 || '',\n  email_body_2:   data.email_body2 || '',\n  subject_line_3: data.subject_line3 || '',\n  email_body_3:   data.email_body3 || '',\n  subject_line_4: data.subject_line4 || '',\n  email_body_4:   data.email_body4 || ''\n} };",
+        "jsCode": "const response = (\n  $json.choices?.[0]?.message?.content ||\n  $json.body?.choices?.[0]?.message?.content ||\n  ''\n).trim();\nlet data = {};\ntry {\n  const cleaned = response.replace(/```json\\n?/g, '').replace(/```\\n?/g, '').trim();\n  data = cleaned ? JSON.parse(cleaned) : {};\n} catch (e) {}\nconst prev = $('Prep Email Gen').item.json;\nconst pain = prev._pain || {};\nreturn { json: {\n  status: 'enriched',\n  vendor_pain: pain.vendor_pain || '',\n  grant_eligibility: pain.grant_eligibility || '',\n  compliance_trigger: pain.compliance_trigger || '',\n  evidence_gap: pain.evidence_gap || '',\n  executive_angle: pain.executive_angle || '',\n  cta_style: pain.cta_style || '',\n  subject_line_1: data.subject_line1 || '',\n  email_body_1: data.email_body1 || '',\n  subject_line_2: data.subject_line2 || '',\n  email_body_2: data.email_body2 || '',\n  subject_line_3: data.subject_line3 || '',\n  email_body_3: data.email_body3 || '',\n  subject_line_4: data.subject_line4 || '',\n  email_body_4: data.email_body4 || ''\n} };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       }
@@ -2245,6 +2245,67 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenize(value) {\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter((token) => token.length > 1 || /^[0-9a-z]$/.test(token));\n}\n\nfunction splitDomainTokens(hostname) {\n  return hostname\n    .toLowerCase()\n    .replace(/^www\\./i, '')\n    .replace(/\\.(com|org|net|gov|edu)(\\.sg)?$/i, '')\n    .replace(/\\.sg$/i, '')\n    .split(/[^a-z0-9]+/)\n    .filter(Boolean);\n}\n\nfunction toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL('https://' + raw);\n    return url.origin + '/';\n  } catch {\n    return '';\n  }\n}\n\nfunction getPathInfo(value) {\n  try {\n    const url = new URL(value.startsWith('http') ? value : 'https://' + value);\n    const path = (url.pathname || '/').toLowerCase();\n    const segments = path.split('/').filter(Boolean);\n    return { path, depth: segments.length };\n  } catch {\n    return { path: '/', depth: 0 };\n  }\n}\n\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg'\n];\nconst BLOCKED_PATH_PATTERNS = [\n  '/at/place/','/listing/','/review/','/venue/','/places/','/directory/','/business/','/find/','/search/','/location/'\n];\nconst results = Array.isArray($('SearXNG - Search').item.json.results) ? $('SearXNG - Search').item.json.results : [];\nconst cleanName = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim();\nconst companyTokens = tokenize(cleanName);\n\nconst candidates = results.map((result, idx) => {\n  const rawUrl = String(result.url || result.link || '').trim();\n  const homepage = toHomepageUrl(rawUrl);\n  if (!homepage) return null;\n\n  let hostname = '';\n  try {\n    hostname = new URL(homepage).hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return null;\n  }\n  if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith('.' + host))) return null;\n\n  const pathInfo = getPathInfo(rawUrl);\n  if (pathInfo.depth > 2) return null;\n  if (BLOCKED_PATH_PATTERNS.some((pattern) => pathInfo.path.includes(pattern))) return null;\n\n  const domainTokens = splitDomainTokens(hostname);\n  const titleTokens = tokenize(result.title || '');\n  const domainOverlap = companyTokens.filter((token) => domainTokens.includes(token));\n  const titleOverlap = companyTokens.filter((token) => titleTokens.includes(token));\n  const exactDomainMatch = companyTokens.length > 0 && companyTokens.every((token) => domainTokens.includes(token));\n  const tldBonus = /\\.(com\\.sg|org\\.sg|sg)$/i.test(hostname) ? 2 : 0;\n  const score = (domainOverlap.length * 10) + (titleOverlap.length * 3) + (exactDomainMatch ? 50 : 0) + tldBonus - (idx * 0.5);\n\n  return {\n    rank: idx + 1,\n    title: String(result.title || '').trim(),\n    url: rawUrl,\n    homepage,\n    hostname,\n    snippet: String(result.content || result.snippet || '').trim(),\n    score,\n    exactDomainMatch,\n    domainOverlap: domainOverlap.length,\n    titleOverlap: titleOverlap.length,\n  };\n}).filter(Boolean).sort((a, b) => b.score - a.score || a.rank - b.rank);\n\nconst top = candidates[0] || null;\nconst candidate_summary = candidates.slice(0, 8)\n  .map((c, index) => String(index + 1) + '. score=' + c.score.toFixed(1) + ' | ' + c.homepage + ' | ' + c.title)\n  .join('\\n');\n\nif (!top) {\n  return { json: { best_url: 'none', skipllm: true, top_score: 0, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\nif (top.score >= 20) {\n  return { json: { best_url: top.homepage, skipllm: true, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\nreturn { json: { best_url: '', skipllm: false, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };",
+        "mode": "runOnceForEachItem",
+        "language": "javaScript"
+      },
+      "id": "score-url-candidates-001",
+      "name": "Score URL Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -28384,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-skip-url-llm-1",
+              "leftValue": "={{ $json.skipllm }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-skip-url-llm-001",
+      "name": "IF Skip URL LLM",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -28224,
+        2512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const current = $json || {};\nconst track = String(current.message_track || '').trim();\nconst status = track === 'OUT_OF_SCOPE'\n  ? 'out of scope'\n  : track === 'UNKNOWN'\n    ? 'classification review'\n    : String(current.status || 'classification review');\nreturn { json: { Id: current.Id || $('Loop Over Items').item.json.Id, status, ...current } };",
+        "mode": "runOnceForEachItem",
+        "language": "javaScript"
+      },
+      "id": "prep-final-out-of-scope-001",
+      "name": "Prep Final Out Of Scope",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -21624,
+        2896
+      ]
     }
   ],
   "pinData": {},
@@ -2960,7 +3021,7 @@
         ],
         [
           {
-            "node": "OpenRouter - URL Dedup",
+            "node": "Score URL Candidates",
             "type": "main",
             "index": 0
           }
@@ -3089,7 +3150,13 @@
             "index": 0
           }
         ],
-        []
+        [
+          {
+            "node": "Prep Final Out Of Scope",
+            "type": "main",
+            "index": 0
+          }
+        ]
       ]
     },
     "Status - url duplicate": {
@@ -3204,6 +3271,46 @@
         [
           {
             "node": "OpenRouter - Clean Name",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score URL Candidates": {
+      "main": [
+        [
+          {
+            "node": "IF Skip URL LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Skip URL LLM": {
+      "main": [
+        [
+          {
+            "node": "Check URL Against All",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "OpenRouter - URL Dedup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Final Out Of Scope": {
+      "main": [
+        [
+          {
+            "node": "Write Final",
             "type": "main",
             "index": 0
           }
