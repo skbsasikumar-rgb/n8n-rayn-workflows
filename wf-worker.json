@@ -1891,7 +1891,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"serper failed\"}",
+        "jsonBody": "{\"status\":\"serper failed\",\"serper_results\":\"\",\"best_url\":\"\",\"url_validated\":\"\",\"website_content\":\"\",\"company_homepage_name\":\"\",\"parent_company\":\"\",\"company_linkedin_url\":\"\",\"hia_relevant\":\"\",\"industry_segment\":\"\",\"hia_batch\":\"\",\"company_size\":\"\",\"product_descriptor\":\"\",\"first_name\":\"\",\"role\":\"\",\"email\":\"\",\"compliance_lead\":\"\",\"vendor_pain\":\"\",\"grant_eligibility\":\"\",\"subject_line_1\":\"\",\"email_body_1\":\"\",\"subject_line_2\":\"\",\"email_body_2\":\"\",\"subject_line_3\":\"\",\"email_body_3\":\"\",\"subject_line_4\":\"\",\"email_body_4\":\"\",\"linkedin_url\":\"\",\"contact_source\":\"\",\"compliance_trigger\":\"\",\"evidence_gap\":\"\",\"executive_angle\":\"\",\"cta_style\":\"\",\"regulatory_track\":\"\",\"sector_track\":\"\",\"personal_data_risk\":\"\",\"nehr_relevant\":\"\",\"funding_track_primary\":\"\",\"funding_track_secondary\":\"\",\"funding_confidence\":\"\",\"message_track\":\"\",\"classification_evidence\":\"\",\"classification_source_url\":\"\"}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
