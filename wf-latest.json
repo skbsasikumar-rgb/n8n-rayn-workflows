@@ -350,7 +350,7 @@
         "url": "https://primary-production-a6441.up.railway.app/webhook/rayn-enrichment-worker-v1",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
+        "jsonBody": "={{ $json }}",
         "options": {
           "timeout": 30000
         }

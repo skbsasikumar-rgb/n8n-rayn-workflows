@@ -1551,7 +1551,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForEachItem",
-        "jsCode": "const body = $json && typeof $json.body === 'object' && $json.body !== null ? $json.body : $json;\nreturn { json: body };"
+        "jsCode": "function normalizePayload(value) {\n  if (value == null) return {};\n  if (typeof value === 'string') {\n    const trimmed = value.trim();\n    if (!trimmed) return {};\n    try {\n      return JSON.parse(trimmed);\n    } catch {\n      return { _raw_body: trimmed };\n    }\n  }\n  if (typeof value === 'object') return value;\n  return { value };\n}\nconst source = Object.prototype.hasOwnProperty.call($json || {}, 'body') ? $json.body : $json;\nconst body = normalizePayload(source);\nif (!body || !body.Id) {\n  throw new Error(`Worker payload missing Id: ${JSON.stringify(body).slice(0, 500)}`);\n}\nreturn { json: body };"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -1754,7 +1754,7 @@
       "continueOnFail": false,
       "parameters": {
         "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
+        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $json.Id }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
