@@ -65,8 +65,13 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "={{ (() => {\n  const raw = String($('Loop Over Items').item.json.company_name || '').trim();\n  const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim();\n  const query = [clean ? '\"' + clean + '\"' : '', clean ? 'Singapore' : ''].filter(Boolean).join(' ');\n  return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query);\n})() }}",
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify((() => { const raw = String($('Loop Over Items').item.json.company_name || '').trim(); const clean = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw).trim(); return { q: '\"' + clean + '\" Singapore website', num: 15, gl: 'sg', hl: 'en' }; })()) }}",
         "options": {
           "timeout": 30000
         }
@@ -78,7 +83,7 @@
         2512
       ],
       "id": "fe508761-32d3-4bff-b7e9-49064f6a746d",
-      "name": "SearXNG - Search",
+      "name": "Serper - Company Search",
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
@@ -1868,7 +1873,7 @@
         2512
       ],
       "id": "23bbbeff-ed43-42a2-b15d-622435f713bc",
-      "name": "IF Serper Failed"
+      "name": "IF Serper No Results"
     },
     {
       "parameters": {
@@ -2248,7 +2253,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenize(value) {\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter((token) => token.length > 1 || /^[0-9a-z]$/.test(token));\n}\n\nfunction splitDomainTokens(hostname) {\n  // Common SG domain abbreviations that map to full tokens\n  const abbrevMap = {\n    'sg': 'singapore',\n    'sgp': 'singapore',\n    'med': 'medical',\n    'health': 'healthcare',\n    'clin': 'clinic',\n    'hosp': 'hospital',\n    'ctr': 'center',\n    'centre': 'center',\n    'grp': 'group',\n    'hldg': 'holdings',\n    'hldgs': 'holdings'\n  };\n  \n  const raw = hostname\n    .toLowerCase()\n    .replace(/^www\\./i, '')\n    .replace(/\\.(com|org|net|gov|edu)(\\.sg)?$/i, '')\n    .replace(/\\.sg$/i, '')\n    .split(/[^a-z0-9]+/)\n    .filter(Boolean);\n\n  const expanded = [];\n  for (const token of raw) {\n    expanded.push(token);\n    if (abbrevMap[token]) {\n      expanded.push(abbrevMap[token]);\n    }\n    // Also split camelCase or compound tokens like 'sgpaincare'\n    const splitTokens = token.replace(/([a-z])([A-Z])/g, '$1 $2')\n      .replace(/(sgp|sg)([a-z])/g, '$1 $2');\n    if (splitTokens !== token && splitTokens.includes(' ')) {\n      for (const st of splitTokens.split(' ').filter(Boolean)) {\n        expanded.push(st);\n        if (abbrevMap[st]) expanded.push(abbrevMap[st]);\n      }\n    }\n  }\n  return [...new Set(expanded)];\n}\n\nfunction toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL('https://' + raw);\n    return url.origin + '/';\n  } catch {\n    return '';\n  }\n}\n\nfunction getPathInfo(value) {\n  try {\n    const url = new URL(value.startsWith('http') ? value : 'https://' + value);\n    const path = (url.pathname || '/').toLowerCase();\n    const segments = path.split('/').filter(Boolean);\n    return { path, depth: segments.length };\n  } catch {\n    return { path: '/', depth: 0 };\n  }\n}\n\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg'\n];\nconst BLOCKED_PATH_PATTERNS = [\n  '/at/place/','/listing/','/review/','/venue/','/places/','/directory/','/business/','/find/','/search/','/location/'\n];\nconst results = Array.isArray($('SearXNG - Search').item.json.results) ? $('SearXNG - Search').item.json.results : [];\nconst cleanName = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim();\nconst companyTokens = tokenize(cleanName);\n\nconst candidates = results.map((result, idx) => {\n  const rawUrl = String(result.url || result.link || '').trim();\n  const homepage = toHomepageUrl(rawUrl);\n  if (!homepage) return null;\n\n  let hostname = '';\n  try {\n    hostname = new URL(homepage).hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return null;\n  }\n  if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith('.' + host))) return null;\n\n  const pathInfo = getPathInfo(rawUrl);\n  if (pathInfo.depth > 2) return null;\n  if (BLOCKED_PATH_PATTERNS.some((pattern) => pathInfo.path.includes(pattern))) return null;\n\n  const domainTokens = splitDomainTokens(hostname);\n  const titleTokens = tokenize(result.title || '');\n  const domainOverlap = companyTokens.filter((token) => domainTokens.includes(token));\n  const titleOverlap = companyTokens.filter((token) => titleTokens.includes(token));\n  const exactDomainMatch = companyTokens.length > 0 && companyTokens.every((token) => domainTokens.includes(token));\n  const tldBonus = /\\.(com\\.sg|org\\.sg|sg)$/i.test(hostname) ? 2 : 0;\n  // Higher baseline for any domain/token overlap; +5 for homepage path\n  const homepageBonus = pathInfo.path === '/' ? 5 : 0;\n  const score = (domainOverlap.length * 10) + (titleOverlap.length * 3) + (exactDomainMatch ? 50 : 0) + tldBonus + homepageBonus - (idx * 0.3);\n\n  return {\n    rank: idx + 1,\n    title: String(result.title || '').trim(),\n    url: rawUrl,\n    homepage,\n    hostname,\n    snippet: String(result.content || result.snippet || '').trim(),\n    score,\n    exactDomainMatch,\n    domainOverlap: domainOverlap.length,\n    titleOverlap: titleOverlap.length,\n  };\n}).filter(Boolean).sort((a, b) => b.score - a.score || a.rank - b.rank);\n\nconst top = candidates[0] || null;\nconst candidate_summary = candidates.slice(0, 8)\n  .map((c, index) => String(index + 1) + '. score=' + c.score.toFixed(1) + ' | ' + c.homepage + ' | ' + c.title)\n  .join('\\n');\n\nif (!top) {\n  return { json: { best_url: 'none', skipllm: true, top_score: 0, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\n// Lowered from 20 to 15 \u2014 any decent single-token match with homepage path qualifies\nif (top.score >= 15 && top.route !== 'none') {\n  return { json: { best_url: top.homepage, skipllm: true, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\nreturn { json: { best_url: '', skipllm: false, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };",
+        "jsCode": "function normalizeText(value) {\n  return String(value || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9]+/g, ' ')\n    .trim();\n}\n\nfunction tokenize(value) {\n  return normalizeText(value)\n    .split(/\\s+/)\n    .filter(Boolean)\n    .filter((token) => token.length > 1 || /^[0-9a-z]$/.test(token));\n}\n\nfunction splitDomainTokens(hostname) {\n  // Common SG domain abbreviations that map to full tokens\n  const abbrevMap = {\n    'sg': 'singapore',\n    'sgp': 'singapore',\n    'med': 'medical',\n    'health': 'healthcare',\n    'clin': 'clinic',\n    'hosp': 'hospital',\n    'ctr': 'center',\n    'centre': 'center',\n    'grp': 'group',\n    'hldg': 'holdings',\n    'hldgs': 'holdings'\n  };\n  \n  const raw = hostname\n    .toLowerCase()\n    .replace(/^www\\./i, '')\n    .replace(/\\.(com|org|net|gov|edu)(\\.sg)?$/i, '')\n    .replace(/\\.sg$/i, '')\n    .split(/[^a-z0-9]+/)\n    .filter(Boolean);\n\n  const expanded = [];\n  for (const token of raw) {\n    expanded.push(token);\n    if (abbrevMap[token]) {\n      expanded.push(abbrevMap[token]);\n    }\n    // Also split camelCase or compound tokens like 'sgpaincare'\n    const splitTokens = token.replace(/([a-z])([A-Z])/g, '$1 $2')\n      .replace(/(sgp|sg)([a-z])/g, '$1 $2');\n    if (splitTokens !== token && splitTokens.includes(' ')) {\n      for (const st of splitTokens.split(' ').filter(Boolean)) {\n        expanded.push(st);\n        if (abbrevMap[st]) expanded.push(abbrevMap[st]);\n      }\n    }\n  }\n  return [...new Set(expanded)];\n}\n\nfunction toHomepageUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  try {\n    const url = raw.startsWith('http') ? new URL(raw) : new URL('https://' + raw);\n    return url.origin + '/';\n  } catch {\n    return '';\n  }\n}\n\nfunction getPathInfo(value) {\n  try {\n    const url = new URL(value.startsWith('http') ? value : 'https://' + value);\n    const path = (url.pathname || '/').toLowerCase();\n    const segments = path.split('/').filter(Boolean);\n    return { path, depth: segments.length };\n  } catch {\n    return { path: '/', depth: 0 };\n  }\n}\n\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg'\n];\nconst BLOCKED_PATH_PATTERNS = [\n  '/at/place/','/listing/','/review/','/venue/','/places/','/directory/','/business/','/find/','/search/','/location/'\n];\nconst results = Array.isArray($('Parse Serper Results').item.json.results) ? $('Parse Serper Results').item.json.results : [];\nconst cleanName = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim();\nconst companyTokens = tokenize(cleanName);\n\nconst candidates = results.map((result, idx) => {\n  const rawUrl = String(result.url || result.link || '').trim();\n  const homepage = toHomepageUrl(rawUrl);\n  if (!homepage) return null;\n\n  let hostname = '';\n  try {\n    hostname = new URL(homepage).hostname.replace(/^www\\./i, '').toLowerCase();\n  } catch {\n    return null;\n  }\n  if (BLOCKED_HOSTS.some((host) => hostname === host || hostname.endsWith('.' + host))) return null;\n\n  const pathInfo = getPathInfo(rawUrl);\n  if (pathInfo.depth > 2) return null;\n  if (BLOCKED_PATH_PATTERNS.some((pattern) => pathInfo.path.includes(pattern))) return null;\n\n  const domainTokens = splitDomainTokens(hostname);\n  const titleTokens = tokenize(result.title || '');\n  const domainOverlap = companyTokens.filter((token) => domainTokens.includes(token));\n  const titleOverlap = companyTokens.filter((token) => titleTokens.includes(token));\n  const exactDomainMatch = companyTokens.length > 0 && companyTokens.every((token) => domainTokens.includes(token));\n  const tldBonus = /\\.(com\\.sg|org\\.sg|sg)$/i.test(hostname) ? 2 : 0;\n  // Higher baseline for any domain/token overlap; +5 for homepage path\n  const homepageBonus = pathInfo.path === '/' ? 5 : 0;\n  const score = (domainOverlap.length * 10) + (titleOverlap.length * 3) + (exactDomainMatch ? 50 : 0) + tldBonus + homepageBonus - (idx * 0.3);\n\n  return {\n    rank: idx + 1,\n    title: String(result.title || '').trim(),\n    url: rawUrl,\n    homepage,\n    hostname,\n    snippet: String(result.content || result.snippet || '').trim(),\n    score,\n    exactDomainMatch,\n    domainOverlap: domainOverlap.length,\n    titleOverlap: titleOverlap.length,\n  };\n}).filter(Boolean).sort((a, b) => b.score - a.score || a.rank - b.rank);\n\nconst top = candidates[0] || null;\nconst candidate_summary = candidates.slice(0, 8)\n  .map((c, index) => String(index + 1) + '. score=' + c.score.toFixed(1) + ' | ' + c.homepage + ' | ' + c.title)\n  .join('\\n');\n\nif (!top) {\n  return { json: { best_url: 'none', skipllm: true, top_score: 0, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\n// Lowered from 20 to 15 \u2014 any decent single-token match with homepage path qualifies\nif (top.score >= 15 && top.route !== 'none') {\n  return { json: { best_url: top.homepage, skipllm: true, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };\n}\n\nreturn { json: { best_url: '', skipllm: false, top_score: top.score, candidate_summary, candidates: candidates.slice(0, 8) } };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
@@ -2306,6 +2311,21 @@
         -21624,
         2896
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const serperResults = $input.first().json.organic || [];\nconst company_name = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '').trim();\n\nconst results = serperResults.map((r, i) => ({\n  url: String(r.link || ''),\n  title: String(r.title || ''),\n  content: String(r.snippet || ''),\n  rank: i + 1\n}));\n\nreturn items.map(() => ({\n  json: {\n    results,\n    company_name,\n    serper_query: $('Serper - Company Search').item.json.query || ''\n  }\n}));\n",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "parse-serper-results-001",
+      "name": "Parse Serper Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "disabled": false
     }
   ],
   "pinData": {},
@@ -3315,6 +3335,33 @@
             "index": 0
           }
         ]
+      ]
+    },
+    "fe508761-32d3-4bff-b7e9-49064f6a746d": {
+      "main": [
+        {
+          "node": "Parse Serper Results",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "parse-serper-results-001": {
+      "main": [
+        {
+          "node": "Score URL Candidates",
+          "type": "main",
+          "index": 0
+        }
+      ]
+    },
+    "fe96459e-0322-426e-883f-d4682ce7909b": {
+      "main": [
+        {
+          "node": "Serper - Company Search",
+          "type": "main",
+          "index": 0
+        }
       ]
     }
   },
