@@ -36,7 +36,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 15 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 50 } }];"
+        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 15 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 10 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
