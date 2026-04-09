@@ -518,7 +518,8 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     markdown_sections.extend(render_page_section(item, 12) for item in extra_pages)
     markdown = limit_text("\n\n".join(section for section in markdown_sections if section), 15000)
 
-    website_content = markdown or combined_main_text
+    # Use the richer rendered artifact instead of preferring markdown when it is sparse.
+    website_content = markdown if len(markdown) >= len(combined_main_text) else combined_main_text
     final_url = primary.get("url", "") or str(request.url)
     title = compact_whitespace(primary.get("title", ""))[:300]
     metadata: MetadataPayload = primary.get("metadata") or MetadataPayload()
