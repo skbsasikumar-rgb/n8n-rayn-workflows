@@ -350,7 +350,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://primary-production-a6441.up.railway.app/webhook/rayn-enrichment-worker-v1",
+        "url": "https://primary-production-a6441.up.railway.app/webhook/rayn-enrichment-worker-v2",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ $json }}",
