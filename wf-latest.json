@@ -36,7 +36,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 15 * 60 * 1000, processing_cutoff_ms: Date.now() - 60 * 60 * 1000, max_in_flight: 10 } }];"
+        "jsCode": "return [{ json: { queued_cutoff_ms: Date.now() - 5 * 60 * 1000, processing_cutoff_ms: Date.now() - 20 * 60 * 1000, max_in_flight: 10 } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -172,7 +172,10 @@
         2512
       ],
       "id": "get-pending-ids-001",
-      "name": "Get Pending IDs"
+      "name": "Get Pending IDs",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -256,9 +259,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "options": {},
+        "options": {
+          "timeout": 20000
+        },
         "jsonBody": "={{ JSON.stringify($json.payload) }}"
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "id": "restore-items",
@@ -299,7 +307,10 @@
         2512
       ],
       "id": "get-in-flight-001",
-      "name": "Get In Flight"
+      "name": "Get In Flight",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "id": "compute-capacity-001",
@@ -440,9 +451,14 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "options": {},
+        "options": {
+          "timeout": 20000
+        },
         "jsonBody": "={{ JSON.stringify($json.payload) }}"
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "id": "get-queued-leads-001",

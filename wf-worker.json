@@ -428,7 +428,10 @@
       ],
       "id": "4ab1bdae-4776-40a8-8a8b-7bc462a29718",
       "name": "Status - no url found",
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -532,7 +535,10 @@
       ],
       "id": "b9c9bfa0-d550-4b9b-a03e-f5929bc9e56b",
       "name": "Status - url rejected",
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -633,7 +639,10 @@
       ],
       "id": "9bba2aa4-94f3-4feb-856a-e1cf1a3f8e9a",
       "name": "Status - scrape failed",
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -827,7 +836,10 @@
       ],
       "id": "b9f31008-2c14-4b68-a17c-6d3354ed565e",
       "name": "Status - enrichment failed",
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -857,7 +869,10 @@
           "name": "Header Auth account"
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -1085,7 +1100,10 @@
         -22544,
         3216
       ],
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -1501,7 +1519,9 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_homepage_name: $json.company_homepage_name, parent_company: $json.parent_company, company_linkedin_url: $json.company_linkedin_url, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, regulatory_track: $json.regulatory_track, sector_track: $json.sector_track, personal_data_risk: $json.personal_data_risk, nehr_relevant: $json.nehr_relevant, funding_track_primary: $json.funding_track_primary, funding_track_secondary: $json.funding_track_secondary, funding_confidence: $json.funding_confidence, message_track: $json.message_track, classification_evidence: $json.classification_evidence, classification_source_url: $json.classification_source_url, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
-        "options": {}
+        "options": {
+          "timeout": 20000
+        }
       },
       "id": "6c7b4c7e-c7cd-417c-8790-d7e9627fd885",
       "name": "Write Partial & Pending",
@@ -1511,7 +1531,10 @@
         -22064,
         2752
       ],
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "name": "HTTP Status Check",
@@ -1805,7 +1828,9 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "options": {},
+        "options": {
+          "timeout": 20000
+        },
         "jsonBody": "={{ JSON.stringify($json) }}"
       }
     },
@@ -1941,7 +1966,10 @@
       ],
       "id": "e52665d1-07bf-480b-b5fa-1d6b8890245d",
       "name": "Status - serper failed",
-      "continueOnFail": true
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
     },
     {
       "parameters": {
@@ -2149,7 +2177,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify((() => { const raw = String(($('OpenRouter - URL Validate').item.json.choices?.[0]?.message?.content || $('OpenRouter - URL Validate').item.json.body?.choices?.[0]?.message?.content || $('Check URL Against All').first().json.best_url || '')).trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return { best_url: url, url_validated: url }; })()) }}",
         "options": {
-          "timeout": 10000
+          "timeout": 20000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -2162,7 +2190,7 @@
       "name": "Claim Candidate URL",
       "continueOnFail": true,
       "retryOnFail": true,
-      "maxTries": 2,
+      "maxTries": 3,
       "waitBetweenTries": 500
     },
     {
@@ -2205,11 +2233,11 @@
           ]
         },
         "options": {
-          "timeout": 10000
+          "timeout": 20000
         }
       },
       "retryOnFail": true,
-      "maxTries": 2,
+      "maxTries": 3,
       "waitBetweenTries": 500
     },
     {
@@ -2275,7 +2303,7 @@
         "specifyBody": "json",
         "jsonBody": "{\"status\": \"processing\"}",
         "options": {
-          "timeout": 10000
+          "timeout": 20000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -2288,7 +2316,7 @@
       "name": "Mark Row Processing",
       "continueOnFail": true,
       "retryOnFail": true,
-      "maxTries": 2,
+      "maxTries": 3,
       "waitBetweenTries": 500
     },
     {
@@ -2339,7 +2367,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const current = $json || {};\nconst track = String(current.message_track || '').trim();\nconst status = track === 'OUT_OF_SCOPE'\n  ? 'out of scope'\n  : track === 'UNKNOWN'\n    ? 'classification review'\n    : 'classification review';\nreturn { json: { Id: current.Id || $('Loop Over Items').item.json.Id, status, ...current } };",
+        "jsCode": "const current = $json || {};\nconst track = String(current.message_track || '').trim();\nconst status = track === 'OUT_OF_SCOPE'\n  ? 'out of scope'\n  : 'classification review';\nreturn { json: { ...current, Id: current.Id || $('Loop Over Items').item.json.Id, status } };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
