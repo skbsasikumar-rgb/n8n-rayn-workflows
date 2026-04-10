@@ -2306,6 +2306,58 @@
         -21624,
         2896
       ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (() => { const raw = String($('Loop Over Items').item.json.company_name || '').trim(); const clean = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim(); const rawLoose = raw.replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim(); const negatives = ['-site:facebook.com','-site:linkedin.com','-site:instagram.com','-site:healthhub.sg','-site:moh.gov.sg','-site:findhealthclinics.com','-site:recordowl.com','-site:wherecrowded.sg','-site:yellowpages.com.sg','-site:gobusiness.gov.sg']; const query = [clean || rawLoose, rawLoose && rawLoose.toLowerCase() !== clean.toLowerCase() ? rawLoose : '', 'Singapore', ...negatives].filter(Boolean).join(' '); return 'https://searxng-railway-production-518a.up.railway.app/search?format=json&q=' + encodeURIComponent(query); })() }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -29024,
+        2704
+      ],
+      "id": "14b356e1-4cfa-4ba2-9b95-b2b37c3d13d5",
+      "name": "SearXNG - Search Fallback",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-serper-1",
+              "leftValue": "={{ ($json.results || []).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -28560,
+        2704
+      ],
+      "id": "25fc74d8-8eef-47ae-ac4e-9dae48abf5ca",
+      "name": "IF Fallback Serper Failed"
     }
   ],
   "pinData": {},
@@ -3014,7 +3066,7 @@
       "main": [
         [
           {
-            "node": "Status - serper failed",
+            "node": "SearXNG - Search Fallback",
             "type": "main",
             "index": 0
           }
@@ -3311,6 +3363,35 @@
         [
           {
             "node": "Write Final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SearXNG - Search Fallback": {
+      "main": [
+        [
+          {
+            "node": "IF Fallback Serper Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Fallback Serper Failed": {
+      "main": [
+        [
+          {
+            "node": "Status - serper failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Score URL Candidates",
             "type": "main",
             "index": 0
           }

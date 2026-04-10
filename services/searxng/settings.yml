@@ -1,4 +1,11 @@
-use_default_settings: true
+use_default_settings:
+  engines:
+    keep_only:
+      - google
+      - brave
+      - duckduckgo
+      - startpage
+      - bing
 
 general:
   instance_name: "Private SearXNG"
@@ -18,13 +25,8 @@ engines:
   - name: startpage
     weight: 1.0
   - name: bing
+    disabled: false
     weight: 0.9
-  - name: aol
-    weight: 0.2
-  - name: ask
-    disabled: true
-  - name: yahoo
-    disabled: true
 
 server:
   secret_key: "X7zL9qR2vB4mP6jN1wS8kC3fT5hG9aY0xV2uM4iE6oB8pZ1dQ3sK5nJ7rL9tW0"
