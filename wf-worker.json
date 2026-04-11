@@ -286,7 +286,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const clear = ['serper_results','best_url','url_validated','website_content','company_homepage_name','parent_company','company_linkedin_url','hia_relevant','industry_segment','hia_batch','company_size','product_descriptor','first_name','role','email','compliance_lead','vendor_pain','grant_eligibility','subject_line_1','email_body_1','subject_line_2','email_body_2','subject_line_3','email_body_3','subject_line_4','email_body_4','linkedin_url','contact_source','compliance_trigger','evidence_gap','executive_angle','cta_style','regulatory_track','sector_track','personal_data_risk','nehr_relevant','funding_track_primary','funding_track_secondary','funding_confidence','message_track','classification_evidence','classification_source_url'];\nconst out = Object.fromEntries(clear.map((field) => [field, '']));\nout.status = 'no url found';\nfunction extractSearchResults(payload) {\n  const rawCandidates = [\n    payload?.results,\n    payload?.json?.results,\n    payload?.response?.results,\n    payload?.body?.results,\n    payload?.data?.results,\n    payload?.organic,\n    payload?.json?.organic,\n    payload?.response?.organic,\n    payload?.body?.organic,\n    payload?.data?.organic,\n  ];\n  for (const candidate of rawCandidates) {\n    if (Array.isArray(candidate) && candidate.length) return candidate;\n  }\n  for (const candidate of [payload?.body, payload?.data]) {\n    if (typeof candidate === 'string' && candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (Array.isArray(parsed.results) && parsed.results.length) return parsed.results;\n        if (Array.isArray(parsed.organic) && parsed.organic.length) return parsed.organic;\n      } catch {}\n    }\n  }\n  return [];\n}\nconst primary = extractSearchResults($('SearXNG - Search').first().json);\nconst fallback = extractSearchResults($('SearXNG - Search Fallback').first().json);\nout.evidence_gap = ['URL_DEBUG','worker_version=segmentation_refactor_20260411; webhook_version=v2','stage=serper_failed','company=' + String($('Loop Over Items').item.json.company_name || '').trim(),'primary_results=' + String(primary.length),'fallback_results=' + String(fallback.length),'primary_query=' + String($('SearXNG - Search').url || ''),'fallback_query=' + String($('SearXNG - Search Fallback').url || '')].join('; ');\nreturn { json: out };",
+        "jsCode": "const clear = ['serper_results','best_url','url_validated','website_content','company_homepage_name','parent_company','company_linkedin_url','hia_relevant','industry_segment','hia_batch','company_size','product_descriptor','first_name','role','email','compliance_lead','vendor_pain','grant_eligibility','subject_line_1','email_body_1','subject_line_2','email_body_2','subject_line_3','email_body_3','subject_line_4','email_body_4','linkedin_url','contact_source','compliance_trigger','evidence_gap','executive_angle','cta_style','regulatory_track','sector_track','personal_data_risk','nehr_relevant','funding_track_primary','funding_track_secondary','funding_confidence','message_track','classification_evidence','classification_source_url'];\nconst out = Object.fromEntries(clear.map((field) => [field, '']));\nout.status = 'no url found';\nfunction extractSearchResults(payload) {\n  const rawCandidates = [\n    payload?.results,\n    payload?.json?.results,\n    payload?.response?.results,\n    payload?.body?.results,\n    payload?.data?.results,\n    payload?.organic,\n    payload?.json?.organic,\n    payload?.response?.organic,\n    payload?.body?.organic,\n    payload?.data?.organic,\n  ];\n  for (const candidate of rawCandidates) {\n    if (Array.isArray(candidate) && candidate.length) return candidate;\n  }\n  for (const candidate of [payload?.body, payload?.data]) {\n    if (typeof candidate === 'string' && candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (Array.isArray(parsed.results) && parsed.results.length) return parsed.results;\n        if (Array.isArray(parsed.organic) && parsed.organic.length) return parsed.organic;\n      } catch {}\n    }\n  }\n  return [];\n}\nconst primary = extractSearchResults($('SearXNG - Search').first().json);\nconst fallback = extractSearchResults($('SearXNG - Search Fallback').first().json);\nout.evidence_gap = ['URL_DEBUG','worker_version=segmentation_cleanup_20260411; webhook_version=v2','stage=serper_failed','company=' + String($('Loop Over Items').item.json.company_name || '').trim(),'primary_results=' + String(primary.length),'fallback_results=' + String(fallback.length),'primary_query=' + String($('SearXNG - Search').url || ''),'fallback_query=' + String($('SearXNG - Search Fallback').url || '')].join('; ');\nreturn { json: out };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
@@ -626,37 +626,6 @@
     },
     {
       "parameters": {
-        "method": "PATCH",
-        "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "xc-token",
-              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
-            }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "{\"status\": \"enrichment failed\"}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -24224,
-        2752
-      ],
-      "id": "b9f31008-2c14-4b68-a17c-6d3354ed565e",
-      "name": "Status - enrichment failed",
-      "continueOnFail": true,
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 1000
-    },
-    {
-      "parameters": {
         "method": "POST",
         "url": "https://api.anymailfinder.com/v5.1/find-email/decision-maker",
         "authentication": "predefinedCredentialType",
@@ -759,7 +728,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function parseUrlParts(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return null;\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/)([^/?#]+)([^?#]*)/i);\n  if (!match) return null;\n\n  const protocol = match[1].toLowerCase();\n  const originalHost = String(match[2] || '').trim();\n  if (!originalHost) return null;\n\n  const hostname = originalHost.replace(/^www\\./i, '').toLowerCase();\n  let path = String(match[3] || '/').trim().toLowerCase();\n  if (!path) path = '/';\n  if (!path.startsWith('/')) path = '/' + path;\n\n  const segments = path.split('/').filter(Boolean);\n  return {\n    origin: protocol + hostname + '/',\n    hostname,\n    path,\n    depth: segments.length,\n  };\n}\n\nfunction toHomepageUrl(value) {\n  const parsed = parseUrlParts(value);\n  return parsed ? parsed.origin : '';\n}\n\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg',\n  'wheree.com','clinicgeek.com','vymaps.com','sgpbusiness.com','threebestrated.sg','practo.com',\n  'ubiehealth.com','sgpgrid.com','worldorgs.com','aic.sg','contact.page','locallead.ai'\n];\nconst BLOCKED_PATH_PATTERNS = [\n  '/at/place/','/listing/','/review/','/venue/','/places/','/directory/'\n];\n\nfunction isAllowedUrl(value) {\n  const parsed = parseUrlParts(value);\n  if (!parsed) return false;\n  if (BLOCKED_HOSTS.some((host) => parsed.hostname === host || parsed.hostname.endsWith('.' + host))) return false;\n  if (parsed.depth > 5) return false;\n  if (BLOCKED_PATH_PATTERNS.some((pattern) => parsed.path.includes(pattern))) return false;\n  return true;\n}\n\nconst scoreResult = $('Score URL Candidates').item.json || {};\nconst candidates = Array.isArray(scoreResult.candidates) ? scoreResult.candidates : [];\nconst top = candidates[0] || null;\n\nif (scoreResult.skipllm === true) {\n  const direct = String(scoreResult.best_url || '').trim();\n  return { json: { best_url: direct || 'none' } };\n}\n\nconst pickedRaw = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nif (!pickedRaw || pickedRaw.toLowerCase() === 'none') {\n  if (top && top.score >= 12 && isAllowedUrl(top.url || top.homepage)) {\n    return { json: { best_url: top.homepage } };\n  }\n  return { json: { best_url: 'none' } };\n}\n\nconst normalizedPicked = toHomepageUrl(pickedRaw);\nconst matched = normalizedPicked ? candidates.find((candidate) => candidate.homepage === normalizedPicked) : null;\nif (matched && isAllowedUrl(matched.url || matched.homepage)) {\n  return { json: { best_url: matched.homepage } };\n}\n\nif (!candidates.length && normalizedPicked && isAllowedUrl(pickedRaw || normalizedPicked)) {\n  return { json: { best_url: normalizedPicked } };\n}\n\nif (top && top.score >= 12 && isAllowedUrl(top.url || top.homepage)) {\n  return { json: { best_url: top.homepage } };\n}\n\nreturn { json: { best_url: 'none' } };",
+        "jsCode": "function parseUrlParts(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return null;\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/)([^/?#]+)([^?#]*)/i);\n  if (!match) return null;\n  const protocol = match[1].toLowerCase();\n  const originalHost = String(match[2] || '').trim();\n  if (!originalHost) return null;\n  const hostname = originalHost.replace(/^www\\./i, '').toLowerCase();\n  let path = String(match[3] || '/').trim().toLowerCase();\n  if (!path) path = '/';\n  if (!path.startsWith('/')) path = '/' + path;\n  const segments = path.split('/').filter(Boolean);\n  return { origin: protocol + hostname + '/', hostname, path, depth: segments.length };\n}\nfunction toHomepageUrl(value) {\n  const parsed = parseUrlParts(value);\n  return parsed ? parsed.origin : '';\n}\nconst BLOCKED_HOSTS = [\n  'facebook.com','linkedin.com','instagram.com','twitter.com','x.com','healthhub.sg','moh.gov.sg',\n  'recordowl.com','findhealthclinics.com','wherecrowded.sg','yellowpages.com.sg','gobusiness.gov.sg',\n  'acra.gov.sg','straitstimes.com','channelnewsasia.com','todayonline.com','businesstimes.com.sg',\n  'tripadvisor.com','foursquare.com','yelp.com','sma.org.sg',\n  'wheree.com','clinicgeek.com','vymaps.com','sgpbusiness.com','threebestrated.sg','practo.com',\n  'ubiehealth.com','sgpgrid.com','worldorgs.com','aic.sg','contact.page','locallead.ai'\n];\nconst BLOCKED_PATH_PATTERNS = ['/at/place/','/listing/','/review/','/venue/','/places/','/directory/'];\nfunction isAllowedUrl(value) {\n  const parsed = parseUrlParts(value);\n  if (!parsed) return false;\n  if (BLOCKED_HOSTS.some((host) => parsed.hostname === host || parsed.hostname.endsWith('.' + host))) return false;\n  if (parsed.depth > 5) return false;\n  if (BLOCKED_PATH_PATTERNS.some((pattern) => parsed.path.includes(pattern))) return false;\n  return true;\n}\nconst scoreResult = $('Score URL Candidates').item.json || {};\nconst candidates = Array.isArray(scoreResult.candidates) ? scoreResult.candidates : [];\nif (scoreResult.skipllm === true) {\n  const direct = String(scoreResult.best_url || '').trim();\n  return { json: { best_url: direct || 'none' } };\n}\nconst pickedRaw = String($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '').trim();\nif (!pickedRaw || pickedRaw.toLowerCase() === 'none') {\n  return { json: { best_url: 'none' } };\n}\nconst normalizedPicked = toHomepageUrl(pickedRaw);\nconst matched = normalizedPicked ? candidates.find((candidate) => candidate.homepage === normalizedPicked) : null;\nif (matched && isAllowedUrl(matched.url || matched.homepage)) {\n  return { json: { best_url: matched.homepage } };\n}\nif (!candidates.length && normalizedPicked && isAllowedUrl(pickedRaw || normalizedPicked)) {\n  return { json: { best_url: normalizedPicked } };\n}\nreturn { json: { best_url: 'none' } };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
@@ -3061,11 +3030,6 @@
       ]
     },
     "Status - no contact found (stop)": {
-      "main": [
-        []
-      ]
-    },
-    "Status - enrichment failed": {
       "main": [
         []
       ]
