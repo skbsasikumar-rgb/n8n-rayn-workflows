@@ -2415,6 +2415,12 @@
       "retryOnFail": true,
       "maxTries": 3,
       "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      },
       "continueOnFail": true
     },
     {
