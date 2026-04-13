@@ -1163,8 +1163,8 @@
           },
           "conditions": [
             {
-              "id": "if-fallback-email-found-email-or-official",
-              "leftValue": "={{ (($json.email || $json.official_email || \"\").trim()) }}",
+              "id": "if-fallback-email-found-personal-only",
+              "leftValue": "={{ (($json.email || '').trim()) }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
@@ -1805,7 +1805,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_homepage_name: $json.company_homepage_name, parent_company: $json.parent_company, company_linkedin_url: $json.company_linkedin_url, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, regulatory_track: $json.regulatory_track, sector_track: $json.sector_track, personal_data_risk: $json.personal_data_risk, nehr_relevant: $json.nehr_relevant, funding_track_primary: $json.funding_track_primary, funding_track_secondary: $json.funding_track_secondary, funding_confidence: $json.funding_confidence, message_track: $json.message_track, classification_evidence: $json.classification_evidence, classification_source_url: $json.classification_source_url, first_name: '', role: '', email: '', linkedin_url: '', contact_source: 'none', status: $json.status }) }}",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name, company_homepage_name: $json.company_homepage_name, parent_company: $json.parent_company, company_linkedin_url: $json.company_linkedin_url, serper_results: $json.serper_results, best_url: $json.best_url, url_validated: $json.url_validated, website_content: $json.website_content, hia_relevant: $json.hia_relevant, industry_segment: $json.industry_segment, hia_batch: $json.hia_batch, company_size: $json.company_size, product_descriptor: $json.product_descriptor, compliance_lead: $json.compliance_lead, regulatory_track: $json.regulatory_track, sector_track: $json.sector_track, personal_data_risk: $json.personal_data_risk, nehr_relevant: $json.nehr_relevant, funding_track_primary: $json.funding_track_primary, funding_track_secondary: $json.funding_track_secondary, funding_confidence: $json.funding_confidence, message_track: $json.message_track, classification_evidence: $json.classification_evidence, classification_source_url: $json.classification_source_url, first_name: $json.first_name, role: $json.role, email: $json.email, linkedin_url: $json.linkedin_url, contact_source: $json.contact_source, status: $json.status }) }}",
         "options": {}
       },
       "id": "87ec47b1-5d56-4d54-a96b-90c43dca80cd",
