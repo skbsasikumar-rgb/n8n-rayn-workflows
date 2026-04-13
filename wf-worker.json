@@ -41,7 +41,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ (() => { const company = String($json._search_company_name || $json.company_name || '').trim(); const prompt = [ 'Clean up this company name for a web search: ' + company, '', 'Rules:', '- Remove legal suffixes: Pte Ltd, Ltd, Pte. Ltd., LLP, Inc, Corp, Sdn Bhd', '- Preserve meaningful brand words, initials, surnames, and brand punctuation when it helps exact matching', '- Normalize obvious punctuation noise only when it does not change the brand', '- Expand common abbreviations only if obvious', '- Keep proper nouns and brand names exactly as-is', '- If already clean, return as-is', '- Do not add any extra words', '- For clinic, family doctor, or location-based business names, prefer keeping the original searchable name', '- Only remove a trailing estate, branch, MRT, or neighborhood qualifier when the remaining operating brand is obviously complete without it', '- If the location word is part of the actual brand or helps distinguish the company, keep it', '- Keep initials such as P Tan, Dr+, NKF, HMI, YSL exactly when they appear in the company name', '- If the cleaned result would be fewer than 4 characters, return the original name unchanged', '', 'Examples:', '- Pacific Healthcare Holdings Pte. Ltd. -> Pacific Healthcare Holdings', '- NKF (Singapore) -> NKF Singapore', \"- St. Andrew's Mission Hospital -> St Andrews Mission Hospital\", '- P Tan Family Medicine Clinic -> P Tan Family Medicine Clinic', '- DR+ Medical & Paincare Bishan -> DR+ Medical & Paincare Bishan', '- HMI OneCare Clinic Bishan -> HMI OneCare Clinic Bishan', '- 1 Bishan Medical Clinic -> 1 Bishan Medical Clinic', '- Raffles Medical Bishan -> Raffles Medical Bishan', '- The Bishan Family Doctors -> The Bishan Family Doctors', '', 'Output: cleaned name only, one line.' ].join('\\n'); return JSON.stringify({ model: 'minimax/minimax-m2.7', temperature: 0, messages: [{ role: 'user', content: prompt }] }); })() }}",
         "options": {
-          "timeout": 60000
+          "timeout": 30000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -53,8 +53,8 @@
       "id": "fe96459e-0322-426e-883f-d4682ce7909b",
       "name": "OpenRouter - Clean Name",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "kVt6l9PuADkn7yhu",
@@ -73,7 +73,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify((() => {\n  function normalizeToken(value) {\n    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');\n  }\n  function unique(values) {\n    return [...new Set(values.map((value) => String(value || '').replace(/\\s+/g, ' ').trim()).filter(Boolean))];\n  }\n  const LOCATION_TOKENS = new Set(['bishan','bedok','hougang','bukit','merah','jalan','sin','ming','geylang','tampines','yishun','jurong','woodlands','serangoon','toa','payoh','sengkang','punggol','clementi','orchard','marine','parade','ang','mo','kio','pasir','ris','choa','chu','kang']);\n  const DESCRIPTOR_TOKENS = new Set(['medical','clinic','health','care','family','medicine','doctors','doctor','centre','center','surgery','practice','group','services']);\n  const TRAILING_GENERIC = new Set(['clinic','centre','center','surgery','practice','services']);\n  function collapseGenericTail(value) {\n    let tokens = String(value || '').split(/\\s+/).filter(Boolean);\n    const variants = [];\n    while (tokens.length > 2 && TRAILING_GENERIC.has(normalizeToken(tokens[tokens.length - 1]))) {\n      tokens = tokens.slice(0, -1);\n      variants.push(tokens.join(' '));\n    }\n    return variants;\n  }\n  function removeLocationTokens(value) {\n    const tokens = String(value || '').split(/\\s+/).filter(Boolean);\n    if (tokens.length < 3) return [];\n    const nonLocationCount = tokens.filter((token) => !LOCATION_TOKENS.has(normalizeToken(token))).length;\n    if (nonLocationCount < 2) return [];\n    const filtered = tokens.filter((token, idx) => {\n      const lower = normalizeToken(token);\n      if (!LOCATION_TOKENS.has(lower)) return true;\n      const descriptorAfter = tokens.slice(idx + 1).some((part) => DESCRIPTOR_TOKENS.has(normalizeToken(part)));\n      const trailingLocation = idx === tokens.length - 1 && idx >= 2;\n      const embeddedBranchLocation = idx > 0 && descriptorAfter;\n      return !(trailingLocation || embeddedBranchLocation);\n    });\n    const collapsed = filtered.join(' ').replace(/\\s+/g, ' ').trim();\n    if (!collapsed || collapsed === String(value || '').trim()) return [];\n    return [collapsed, ...collapseGenericTail(collapsed)];\n  }\n  function buildAliases(rawValue, cleanedValue) {\n    const rawLoose = String(rawValue || '').replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim();\n    const cleaned = String(cleanedValue || '').replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim();\n    const base = [\n      cleaned.length >= 4 ? cleaned : '',\n      rawLoose,\n      rawLoose.replace(/\\s*@\\s.*/i, '').trim(),\n      rawLoose.split(/\\s+by\\s+/i)[0].trim(),\n      String(rawValue || '').replace(/\\s*\\([^)]*\\)\\s*/g, ' ').replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim()\n    ].filter(Boolean);\n    const expanded = [];\n    for (const variant of base) {\n      expanded.push(variant);\n      expanded.push(...removeLocationTokens(variant));\n      expanded.push(...collapseGenericTail(variant));\n    }\n    return unique(expanded).filter((value) => value.length >= 2);\n  }\n  const raw = String($('Loop Over Items').item.json._search_company_name || $('Loop Over Items').item.json.company_name || '').trim();\n  const cleanRaw = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || raw)).trim();\n  const rawLoose = raw.replace(/[()]/g, ' ').replace(/\\s+/g, ' ').trim();\n  const aliases = buildAliases(raw, cleanRaw).filter((value) => String(value || '').trim().length >= 4);\n  const negatives = ['-site:facebook.com','-site:linkedin.com','-site:instagram.com','-site:healthhub.sg','-site:moh.gov.sg','-site:findhealthclinics.com','-site:recordowl.com','-site:wherecrowded.sg','-site:yellowpages.com.sg','-site:gobusiness.gov.sg','-site:straitstimes.com','-site:channelnewsasia.com','-site:todayonline.com','-site:wheree.com','-site:clinicgeek.com','-site:vymaps.com','-site:sgpbusiness.com','-site:threebestrated.sg','-site:practo.com','-site:ubiehealth.com','-site:sgpgrid.com','-site:worldorgs.com','-site:aic.sg','-site:zhihu.com','-site:quora.com','-site:contact.page','-site:locallead.ai','-site:99.co','-site:activeasia.co','-site:unifiedlisting.com'];\n  const queryCore = aliases.map((value) => '\"' + value + '\"').join(' OR ');\n  const q = [queryCore || '\"' + rawLoose + '\"', 'Singapore official website clinic medical healthcare', ...negatives].filter(Boolean).join(' ');\n  return { q, num: 10, gl: 'sg' };\n})()) }}",
         "options": {
-          "timeout": 30000
+          "timeout": 20000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -85,8 +85,8 @@
       "id": "fe508761-32d3-4bff-b7e9-49064f6a746d",
       "name": "SearXNG - Search",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "rNWf15tU6OmVJqMC",
@@ -247,7 +247,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  model:'minimax/minimax-m2.7',\n  temperature:0,\n  messages:[{\n    role:'user',\n    content:(() => {\n      const originalName = String($('Loop Over Items').item.json.company_name || '').trim();\n      const searchName = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json._search_company_name || originalName || '')).trim();\n      const scored = String($json.candidate_summary || '').trim();\n      const raw = String($json.raw_results_summary || '').trim();\n      return 'Company input: ' + originalName + '\\n' +\n        'Search aliases: ' + [searchName, $('Loop Over Items').item.json._search_company_name || '', originalName].filter(Boolean).join(' | ') + '\\n\\n' +\n        'Scored candidates:\\n' + (scored || '(none)') + '\\n\\n' +\n        'Raw search results:\\n' + (raw || '(none)') + '\\n\\n' +\n        'Task:\\n' +\n        'Choose the official homepage for the same organisation.\\n\\n' +\n        'Rules:\\n' +\n        '- Prefer exact organisation match.\\n' +\n        '- A parent/group homepage is allowed only if the title or snippet clearly links the company to that parent/group.\\n' +\n        '- Reject directories, social profiles, marketplaces, government listings, news, and aggregators.\\n' +\n        '- If uncertain, return none.\\n' +\n        '- Output only the homepage root (origin only).\\n\\n' +\n        'Output: URL only, or none. One line.';\n    })()\n  }]\n}) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 30000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -259,8 +259,8 @@
       "id": "c75394b2-750d-400e-a626-47f2746624be",
       "name": "OpenRouter - URL Dedup",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "kVt6l9PuADkn7yhu",
@@ -436,7 +436,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  model:'minimax/minimax-m2.7',\n  temperature:0,\n  messages:[{\n    role:'user',\n    content:(() => {\n      const originalName = String($('Loop Over Items').item.json.company_name || '').trim();\n      const searchName = String(($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json._search_company_name || originalName || '')).trim();\n      const currentCandidate = String($json.best_url || '').trim();\n      const scored = String($('Score URL Candidates').item.json.candidate_summary || '').trim();\n      const raw = String($('Score URL Candidates').item.json.raw_results_summary || '').trim();\n      return 'Company input: ' + originalName + '\\n' +\n        'Search name: ' + searchName + '\\n' +\n        'Current candidate URL: ' + currentCandidate + '\\n\\n' +\n        'Top scored candidates:\\n' + (scored || '(none)') + '\\n\\n' +\n        'Top raw search results:\\n' + (raw || '(none)') + '\\n\\n' +\n        'Task:\\n' +\n        'Choose the single best official homepage for this organisation from the current candidate, scored candidates, and raw search results.\\n\\n' +\n        'Rules:\\n' +\n        '- Review the full set, not just the first result.\\n' +\n        '- Prefer the exact organisation that matches the original company input.\\n' +\n        '- A parent/group homepage is allowed only if the title or snippet clearly links the company to that parent/group.\\n' +\n        '- Reject directories, aggregators, marketplaces, social profiles, government listings, news pages, and unrelated companies.\\n' +\n        '- Reject any URL whose path clearly looks like a listing directory such as /at/place/, /listing/, /review/, /venue/, /places/, or /directory/.\\n' +\n        '- Prefer the homepage root when the same official domain appears anywhere in the evidence.\\n' +\n        '- If uncertain, output empty string.\\n\\n' +\n        'Output: homepage URL only, or empty string.';\n    })()\n  }]\n}) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 30000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -448,8 +448,8 @@
       "id": "3a227517-97fa-48c1-bbf1-21e4870e3ee3",
       "name": "OpenRouter - URL Validate",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "kVt6l9PuADkn7yhu",
@@ -528,7 +528,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ url: (($json.choices?.[0]?.message?.content || $json.body?.choices?.[0]?.message?.content || '') + '').trim(), company_name: (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim(), market: 'Singapore' }) }}",
         "options": {
-          "timeout": 240000
+          "timeout": 90000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -540,8 +540,8 @@
       "id": "a1f37d37-d37a-4ae8-9984-ab4f2a8f337e",
       "name": "Crawl4AI - Scrape",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "continueOnFail": true
     },
     {
@@ -1021,7 +1021,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ domain: $('Prep Anymail Domain').item.json.clean_domain || undefined, company_name: $('Prep Anymail Domain').item.json.lookup_company_name || $('Parse Parent Company').item.json.parent_company || $('Parse Parent Company').item.json.company_homepage_name || (($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '')).trim(), full_name: $json.full_name || undefined, first_name: $json.first_name || undefined, last_name: $json.last_name || undefined }) }}",
         "options": {
-          "timeout": 180000
+          "timeout": 60000
         }
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -1301,76 +1301,6 @@
       "waitBetweenTries": 1000
     },
     {
-      "name": "HTTP Status Check",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "id": "http-status-check-001",
-      "position": [
-        -27104,
-        2512
-      ],
-      "continueOnFail": true,
-      "parameters": {
-        "method": "HEAD",
-        "url": "={{ $json.best_url }}",
-        "options": {
-          "timeout": 10000,
-          "response": {
-            "response": {
-              "fullResponse": true,
-              "neverError": true
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "Parse HTTP Status",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "id": "parse-http-status-001",
-      "position": [
-        -26864,
-        2512
-      ],
-      "parameters": {
-        "jsCode": "const best_url = $('IF URL None').item.json.best_url;\nconst statusCode = $json.statusCode;\nconst hasNetworkError = !!$json.error || statusCode === undefined;\n\n// Network error (connection refused, DNS fail, timeout) -> unreachable\nif (hasNetworkError) {\n  return { json: { best_url, _unreachable: true, http_reason: 'connection_error' } };\n}\n\n// 5xx server errors -> unreachable\nif (statusCode >= 500) {\n  return { json: { best_url, _unreachable: true, http_reason: 'server_error_' + statusCode } };\n}\n\n// 403/429 = site is up but blocking bots -> proceed\n// 2xx/3xx (n8n follows redirects to final URL) -> proceed\n// 404 = specific page missing but domain exists -> proceed (URL validate will judge)\nreturn { json: { best_url, _unreachable: false, http_status: statusCode } };",
-        "mode": "runOnceForEachItem",
-        "language": "javaScript"
-      }
-    },
-    {
-      "name": "IF Unreachable",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "id": "if-unreachable-001",
-      "position": [
-        -26624,
-        2512
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": false,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-unreach-1",
-              "leftValue": "={{ $json._unreachable }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      }
-    },
-    {
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForEachItem",
@@ -1425,8 +1355,8 @@
         2752
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
@@ -1450,7 +1380,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
         "options": {
-          "timeout": 60000
+          "timeout": 30000
         }
       },
       "credentials": {
@@ -1500,8 +1430,8 @@
         2752
       ],
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "continueOnFail": true,
       "parameters": {
         "method": "POST",
@@ -1525,7 +1455,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
         "options": {
-          "timeout": 120000
+          "timeout": 60000
         }
       },
       "credentials": {
@@ -2149,7 +2079,7 @@
         "method": "POST",
         "url": "https://google.serper.dev/search",
         "options": {
-          "timeout": 30000
+          "timeout": 20000
         },
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "httpHeaderAuth",
@@ -2167,8 +2097,8 @@
       "id": "14b356e1-4cfa-4ba2-9b95-b2b37c3d13d5",
       "name": "SearXNG - Search Fallback",
       "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
       "credentials": {
         "httpHeaderAuth": {
           "id": "rNWf15tU6OmVJqMC",
@@ -2569,46 +2499,6 @@
         [
           {
             "node": "Prep Partial No Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP Status Check": {
-      "main": [
-        [
-          {
-            "node": "Parse HTTP Status",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse HTTP Status": {
-      "main": [
-        [
-          {
-            "node": "IF Unreachable",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Unreachable": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter - URL Validate",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "OpenRouter - URL Validate",
             "type": "main",
             "index": 0
           }
