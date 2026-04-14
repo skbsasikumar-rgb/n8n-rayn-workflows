@@ -314,7 +314,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "{\"status\": \"url duplicate - same org\"}",
+        "jsonBody": "={{ JSON.stringify((() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return { status: 'url duplicate - same org', best_url: url, url_validated: url }; })()) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
@@ -1163,6 +1163,114 @@
       "waitBetweenTries": 1000
     },
     {
+      "name": "List URL Claims Before Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "list-url-claims-before-pending-001",
+      "position": [
+        -22064,
+        2672
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "where",
+              "value": "={{ (() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return url ? '(url_validated,eq,' + url + ')' : '(Id,eq,-1)'; })() }}"
+            },
+            {
+              "name": "fields",
+              "value": "Id,url_validated,company_homepage_name,parent_company,UpdatedAt,status"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst currentId = Number($('Loop Over Items').item.json.Id || 0);\nconst currentUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst list = Array.isArray($json.list) ? $json.list : [];\nconst sameUrl = list\n  .filter((row) => normalizeWorkflowUrl(row.url_validated) === currentUrl)\n  .filter((row) => String(row.status || '').toLowerCase() !== 'url duplicate - same org')\n  .sort((a, b) => Number(a.Id || 0) - Number(b.Id || 0));\nconst ownerId = sameUrl.length ? Number(sameUrl[0].Id || 0) : currentId;\nreturn {\n  json: {\n    current_url: currentUrl,\n    owner_id: ownerId,\n    claim_count: sameUrl.length,\n    winner: !!currentUrl && ownerId === currentId\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -21824,
+        2672
+      ],
+      "id": "resolve-url-claim-before-pending-001",
+      "name": "Resolve URL Claim Before Pending"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-url-claim-winner-before-pending-1",
+              "leftValue": "={{ $json.winner }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -21584,
+        2672
+      ],
+      "id": "if-url-claim-winner-before-pending-001",
+      "name": "IF URL Claim Winner Before Pending"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: $('Prep Outreach Context').item.json || {} };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -21344,
+        2672
+      ],
+      "id": "restore-pending-payload-001",
+      "name": "Restore Pending Payload"
+    },
+    {
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForEachItem",
@@ -1611,6 +1719,114 @@
       "continueOnFail": true
     },
     {
+      "name": "List URL Claims Before No Contact",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "id": "list-url-claims-before-no-contact-001",
+      "position": [
+        -22064,
+        3216
+      ],
+      "continueOnFail": true,
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "xc-token",
+              "value": "SqqM8YcDuzXGijg0oY7PvqTcPX5H-r2sYqbAOWTN"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "where",
+              "value": "={{ (() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); const lower = raw.toLowerCase(); const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : ''; return url ? '(url_validated,eq,' + url + ')' : '(Id,eq,-1)'; })() }}"
+            },
+            {
+              "name": "fields",
+              "value": "Id,url_validated,company_homepage_name,parent_company,UpdatedAt,status"
+            },
+            {
+              "name": "limit",
+              "value": "50"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 500
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst currentId = Number($('Loop Over Items').item.json.Id || 0);\nconst currentUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst list = Array.isArray($json.list) ? $json.list : [];\nconst sameUrl = list\n  .filter((row) => normalizeWorkflowUrl(row.url_validated) === currentUrl)\n  .filter((row) => String(row.status || '').toLowerCase() !== 'url duplicate - same org')\n  .sort((a, b) => Number(a.Id || 0) - Number(b.Id || 0));\nconst ownerId = sameUrl.length ? Number(sameUrl[0].Id || 0) : currentId;\nreturn {\n  json: {\n    current_url: currentUrl,\n    owner_id: ownerId,\n    claim_count: sameUrl.length,\n    winner: !!currentUrl && ownerId === currentId\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -21824,
+        3216
+      ],
+      "id": "resolve-url-claim-before-no-contact-001",
+      "name": "Resolve URL Claim Before No Contact"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "cond-url-claim-winner-before-no-contact-1",
+              "leftValue": "={{ $json.winner }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -21584,
+        3216
+      ],
+      "id": "if-url-claim-winner-before-no-contact-001",
+      "name": "IF URL Claim Winner Before No Contact"
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "mode": "runOnceForEachItem",
+        "jsCode": "return { json: $('Prep Partial No Contact').item.json || {} };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -21344,
+        3216
+      ],
+      "id": "restore-no-contact-payload-001",
+      "name": "Restore No Contact Payload"
+    },
+    {
       "id": "prep-classification-001",
       "name": "Prep Classification",
       "type": "n8n-nodes-base.code",
@@ -1731,7 +1947,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify((() => {\n  const raw = String($('Check URL Against All').item.json.best_url || '').trim();\n  const lower = raw.toLowerCase();\n  const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : '';\n  const homepage = String($('Parse Parent Company').item.json.company_homepage_name || '').trim();\n  const parent = String($('Parse Parent Company').item.json.parent_company || homepage).trim();\n  return { best_url: url, url_validated: url, company_homepage_name: homepage, parent_company: parent };\n})()) }}",
+        "jsonBody": "={{ JSON.stringify((() => {\n  const raw = String($('Check URL Against All').item.json.best_url || '').trim();\n  const lower = raw.toLowerCase();\n  const url = raw && !['reject','rejected','none','duplicate','url rejected'].includes(lower) && (lower.startsWith('http://') || lower.startsWith('https://')) ? raw : '';\n  return { best_url: url, url_validated: url };\n})()) }}",
         "options": {
           "timeout": 20000
         }
@@ -1800,7 +2016,7 @@
       "parameters": {
         "language": "javaScript",
         "mode": "runOnceForEachItem",
-        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst currentId = Number($('Loop Over Items').item.json.Id || 0);\nconst currentUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst list = Array.isArray($json.list) ? $json.list : [];\nconst sameUrl = list\n  .filter((row) => normalizeWorkflowUrl(row.url_validated) === currentUrl)\n  .filter((row) => String(row.status || '').toLowerCase() !== 'url duplicate')\n  .sort((a, b) => Number(a.Id || 0) - Number(b.Id || 0));\nconst ownerId = sameUrl.length ? Number(sameUrl[0].Id || 0) : currentId;\nreturn {\n  json: {\n    current_url: currentUrl,\n    owner_id: ownerId,\n    claim_count: sameUrl.length,\n    winner: !!currentUrl && ownerId === currentId\n  }\n};"
+        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst currentId = Number($('Loop Over Items').item.json.Id || 0);\nconst currentUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst list = Array.isArray($json.list) ? $json.list : [];\nconst sameUrl = list\n  .filter((row) => normalizeWorkflowUrl(row.url_validated) === currentUrl)\n  .filter((row) => !String(row.status || '').toLowerCase().startsWith('url duplicate'))\n  .sort((a, b) => Number(a.Id || 0) - Number(b.Id || 0));\nconst ownerId = sameUrl.length ? Number(sameUrl[0].Id || 0) : currentId;\nreturn {\n  json: {\n    current_url: currentUrl,\n    owner_id: ownerId,\n    claim_count: sameUrl.length,\n    winner: !!currentUrl && ownerId === currentId\n  }\n};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -2047,7 +2263,7 @@
         ],
         [
           {
-            "node": "Crawl4AI - Scrape",
+            "node": "List URL Claims",
             "type": "main",
             "index": 0
           }
@@ -2430,7 +2646,7 @@
       "main": [
         [
           {
-            "node": "Write Partial & Pending",
+            "node": "List URL Claims Before Pending",
             "type": "main",
             "index": 0
           }
@@ -2463,7 +2679,7 @@
       "main": [
         [
           {
-            "node": "List URL Claims",
+            "node": "SearXNG - Company LinkedIn Search",
             "type": "main",
             "index": 0
           }
@@ -2587,7 +2803,7 @@
       "main": [
         [
           {
-            "node": "Write Partial No Contact",
+            "node": "List URL Claims Before No Contact",
             "type": "main",
             "index": 0
           }
@@ -2753,7 +2969,7 @@
       "main": [
         [
           {
-            "node": "SearXNG - Company LinkedIn Search",
+            "node": "Crawl4AI - Scrape",
             "type": "main",
             "index": 0
           }
@@ -2794,6 +3010,108 @@
         [
           {
             "node": "Status - url duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List URL Claims Before Pending": {
+      "main": [
+        [
+          {
+            "node": "Resolve URL Claim Before Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve URL Claim Before Pending": {
+      "main": [
+        [
+          {
+            "node": "IF URL Claim Winner Before Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL Claim Winner Before Pending": {
+      "main": [
+        [
+          {
+            "node": "Restore Pending Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - url duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Pending Payload": {
+      "main": [
+        [
+          {
+            "node": "Write Partial & Pending",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List URL Claims Before No Contact": {
+      "main": [
+        [
+          {
+            "node": "Resolve URL Claim Before No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve URL Claim Before No Contact": {
+      "main": [
+        [
+          {
+            "node": "IF URL Claim Winner Before No Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF URL Claim Winner Before No Contact": {
+      "main": [
+        [
+          {
+            "node": "Restore No Contact Payload",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Status - url duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore No Contact Payload": {
+      "main": [
+        [
+          {
+            "node": "Write Partial No Contact",
             "type": "main",
             "index": 0
           }
