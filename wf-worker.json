@@ -612,96 +612,6 @@
     },
     {
       "parameters": {
-        "method": "GET",
-        "url": "https://api.hunter.io/v2/domain-search",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-API-KEY",
-              "value": "30f1b25815a3bbf659f0db204795dc95fecac58b"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "domain",
-              "value": "={{ String($json.contact_domain || (() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); if (!raw) return ''; const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i); return String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim(); })()).replace(/^www\\./i, '').toLowerCase().trim() || undefined }}"
-            },
-            {
-              "name": "limit",
-              "value": "25"
-            },
-            {
-              "name": "type",
-              "value": "personal"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "ef208871-8b6d-4a67-a4cb-c59fa6401b07",
-      "name": "Hunter - Contact",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -23264,
-        2992
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const HONORIFICS = new Set(['dr','prof','professor','mr','mrs','ms','miss','md']);\nconst BLOCKED_EMAIL_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','icloud.com','aol.com','proton.me','protonmail.com']);\nconst GENERIC_LOCAL_PARTS = new Set(['info','hello','hi','admin','support','contact','ask','enquiry','inquiry','office','sales','team','clinic','medical','feedback','service','appointment','appointments','booking','bookings','reception','general','marketing','hr','career','careers','privacy','dpo','compliance','it']);\nconst COMPANY_STOP_WORDS = new Set(['the','and','pte','ltd','limited','private','singapore','clinic','medical','health','care','centre','center','group','holdings','services','service','family','medicine','doctors','doctor','practice']);\nfunction normaliseToken(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }\nfunction normalizeText(value) { return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }\nfunction cleanNameToken(value) { return String(value || '').replace(/^[^A-Za-z]+|[^A-Za-z'-]+$/g, '').trim(); }\nfunction stripHonorifics(value) {\n  return String(value || '').replace(/\\b(dr|dr\\.|prof|prof\\.|professor|mr|mr\\.|mrs|mrs\\.|ms|ms\\.|miss|md)\\b/gi, ' ').replace(/\\s+/g, ' ').trim();\n}\nfunction titleCaseToken(value) {\n  const cleaned = cleanNameToken(value);\n  if (!cleaned) return '';\n  if (/^[A-Z]\\.?$/.test(cleaned)) return cleaned.replace(/\\.$/, '') + '.';\n  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();\n}\nfunction splitNameTokens(value) {\n  return stripHonorifics(value).split(/\\s+/).map(titleCaseToken).filter(Boolean).filter((token) => !HONORIFICS.has(normaliseToken(token)));\n}\nfunction extractLinkedInSlugTokens(url) {\n  const raw = String(url || '');\n  const match = raw.match(/linkedin\\.com\\/(?:in|pub)\\/([^/?#]+)/i);\n  if (!match) return [];\n  return decodeURIComponent(match[1]).split('-').map((part) => part.replace(/\\d+$/, '').trim()).map(titleCaseToken).filter(Boolean);\n}\nfunction deriveNameParts({ fullName, firstName, lastName, linkedinUrl }) {\n  const explicitFirst = splitNameTokens(firstName).join(' ');\n  const explicitLast = splitNameTokens(lastName).join(' ');\n  const sourceTokens = splitNameTokens(fullName).length ? splitNameTokens(fullName) : extractLinkedInSlugTokens(linkedinUrl);\n  const normalizedFull = sourceTokens.join(' ');\n  const normalizedFirst = explicitFirst || sourceTokens[0] || '';\n  const normalizedLast = explicitLast || (sourceTokens.length > 1 ? sourceTokens[sourceTokens.length - 1] : '');\n  return {\n    full_name: normalizedFull || [normalizedFirst, normalizedLast].filter(Boolean).join(' '),\n    first_name: normalizedFirst,\n    last_name: normalizedLast\n  };\n}\nfunction domainFromEmail(value) {\n  const raw = String(value || '').trim().toLowerCase();\n  if (!raw.includes('@')) return '';\n  return raw.split('@')[1].replace(/^www\\./i, '').trim();\n}\nfunction parseAllowedDomains() {\n  const raw = String($('Check URL Against All').item.json.best_url || '').trim();\n  if (!raw) return [];\n  const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i);\n  const hostname = String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim();\n  return hostname && hostname.includes('.') ? [hostname] : [];\n}\nfunction isGenericLocal(localFlat) {\n  return GENERIC_LOCAL_PARTS.has(localFlat) || [...GENERIC_LOCAL_PARTS].some((part) => localFlat === part || localFlat.startsWith(part) || localFlat.endsWith(part));\n}\nfunction acceptPersonalEmail(email, allowedDomains) {\n  const raw = String(email || '').trim().toLowerCase();\n  if (!raw || !raw.includes('@')) return false;\n  const emailDomain = domainFromEmail(raw);\n  if (!emailDomain || BLOCKED_EMAIL_DOMAINS.has(emailDomain)) return false;\n  if (!allowedDomains.length) return false;\n  if (!allowedDomains.some((domain) => emailDomain === domain || emailDomain.endsWith('.' + domain))) return false;\n  const localFlat = normaliseToken(raw.split('@')[0]);\n  if (!localFlat || isGenericLocal(localFlat)) return false;\n  return true;\n}\nfunction titleScore(value) {\n  const text = normalizeText(value);\n  if (!text) return 0;\n  let score = 0;\n  if (/\b(founder|co founder|co-founder|owner|president|chairman|chief executive officer|ceo|managing director|executive director)\b/.test(text)) score += 140;\n  if (/\b(cio|cto|ciso|head of it|it director|it manager|technology director|security director|head of security|information security)\b/.test(text)) score += 120;\n  if (/\b(data protection officer|dpo|privacy officer|head of compliance|compliance manager|compliance officer)\b/.test(text)) score += 110;\n  if (/\b(medical director|principal doctor|clinic director)\b/.test(text)) score += 100;\n  if (/\b(clinic manager|practice manager|operations manager|operations lead)\b/.test(text)) score += 90;\n  if (/\b(director)\b/.test(text)) score += 50;\n  return score;\n}\nconst emails = Array.isArray($json?.data?.emails) ? $json.data.emails : [];\nconst allowedDomains = parseAllowedDomains();\nlet best = null;\nfor (const person of emails) {\n  const names = deriveNameParts({\n    fullName: person.full_name || [person.first_name || '', person.last_name || ''].filter(Boolean).join(' '),\n    firstName: person.first_name,\n    lastName: person.last_name,\n    linkedinUrl: person.linkedin || person.linkedin_url\n  });\n  const rawEmail = String(person.value || person.email || '').trim();\n  if (!acceptPersonalEmail(rawEmail, allowedDomains)) continue;\n  const role = String(person.position || person.job_title || person.title || '').trim();\n  const verificationStatus = String(person.verification?.status || person.verification_status || '').trim().toLowerCase();\n  const score = titleScore(role) + (['valid','verified'].includes(verificationStatus) ? 20 : 0);\n  if (!score) continue;\n  if (!best || score > best.score) {\n    best = {\n      score,\n      full_name: names.full_name || '',\n      first_name: names.first_name || '',\n      last_name: names.last_name || '',\n      role,\n      email: rawEmail,\n      linkedin_url: String(person.linkedin || person.linkedin_url || '').trim(),\n      source_url: '',\n      evidence_snippet: '',\n      verification_status: verificationStatus,\n      source: 'hunter'\n    };\n  }\n}\nreturn { json: best ? {\n  full_name: best.full_name,\n  first_name: best.first_name,\n  last_name: best.last_name,\n  role: best.role,\n  email: best.email,\n  official_email: '',\n  linkedin_url: best.linkedin_url,\n  source_url: best.source_url,\n  evidence_snippet: best.evidence_snippet,\n  verification_status: best.verification_status,\n  source: best.source\n} : {\n  full_name: '',\n  first_name: '',\n  last_name: '',\n  role: '',\n  email: '',\n  official_email: '',\n  linkedin_url: '',\n  source_url: '',\n  evidence_snippet: '',\n  verification_status: '',\n  source: 'hunter'\n} };",
-        "mode": "runOnceForEachItem",
-        "language": "javaScript"
-      },
-      "id": "601985e9-7b46-4c34-b9a0-1d8fba4109e5",
-      "name": "Parse Hunter Contact",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -23024,
-        2992
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "if-still-no-contact-email-or-official",
-              "leftValue": "={{ (($json.email || \"\").trim()) }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "empty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "d48604da-666e-49a2-b6ba-c89f028c634d",
-      "name": "IF Still No Contact",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -22784,
-        2992
-      ]
-    },
-    {
-      "parameters": {
         "method": "PATCH",
         "url": "=https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/{{ $('Loop Over Items').item.json.Id }}",
         "sendHeaders": true,
@@ -948,174 +858,6 @@
       ],
       "id": "if-fallback-anymail-email-found-001",
       "name": "IF Fallback Anymail Email Found"
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.hunter.io/v2/email-finder",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-API-KEY",
-              "value": "30f1b25815a3bbf659f0db204795dc95fecac58b"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "domain",
-              "value": "={{ String($json.contact_domain || (() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); if (!raw) return ''; const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i); return String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim(); })()).replace(/^www\\./i, '').toLowerCase().trim() || undefined }}"
-            },
-            {
-              "name": "full_name",
-              "value": "={{ $json.full_name }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "hunter-fallback-email-finder-001",
-      "name": "Hunter - Fallback Email Finder",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -21344,
-        3408
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const HONORIFICS = new Set(['dr','prof','professor','mr','mrs','ms','miss','md']);\nconst BLOCKED_EMAIL_DOMAINS = new Set(['gmail.com','yahoo.com','hotmail.com','outlook.com','live.com','icloud.com','aol.com','proton.me','protonmail.com']);\nconst GENERIC_LOCAL_PARTS = new Set(['info','hello','hi','admin','support','contact','ask','enquiry','inquiry','office','sales','team','clinic','medical','feedback','service','appointment','appointments','booking','bookings','reception','general','marketing','hr','career','careers','privacy','dpo','compliance','it']);\nconst COMPANY_STOP_WORDS = new Set(['the','and','pte','ltd','limited','private','singapore','clinic','medical','health','care','centre','center','group','holdings','services','service','family','medicine','doctors','doctor','practice']);\nfunction normaliseToken(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }\nfunction normalizeText(value) { return String(value || '').toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim(); }\nfunction cleanNameToken(value) { return String(value || '').replace(/^[^A-Za-z]+|[^A-Za-z'-]+$/g, '').trim(); }\nfunction stripHonorifics(value) {\n  return String(value || '').replace(/\\b(dr|dr\\.|prof|prof\\.|professor|mr|mr\\.|mrs|mrs\\.|ms|ms\\.|miss|md)\\b/gi, ' ').replace(/\\s+/g, ' ').trim();\n}\nfunction titleCaseToken(value) {\n  const cleaned = cleanNameToken(value);\n  if (!cleaned) return '';\n  if (/^[A-Z]\\.?$/.test(cleaned)) return cleaned.replace(/\\.$/, '') + '.';\n  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();\n}\nfunction splitNameTokens(value) {\n  return stripHonorifics(value).split(/\\s+/).map(titleCaseToken).filter(Boolean).filter((token) => !HONORIFICS.has(normaliseToken(token)));\n}\nfunction extractLinkedInSlugTokens(url) {\n  const raw = String(url || '');\n  const match = raw.match(/linkedin\\.com\\/(?:in|pub)\\/([^/?#]+)/i);\n  if (!match) return [];\n  return decodeURIComponent(match[1]).split('-').map((part) => part.replace(/\\d+$/, '').trim()).map(titleCaseToken).filter(Boolean);\n}\nfunction deriveNameParts({ fullName, firstName, lastName, linkedinUrl }) {\n  const explicitFirst = splitNameTokens(firstName).join(' ');\n  const explicitLast = splitNameTokens(lastName).join(' ');\n  const sourceTokens = splitNameTokens(fullName).length ? splitNameTokens(fullName) : extractLinkedInSlugTokens(linkedinUrl);\n  const normalizedFull = sourceTokens.join(' ');\n  const normalizedFirst = explicitFirst || sourceTokens[0] || '';\n  const normalizedLast = explicitLast || (sourceTokens.length > 1 ? sourceTokens[sourceTokens.length - 1] : '');\n  return {\n    full_name: normalizedFull || [normalizedFirst, normalizedLast].filter(Boolean).join(' '),\n    first_name: normalizedFirst,\n    last_name: normalizedLast\n  };\n}\nfunction domainFromEmail(value) {\n  const raw = String(value || '').trim().toLowerCase();\n  if (!raw.includes('@')) return '';\n  return raw.split('@')[1].replace(/^www\\./i, '').trim();\n}\nfunction parseAllowedDomains() {\n  const raw = String($('Check URL Against All').item.json.best_url || '').trim();\n  if (!raw) return [];\n  const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i);\n  const hostname = String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim();\n  return hostname && hostname.includes('.') ? [hostname] : [];\n}\nfunction isGenericLocal(localFlat) {\n  return GENERIC_LOCAL_PARTS.has(localFlat) || [...GENERIC_LOCAL_PARTS].some((part) => localFlat === part || localFlat.startsWith(part) || localFlat.endsWith(part));\n}\nfunction acceptPersonalEmail(email, allowedDomains) {\n  const raw = String(email || '').trim().toLowerCase();\n  if (!raw || !raw.includes('@')) return false;\n  const emailDomain = domainFromEmail(raw);\n  if (!emailDomain || BLOCKED_EMAIL_DOMAINS.has(emailDomain)) return false;\n  if (!allowedDomains.length) return false;\n  if (!allowedDomains.some((domain) => emailDomain === domain || emailDomain.endsWith('.' + domain))) return false;\n  const localFlat = normaliseToken(raw.split('@')[0]);\n  if (!localFlat || isGenericLocal(localFlat)) return false;\n  return true;\n}\nconst candidate = $('Parse Fallback Anymail Person').item.json || {};\nconst data = $json?.data || {};\nconst sources = Array.isArray(data.sources) ? data.sources : [];\nconst names = deriveNameParts({\n  fullName: candidate.full_name || [data.first_name || '', data.last_name || ''].filter(Boolean).join(' '),\n  firstName: candidate.first_name || data.first_name,\n  lastName: candidate.last_name || data.last_name,\n  linkedinUrl: candidate.linkedin_url || data.linkedin || data.linkedin_url\n});\nconst allowedDomains = parseAllowedDomains();\nconst rawEmail = String(data.email || '').trim();\nconst accepted = acceptPersonalEmail(rawEmail, allowedDomains);\nreturn { json: {\n  full_name: names.full_name || candidate.full_name || '',\n  first_name: names.first_name || candidate.first_name || '',\n  last_name: names.last_name || candidate.last_name || '',\n  role: String(candidate.role || data.position || '').trim(),\n  email: accepted ? rawEmail : '',\n  official_email: '',\n  linkedin_url: String(candidate.linkedin_url || data.linkedin || data.linkedin_url || '').trim(),\n  source_url: String(candidate.source_url || sources[0]?.uri || '').trim(),\n  evidence_snippet: String(candidate.evidence_snippet || '').trim(),\n  finder_score: Number(data.score || 0),\n  verification_status: String(data.verification?.status || data.verification?.result || '').trim(),\n  source: 'leadership_hunter'\n} };",
-        "mode": "runOnceForEachItem",
-        "language": "javaScript"
-      },
-      "id": "parse-fallback-email-finder-001",
-      "name": "Parse Fallback Email Finder",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -21104,
-        3408
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "if-fallback-email-found-personal-only",
-              "leftValue": "={{ (($json.email || '').trim()) }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "if-fallback-email-found-001",
-      "name": "IF Fallback Email Found",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -20864,
-        3408
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.hunter.io/v2/email-verifier",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "X-API-KEY",
-              "value": "30f1b25815a3bbf659f0db204795dc95fecac58b"
-            }
-          ]
-        },
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "email",
-              "value": "={{ $json.email }}"
-            }
-          ]
-        },
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "id": "hunter-fallback-email-verify-001",
-      "name": "Hunter - Fallback Email Verify",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -20624,
-        3408
-      ],
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "jsCode": "const found = $('Parse Fallback Email Finder').item.json;\nconst data = $json?.data || {};\nconst verifierStatus = String(data.status || data.result || '').trim().toLowerCase();\nconst finderStatus = String(found.verification_status || '').trim().toLowerCase();\nconst status = verifierStatus || finderStatus;\nconst verificationScore = Number(data.score || found.finder_score || 0);\nconst finderScore = Number(found.finder_score || 0);\nconst accepted = status === 'valid' || status === 'verified' || (status === 'accept_all' && finderScore >= 80 && verificationScore >= 70);\nreturn { json: {\n  full_name: found.full_name || '',\n  first_name: found.first_name || '',\n  last_name: found.last_name || '',\n  role: found.role || '',\n  email: accepted ? found.email : '',\n  linkedin_url: found.linkedin_url || '',\n  source_url: found.source_url || '',\n  evidence_snippet: found.evidence_snippet || '',\n  verification_status: status,\n  verification_score: verificationScore,\n  source: accepted ? (status === 'accept_all' ? 'leadership_hunter_accept_all' : 'leadership_hunter_verified') : found.source\n} };\n",
-        "mode": "runOnceForEachItem",
-        "language": "javaScript"
-      },
-      "id": "parse-fallback-email-verify-001",
-      "name": "Parse Fallback Email Verify",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -20384,
-        3408
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": ""
-          },
-          "conditions": [
-            {
-              "id": "cond-verified-fallback-email",
-              "leftValue": "={{ ($json.email || '').trim() }}",
-              "rightValue": "",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "if-verified-fallback-email-001",
-      "name": "IF Verified Fallback Email",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        -20144,
-        3408
-      ]
     },
     {
       "parameters": {
@@ -1625,7 +1367,7 @@
     },
     {
       "parameters": {
-        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst classification = $('Parse Classification').item.json || {};\nconst cleanName = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '').trim();\nconst homepageName = String($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = String($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst trigger = $('Loop Over Items').item.json;\nfunction extractSearchResults(payload) {\n  const rawCandidates = [payload?.results, payload?.json?.results, payload?.response?.results, payload?.body?.results, payload?.data?.results, payload?.organic, payload?.json?.organic, payload?.response?.organic, payload?.body?.organic, payload?.data?.organic];\n  for (const candidate of rawCandidates) {\n    if (Array.isArray(candidate) && candidate.length) return candidate;\n  }\n  for (const candidate of [payload?.body, payload?.data]) {\n    if (typeof candidate === 'string' && candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (Array.isArray(parsed.results) && parsed.results.length) return parsed.results;\n        if (Array.isArray(parsed.organic) && parsed.organic.length) return parsed.organic;\n      } catch {}\n    }\n  }\n  return [];\n}\nfunction safeJson(nodeName) {\n  try { return $(nodeName).item.json || {}; } catch { return {}; }\n}\nfunction limit(value, size = 120) {\n  return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, size);\n}\nconst serperPrimaryResults = extractSearchResults($('SearXNG - Search').item.json);\nconst serperFallbackResults = (() => { try { return extractSearchResults($('SearXNG - Search Fallback').item.json); } catch { return []; } })();\nconst serperResults = JSON.stringify(serperPrimaryResults.concat(serperFallbackResults).slice(0, 10).map((r) => (r.title || '') + ' | ' + (r.url || r.link || '')).join('; '));\nconst companyLinkedIn = String($('Select Company LinkedIn').item.json.company_linkedin_url || '').trim();\nconst messageTrack = classification.message_track || 'PDPA_OTHER';\nconst status = messageTrack === 'OUT_OF_SCOPE' ? 'out of scope' : 'no contact found';\nconst anymail = safeJson('Parse Contact');\nconst hunter = safeJson('Parse Hunter Contact');\nconst leadership = safeJson('Parse Leadership Extract');\nconst fallbackAnymail = safeJson('Parse Fallback Anymail Person');\nconst fallbackFinder = safeJson('Parse Fallback Email Finder');\nconst fallbackVerify = safeJson('Parse Fallback Email Verify');\nconst rawHunter = safeJson('Hunter - Contact');\nconst rawAnymail = safeJson('Anymail - Contact');\nconst rawLeadershipSearch = safeJson('SearXNG - Leadership Search');\nconst prepDomain = safeJson('Prep Anymail Domain');\nconst hunterCount = Array.isArray(rawHunter?.data?.emails) ? rawHunter.data.emails.length : 0;\nconst leadershipSearchCount = extractSearchResults(rawLeadershipSearch).length;\nconst leadershipCandidateCount = Number(leadership.candidate_count || 0);\nconst anymailError = rawAnymail.message || rawAnymail.error?.message || rawAnymail.error || rawAnymail.body?.message || '';\nconst hunterError = rawHunter.message || rawHunter.error?.message || rawHunter.error || rawHunter.body?.message || '';\nconst resolvedContactDomain = String(anymail.contact_domain || hunter.contact_domain || leadership.contact_domain || fallbackAnymail.contact_domain || fallbackFinder.contact_domain || fallbackVerify.contact_domain || prepDomain.contact_domain || (() => { const raw = String($('Check URL Against All').item.json.best_url || '').trim(); if (!raw) return ''; const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i); return String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim(); })()).replace(/^www\\./i, '').toLowerCase().trim();\nconst debug = [\n  'CONTACT_DEBUG',\n  'worker_version=contact_domain_fix_20260414; webhook_version=v2',\n  'best_url_seen=' + limit(normalizedUrl),\n  'contact_domain=' + limit(resolvedContactDomain),\n  'anymail_status=' + limit(anymail.verification_status || rawAnymail.email_status || rawAnymail.status),\n  'anymail_error=' + limit(anymailError),\n  'anymail_category=' + limit(anymail.decision_maker_category || rawAnymail.decision_maker_category),\n  'anymail_raw_name=' + limit(rawAnymail.person_full_name || [rawAnymail.person_first_name || '', rawAnymail.person_last_name || ''].filter(Boolean).join(' ') || anymail.raw_name),\n  'anymail_raw_email=' + limit(rawAnymail.valid_email || rawAnymail.email || anymail.raw_email),\n  'anymail_name=' + limit(anymail.full_name),\n  'anymail_email=' + limit(anymail.email),\n  'hunter_candidates=' + String(hunterCount),\n  'hunter_error=' + limit(hunterError),\n  'hunter_name=' + limit(hunter.full_name),\n  'hunter_email=' + limit(hunter.email),\n  'leadership_search_results=' + String(leadershipSearchCount),\n  'leadership_candidate_count=' + String(leadershipCandidateCount),\n  'leadership_parse_ok=' + limit(leadership.parse_ok),\n  'leadership_parse_error=' + limit(leadership.parse_error),\n  'leadership_name=' + limit(leadership.full_name),\n  'leadership_candidates=' + limit(leadership.candidate_names, 240),\n  'fallback_anymail_status=' + limit(fallbackAnymail.verification_status),\n  'fallback_anymail_raw_name=' + limit(fallbackAnymail.raw_name),\n  'fallback_anymail_raw_email=' + limit(fallbackAnymail.raw_email),\n  'fallback_anymail_email=' + limit(fallbackAnymail.email),\n  'fallback_finder_status=' + limit(fallbackFinder.verification_status),\n  'fallback_finder_email=' + limit(fallbackFinder.email),\n  'fallback_verify_status=' + limit(fallbackVerify.verification_status),\n  'fallback_verify_email=' + limit(fallbackVerify.email)\n].join('; ');\nreturn { json: {\n  company_name: trigger.company_name,\n  company_name_clean: homepageName,\n  company_homepage_name: homepageName,\n  parent_company: parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results: serperResults,\n  best_url: normalizedUrl,\n  url_validated: normalizedUrl,\n  website_content: scrapeContent,\n  hia_relevant: classification.hia_relevant || 'NO',\n  industry_segment: classification.industry_segment || '',\n  hia_batch: classification.hia_batch || '',\n  company_size: classification.company_size || 'Unknown',\n  product_descriptor: classification.product_descriptor || '',\n  compliance_lead: classification.compliance_lead || 'Data-protection governance readiness',\n  regulatory_track: classification.regulatory_track || 'PDPA_OTHER',\n  service_type: classification.service_type || 'other',\n  offer_track: classification.offer_track || 'PDPA_CYBER_ESSENTIALS',\n  implementation_window: classification.implementation_window || 'NONE',\n  sector_track: classification.sector_track || 'other_personal_data',\n  personal_data_risk: classification.personal_data_risk || 'general_personal_data',\n  nehr_relevant: classification.nehr_relevant || 'NO',\n  funding_track_primary: classification.funding_track_primary || 'NONE',\n  funding_track_secondary: classification.funding_track_secondary || 'NONE',\n  funding_confidence: classification.funding_confidence || 'MEDIUM',\n  message_track: messageTrack,\n  classification_evidence: classification.classification_evidence || '',\n  classification_source_url: classification.classification_source_url || normalizedUrl,\n  first_name: '',\n  role: '',\n  email: '',\n  linkedin_url: '',\n  contact_source: 'none',\n  evidence_gap: debug,\n  status\n} };",
+        "jsCode": "function normalizeWorkflowUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const lower = raw.toLowerCase();\n  if (['reject','rejected','none','duplicate','url rejected'].includes(lower)) return '';\n  return /^https?:\\/\\//i.test(raw) ? raw : '';\n}\nconst classification = $('Parse Classification').item.json || {};\nconst cleanName = String($('OpenRouter - Clean Name').item.json.choices?.[0]?.message?.content || $('OpenRouter - Clean Name').item.json.body?.choices?.[0]?.message?.content || $('Loop Over Items').item.json.company_name || '').trim();\nconst homepageName = String($('Parse Parent Company').item.json.company_homepage_name || cleanName).trim();\nconst parentCompany = String($('Parse Parent Company').item.json.parent_company || homepageName).trim();\nconst normalizedUrl = normalizeWorkflowUrl($('Check URL Against All').item.json.best_url || '');\nconst scrapeContent = $('Crawl4AI - Scrape').item.json.website_content || '';\nconst trigger = $('Loop Over Items').item.json;\nfunction extractSearchResults(payload) {\n  const rawCandidates = [payload?.results, payload?.json?.results, payload?.response?.results, payload?.body?.results, payload?.data?.results, payload?.organic, payload?.json?.organic, payload?.response?.organic, payload?.body?.organic, payload?.data?.organic];\n  for (const candidate of rawCandidates) {\n    if (Array.isArray(candidate) && candidate.length) return candidate;\n  }\n  for (const candidate of [payload?.body, payload?.data]) {\n    if (typeof candidate === 'string' && candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (Array.isArray(parsed.results) && parsed.results.length) return parsed.results;\n        if (Array.isArray(parsed.organic) && parsed.organic.length) return parsed.organic;\n      } catch {}\n    }\n  }\n  return [];\n}\nfunction safeJson(nodeName) {\n  try { return $(nodeName).item.json || {}; } catch { return {}; }\n}\nfunction limit(value, size = 120) {\n  return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, size);\n}\nconst serperPrimaryResults = extractSearchResults($('SearXNG - Search').item.json);\nconst serperFallbackResults = (() => { try { return extractSearchResults($('SearXNG - Search Fallback').item.json); } catch { return []; } })();\nconst serperResults = JSON.stringify(serperPrimaryResults.concat(serperFallbackResults).slice(0, 10).map((r) => (r.title || '') + ' | ' + (r.url || r.link || '')).join('; '));\nconst companyLinkedIn = String($('Select Company LinkedIn').item.json.company_linkedin_url || '').trim();\nconst messageTrack = classification.message_track || 'PDPA_OTHER';\nconst status = messageTrack === 'OUT_OF_SCOPE' ? 'out of scope' : 'no contact found';\nconst anymail = safeJson('Parse Contact');\nconst leadership = safeJson('Parse Leadership Extract');\nconst fallbackAnymail = safeJson('Parse Fallback Anymail Person');\nconst rawAnymail = safeJson('Anymail - Contact');\nconst rawLeadershipSearch = safeJson('SearXNG - Leadership Search');\nconst prepDomain = safeJson('Prep Anymail Domain');\nconst leadershipSearchCount = extractSearchResults(rawLeadershipSearch).length;\nconst leadershipCandidateCount = Number(leadership.candidate_count || 0);\nconst anymailError = rawAnymail.message || rawAnymail.error?.message || rawAnymail.error || rawAnymail.body?.message || '';\nconst resolvedContactDomain = String(anymail.contact_domain || leadership.contact_domain || fallbackAnymail.contact_domain || prepDomain.contact_domain || (() => {\n  const raw = String($('Check URL Against All').item.json.best_url || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:https?:\\/\\/)?([^/?#]+)/i);\n  return String(match?.[1] || '').replace(/^www\\./i, '').toLowerCase().trim();\n})()).replace(/^www\\./i, '').toLowerCase().trim();\nconst debug = [\n  'CONTACT_DEBUG',\n  'worker_version=anymail_only_20260415; webhook_version=v2',\n  'best_url_seen=' + limit(normalizedUrl),\n  'contact_domain=' + limit(resolvedContactDomain),\n  'anymail_status=' + limit(anymail.verification_status || rawAnymail.email_status || rawAnymail.status),\n  'anymail_error=' + limit(anymailError),\n  'anymail_category=' + limit(anymail.decision_maker_category || rawAnymail.decision_maker_category),\n  'anymail_raw_name=' + limit(rawAnymail.person_full_name || [rawAnymail.person_first_name || '', rawAnymail.person_last_name || ''].filter(Boolean).join(' ') || anymail.raw_name),\n  'anymail_raw_email=' + limit(rawAnymail.valid_email || rawAnymail.email || anymail.raw_email),\n  'anymail_name=' + limit(anymail.full_name),\n  'anymail_email=' + limit(anymail.email),\n  'leadership_search_results=' + String(leadershipSearchCount),\n  'leadership_candidate_count=' + String(leadershipCandidateCount),\n  'leadership_parse_ok=' + limit(leadership.parse_ok),\n  'leadership_parse_error=' + limit(leadership.parse_error),\n  'leadership_name=' + limit(leadership.full_name),\n  'leadership_candidates=' + limit(leadership.candidate_names, 240),\n  'fallback_anymail_status=' + limit(fallbackAnymail.verification_status),\n  'fallback_anymail_raw_name=' + limit(fallbackAnymail.raw_name),\n  'fallback_anymail_raw_email=' + limit(fallbackAnymail.raw_email),\n  'fallback_anymail_email=' + limit(fallbackAnymail.email)\n].join('; ');\nreturn { json: {\n  company_name: trigger.company_name,\n  company_name_clean: homepageName,\n  company_homepage_name: homepageName,\n  parent_company: parentCompany,\n  company_linkedin_url: companyLinkedIn,\n  serper_results: serperResults,\n  best_url: normalizedUrl,\n  url_validated: normalizedUrl,\n  website_content: scrapeContent,\n  hia_relevant: classification.hia_relevant || 'NO',\n  industry_segment: classification.industry_segment || '',\n  hia_batch: classification.hia_batch || '',\n  company_size: classification.company_size || 'Unknown',\n  product_descriptor: classification.product_descriptor || '',\n  compliance_lead: classification.compliance_lead || 'Data-protection governance readiness',\n  regulatory_track: classification.regulatory_track || 'PDPA_OTHER',\n  service_type: classification.service_type || 'other',\n  offer_track: classification.offer_track || 'PDPA_CYBER_ESSENTIALS',\n  implementation_window: classification.implementation_window || 'NONE',\n  sector_track: classification.sector_track || 'other_personal_data',\n  personal_data_risk: classification.personal_data_risk || 'general_personal_data',\n  nehr_relevant: classification.nehr_relevant || 'NO',\n  funding_track_primary: classification.funding_track_primary || 'NONE',\n  funding_track_secondary: classification.funding_track_secondary || 'NONE',\n  funding_confidence: classification.funding_confidence || 'MEDIUM',\n  message_track: messageTrack,\n  classification_evidence: classification.classification_evidence || '',\n  classification_source_url: classification.classification_source_url || normalizedUrl,\n  first_name: '',\n  role: '',\n  email: '',\n  linkedin_url: '',\n  contact_source: 'none',\n  evidence_gap: debug,\n  status\n} };",
         "mode": "runOnceForEachItem",
         "language": "javaScript"
       },
@@ -2313,7 +2055,7 @@
       "main": [
         [
           {
-            "node": "Hunter - Contact",
+            "node": "SearXNG - Leadership Search",
             "type": "main",
             "index": 0
           }
@@ -2343,46 +2085,6 @@
         [
           {
             "node": "IF URL None",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Hunter - Contact": {
-      "main": [
-        [
-          {
-            "node": "Parse Hunter Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Hunter Contact": {
-      "main": [
-        [
-          {
-            "node": "IF Still No Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Still No Contact": {
-      "main": [
-        [
-          {
-            "node": "SearXNG - Leadership Search",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prep Partial Contact",
             "type": "main",
             "index": 0
           }
@@ -2438,86 +2140,6 @@
         [
           {
             "node": "Anymail - Fallback Person Email",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prep Partial No Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Hunter - Fallback Email Finder": {
-      "main": [
-        [
-          {
-            "node": "Parse Fallback Email Finder",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Fallback Email Finder": {
-      "main": [
-        [
-          {
-            "node": "IF Fallback Email Found",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Fallback Email Found": {
-      "main": [
-        [
-          {
-            "node": "Hunter - Fallback Email Verify",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Prep Partial No Contact",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Hunter - Fallback Email Verify": {
-      "main": [
-        [
-          {
-            "node": "Parse Fallback Email Verify",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Parse Fallback Email Verify": {
-      "main": [
-        [
-          {
-            "node": "IF Verified Fallback Email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF Verified Fallback Email": {
-      "main": [
-        [
-          {
-            "node": "Prep Partial Contact",
             "type": "main",
             "index": 0
           }
@@ -2838,7 +2460,7 @@
         ],
         [
           {
-            "node": "Hunter - Fallback Email Finder",
+            "node": "Prep Partial No Contact",
             "type": "main",
             "index": 0
           }
