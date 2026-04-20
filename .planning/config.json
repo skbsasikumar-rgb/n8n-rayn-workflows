@@ -29,6 +29,6 @@
     "_auto_chain_active": false
   },
   "hooks": {
-    "context_warnings": true
+    "context_warnings": false
   }
 }

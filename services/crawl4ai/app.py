@@ -126,6 +126,45 @@ CONTACT_KEYWORDS = (
     "services",
 )
 
+NOISE_HINTS = (
+    "accept all cookies",
+    "cookie settings",
+    "privacy preferences",
+    "skip to content",
+    "back to top",
+    "all rights reserved",
+    "powered by",
+    "newsletter",
+    "subscribe",
+    "follow us",
+    "share this",
+    "sign in",
+    "log in",
+    "open menu",
+    "close menu",
+)
+
+NOISE_CLASS_HINTS = (
+    "cookie",
+    "consent",
+    "banner",
+    "modal",
+    "popup",
+    "newsletter",
+    "subscribe",
+    "chat",
+    "whatsapp",
+    "social",
+    "breadcrumb",
+    "menu",
+    "navbar",
+    "footer",
+    "header",
+    "sidebar",
+)
+
+NOISE_ROLE_HINTS = {"navigation", "banner", "dialog", "search", "contentinfo", "complementary"}
+
 COMMON_FOLLOW_PATHS = (
     "/about",
     "/about-us",
@@ -187,6 +226,68 @@ def compact_whitespace(value: Any) -> str:
     return text.strip()
 
 
+def normalize_dedupe_key(value: str) -> str:
+    text = compact_whitespace(value).lower()
+    text = re.sub(r"https?://", "", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return text.strip()
+
+
+def is_noise_line(value: str) -> bool:
+    text = compact_whitespace(value)
+    lowered = text.lower()
+    if not text:
+        return True
+    if len(text) < 3:
+        return True
+    if any(hint in lowered for hint in NOISE_HINTS):
+        return True
+    if re.fullmatch(r"(?:home|about|contact|services|blog|careers|news|terms|privacy|cookies?)", lowered):
+        return True
+    if re.fullmatch(r"[a-z0-9/&|,.\- ]{1,22}", lowered):
+        # Very short generic nav-like fragments.
+        words = lowered.split()
+        if len(words) <= 3:
+            return True
+    return False
+
+
+def prune_noise_nodes(soup: BeautifulSoup) -> None:
+    for tag in soup(["script", "style", "noscript", "svg", "canvas", "iframe", "template"]):
+        tag.decompose()
+
+    for tag_name in ("header", "nav", "footer", "aside", "form", "button", "input", "select", "textarea"):
+        for tag in soup.find_all(tag_name):
+            tag.decompose()
+
+    for node in list(soup.find_all(True)):
+        attrs_map = getattr(node, "attrs", None)
+        if not isinstance(attrs_map, dict):
+            continue
+
+        role = compact_whitespace(attrs_map.get("role", "")).lower()
+        if role in NOISE_ROLE_HINTS:
+            node.decompose()
+            continue
+
+        class_value = attrs_map.get("class", [])
+        if isinstance(class_value, (list, tuple)):
+            class_value = " ".join(compact_whitespace(item) for item in class_value if item is not None)
+        else:
+            class_value = compact_whitespace(class_value)
+
+        attrs = " ".join(
+            compact_whitespace(v)
+            for v in (
+                attrs_map.get("id", ""),
+                class_value,
+                attrs_map.get("aria-label", ""),
+            )
+        ).lower()
+        if attrs and any(hint in attrs for hint in NOISE_CLASS_HINTS):
+            node.decompose()
+
+
 def limit_text(value: str, max_chars: int = 15000) -> str:
     return compact_whitespace(value)[:max_chars]
 
@@ -240,8 +341,8 @@ def dedupe_lines(lines: list[str], max_items: int) -> list[str]:
     output: list[str] = []
     for line in lines:
         cleaned = compact_whitespace(line)
-        key = cleaned.lower()
-        if not cleaned or key in seen:
+        key = normalize_dedupe_key(cleaned)
+        if not cleaned or not key or is_noise_line(cleaned) or key in seen:
             continue
         seen.add(key)
         output.append(cleaned)
@@ -309,9 +410,7 @@ def extract_metadata(soup: BeautifulSoup) -> MetadataPayload:
 
 def extract_html_sections(html: str, page_url: str) -> dict[str, Any]:
     soup = BeautifulSoup(html, "lxml")
-
-    for tag in soup(["script", "style", "noscript", "svg", "canvas", "iframe", "template"]):
-        tag.decompose()
+    prune_noise_nodes(soup)
 
     headings = dedupe_lines(
         [node.get_text(" ", strip=True) for node in soup.select("h1, h2, h3")],
@@ -319,11 +418,22 @@ def extract_html_sections(html: str, page_url: str) -> dict[str, Any]:
     )
 
     blocks: list[str] = []
-    for node in soup.select("main p, main li, main address, article p, article li, section p, section li, p, li, address"):
-        text = compact_whitespace(node.get_text(" ", strip=True))
-        if len(text) < 30:
-            continue
-        blocks.append(text)
+    primary_selectors = (
+        "main p, main li, main address, article p, article li, article address, [role='main'] p, [role='main'] li, [role='main'] address"
+    )
+    secondary_selectors = "section p, section li, section address, .content p, .content li, .entry-content p, .entry-content li"
+    fallback_selectors = "p, address"
+
+    for selector in (primary_selectors, secondary_selectors, fallback_selectors):
+        for node in soup.select(selector):
+            text = compact_whitespace(node.get_text(" ", strip=True))
+            if len(text) < 25:
+                continue
+            if is_noise_line(text):
+                continue
+            blocks.append(text)
+        if len(blocks) >= 30:
+            break
     blocks = dedupe_lines(blocks, 60)
 
     links: list[dict[str, str]] = []
@@ -392,7 +502,9 @@ def pick_follow_links(base_url: str, links: list[dict[str, str]], limit: int = 3
     scored: list[tuple[int, str]] = []
     seen: set[str] = set()
 
-    for link in links:
+    for link in links or []:
+        if not isinstance(link, dict):
+            continue
         href = link.get("href", "")
         text = link.get("text", "")
         if not href or href in seen:
@@ -420,10 +532,22 @@ def pick_follow_links(base_url: str, links: list[dict[str, str]], limit: int = 3
 
 
 def render_page_section(page_data: dict[str, Any], include_blocks: int) -> str:
+    if not isinstance(page_data, dict):
+        return ""
     lines: list[str] = []
     title = compact_whitespace(page_data.get("title", ""))
     url = compact_whitespace(page_data.get("url", ""))
-    metadata: MetadataPayload = page_data.get("metadata") or MetadataPayload()
+    metadata_raw = page_data.get("metadata")
+    metadata: MetadataPayload
+    if isinstance(metadata_raw, MetadataPayload):
+        metadata = metadata_raw
+    elif isinstance(metadata_raw, dict):
+        metadata = MetadataPayload(
+            description=compact_whitespace(metadata_raw.get("description", ""))[:500],
+            lang=compact_whitespace(metadata_raw.get("lang", ""))[:40],
+        )
+    else:
+        metadata = MetadataPayload()
     headings = dedupe_lines(list(page_data.get("headings", [])), 10)
     contacts = dedupe_lines(list(page_data.get("contacts", [])), 10)
     blocks = dedupe_lines(list(page_data.get("blocks", [])), include_blocks)
@@ -440,6 +564,24 @@ def render_page_section(page_data: dict[str, Any], include_blocks: int) -> str:
         lines.append("Contacts: " + "; ".join(contacts))
 
     return "\n".join(lines).strip()
+
+
+def sanitize_website_content(value: str) -> str:
+    lines = [compact_whitespace(line) for line in str(value or "").splitlines()]
+    cleaned = dedupe_lines(lines, 400)
+    return compact_whitespace("\n".join(cleaned))
+
+
+def extract_visible_text_lines(value: str, min_len: int = 35, max_items: int = 240) -> str:
+    lines = [compact_whitespace(line) for line in str(value or "").splitlines()]
+    filtered: list[str] = []
+    for line in lines:
+        if len(line) < min_len:
+            continue
+        if is_noise_line(line):
+            continue
+        filtered.append(line)
+    return "\n".join(dedupe_lines(filtered, max_items))
 
 
 async def new_browser(app: FastAPI) -> Browser:
@@ -504,7 +646,9 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
                     continue
                 extra_page = await context.new_page()
                 try:
-                    extra_pages.append(await extract_page(extra_page, href, min(timeout_ms, 20000)))
+                    extracted = await extract_page(extra_page, href, min(timeout_ms, 20000))
+                    if isinstance(extracted, dict):
+                        extra_pages.append(extracted)
                 except Exception:
                     pass
                 finally:
@@ -519,10 +663,11 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
             app.state.browser = await new_browser(app)
         except Exception:
             pass
+        error_text = compact_whitespace(str(exc))
         return ScrapeResponse(
             ok=False,
             url=str(request.url),
-            error=f"scrape_error: {compact_whitespace(str(exc))}",
+            error=f"scrape_error: {error_text}",
         )
 
     if page is not None:
@@ -533,17 +678,37 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     combined_main_text = limit_text(
         "\n\n".join(
             [primary.get("visible_text", "")]
-            + [item.get("visible_text", "") for item in extra_pages]
+            + [item.get("visible_text", "") for item in extra_pages if isinstance(item, dict)]
         ),
         15000,
     )
 
     markdown_sections = [render_page_section(primary, 20)]
-    markdown_sections.extend(render_page_section(item, 12) for item in extra_pages)
+    markdown_sections.extend(render_page_section(item, 12) for item in extra_pages if isinstance(item, dict))
     markdown = limit_text("\n\n".join(section for section in markdown_sections if section), 15000)
 
-    # Use the richer rendered artifact instead of preferring markdown when it is sparse.
-    website_content = markdown if len(markdown) >= len(combined_main_text) else combined_main_text
+    # Merge both artifacts, then normalize to remove repeated chrome/noise lines.
+    raw_website_content = "\n\n".join(part for part in (markdown, combined_main_text) if part)
+    website_content = limit_text(sanitize_website_content(raw_website_content), 15000)
+
+    # Some sites render sparse semantic HTML but expose meaningful body text.
+    # If cleaned content is too short, recover additional signal from visible text lines.
+    if len(website_content) < 1200:
+        visible_fallback = extract_visible_text_lines(
+            "\n".join(
+                [primary.get("visible_text", "")]
+                + [item.get("visible_text", "") for item in extra_pages if isinstance(item, dict)]
+            ),
+            min_len=35,
+            max_items=260,
+        )
+        if visible_fallback:
+            recovered = sanitize_website_content(
+                "\n\n".join(part for part in (website_content, visible_fallback) if part)
+            )
+            if len(recovered) > len(website_content):
+                website_content = limit_text(recovered, 15000)
+
     final_url = primary.get("url", "") or str(request.url)
     title = compact_whitespace(primary.get("title", ""))[:300]
     metadata: MetadataPayload = primary.get("metadata") or MetadataPayload()
