@@ -261,7 +261,7 @@
     {
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const input=(()=>{try{return $('Normalize Input').item.json||{};}catch{return {};}})();\nconst url=(()=>{try{return $('Resolve URL Status').item.json||{};}catch{return {};}})();\nconst clean=(v)=>String(v||'').trim();\nreturn {json:{\n  Id:input.Id,\n  company_name:clean(input.company_name),\n  hia_batch:clean(input.hia_batch),\n  status:'failed',\n  best_url:'',\n  canonical_domain:'',\n  clean_company_name:clean(url.clean_company_name||input.clean_company_name||input.company_name),\n  website_content:'',\n  company_homepage_name:'',\n  parent_company:'',\n  evidence_gap:'no_official_homepage',\n  last_stage:'resolve_url',\n  last_error:'No official homepage found'\n}};"
+        "jsCode": "const input=(()=>{try{return $('Normalize Input').item.json||{};}catch{return {};}})();\nconst url=(()=>{try{return $('Resolve URL Status').item.json||{};}catch{return {};}})();\nconst clean=(v)=>String(v||'').trim();\nreturn {json:{\n  Id:input.Id,\n  company_name:clean(input.company_name),\n  hia_batch:clean(input.hia_batch),\n  status:'partial',\n  best_url:'',\n  canonical_domain:'',\n  clean_company_name:clean(url.clean_company_name||input.clean_company_name||input.company_name),\n  website_content:'',\n  company_homepage_name:'',\n  parent_company:'',\n  evidence_gap:'no_official_homepage',\n  last_stage:'resolve_url',\n  last_error:'No official homepage found'\n}};"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
