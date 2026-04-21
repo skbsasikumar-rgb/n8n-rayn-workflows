@@ -180,10 +180,17 @@ for (const response of responses) {
     + (candidate.path_signal ? 2 : 0)
     + (candidate.network_hint ? 1 : 0)
     + Math.min(identityFromText, 3)
-    - (candidate.listing_hint && !candidate.network_hint ? 2 : 0)
+    - (candidate.listing_hint ? 3 : 0)
     - (utilityPath ? 6 : 0)
     - (listingIndexPath ? 5 : 0)
     - (!rootOnly && !candidate.path_signal ? 2 : 0);
+  const insufficientIdentity = Number(candidate.evidence_score || 0) < 6
+    && !candidate.exact_name_in_title
+    && !candidate.exact_name_in_snippet
+    && Number(candidate.domain_token_overlap || 0) < 1
+    && !candidate.path_signal
+    && Number(candidate.mention_count || 0) < 2
+    && identityFromText < 2;
   const weakRoot = Boolean(rootOnly)
     && !candidate.path_signal
     && !candidate.exact_name_in_title
@@ -191,6 +198,7 @@ for (const response of responses) {
     && Number(candidate.mention_count || 0) < 1
     && Number(candidate.domain_token_overlap || 0) < 1
     && identityFromText < 1;
+  if (insufficientIdentity) continue;
   if (weakRoot) continue;
   const sourceName = String(title || snippet || candidate.canonical_domain || url || '').trim();
   const cleanFromTitle = cleanHomepageName(sourceName);

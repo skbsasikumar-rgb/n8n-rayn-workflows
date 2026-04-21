@@ -118,6 +118,7 @@ function isPlausibleParentName(value) {
   if (!candidate) return false;
   if (candidate.length > 90) return false;
   if (/[.!?]/.test(candidate)) return false;
+  if (/\b(?:ministry of health|healthier sg|health hub|ministry of manpower|programme|program|scheme|initiative)\b/i.test(candidate)) return false;
   if (/\b(?:welcome|book|appointment|download|click|learn|more|opening hours|questions|available|support|selecting|opened|provides?|offers?|delivers?|supports?|focused|blending|operates?|serves?|helping|making|dedicated|trusted|located|accepts)\b/i.test(candidate)) return false;
   if (/^\d+$/.test(candidate)) return false;
   if (/^[a-z\s]+$/.test(candidate)) return false;
@@ -131,7 +132,7 @@ function extractExplicitParent(value) {
   const haystack = String(value || '');
   if (!haystack) return '';
   const patterns = [
-    /\b(?:clinic\s+chain|brand|network|service|company)?\s*by\s+([A-Z][A-Za-z0-9&+.,'()\- ]{2,90}?)(?=(?:\s+(?:offering|providing|with|that|which|who|to|for|across|in|at|on)\b)|[.;,\n]|$)/gi,
+    /\b(?:clinic\s+chain|brand|network|company|group|practice)\s+by\s+([A-Z][A-Za-z0-9&+.,'()\- ]{2,90}?)(?=(?:\s+(?:offering|providing|with|that|which|who|to|for|across|in|at|on)\b)|[.;,\n]|$)/gi,
     /\b(?:part\s+of|member\s+of|under|owned\s+by|subsidiary\s+of)\s+(?:the\s+)?([A-Z][A-Za-z0-9&+.,'()\- ]{2,90}?)(?=(?:\s+(?:offering|providing|with|that|which|who|to|for|across|in|at|on)\b)|[.;,\n]|$)/gi,
   ];
   for (const pattern of patterns) {
