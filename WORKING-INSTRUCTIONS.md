@@ -31,16 +31,21 @@ This file records standing task instructions for this repository.
 
 - Keep Searx first. Use Serper only as fallback when Searx is weak or noisy.
 - Do not trigger Serper fallback when Searx already surfaced at least one strong official candidate. Fallback is for missing search signal, not for replacing a usable official result.
+- When Serper fallback is used, do not discard usable Searx candidates. Merge the candidate sets and let filtering choose the best official result.
 - Keep homepage discovery generic. Do not hardcode industry-specific heuristics unless explicitly required.
 - Keep search queries identity-anchored:
   - exact company name in quotes
   - exact company name + Singapore
   - only use a backup query when needed
+- Keep fallback queries simple. Do not add `official website` wording unless there is a specific reason and evidence it helps.
+- If exact and broad search both fail, one small generic brand-core fallback query is acceptable. Keep the first few identity tokens and remove only obvious legal or status noise.
+- If the input already contains an explicit location qualifier such as `@ <place>`, do not let a generic domain-clue query override the stronger exact or backup query path.
 - Do not over-strip company names.
 - Do not build the homepage picker around clinic-specific logic. The job is to find the official homepage for `company_name`.
 - LLM URL choice is a tie-breaker only. It must not rescue weak candidates.
 - `best_url` must come only from the URL-resolution stage.
 - Use official branch or clinic pages as evidence when they are clearly on the official domain, but write the clean homepage root into `best_url`.
+- If the root is the stored `best_url` but the matched evidence sits on a stronger branch or subpage, scrape the matched official evidence page while still writing the clean root into `best_url`.
 - Do not treat official branch pages on a strong official domain as directory noise just because the title or snippet contains address, hours, or branch wording.
 - If a result title is an exact or near-exact branch/page match for the input and the path also matches the branch identity, do not discard it just because the snippet contains address or appointment wording.
 - If the only evidence is third-party directory or marketplace pages, leave `best_url` blank.
@@ -185,6 +190,11 @@ Additional rules for agentic work:
   - clear the stuck execution record
   - reset only the target rows
   - reactivate and rerun
+- After a `Primary` restart, do not assume a fresh execution is stuck just because preview shows `0` executed nodes at first.
+  - n8n may still be registering the JS task runner and recovering unfinished executions
+  - webhook executions can sit at `worker_started` for a few minutes before node data appears
+  - verify again from Postgres before declaring the rerun failed
+- Avoid firing a large parallel batch immediately after a restart when possible. A small controlled rerun gives a clearer signal while the runner settles.
 - Do not broaden the worker to solve isolated misses. Keep fixing the exact decision rule that failed.
 
 ## Local Helper Tools
@@ -212,3 +222,44 @@ Additional rules for agentic work:
 - `company_homepage_name` and `parent_company` must come only after scraping.
 - Prefer the first search result only when it is a strong official match.
 - If the first result is noisy, third-party, or not clearly official, keep scanning lower-ranked results until a better official URL is found or the list is exhausted.
+
+## Company Facts Rules
+
+
+- In Serper fallback queries, do not append `official website`; it caused empty result sets on real company rows. Keep fallback queries identity-anchored and plain.
+- For Serper fallback precedence, use: corporate inputs -> `search_domain_query`, then `search_backup_query`, then `search_broad_query`; non-corporate inputs -> `search_backup_query`, then `search_broad_query`, then `search_domain_query`.
+- Third-party candidates must be removed before URL choice. Do not let finance pages, news pages, directories, or clue domains survive long enough for the LLM to guess.
+- In company facts parsing, trust a strong, clean LLM homepage name over weak evidence-title fragments when the scraped page content supports it.
+- Do not allow broad prose extraction patterns to become `parent_company`. Remove weak parent rules before adding new ones.
+- `company_homepage_name` should be the matched business, brand, branch, or entity name you want to keep from the official site.
+- Prefer short, clean brand or entity names over long marketing titles and descriptive headings.
+- Reject homepage-name candidates that are obviously sentence fragments, date/opening-hour text, doctor attribution lines, or page-status text such as `404`.
+- Strip generic title suffixes such as `| Our Services`, `| Contact Us`, or opening-hours text before scoring `company_homepage_name`.
+- Never let address lines, postal codes, or plain location strings become `company_homepage_name` or `parent_company`.
+- When company facts are weak or noisy, pass the official evidence title and snippet into the extraction stage. Do not rely on scraped body text alone.
+- Split evidence titles on separators such as `-` or `•` and treat the clean brand/entity segment as a first-class candidate for `company_homepage_name`.
+- When the scraped URL is the site root and the root title clearly matches the input business identity, it is acceptable for `company_homepage_name` to resolve to the broader official brand instead of the location-suffixed branch name.
+- If the scraped page looks like a `404` or utility page but the matched evidence URL/title still clearly identifies the official brand or entity, prefer the evidence identity over the `404` text.
+- When the exact input business name is clearly listed on the official site and no stronger brand-level override is supported, keep the input business name as `company_homepage_name`.
+- `parent_company` should only be different when the official site clearly supports it with wording such as:
+  - `part of`
+  - `a member of`
+  - `a brand of`
+  - `by`
+  - `under`
+  - `owned by`
+  - `clinic chain by`
+- Never use these as `parent_company`:
+  - programme names such as `Healthier SG`
+  - membership or sector bodies such as `NCSS`
+  - government agencies such as `Ministry of Health`
+  - doctor names
+  - slogans
+  - sentence fragments
+- For legal-entity inputs, prefer the exact legal entity over a consumer-facing marketing brand when the site supports that entity.
+- For legal-entity inputs, if the site is clearly about that entity but the marketing site title is broader or more consumer-facing, keep the exact legal entity anyway unless a higher parent is explicitly shown.
+- A footer or site-wide corporate identity can support `parent_company` when it is clearly distinct from the homepage brand and appears as the official site owner or operator.
+- When using footer or sitewide corporate identity as parent evidence, strip navigation labels such as `About Us` and `Contact Us` before scoring the candidate.
+- When the official site clearly lists the input business under a broader official site brand, that broader official brand can be used as `parent_company` even if the site does not use a formal `parent company` label.
+- If no distinct parent is explicitly supported, set `parent_company = company_homepage_name`.
+- Keep this logic generic. Do not hardcode it around clinics.
