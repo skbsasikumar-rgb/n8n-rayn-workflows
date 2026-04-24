@@ -377,7 +377,7 @@
         "url": "={{ 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9/' + $json.Id }}",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name || '', hia_batch: $json.hia_batch || '', status: $json.status || 'failed', best_url: $json.best_url || '', canonical_domain: $json.canonical_domain || '', website_content: $json.website_content || '', company_homepage_name: $json.company_homepage_name || '', parent_company: $json.parent_company || '', evidence_gap: $json.evidence_gap || '', last_stage: $json.last_stage || '', last_error: $json.last_error || '' }) }}",
+        "jsonBody": "={{ JSON.stringify({ company_name: $json.company_name || '', hia_batch: $json.hia_batch || '', status: $json.status || 'failed', best_url: $json.best_url || '', canonical_domain: $json.canonical_domain || '', duplicate_of_id: $json.duplicate_of_id || '', website_content: $json.website_content || '', company_homepage_name: $json.company_homepage_name || '', parent_company: $json.parent_company || '', evidence_gap: $json.evidence_gap || '', last_stage: $json.last_stage || '', last_error: $json.last_error || '' }) }}",
         "options": {
           "timeout": 20000
         },
@@ -524,6 +524,96 @@
       ],
       "id": "worker-parse-url-choice",
       "name": "Parse URL Choice"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (() => { const domain = String($('Resolve URL Status').item.json.canonical_domain || '').trim(); const id = String($('Normalize Input').item.json.Id || '').trim(); const where = '(canonical_domain,eq,' + domain + ')~and(Id,neq,' + id + ')'; return 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent(where) + '&fields=Id,company_name,canonical_domain,duplicate_of_id,status,best_url,homepage_root_url&limit=25'; })() }}",
+        "sendHeaders": false,
+        "options": {
+          "timeout": 20000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3360,
+        560
+      ],
+      "id": "worker-read-domain-duplicates",
+      "name": "Read Domain Duplicates",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "continueOnFail": true,
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input=(()=>{try{return $('Normalize Input').item.json||{};}catch{return {};}})();\nconst resolved=(()=>{try{return $('Resolve URL Status').item.json||{};}catch{return {};}})();\nconst clean=(value)=>String(value||'').replace(/\\s+/g,' ').trim();\nconst currentId=clean(input.Id);\nconst domain=clean(resolved.canonical_domain).toLowerCase();\nconst rows=Array.isArray($json.list) ? $json.list : [];\nconst matches=rows\n  .filter((row)=>clean(row.Id)!==currentId && clean(row.canonical_domain).toLowerCase()===domain)\n  .sort((a,b)=>Number(a.Id||0)-Number(b.Id||0));\nconst primary=matches.find((row)=>!clean(row.duplicate_of_id)) || matches[0] || null;\nconst duplicateOfId=primary ? clean(primary.duplicate_of_id || primary.Id) : '';\nreturn {json:{\n  ...resolved,\n  duplicate_found:Boolean(domain && duplicateOfId),\n  duplicate_of_id:duplicateOfId,\n  duplicate_match:primary || null,\n  duplicate_match_count:matches.length\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        560
+      ],
+      "id": "worker-identify-domain-duplicate",
+      "name": "Identify Domain Duplicate"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "worker-if-domain-duplicate",
+              "leftValue": "={{ $json.duplicate_found === true }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3808,
+        560
+      ],
+      "id": "worker-if-domain-duplicate",
+      "name": "IF Domain Duplicate"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const input=(()=>{try{return $('Normalize Input').item.json||{};}catch{return {};}})();\nconst dupe=(()=>{try{return $('Identify Domain Duplicate').item.json||{};}catch{return {};}})();\nconst clean=(value)=>String(value||'').replace(/\\s+/g,' ').trim();\nconst duplicateOfId=clean(dupe.duplicate_of_id);\nconst sourceUrls=[dupe.homepage_root, dupe.best_url, dupe.evidence_url, dupe.scrape_url].map(clean).filter(Boolean);\nconst uniqueSourceUrls=[...new Set(sourceUrls)];\nconst evidence={\n  duplicate_of_id:duplicateOfId,\n  duplicate_match:dupe.duplicate_match || null,\n  canonical_domain:clean(dupe.canonical_domain),\n  duplicate_match_count:Number(dupe.duplicate_match_count || 0)\n};\nreturn {json:{\n  Id:input.Id,\n  company_name:clean(input.company_name),\n  hia_batch:clean(input.hia_batch),\n  status:'url duplicate',\n  best_url:clean(dupe.best_url),\n  homepage_root_url:clean(dupe.homepage_root),\n  evidence_url:clean(dupe.evidence_url),\n  scrape_url:clean(dupe.scrape_url),\n  canonical_domain:clean(dupe.canonical_domain),\n  duplicate_of_id:duplicateOfId,\n  website_content:'',\n  website_scrape:'',\n  operating_company_root_name:'',\n  company_homepage_name:'',\n  parent_company:'',\n  confidence:'High',\n  notes:'Duplicate canonical_domain; enrichment skipped and linked to existing lead Id ' + duplicateOfId + '.',\n  source_urls:uniqueSourceUrls.join(' | '),\n  fallback_used:'duplicate_canonical_domain',\n  search_evidence_json:JSON.stringify(evidence),\n  evidence_gap:'duplicate_canonical_domain',\n  last_stage:'canonical_domain_dedupe',\n  last_error:''\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        10976,
+        64
+      ],
+      "id": "worker-prepare-duplicate-result",
+      "name": "Prepare Duplicate Result"
     }
   ],
   "connections": {
@@ -637,7 +727,7 @@
         ],
         [
           {
-            "node": "Crawl4AI - Scrape",
+            "node": "Read Domain Duplicates",
             "type": "main",
             "index": 0
           }
@@ -784,6 +874,57 @@
         [
           {
             "node": "Pick First Valid Homepage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Domain Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Identify Domain Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Identify Domain Duplicate": {
+      "main": [
+        [
+          {
+            "node": "IF Domain Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF Domain Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Duplicate Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Crawl4AI - Scrape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Duplicate Result": {
+      "main": [
+        [
+          {
+            "node": "Write Result",
             "type": "main",
             "index": 0
           }
