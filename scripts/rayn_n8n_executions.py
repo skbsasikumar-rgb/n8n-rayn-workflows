@@ -54,14 +54,7 @@ def request_json(method: str, path: str, params: dict[str, str] | None = None) -
 
 
 def cmd_list(args: argparse.Namespace) -> None:
-    params = {
-        "workflowId": args.workflow_id,
-        "limit": str(args.limit),
-    }
-    if args.status:
-        params["status"] = args.status
-    payload = request_json("GET", "/api/v1/executions", params)
-    data = payload.get("data", payload)
+    data = list_executions(args.workflow_id, args.limit, args.status, args.all)
     print(json.dumps(data, ensure_ascii=True))
 
 
@@ -73,6 +66,42 @@ def cmd_delete(args: argparse.Namespace) -> None:
     print(json.dumps({"deleted": deleted}, ensure_ascii=True))
 
 
+def list_executions(workflow_id: str, limit: int, status: str | None, all_pages: bool) -> dict[str, Any]:
+    params = {
+        "workflowId": workflow_id,
+        "limit": str(limit),
+    }
+    if status:
+        params["status"] = status
+
+    if not all_pages:
+        payload = request_json("GET", "/api/v1/executions", params)
+        return payload.get("data", payload)
+
+    executions = []
+    cursor = None
+    while True:
+        current_params = dict(params)
+        if cursor:
+            current_params["cursor"] = cursor
+        payload = request_json("GET", "/api/v1/executions", current_params)
+        data = payload.get("data", payload)
+        executions.extend(data.get("executions", []))
+        cursor = data.get("nextCursor")
+        if not cursor:
+            return {"executions": executions, "returned": len(executions), "nextCursor": None, "hasMore": False}
+
+
+def cmd_purge(args: argparse.Namespace) -> None:
+    payload = list_executions(args.workflow_id, args.limit, args.status, True)
+    execution_ids = [str(item.get("id", "")).strip() for item in payload.get("executions", []) if str(item.get("id", "")).strip()]
+    deleted = []
+    for execution_id in execution_ids:
+        request_json("DELETE", f"/api/v1/executions/{execution_id}")
+        deleted.append(execution_id)
+    print(json.dumps({"deleted": deleted, "workflow_id": args.workflow_id, "count": len(deleted)}, ensure_ascii=True))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="List and delete n8n executions.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -81,11 +110,18 @@ def build_parser() -> argparse.ArgumentParser:
     list_cmd.add_argument("--workflow-id", default=DEFAULT_WORKFLOW_ID)
     list_cmd.add_argument("--status", choices=["success", "error", "waiting"])
     list_cmd.add_argument("--limit", type=int, default=20)
+    list_cmd.add_argument("--all", action="store_true", help="Fetch all execution pages")
     list_cmd.set_defaults(func=cmd_list)
 
     delete_cmd = sub.add_parser("delete", help="Delete executions by ID")
     delete_cmd.add_argument("--ids", required=True, help="Comma-separated execution IDs")
     delete_cmd.set_defaults(func=cmd_delete)
+
+    purge_cmd = sub.add_parser("purge", help="Delete all executions for a workflow")
+    purge_cmd.add_argument("--workflow-id", default=DEFAULT_WORKFLOW_ID)
+    purge_cmd.add_argument("--status", choices=["success", "error", "waiting"])
+    purge_cmd.add_argument("--limit", type=int, default=100)
+    purge_cmd.set_defaults(func=cmd_purge)
 
     return parser
 

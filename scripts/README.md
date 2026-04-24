@@ -55,7 +55,7 @@ File: `scripts/rayn_prepare_rerun.py`
 
 Purpose:
 - list recent executions
-- optionally delete old execution records
+- purge old execution records before a clean rerun
 - reset chosen rows
 - immediately show the cleaned rows for verification
 
@@ -63,7 +63,6 @@ Example:
 
 ```bash
 python3 scripts/rayn_prepare_rerun.py --ids 209,210,211
-python3 scripts/rayn_prepare_rerun.py --ids 209,210,211 --delete-execution-ids 101,102
 ```
 
 ## Company Facts Probe

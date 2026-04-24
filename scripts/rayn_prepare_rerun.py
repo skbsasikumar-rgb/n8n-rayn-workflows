@@ -4,7 +4,7 @@ Prepare a clean rerun for the RAYN worker.
 
 Behavior:
 1. List recent executions for visibility.
-2. Optionally delete provided execution IDs.
+2. Purge old executions for the worker.
 3. Reset target rows back to a clean pending state.
 4. Show the reset rows for verification.
 
@@ -34,10 +34,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Prepare a clean rerun for selected RAYN rows.")
     parser.add_argument("--ids", required=True, help="Comma-separated row IDs to reset and verify")
     parser.add_argument(
-        "--delete-execution-ids",
-        help="Optional comma-separated n8n execution IDs to delete before resetting rows",
-    )
-    parser.add_argument(
         "--list-limit",
         type=int,
         default=20,
@@ -52,9 +48,8 @@ def main() -> None:
     print("== Recent executions ==")
     run([sys.executable, N8N_HELPER, "list", "--limit", str(args.list_limit)])
 
-    if args.delete_execution_ids:
-        print("== Delete execution records ==")
-        run([sys.executable, N8N_HELPER, "delete", "--ids", args.delete_execution_ids])
+    print("== Purge execution records ==")
+    run([sys.executable, N8N_HELPER, "purge"])
 
     print("== Reset rows ==")
     run([sys.executable, NOCO_HELPER, "reset", "--ids", args.ids])
