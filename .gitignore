@@ -1,1 +1,6 @@
 .DS_Store
+.tmp/
+.codex/config.toml.bak
+.codex/config.toml.disabled
+.codex/hooks.json
+.codex/* 2/
