@@ -1,6 +1,0 @@
-# Minimal repo-local Codex/GSD config.
-# Keep secrets and MCP credentials in user-level config, not this repo.
-
-[features]
-codex_hooks = true
-tool_search_always_defer_mcp_tools = true
