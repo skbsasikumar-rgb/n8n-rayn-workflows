@@ -1,10 +1,16 @@
 # Browser Scraper Service
 
-This service gives `wf-latest.json` one normalized scrape endpoint:
+This service gives `wf-worker.json` one normalized scrape endpoint:
 
 - `POST /scrape`
 - input: `url`, `company_name`, optional `market`
 - output: `ok`, `final_url`, `title`, `markdown`, `main_text`, `website_content`, `metadata`, `signals`, `quality`, `error`
+
+Workflow operating docs:
+
+- `docs/workflow/overview.md` explains where this service sits in the n8n flow.
+- `docs/workflow/runbook.md` covers scraper deployment and rerun checks.
+- `docs/workflow/operations-log.md` tracks current scrape-related failures.
 
 ## Why this exists
 
@@ -62,7 +68,8 @@ Current implementation:
 
 ```bash
 cd /Users/sasikumar/Documents/n8n/services/crawl4ai
-docker compose up -d --build
+docker build -t rayn-crawl4ai -f Dockerfile ../..
+docker run --rm -p 8080:8080 rayn-crawl4ai
 ```
 
 Health check:
@@ -90,16 +97,23 @@ Runtime notes:
 - On Linux it defaults `PLAYWRIGHT_BROWSERS_PATH` to `~/.cache/ms-playwright`
 - Railway/Docker sets `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` and `CRAWL4AI_RUNTIME_HOME=/app/runtime-home`
 - Override either with environment variables if needed
+- If scraping fails after the worker has verified an official homepage, the workflow should write a `partial` row with `fallback_used`, `evidence_gap`, and `last_error` instead of blocking enrichment.
 
 ## n8n URL
 
-The workflow uses:
+The current worker calls the deployed Railway scrape endpoint directly:
+
+```text
+https://n8n-rayn-workflows-production.up.railway.app/scrape
+```
+
+For future portability, prefer configuring the worker with:
 
 ```text
 {{ $env.CRAWL4AI_SCRAPER_URL || 'http://127.0.0.1:8080/scrape' }}
 ```
 
-Set `CRAWL4AI_SCRAPER_URL` if your n8n runtime cannot reach `127.0.0.1:8080`.
+Set `CRAWL4AI_SCRAPER_URL` if your n8n runtime cannot reach `127.0.0.1:8080` or if the Railway scrape service URL changes.
 
 ## Railway
 

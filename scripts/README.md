@@ -4,6 +4,12 @@ These scripts are intentionally small and explicit.
 
 Simple is best. Do not be over clever.
 
+Workflow operating docs:
+
+- `docs/workflow/runbook.md` for clean reruns, execution cleanup, and validation.
+- `docs/workflow/data-contract.md` for row fields and status semantics.
+- `docs/workflow/operations-log.md` for current regression anchors and rerun notes.
+
 ## NocoDB Row Helper
 
 File: `scripts/rayn_noco_rows.py`
@@ -90,3 +96,4 @@ python3 scripts/rayn_company_facts_probe.py --ids 213,215 --format json
 - They do not try to be smart.
 - For in-flight executions that refuse to stop cleanly, restart the Railway `Primary` service before rerunning rows.
 - `rayn_prepare_rerun.py` does not stop live in-flight executions. It only cleans execution records and resets target rows.
+- Do not store NocoDB, n8n, or Railway tokens in this directory.
