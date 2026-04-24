@@ -1,0 +1,121 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+stopped_at: Updated wf-latest with parent_company enrichment path and NocoDB write field
+last_updated: "2026-03-26T13:45:00.000Z"
+progress:
+  total_phases: 4
+  completed_phases: 1
+  total_plans: 5
+  completed_plans: 5
+---
+
+# STATE: RAYN Sales Engine
+
+**Last updated:** 2026-03-26
+**Session:** wf-latest updated with parent-company enrichment before Hunter lookup
+
+---
+
+## Project Reference
+
+**Core Value:** Every discovered lead gets a personalised, compliance-context-aware cold email sent without manual intervention.
+
+**Current Focus:** Phase 01 — workflow-reliability
+
+---
+
+## Current Position
+
+Phase: 2
+Plan: Not started
+
+## Performance Metrics
+
+| Metric | Value |
+|--------|-------|
+| Phases total | 4 |
+| Requirements total | 26 |
+| Requirements mapped | 26 |
+| Plans created | 5 |
+| Plans complete | 1 |
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | human-action | 2 tasks | 0 files |
+| Phase 01 P05 | 15min | 2 tasks | 2 files |
+| Phase 01 P02 | 12min | 2 tasks | 1 files |
+| Phase 01 P03 | 4min | 2 tasks | 1 files |
+| Phase 01 P04 | 6min | 2 tasks | 1 files |
+
+## Accumulated Context
+
+### Key Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| Phase 1 starts with Railway env vars (INFRA-01, INFRA-02) | No workflow changes needed; instant effect; unblocks all other fixes safely |
+| Batch processing fix (FIX-02) requires OpenRouter backoff (FIX-03) first | 5x throughput increase without backoff will hit OpenRouter rate limits |
+| No2Bounce polling redesigned as separate workflow (FIX-05) | Inline polling risks the 300s n8n task runner timeout; Wait node approach is the only safe pattern |
+| WhatsApp scope is post-engagement nurture only, not cold outreach | Meta policy enforcement makes cold WhatsApp to scraped contacts a permanent-ban risk; REQUIREMENTS.md already captures this |
+| Hunter fallback triggered on OR logic (FIX-04) | AND logic means a lead with a name but no email never triggers Hunter, leaving email field empty |
+| N8N_CONCURRENCY_PRODUCTION_LIMIT=1 applied to worker service (INFRA-01) | Worker service executes production workflows; primary/UI service does not need this constraint |
+| DB_QUERY_LIMIT_DEFAULT=1000 as NocoDB page size; DB_QUERY_LIMIT_MAX=100000 removes silent row cap (INFRA-02) | 1000 rows/page minimises loop iterations; 100k max ensures all leads visible to wf-latest and wf-discovery |
+| Used 6 Wait nodes (one before each OpenRouter call) not minimum 3 (FIX-03) | Vendor Enrichment1 and Enrichment both active depending on HIA classification path — all need backoff |
+| Loop-back connections from all terminal status nodes were missing after Plan 02 (FIX-02) | Without loop-back, the splitInBatches loop only processed lead #1 despite batchSize=1 — terminal nodes must connect back to Loop Over Items input |
+| Changed IF Still No Contact combinator to OR (Plan 04, FIX-04) | Consistent post-Hunter contact-check: name OR email empty triggers no-contact status, not only when both are empty |
+| Added IF Ready 4 + Status - verification timeout node pair after Parse Poll 4 (Plan 04, FIX-05) | Explicit routing of still-processing No2Bounce results to verification_timeout; cleaner than reusing IF Email Valid which checks email validity |
+| Pagination Code nodes bypass Parse list-expansion nodes (Plan 04, FIX-06) | Pagination Code nodes return individual items natively via allRecords.map; Parse nodes doing $json.list expansion are redundant |
+| Hunter company lookup now uses `parent_company` derived from website content | Clinic/branch names are weaker search keys than the parent medical group; `Prep Parent Company` → `OpenRouter - Parent Company` → `Parse Parent Company` normalizes this before Hunter runs |
+
+### Critical Pre-Conditions Before Phase 2
+
+- NocoDB row cap validated: confirm actual row count vs. n8n Get All today
+- OpenRouter balance confirmed above $10 before batch fix deployment
+- Instantly plan confirmed as Hypergrowth (API access minimum)
+- NocoDB backend confirmed (SQLite vs PostgreSQL) — PostgreSQL migration recommended before v2 launch to prevent SQLite write contention
+
+### Blockers
+
+None currently. Phase 1 can begin immediately.
+
+### Todos
+
+- [ ] Check actual NocoDB leads table row count vs. n8n Get All output (validates urgency of INFRA-02 and pagination fix)
+- [ ] Confirm OpenRouter balance and current tier before deploying batch fix
+- [ ] Confirm Instantly plan tier before v2 planning
+
+---
+
+## Session Continuity
+
+### To Resume Work
+
+1. Read `/Users/sasikumar/Documents/n8n/.planning/ROADMAP.md` — current phase and plan status
+2. Read `/Users/sasikumar/Documents/n8n/.planning/phases/01-workflow-reliability/01-05-SUMMARY.md` — completed Phase 1 workflow reliability context
+3. Start Phase 2 planning for Instantly push, keeping the new `parent_company` field in scope for downstream sync and schema work
+
+**Stopped at:** Updated wf-latest with `parent_company` enrichment and NocoDB persistence
+
+### Workflow Files
+
+| File | Purpose |
+|------|---------|
+| `wf-latest.json` | Lead enrichment workflow (3-min trigger, wf-latest) — now includes parent-company derivation before Hunter contact lookup |
+| `wf-discovery.json` | Lead discovery workflow (weekly trigger) — pagination fix target in Phase 1 |
+
+### Context Notes
+
+- wf-latest currently uses `limit=10000` in a single HTTP GET (no pagination) — NocoDB server default may cap at 100 rows
+- wf-latest uses `.first()` equivalent pattern (Code node `unique.slice(0, 5)` feeds into single-item processing — the loop structure needs confirmation from full workflow read)
+- wf-latest now adds `Prep Parent Company` → `OpenRouter - Parent Company` → `Parse Parent Company`; Hunter's `company` param reads `$('Parse Parent Company').item.json.parent_company`
+- `Prep Partial Hunter` writes parsed `parent_company`; `Prep Partial Anymail` currently seeds `parent_company` from `cleanName`; `Write Partial & Pending` PATCH now includes `parent_company`
+- NocoDB needs a `parent_company` text column for the new field to persist visibly in the leads table
+- wf-discovery uses weekly trigger, fires all 589 search combos in one run
+- All Railway env vars must be applied to both the n8n service AND the NocoDB service (separate Railway services)
+
+---
+
+*State initialised: 2026-03-24*
