@@ -1,0 +1,42 @@
+{
+  "normalizeInput": {
+    "Id": 210,
+    "company_name": "P Tan Family Medicine Clinic",
+    "prefer_corporate_root": false
+  },
+  "searchHomepageSimple": {
+    "results": []
+  },
+  "inputItems": [
+    {
+      "results": [
+        {
+          "url": "https://www.practo.com/singapore/clinic/radlink-medicare-bishan-bishan",
+          "title": "P Tan Family Medicine Clinic, Bishan, Singapore - Practo",
+          "content": "P Tan Family Medicine Clinic is a General Surgery Clinic in Bishan, Singapore. Read more Address 503 Bishan Street 11, #01-464, Singapore 570503."
+        },
+        {
+          "url": "http://street-directory.com/aic_site_prm/routing.php?postalcode=570503&tel=62557545&company=P+TAN+FAMILY+MEDICINE+CLINIC&unitno=464",
+          "title": "AIC - P TAN FAMILY MEDICINE CLINIC",
+          "content": "P TAN FAMILY MEDICINE CLINIC 503 Bishan Street 11 464. SINGAPORE 570503. Tel :62557545."
+        },
+        {
+          "url": "https://www.ptanfmc.com/",
+          "title": "Doctor | P Tan Family Medicine Clinic | Singapore",
+          "content": "We are committed to keeping Singapore healthy through preventive care, health education, and management of both acute and chronic conditions. As your first and ongoing point of care, our experienced medical team delivers personalised, high-quality treatment."
+        },
+        {
+          "url": "https://listing.yellowpages.com.sg/listing/p-tan-family-medicine-clinic/",
+          "title": "P Tan Family Medicine Clinic | Yellow Pages Singapore",
+          "content": "Blk 503 Bishan St 11 #01-464 Singapore 570503."
+        },
+        {
+          "url": "https://sg.linkedin.com/in/kytan",
+          "title": "Paul Tan - Family Medicine - LinkedIn Singapore",
+          "content": "Family Physician. P Tan Family Medicine Clinic. Aug 2018 - Present. Bishan, Singapore."
+        }
+      ]
+    }
+  ]
+}
+

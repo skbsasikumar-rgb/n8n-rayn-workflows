@@ -629,16 +629,23 @@ async def health() -> dict[str, str]:
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     timeout_ms = int(os.getenv("CRAWL4AI_PAGE_TIMEOUT_MS", "45000"))
+    total_timeout_ms = int(os.getenv("CRAWL4AI_TOTAL_TIMEOUT_MS", "90000"))
+    follow_links_limit = max(0, int(os.getenv("CRAWL4AI_FOLLOW_LINKS_LIMIT", "2")))
     context = None
     page = None
 
-    try:
+    async def run_scrape() -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        nonlocal context, page
         async with scrape_semaphore:
             browser = await ensure_browser(app)
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
             primary = await extract_page(page, str(request.url), timeout_ms)
-            follow_links = pick_follow_links(primary["url"], primary["links"])
+            follow_links = pick_follow_links(
+                primary["url"],
+                primary["links"],
+                limit=follow_links_limit,
+            )
 
             extra_pages: list[dict[str, Any]] = []
             for href in follow_links:
@@ -653,6 +660,13 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
                     pass
                 finally:
                     await extra_page.close()
+            return primary, extra_pages
+
+    try:
+        primary, extra_pages = await asyncio.wait_for(
+            run_scrape(),
+            timeout=total_timeout_ms / 1000,
+        )
 
     except Exception as exc:
         if page is not None:
@@ -663,7 +677,10 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
             app.state.browser = await new_browser(app)
         except Exception:
             pass
-        error_text = compact_whitespace(str(exc))
+        if isinstance(exc, TimeoutError) or isinstance(exc, asyncio.TimeoutError):
+            error_text = f"scrape_timeout: {total_timeout_ms}ms"
+        else:
+            error_text = compact_whitespace(str(exc))
         return ScrapeResponse(
             ok=False,
             url=str(request.url),

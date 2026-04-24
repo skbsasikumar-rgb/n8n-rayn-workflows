@@ -1,0 +1,29 @@
+{
+  "normalizeInput": {
+    "Id": 209,
+    "company_name": "1 Bishan Medical Clinic",
+    "prefer_corporate_root": false,
+    "search_core_query": "\"1 Medical\" Singapore"
+  },
+  "searchHomepageSimple": {
+    "results": []
+  },
+  "inputItems": [
+    {
+      "organic": [
+        {
+          "title": "1 MEDICAL - Your Healthcare Partner",
+          "link": "https://www.1medical.sg/",
+          "snippet": "At 1 Medical Clinics, we are dedicated to providing compassionate ... Singapore 367874. Opening Hours. Mon - Thurs: 8am - 2pm, 6pm - 9pm. Fri & Sun: 8am ...",
+          "position": 1
+        },
+        {
+          "title": "Role of artificial intelligence in virtual emergency care - PubMed",
+          "link": "https://pubmed.ncbi.nlm.nih.gov/41022432/",
+          "snippet": "1 Medical Affairs - Research Innovation and Enterprise, Alexandra Hospital, Singapore, Alexandra Hospital, Singapore Ravi_SHANKAR@nuhs.edu.sg.",
+          "position": 2
+        }
+      ]
+    }
+  ]
+}
