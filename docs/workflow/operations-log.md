@@ -32,8 +32,12 @@ Current local git state when this log was created:
 | `263` | Sree Narayana Mission | `partial` | `https://sreenarayanamission.org/` | Correct homepage root; avoids donation-platform evidence. |
 | `257` | Frontier Medical | `partial` | `https://frontierhealthcare.com.sg/` | Correct group homepage and parent/root output. |
 | `251` | GP | `partial` | blank | Ambiguous short name; false-positive domains blocked and row falls back to no official homepage. |
-| `253` | 57 Medical Clinic | `partial` | blank | `findglocal.com` false positive blocked; no official homepage verified. |
+| `253` | 57 Medical Clinic | `partial` | `https://57medical.sg/` | Correct official clinic group homepage. |
 | `260` | C3 Family Clinic | `partial` | blank | `enablingguide.sg` false positive blocked; no official homepage verified. |
+| `262` | Baby Allergy Prevention By Eco Pacific Pte Ltd | `partial` | `https://babyallergyprevention.com.sg/` | Correct Singapore homepage for Baby Allergy Prevention by Eco Pacific. |
+| `237` | Binjai Medical Clinic | `partial` | `https://binjaimedical.com/` | Correct official clinic homepage. |
+| `244` | Providence Medical Centre Pte Ltd | `partial` | blank | No official homepage found; directory results remain rejected. |
+| `231` | Bukit Timah Family Clinic & Surgery | `partial` | blank | No official homepage found; directory/Facebook-style evidence remains rejected. |
 
 ## Recent Fixes
 
@@ -47,6 +51,7 @@ Current local git state when this log was created:
 - Strengthened the company-facts prompt so outlet, brand, group, and network parent relationships require official evidence.
 - Restored Railway Primary to n8n `2.12.3`, set `N8N_PROXY_HOPS=1`, activated the worker webhook, and cleared old worker executions before the full-table rerun.
 - Blocked late false positives from `tiktok.com`, `enablingguide.sg`, `singaporegp.sg`, `tickets.gp`, and `findglocal.com`; added a short-name guard for ambiguous names such as `GP`.
+- Added precise homepage hints for Baby Allergy Prevention, 57 Medical, and Binjai Medical Clinic; reran only rows `262`, `253`, and `237`.
 
 ## Open Follow-Ups
 
