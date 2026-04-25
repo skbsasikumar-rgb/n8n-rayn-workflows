@@ -1,0 +1,3 @@
+FROM karust/openserp:latest
+
+CMD ["serve", "-a", "0.0.0.0", "-p", "7000"]
