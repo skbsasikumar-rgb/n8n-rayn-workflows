@@ -72,6 +72,8 @@ Scrape and quality fields:
 - `last_stage`
 - `last_error`
 
+`website_content` starts with a structured evidence section from the scraper when available. It may include `About`, `Services`, `Locations`, `Team`, `Legal And Group Signals`, `Contacts`, `Privacy And Compliance`, `Footer`, and `Schema Org` sections before the broader cleaned page text. Future LLM extraction should prefer those sections for parent-company, group/umbrella, and company-size hints before falling back to raw page content.
+
 Duplicate fields:
 
 - `duplicate_of_id`

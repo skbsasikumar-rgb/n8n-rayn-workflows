@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 from pathlib import Path
@@ -212,6 +213,7 @@ class ScrapeResponse(BaseModel):
     markdown: str = ""
     main_text: str = ""
     website_content: str = ""
+    evidence_bundle: dict[str, Any] = Field(default_factory=dict)
     metadata: MetadataPayload = Field(default_factory=MetadataPayload)
     signals: SignalPayload = Field(default_factory=SignalPayload)
     quality: QualityPayload = Field(default_factory=QualityPayload)
@@ -410,6 +412,8 @@ def extract_metadata(soup: BeautifulSoup) -> MetadataPayload:
 
 def extract_html_sections(html: str, page_url: str) -> dict[str, Any]:
     soup = BeautifulSoup(html, "lxml")
+    schema_org = extract_schema_org(soup)
+    footer_text = extract_footer_text(soup)
     prune_noise_nodes(soup)
 
     headings = dedupe_lines(
@@ -453,7 +457,77 @@ def extract_html_sections(html: str, page_url: str) -> dict[str, Any]:
         "blocks": blocks,
         "links": links,
         "contacts": contacts,
+        "footer_text": footer_text,
+        "schema_org": schema_org,
     }
+
+
+def extract_footer_text(soup: BeautifulSoup) -> str:
+    lines: list[str] = []
+    for node in soup.select("footer, [role='contentinfo']"):
+        text = compact_whitespace(node.get_text(" ", strip=True))
+        if text:
+            lines.append(text)
+    return limit_text("\n".join(dedupe_lines(lines, 12)), 1200)
+
+
+def extract_schema_org(soup: BeautifulSoup) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for node in soup.find_all("script", attrs={"type": re.compile(r"ld\+json", re.I)}):
+        raw = compact_whitespace(node.string or node.get_text(" ", strip=True))
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        items = parsed if isinstance(parsed, list) else [parsed]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            compact_item = compact_schema_item(item)
+            if compact_item:
+                output.append(compact_item)
+            if len(output) >= 6:
+                return output
+    return output
+
+
+def compact_schema_item(item: dict[str, Any]) -> dict[str, Any]:
+    allowed_keys = (
+        "@type",
+        "name",
+        "legalName",
+        "alternateName",
+        "url",
+        "parentOrganization",
+        "branchOf",
+        "department",
+        "address",
+        "telephone",
+        "email",
+        "sameAs",
+    )
+    output: dict[str, Any] = {}
+    for key in allowed_keys:
+        value = item.get(key)
+        if value in (None, "", [], {}):
+            continue
+        output[key] = simplify_schema_value(value)
+    return output
+
+
+def simplify_schema_value(value: Any) -> Any:
+    if isinstance(value, str):
+        return compact_whitespace(value)[:500]
+    if isinstance(value, list):
+        simplified = [simplify_schema_value(item) for item in value[:8]]
+        return [item for item in simplified if item not in (None, "", [], {})]
+    if isinstance(value, dict):
+        keys = ("@type", "name", "legalName", "url", "streetAddress", "addressLocality", "addressRegion", "postalCode", "addressCountry")
+        output = {key: simplify_schema_value(value.get(key)) for key in keys if value.get(key) not in (None, "", [], {})}
+        return output
+    return value
 
 
 async def auto_scroll(page: Page) -> None:
@@ -562,6 +636,147 @@ def render_page_section(page_data: dict[str, Any], include_blocks: int) -> str:
     lines.extend(blocks)
     if contacts:
         lines.append("Contacts: " + "; ".join(contacts))
+
+    return "\n".join(lines).strip()
+
+
+EVIDENCE_BUCKETS: dict[str, tuple[str, ...]] = {
+    "about_text": ("about", "who we are", "our story", "mission", "vision", "established", "founded"),
+    "services_text": ("service", "services", "treatment", "treatments", "specialty", "specialities", "specialties", "care"),
+    "locations_text": ("location", "locations", "branch", "branches", "clinic", "clinics", "address", "postal", "singapore"),
+    "team_text": ("team", "doctor", "doctors", "physician", "medical director", "leadership", "management"),
+    "company_legal_text": (
+        "pte ltd",
+        "private limited",
+        "limited",
+        "ltd",
+        "group",
+        "holdings",
+        "owned by",
+        "operated by",
+        "managed by",
+        "member of",
+        "part of",
+        "brand of",
+        "subsidiary",
+        "parent company",
+    ),
+    "privacy_compliance_text": ("privacy", "pdpa", "personal data", "data protection", "dpo", "security", "compliance"),
+}
+
+
+def build_evidence_bundle(primary: dict[str, Any], extra_pages: list[dict[str, Any]]) -> dict[str, Any]:
+    pages = [primary] + [item for item in extra_pages if isinstance(item, dict)]
+    bundle: dict[str, Any] = {
+        "page_sources": [],
+        "about_text": "",
+        "services_text": "",
+        "locations_text": "",
+        "team_text": "",
+        "company_legal_text": "",
+        "contact_text": "",
+        "privacy_compliance_text": "",
+        "footer_text": "",
+        "schema_org": [],
+    }
+    bucket_lines: dict[str, list[str]] = {key: [] for key in EVIDENCE_BUCKETS}
+    footer_lines: list[str] = []
+    contact_lines: list[str] = []
+    schema_items: list[dict[str, Any]] = []
+
+    for page_data in pages:
+        url = compact_whitespace(page_data.get("url", ""))
+        title = compact_whitespace(page_data.get("title", ""))
+        if url or title:
+            bundle["page_sources"].append({"url": url, "title": title})
+
+        metadata_raw = page_data.get("metadata")
+        metadata_description = ""
+        if isinstance(metadata_raw, MetadataPayload):
+            metadata_description = metadata_raw.description
+        elif isinstance(metadata_raw, dict):
+            metadata_description = compact_whitespace(metadata_raw.get("description", ""))
+
+        page_context = " ".join(
+            [
+                url,
+                title,
+                metadata_description,
+                " ".join(str(item) for item in page_data.get("headings", [])),
+            ]
+        ).lower()
+        evidence_lines = [metadata_description, *page_data.get("headings", []), *page_data.get("blocks", [])]
+
+        for line in evidence_lines:
+            cleaned = compact_whitespace(line)
+            if not cleaned or is_noise_line(cleaned):
+                continue
+            lowered = f"{page_context} {cleaned.lower()}"
+            for bucket, keywords in EVIDENCE_BUCKETS.items():
+                if any(keyword in lowered for keyword in keywords):
+                    bucket_lines[bucket].append(cleaned)
+
+        footer = compact_whitespace(page_data.get("footer_text", ""))
+        if footer:
+            footer_lines.append(footer)
+
+        contacts = page_data.get("contacts", [])
+        if isinstance(contacts, list):
+            contact_lines.extend(str(item) for item in contacts)
+
+        page_schema = page_data.get("schema_org", [])
+        if isinstance(page_schema, list):
+            schema_items.extend(item for item in page_schema if isinstance(item, dict))
+
+    limits = {
+        "about_text": 2200,
+        "services_text": 1800,
+        "locations_text": 1800,
+        "team_text": 1400,
+        "company_legal_text": 1800,
+        "privacy_compliance_text": 1200,
+    }
+    for bucket, lines in bucket_lines.items():
+        bundle[bucket] = limit_text("\n".join(dedupe_lines(lines, 30)), limits[bucket])
+
+    bundle["contact_text"] = limit_text("\n".join(dedupe_lines(contact_lines, 20)), 1000)
+    bundle["footer_text"] = limit_text("\n".join(dedupe_lines(footer_lines, 12)), 1200)
+    bundle["schema_org"] = schema_items[:8]
+    return bundle
+
+
+def render_evidence_bundle(bundle: dict[str, Any]) -> str:
+    lines: list[str] = ["# Structured Website Evidence"]
+    sources = bundle.get("page_sources", [])
+    if isinstance(sources, list) and sources:
+        lines.append("## Page Sources")
+        for source in sources[:6]:
+            if not isinstance(source, dict):
+                continue
+            title = compact_whitespace(source.get("title", ""))
+            url = compact_whitespace(source.get("url", ""))
+            value = " | ".join(part for part in (title, url) if part)
+            if value:
+                lines.append(value)
+
+    labels = {
+        "about_text": "About",
+        "services_text": "Services",
+        "locations_text": "Locations",
+        "team_text": "Team",
+        "company_legal_text": "Legal And Group Signals",
+        "contact_text": "Contacts",
+        "privacy_compliance_text": "Privacy And Compliance",
+        "footer_text": "Footer",
+    }
+    for key, label in labels.items():
+        value = compact_whitespace(bundle.get(key, ""))
+        if value:
+            lines.extend([f"## {label}", value])
+
+    schema_org = bundle.get("schema_org", [])
+    if isinstance(schema_org, list) and schema_org:
+        lines.extend(["## Schema Org", limit_text(json.dumps(schema_org[:6], ensure_ascii=True, separators=(",", ":")), 2000)])
 
     return "\n".join(lines).strip()
 
@@ -703,9 +918,11 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     markdown_sections = [render_page_section(primary, 20)]
     markdown_sections.extend(render_page_section(item, 12) for item in extra_pages if isinstance(item, dict))
     markdown = limit_text("\n\n".join(section for section in markdown_sections if section), 15000)
+    evidence_bundle = build_evidence_bundle(primary, extra_pages)
+    structured_evidence = limit_text(render_evidence_bundle(evidence_bundle), 8000)
 
     # Merge both artifacts, then normalize to remove repeated chrome/noise lines.
-    raw_website_content = "\n\n".join(part for part in (markdown, combined_main_text) if part)
+    raw_website_content = "\n\n".join(part for part in (structured_evidence, markdown, combined_main_text) if part)
     website_content = limit_text(sanitize_website_content(raw_website_content), 15000)
 
     # Some sites render sparse semantic HTML but expose meaningful body text.
@@ -740,6 +957,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
         markdown=markdown,
         main_text=combined_main_text,
         website_content=website_content,
+        evidence_bundle=evidence_bundle,
         metadata=metadata,
         signals=signals,
         quality=quality,

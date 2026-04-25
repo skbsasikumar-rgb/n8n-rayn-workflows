@@ -4,7 +4,7 @@ This service gives `wf-worker.json` one normalized scrape endpoint:
 
 - `POST /scrape`
 - input: `url`, `company_name`, optional `market`
-- output: `ok`, `final_url`, `title`, `markdown`, `main_text`, `website_content`, `metadata`, `signals`, `quality`, `error`
+- output: `ok`, `final_url`, `title`, `markdown`, `main_text`, `website_content`, `evidence_bundle`, `metadata`, `signals`, `quality`, `error`
 
 Workflow operating docs:
 
@@ -44,6 +44,18 @@ Current implementation:
   "markdown": "...",
   "main_text": "...",
   "website_content": "...",
+  "evidence_bundle": {
+    "page_sources": [{"url": "https://example.com/", "title": "Example Medical Clinic Singapore"}],
+    "about_text": "...",
+    "services_text": "...",
+    "locations_text": "...",
+    "team_text": "...",
+    "company_legal_text": "...",
+    "contact_text": "...",
+    "privacy_compliance_text": "...",
+    "footer_text": "...",
+    "schema_org": []
+  },
   "metadata": {
     "description": "...",
     "lang": "en"

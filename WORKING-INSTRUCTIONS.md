@@ -28,6 +28,7 @@ The older GSD planning log still exists at `.planning/phases/01-workflow-reliabi
 - Use `rg` for node names, field names, and status values.
 - Keep workflow edits in the canonical JSON file being deployed: discovery in `wf-discovery.json`, orchestration in `wf-latest.json`, enrichment in `wf-worker.json`.
 - Prefer one known-bad row, then first 20, then full-table reruns.
+- If an external repo, library, tool, or service has a simpler or better approach, point it out and ask for approval before changing the workflow to use it.
 
 ## Quality Rules
 

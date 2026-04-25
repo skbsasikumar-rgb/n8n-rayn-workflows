@@ -33,7 +33,8 @@ The workflow should produce a clean, auditable company record with:
 6. The worker checks for existing rows with the same `canonical_domain`.
 7. Duplicate rows are written with `duplicate_of_id` and enrichment stops.
 8. Non-duplicate rows are scraped through the Crawl4AI service.
-9. Company facts are extracted from scrape evidence and written back to NocoDB.
+9. The scraper returns a bounded page scrape plus structured evidence buckets for about, services, locations, team, legal/group signals, contacts, privacy/compliance, footer, and schema.org data.
+10. Company facts are extracted from scrape evidence and written back to NocoDB.
 
 ## Source Of Truth
 
@@ -48,6 +49,8 @@ The workflow should produce a clean, auditable company record with:
 Discovery should not decide final homepage, parent company, certification fit, or enrichment facts. It can store candidate hints for audit, but the worker must be able to enrich from `company_name` alone.
 
 The worker should not depend on a discovery URL being correct. It should treat `candidate_homepage` and `candidate_domain` as weak hints and re-validate official homepage evidence.
+
+The scraper should not crawl an entire site by default. It should keep the current bounded crawl, then organize high-value evidence into structured buckets so future LLM extraction can classify solo clinic, group/umbrella relationship, and SME/enterprise hints from cleaner inputs.
 
 ## Success Criteria
 

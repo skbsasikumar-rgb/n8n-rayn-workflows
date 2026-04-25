@@ -78,6 +78,7 @@ Rules:
 - deterministic URL cleanup before LLM ranking
 - no full raw HTML in model calls unless needed
 - compact JSON evidence for facts extraction
+- prefer structured scraper evidence buckets before broad page text
 - higher reasoning only for ambiguous parent-company or legal-entity cases
 - cache reusable rules in docs and workflow code, not duplicated prompt prose
 

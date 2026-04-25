@@ -35,6 +35,7 @@ The historical GSD discussion log lives at `.planning/phases/01-workflow-reliabi
 - Every writeback should be auditable from `evidence_url`, `scrape_url`, `source_urls`, `search_evidence_json`, `last_stage`, and `last_error`.
 - A row with a duplicate `canonical_domain` should link to `duplicate_of_id` and stop enrichment.
 - Full-table reruns should clear old executions first, reset only target rows, then verify final row fields.
+- If an external repo, library, tool, or service looks like a better path, call it out and wait for approval before switching the workflow to it.
 
 ## Secrets
 
