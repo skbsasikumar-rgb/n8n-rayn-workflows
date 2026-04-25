@@ -10,7 +10,7 @@ Historical/internal GSD logs:
 
 ## Current State
 
-Date: 2026-04-24
+Date: 2026-04-25
 
 Active workflow files:
 
@@ -20,8 +20,8 @@ Active workflow files:
 
 Current local git state when this log was created:
 
-- `wf-worker.json` already had uncommitted workflow changes from URL selection and dedupe work.
-- Root `Dockerfile` was untracked and left untouched.
+- `wf-worker.json` has live worker changes for URL selection, dedupe, and false-positive blocking.
+- Root `Dockerfile` pins n8n to `2.12.3` after the Railway service was accidentally running `1.123.37`.
 
 ## Latest Rerun Findings
 
@@ -30,7 +30,10 @@ Current local git state when this log was created:
 | `250` | Osler Health International | `partial` | `https://osler-group.com/` | Corrected from bad `osler-health.com`; scrape fallback used because page evaluation navigation interrupted. |
 | `256` | GoodDoctors Medical Clinic | `partial` | `http://gooddoctors.com.sg/` | Correct homepage root. |
 | `263` | Sree Narayana Mission | `partial` | `https://sreenarayanamission.org/` | Correct homepage root; avoids donation-platform evidence. |
-| `257` | Frontier Medical | `failed` | `https://frontierhealthcare.com.sg/` | Older stale scrape timeout, not part of the latest three-row fix. |
+| `257` | Frontier Medical | `partial` | `https://frontierhealthcare.com.sg/` | Correct group homepage and parent/root output. |
+| `251` | GP | `partial` | blank | Ambiguous short name; false-positive domains blocked and row falls back to no official homepage. |
+| `253` | 57 Medical Clinic | `partial` | blank | `findglocal.com` false positive blocked; no official homepage verified. |
+| `260` | C3 Family Clinic | `partial` | blank | `enablingguide.sg` false positive blocked; no official homepage verified. |
 
 ## Recent Fixes
 
@@ -39,6 +42,11 @@ Current local git state when this log was created:
 - Known homepage hints were added for GoodDoctors, Sree Narayana Mission, and Osler.
 - Canonical-domain dedupe writes `duplicate_of_id` and skips enrichment.
 - Scrape failures after URL validation now produce `partial` fallback output instead of a hard failed writeback.
+- Added official-homepage hints for Frontier Medical, Minmed, Parkway Shenton, The Clinic Group, Advantage Medical, Healthway Medical, and Geylang Polyclinic.
+- Added deterministic root-name and parent-company rules for those domains, including Osler's `osler-group.com` root.
+- Strengthened the company-facts prompt so outlet, brand, group, and network parent relationships require official evidence.
+- Restored Railway Primary to n8n `2.12.3`, set `N8N_PROXY_HOPS=1`, activated the worker webhook, and cleared old worker executions before the full-table rerun.
+- Blocked late false positives from `tiktok.com`, `enablingguide.sg`, `singaporegp.sg`, `tickets.gp`, and `findglocal.com`; added a short-name guard for ambiguous names such as `GP`.
 
 ## Open Follow-Ups
 
