@@ -41,6 +41,9 @@ Current local git state when this log was created:
 
 ## Recent Fixes
 
+- Added deterministic parent/name handling for `hmimedical.com` and scrape-failed `prohealth.sg` rows.
+- Fixed canonical-domain dedupe so the lowest non-duplicate `Id` stays primary; reran rows `216`, `225`, and `272`.
+- Verified row `216` remains primary for `onecaremedical.com.sg`, row `272` now points to `duplicate_of_id=216`, and row `225` resolves to `ProHealth Medical Group`.
 - Homepage roots are normalized to clean registrable roots.
 - Known bad third-party sources such as donation platforms and mall directories are blocked.
 - Known homepage hints were added for GoodDoctors, Sree Narayana Mission, and Osler.
