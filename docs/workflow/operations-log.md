@@ -41,6 +41,10 @@ Current local git state when this log was created:
 
 ## Recent Fixes
 
+- Added Browserless as a fallback scraper after Crawl4AI failures and deployed it as a separate Railway service.
+- Full-table rerun completed: `54 partial`, `2 url duplicate`, `0 failed`, `0 pending`, `0 processing`.
+- Browserless recovered Crawl4AI scrape failures for rows `225` and `228`; rows `249` and `259` still fell back after both scrapers failed.
+- Added a hosted-platform root exception so `changclinic.blogspot.com` does not collapse to `blogspot.com`; reran row `238`.
 - Added deterministic parent/name handling for `hmimedical.com` and scrape-failed `prohealth.sg` rows.
 - Fixed canonical-domain dedupe so the lowest non-duplicate `Id` stays primary; reran rows `216`, `225`, and `272`.
 - Verified row `216` remains primary for `onecaremedical.com.sg`, row `272` now points to `duplicate_of_id=216`, and row `225` resolves to `ProHealth Medical Group`.

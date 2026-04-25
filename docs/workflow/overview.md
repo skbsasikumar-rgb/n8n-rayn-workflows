@@ -20,6 +20,7 @@ The workflow should produce a clean, auditable company record with:
 | Orchestrator | `wf-latest.json` | Resets stale processing rows, checks capacity, claims pending rows, and dispatches worker calls. |
 | Worker | `wf-worker.json` | Enriches each row independently and writes final result fields. |
 | Browser scraper | `services/crawl4ai/app.py` | Normalizes page scrape output for the worker. |
+| Browserless fallback | Railway `browserless` service | Renders pages when Crawl4AI returns an error page, empty content, or navigation failure. |
 | Search service | `services/searxng/settings.yml` | Supports deterministic homepage search. |
 | Local helpers | `scripts/` | Resets rows, clears executions, probes evidence, and replays homepage selection. |
 
@@ -33,8 +34,9 @@ The workflow should produce a clean, auditable company record with:
 6. The worker checks for existing rows with the same `canonical_domain`.
 7. Duplicate rows are written with `duplicate_of_id` and enrichment stops.
 8. Non-duplicate rows are scraped through the Crawl4AI service.
-9. The scraper returns a bounded page scrape plus structured evidence buckets for about, services, locations, team, legal/group signals, contacts, privacy/compliance, footer, and schema.org data.
-10. Company facts are extracted from scrape evidence and written back to NocoDB.
+9. If Crawl4AI returns empty or unusable content, the worker tries Browserless on the same resolved scrape URL.
+10. The scraper path returns bounded page text plus structured evidence when available.
+11. Company facts are extracted from scrape evidence and written back to NocoDB.
 
 ## Source Of Truth
 
