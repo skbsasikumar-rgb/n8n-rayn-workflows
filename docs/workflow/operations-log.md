@@ -27,6 +27,13 @@ First 20-row rerun:
 - picked 4 URLs and rejected 16 rows from the first 20.
 - observed noisy results from the old search backend; next tuning should focus on search quality before picker complexity.
 
+OpenSERP deployment fix:
+
+- Railway deploy was slow because the service was being rebuilt from a pinned OpenSERP source checkout instead of pulling the old prebuilt image.
+- raw OpenSERP mode returned `null` results, so the service now runs browser mode with Railway-safe Chromium sandbox flags.
+- OpenSERP responses are wrapped as `{ "results": [...] }` so n8n keeps one search response per company.
+- first 20-row OpenSERP rerun picked 6 URLs and left 14 as no-url-picked for review/tuning.
+
 Rebuild direction:
 
 - worker first.

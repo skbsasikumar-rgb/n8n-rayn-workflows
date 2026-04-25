@@ -1,4 +1,33 @@
-FROM karust/openserp:latest
+FROM golang:1.24.6-bookworm AS build
+
+ARG OPENSERP_REF=e4a84d8914a8e283a18b4152650d092c9f009164
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates git \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY patches/railway-no-sandbox.patch /tmp/railway-no-sandbox.patch
+RUN git clone https://github.com/karust/openserp.git . \
+  && git checkout "$OPENSERP_REF" \
+  && git apply /tmp/railway-no-sandbox.patch \
+  && CGO_ENABLED=0 go build -ldflags="-s -w" -o /out/openserp .
+
+FROM chromedp/headless-shell:stable
+
+WORKDIR /usr/src/app
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && getent passwd chrome >/dev/null 2>&1 || useradd --create-home --uid 1001 --shell /bin/bash chrome \
+  && chown chrome:chrome /usr/src/app
+
+COPY --from=build /out/openserp /usr/local/bin/openserp
+
+ENV OPENSERP_APP_BROWSER_PATH=/headless-shell/headless-shell
+
+USER chrome
 
 ENTRYPOINT []
-CMD openserp serve --raw -a 0.0.0.0 -p ${PORT:-7000}
+CMD ["sh", "-c", "exec openserp serve -a 0.0.0.0 -p ${PORT:-7000}"]

@@ -6,9 +6,11 @@ Build and run the container with:
 
 ```bash
 docker build -t openserp .
-docker run -p 7000:7000 openserp serve -a 0.0.0.0 -p 7000
+docker run -p 7000:7000 openserp
 ```
 
 The workflow expects the service base URL to expose `/google/search?text=...&limit=10`.
-On Railway, the container binds to `${PORT:-7000}` and runs in raw Google search mode.
+On Railway, the container binds to `${PORT:-7000}` and runs OpenSERP in browser mode.
+The image pins OpenSERP upstream and patches Chromium launch flags with `no-sandbox` / `disable-setuid-sandbox`; without this, Railway can fail Chromium startup with sandbox permission errors.
+The image also wraps dedicated search responses as `{ "results": [...] }` so n8n keeps one item per company instead of splitting a result array into many unrelated items.
 Railway healthchecks must use `/health`.
