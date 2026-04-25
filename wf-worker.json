@@ -161,7 +161,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nconst prepared = $('Prepare OpenSERP Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst pickedUrl = normalizeUrl(parsed.url || '');\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  reason: String(parsed.reason || '').trim(),\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    search_evidence_json: JSON.stringify(evidence),\n    status: pickedUrl ? 'url picked' : 'no url picked',\n    last_stage: 'url_pick',\n    last_error: pickedUrl ? '' : 'No official URL selected from first 10 OpenSERP Google results'\n  }\n};"
+        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nfunction canonicalDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\\/\\/)?([^\\s\\/?#]+)/i);\n  if (!match) return '';\n  let hostname = match[1].split('@').pop().split(':')[0];\n  hostname = hostname.toLowerCase().replace(/^www\\./, '');\n  const parts = hostname.split('.').filter(Boolean);\n  if (parts.length <= 2) return hostname;\n  const suffix2 = parts.slice(-2).join('.');\n  const sgSecondLevel = new Set(['com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg', 'per.sg']);\n  if (sgSecondLevel.has(suffix2) && parts.length >= 3) return parts.slice(-3).join('.');\n  return parts.slice(-2).join('.');\n}\nconst prepared = $('Prepare OpenSERP Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst pickedUrl = normalizeUrl(parsed.url || '');\nconst canonical = canonicalDomain(pickedUrl);\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  canonical_domain: canonical,\n  reason: String(parsed.reason || '').trim(),\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    canonical_domain: canonical,\n    duplicate_of_id: null,\n    search_evidence_json: JSON.stringify(evidence),\n    status: pickedUrl ? 'url picked' : 'no url picked',\n    last_stage: 'url_pick',\n    last_error: pickedUrl ? '' : 'No official URL selected from first 10 OpenSERP Google results'\n  }\n};"
       }
     },
     {
@@ -170,7 +170,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2300,
+        2820,
         300
       ],
       "parameters": {
@@ -179,7 +179,7 @@
         "sendHeaders": false,
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, url_picked: $json.url_picked, search_evidence_json: $json.search_evidence_json, status: $json.status, last_stage: $json.last_stage, last_error: $json.last_error }]) }}",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, url_picked: $json.url_picked, canonical_domain: $json.canonical_domain, duplicate_of_id: $json.duplicate_of_id, search_evidence_json: $json.search_evidence_json, status: $json.status, last_stage: $json.last_stage, last_error: $json.last_error }]) }}",
         "options": {
           "timeout": 30000
         },
@@ -195,6 +195,47 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000
+    },
+    {
+      "id": "find-canonical-duplicate",
+      "name": "Find Canonical Duplicate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2300,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.canonical_domain ? 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent('(canonical_domain,eq,' + $json.canonical_domain + ')~and(Id,neq,' + $json.Id + ')') + '&fields=Id,company_name,canonical_domain,url_picked,status&limit=1' : 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(Id,eq,-1)&fields=Id&limit=1' }}",
+        "sendHeaders": false,
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "id": "apply-dedupe-result",
+      "name": "Apply Dedupe Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const picked = $('Parse URL Pick').all()[$itemIndex]?.json || {};\nconst lookup = $json || {};\nconst dbMatches = Array.isArray(lookup.list) ? lookup.list : [];\nconst parsedItems = $('Parse URL Pick').all().map((item) => item.json || {});\nconst earlierBatchDuplicate = parsedItems\n  .filter((item) => item.canonical_domain && item.canonical_domain === picked.canonical_domain)\n  .filter((item) => Number(item.Id) < Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst dbDuplicate = dbMatches\n  .filter((row) => Number(row.Id) !== Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst duplicate = dbDuplicate || earlierBatchDuplicate || null;\nif (picked.canonical_domain && duplicate) {\n  return {\n    json: {\n      ...picked,\n      duplicate_of_id: Number(duplicate.Id),\n      status: 'url duplicate',\n      last_stage: 'dedupe',\n      last_error: 'Duplicate canonical_domain ' + picked.canonical_domain + ' of row ' + duplicate.Id\n    }\n  };\n}\nreturn { json: picked };"
+      }
     }
   ],
   "connections": {
@@ -235,7 +276,7 @@
       "main": [
         [
           {
-        "node": "Build OpenSERP Query",
+            "node": "Build OpenSERP Query",
             "type": "main",
             "index": 0
           }
@@ -287,6 +328,28 @@
       ]
     },
     "Parse URL Pick": {
+      "main": [
+        [
+          {
+            "node": "Find Canonical Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Canonical Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Apply Dedupe Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Dedupe Result": {
       "main": [
         [
           {

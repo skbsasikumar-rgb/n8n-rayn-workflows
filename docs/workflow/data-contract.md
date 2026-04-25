@@ -46,9 +46,11 @@ This document defines the rebuild contract for the lead enrichment table.
 
 ## Duplicate Rules
 
-If `canonical_domain` already exists on another non-error row:
+If `canonical_domain` already exists on another row:
 
 - set `status` to `url duplicate`.
 - set `duplicate_of_id` to the existing row ID.
 - skip website scraping and parent-company inference.
 - keep enough notes to explain the duplicate match.
+
+`canonical_domain` is derived from the selected URL, not from the raw company name. It removes protocol, path, query, fragment, port, credentials, and leading `www`, then stores the registrable root domain. Singapore suffixes such as `com.sg`, `org.sg`, and `net.sg` remain intact.

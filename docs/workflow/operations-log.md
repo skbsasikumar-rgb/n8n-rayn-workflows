@@ -34,6 +34,15 @@ OpenSERP deployment fix:
 - OpenSERP responses are wrapped as `{ "results": [...] }` so n8n keeps one search response per company.
 - first 20-row OpenSERP rerun picked 6 URLs and left 14 as no-url-picked for review/tuning.
 
+Canonical-domain dedupe:
+
+- worker now derives `canonical_domain` immediately after `url_picked`.
+- worker writes `canonical_domain` and `duplicate_of_id` back to NocoDB with the URL-pick result.
+- worker checks existing rows for the same canonical domain before later enrichment stages are added.
+- duplicate rows are marked `url duplicate`, receive `duplicate_of_id`, and must not continue into scraping or parent-company inference.
+- row 274 smoke test confirmed live canonical-domain write: `https://www.amazinghearing.com/` -> `amazinghearing.com`.
+- rows that were URL-picked before this patch were backfilled at the column level; their old `search_evidence_json` may still show earlier evidence until rerun.
+
 Rebuild direction:
 
 - worker first.

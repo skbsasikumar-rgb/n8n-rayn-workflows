@@ -36,10 +36,12 @@ The first rebuild slice is intentionally smaller than the full worker:
 2. Query OpenSERP Google with `company_name Singapore`.
 3. Keep the first 10 search results.
 4. Ask an LLM to choose the best official URL or return blank.
-5. Write the selected URL to `url_picked`.
-6. Store the query, first 10 Google results, LLM reason, and raw LLM output in `search_evidence_json`.
+5. Derive `canonical_domain` from the selected URL.
+6. If another row already has the same `canonical_domain`, set `duplicate_of_id`, mark `status` as `url duplicate`, and stop enrichment for that row.
+7. Write the selected URL and dedupe state to NocoDB.
+8. Store the query, first 10 Google results, canonical domain, LLM reason, and raw LLM output in `search_evidence_json`.
 
-No input normalization, scraping, dedupe, parent-company inference, or discovery logic belongs in this slice.
+No input normalization, scraping, parent-company inference, or discovery logic belongs in this slice.
 
 ## Success Criteria
 
@@ -61,6 +63,20 @@ The worker does not:
 - guess parent companies from weak signals.
 - hardcode one-off company URL hints as normal logic.
 - enrich rows when canonical-domain duplicate detection has already matched an existing lead.
+
+## Canonical-Domain Dedupe
+
+The worker computes `canonical_domain` immediately after `url_picked`.
+
+Rules:
+
+- strip protocol, path, query, fragment, port, credentials, and leading `www`.
+- keep Singapore second-level suffixes such as `com.sg`, `org.sg`, and `net.sg` as registrable roots.
+- otherwise use the final two hostname labels.
+- lookup existing rows by `canonical_domain`, excluding the current row.
+- if a duplicate exists, set `duplicate_of_id` to the existing row ID and `status` to `url duplicate`.
+
+Later enrichment stages must skip rows where `duplicate_of_id` is present or `status` is `url duplicate`.
 
 ## Initial Test Set
 
