@@ -53,6 +53,19 @@ def request_json(method: str, path: str, params: dict[str, str] | None = None) -
         raise SystemExit(f"HTTP {exc.code} {exc.reason}: {detail}") from exc
 
 
+def normalize_execution_payload(payload: Any) -> dict[str, Any]:
+    if isinstance(payload, list):
+        return {"executions": payload, "returned": len(payload), "nextCursor": None, "hasMore": False}
+    if isinstance(payload, dict):
+        data = payload.get("data")
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):
+            return {"executions": data, "returned": len(data), "nextCursor": None, "hasMore": False}
+        return payload
+    return {"executions": [], "returned": 0, "nextCursor": None, "hasMore": False}
+
+
 def cmd_list(args: argparse.Namespace) -> None:
     data = list_executions(args.workflow_id, args.limit, args.status, args.all)
     print(json.dumps(data, ensure_ascii=True))
@@ -76,7 +89,7 @@ def list_executions(workflow_id: str, limit: int, status: str | None, all_pages:
 
     if not all_pages:
         payload = request_json("GET", "/api/v1/executions", params)
-        return payload.get("data", payload)
+        return normalize_execution_payload(payload)
 
     executions = []
     cursor = None
@@ -85,7 +98,7 @@ def list_executions(workflow_id: str, limit: int, status: str | None, all_pages:
         if cursor:
             current_params["cursor"] = cursor
         payload = request_json("GET", "/api/v1/executions", current_params)
-        data = payload.get("data", payload)
+        data = normalize_execution_payload(payload)
         executions.extend(data.get("executions", []))
         cursor = data.get("nextCursor")
         if not cursor:
