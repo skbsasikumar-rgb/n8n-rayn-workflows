@@ -84,7 +84,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const companyName = String($json.company_name || '').trim();\nconst query = companyName.replace(/\"/g, '') + ' Singapore';\nreturn {\n  json: {\n    ...$json,\n    openserp_query: query,\n    openserp_url: 'https://searxng-railway-production-518a.up.railway.app/google/search?text=' + encodeURIComponent(query) + '&limit=10'\n  }\n};"
+        "jsCode": "const companyName = String($json.company_name || '').trim();\nconst query = companyName.replace(/\"/g, '') + ' Singapore';\nconst baseUrl = String($env.OPENSERP_BASE_URL || 'https://searxng-railway-production-518a.up.railway.app').trim().replace(/\\/+$/, '');\nreturn {\n  json: {\n    ...$json,\n    openserp_query: query,\n    openserp_url: baseUrl + '/google/search?text=' + encodeURIComponent(query) + '&limit=10'\n  }\n};"
       }
     },
     {

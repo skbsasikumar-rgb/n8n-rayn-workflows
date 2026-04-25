@@ -19,6 +19,7 @@ First rebuild slice:
 - workflow sends the first 10 results to OpenRouter using `deepseek/deepseek-v4-flash`.
 - workflow writes `url_picked`, `search_evidence_json`, `status`, `last_stage`, and `last_error`.
 - webhook returns on receipt so 20-row test runs do not block on the full execution.
+- search backend URL is now configurable via `OPENSERP_BASE_URL`.
 
 First 20-row rerun:
 
