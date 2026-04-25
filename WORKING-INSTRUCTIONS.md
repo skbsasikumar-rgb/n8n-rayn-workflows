@@ -1,46 +1,79 @@
-# RAYN Workflow Working Instructions
+# Working Instructions
 
-This file is the compact default context for RAYN n8n workflow work. Start here, then open only the exact workflow JSON, script, row, or doc needed for the task.
+These instructions govern the Rayn Secure n8n workflow rebuild.
 
-## Start Here
+## Four Principles
 
-- Workflow overview: `docs/workflow/overview.md`
-- Data and status contract: `docs/workflow/data-contract.md`
-- Rerun and deployment runbook: `docs/workflow/runbook.md`
-- Operator log and current progress: `docs/workflow/operations-log.md`
-- Improvement backlog: `docs/workflow/improvement-backlog.md`
+### 1. Think Before Coding
 
-The older GSD planning log still exists at `.planning/phases/01-workflow-reliability/01-DISCUSSION-LOG.md`, with verification state in `.planning/phases/01-workflow-reliability/01-VERIFICATION.md`. Treat those as historical/internal planning artifacts, not the day-to-day operator log.
+Do not assume silently.
 
-## Workflow Contract
+- State assumptions before changing workflow logic.
+- Present multiple interpretations when a requirement can mean more than one thing.
+- Push back when a simpler or safer approach is available.
+- Stop and ask when the next step is genuinely unclear.
 
-- Rayn Secure site: `https://www.raynsecure.com/`
-- Business goal: Singapore outbound lead workflow for cyber and data security certification.
-- Discovery is lead generation. It may store search evidence, but the enrichment worker must require only row identity plus `company_name`.
-- `wf-discovery.json` finds candidate companies and writes pending seed rows.
-- `wf-latest.json` is the orchestrator that claims pending rows and dispatches the worker.
-- `wf-worker.json` owns homepage discovery, URL validation, canonical-domain dedupe, scrape, facts extraction, and NocoDB writeback.
+### 2. Simplicity First
 
-## Token Budget Rules
+Build the minimum workflow that solves the current goal.
 
-- Open this file first, then the specific doc under `docs/workflow/` for the task.
-- Do not scan `.codex/`, `.planning/`, workflow history, or generated temp files unless the task needs them.
-- Use `rg` for node names, field names, and status values.
-- Keep workflow edits in the canonical JSON file being deployed: discovery in `wf-discovery.json`, orchestration in `wf-latest.json`, enrichment in `wf-worker.json`.
-- Prefer one known-bad row, then first 20, then full-table reruns.
-- If an external repo, library, tool, or service has a simpler or better approach, point it out and ask for approval before changing the workflow to use it.
+- No speculative nodes.
+- No abstractions for single-use logic.
+- No configuration until the workflow needs it.
+- No defensive branches for scenarios that cannot happen in the current contract.
+- If a node can be removed without breaking the success criteria, remove it.
 
-## Quality Rules
+### 3. Surgical Changes
 
-- `best_url` and `homepage_root_url` must be clean official homepage roots.
-- Reject directories, donation platforms, malls, social profiles, government/program pages, PDFs, jobs, maps, and unrelated parent pages.
-- Preserve `evidence_url`, `scrape_url`, `source_urls`, `search_evidence_json`, `last_stage`, and `last_error` for auditability.
-- If a canonical-domain duplicate exists, write `duplicate_of_id`, mark the row as duplicate, and stop enrichment.
-- If scrape fails after a valid official homepage is found, write a `partial` result with fallback evidence instead of inventing facts.
+Touch only what is required.
 
-## Live Validation Rules
+- Worker changes must not alter discovery unless explicitly requested.
+- Discovery changes must not alter the worker contract unless explicitly requested.
+- Do not refactor adjacent nodes while fixing one node.
+- Remove only unused fields, nodes, or docs created by the current change.
+- Mention unrelated cleanup opportunities instead of doing them.
 
-- A successful webhook response only means the workflow started. Always verify n8n execution history and final NocoDB row fields.
-- Before adding writeback fields, confirm the NocoDB schema or pair the workflow change with a schema update.
-- Before clean reruns, clear old execution records when practical, then reset only the target rows.
-- Keep credentials out of repo files. Use n8n credentials, NocoDB credentials, Railway variables, or user-level Codex config.
+### 4. Goal-Driven Execution
+
+Every task needs a verification loop.
+
+- Define what success means before editing.
+- Test with concrete rows or sample payloads.
+- Compare expected and actual output.
+- Keep looping until the stated check passes or the blocker is explicit.
+
+## External Tools Rule
+
+If a repo, library, SaaS tool, MCP server, or online service could materially simplify the workflow, propose it first and wait for approval before integrating it.
+
+## Rerun Discipline
+
+Use the same cleanup sequence before every meaningful rerun.
+
+- Disable the live workflow before resetting rows.
+- Stop or wait out any in-flight executions before triggering new work.
+- Clear old n8n execution history for the workflow being tested.
+- Reset only the target NocoDB rows for the rerun.
+- Clear stale workflow output fields before rerunning.
+- Add a fresh batch marker or run label whenever possible.
+- Restart `primary` only when executions are stuck or workflow state is inconsistent.
+- Do not restart NocoDB just to clear stale worker state.
+- Do not scale concurrency until the small verification batch passes cleanly.
+
+## Closeout Rule
+
+After each completed patch, use this exact closeout only when it is true:
+
+- `Implemented, deployed live, committed, and pushed.`
+
+If any part is not true, state the exact remaining gap instead of using the full closeout line.
+
+## Workflow Rebuild Order
+
+1. Worker: accept company name and produce enrichment output.
+2. Discovery: create lead candidates and pass only `company_name` plus minimal metadata to worker.
+3. Orchestrator: dispatch work at controlled concurrency after worker behaviour is stable.
+
+## Current Scope
+
+The current rebuild is worker-first. Do not recreate discovery or orchestrator workflows until the worker contract and tests are stable.
