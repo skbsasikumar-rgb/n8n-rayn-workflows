@@ -42,6 +42,7 @@ Current local git state when this log was created:
 ## Recent Fixes
 
 - Added a verified homepage hint for Health Partners Medical Clinic; row `248` now resolves to `https://myhealthpartners.com.sg/` and scrapes the reachable `www` host.
+- Added narrow homepage hints for remaining obvious misses: row `231` to `https://www.ymedicalwellness.com/our-bukit-timah-family-clinic`, row `240` to `https://cavenaghmedical.page/hsg`, row `244` to `https://www.providenceclinic.sg/`, and row `255` to `https://careandcure.sg/`.
 - Preserved `www` as the scrape URL when the clean homepage root is an apex domain that may not resolve; ProHealth rows now keep `best_url=https://prohealth.sg/` but scrape `https://www.prohealth.sg/`.
 - Tightened Browserless/Crawl4AI blocked-page detection for DNS/NXDOMAIN/browser error pages so Chrome error text is not accepted as website content.
 - Set orchestrator in-flight dispatch to `1` to make clean full-table reruns deterministic for canonical-domain dedupe.
