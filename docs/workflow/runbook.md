@@ -24,6 +24,7 @@ Use this sequence for first-20 or full-table reruns:
 5. Verify n8n execution status.
 6. Verify NocoDB final row fields.
 7. Query for remaining `failed`, `pending`, or stale `processing` rows.
+8. For full-table duplicate cleanup, keep orchestrator dispatch sequential so the primary row writes its `canonical_domain` before later rows check `duplicate_of_id`.
 
 Local helper:
 

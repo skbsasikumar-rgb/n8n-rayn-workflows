@@ -29,7 +29,7 @@ The workflow should produce a clean, auditable company record with:
 1. `wf-discovery.json` runs from schedule or manual trigger.
 2. Discovery normalizes search results and writes rows with `status=pending`.
 3. `wf-latest.json` resets stale `processing` rows, checks in-flight capacity, and claims pending rows.
-4. The orchestrator dispatches each claimed row to the worker webhook at `rayn-enrichment-worker-v2`.
+4. The orchestrator dispatches one claimed row at a time to the worker webhook at `rayn-enrichment-worker-v2` so dedupe has a stable primary row.
 5. `wf-worker.json` normalizes input, searches for homepage candidates, validates URL status, and resolves a clean homepage root.
 6. The worker checks for existing rows with the same `canonical_domain`.
 7. Duplicate rows are written with `duplicate_of_id` and enrichment stops.

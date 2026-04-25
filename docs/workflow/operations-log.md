@@ -41,6 +41,11 @@ Current local git state when this log was created:
 
 ## Recent Fixes
 
+- Added a verified homepage hint for Health Partners Medical Clinic; row `248` now resolves to `https://myhealthpartners.com.sg/` and scrapes the reachable `www` host.
+- Preserved `www` as the scrape URL when the clean homepage root is an apex domain that may not resolve; ProHealth rows now keep `best_url=https://prohealth.sg/` but scrape `https://www.prohealth.sg/`.
+- Tightened Browserless/Crawl4AI blocked-page detection for DNS/NXDOMAIN/browser error pages so Chrome error text is not accepted as website content.
+- Set orchestrator in-flight dispatch to `1` to make clean full-table reruns deterministic for canonical-domain dedupe.
+- Reran duplicate-prone rows and verified `7` current URL duplicates: `228→225`, `235→232`, `243→241`, `245→241`, `246→233`, `261→216`, and `272→216`.
 - Added Browserless as a fallback scraper after Crawl4AI failures and deployed it as a separate Railway service.
 - Full-table rerun completed: `54 partial`, `2 url duplicate`, `0 failed`, `0 pending`, `0 processing`.
 - Browserless recovered Crawl4AI scrape failures for rows `225` and `228`; rows `249` and `259` still fell back after both scrapers failed.
