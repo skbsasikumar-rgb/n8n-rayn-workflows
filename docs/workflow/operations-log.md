@@ -43,6 +43,13 @@ Canonical-domain dedupe:
 - row 274 smoke test confirmed live canonical-domain write: `https://www.amazinghearing.com/` -> `amazinghearing.com`.
 - rows that were URL-picked before this patch were backfilled at the column level; their old `search_evidence_json` may still show earlier evidence until rerun.
 
+OpenSERP candidate outage:
+
+- first 25-row rerun exposed that missing URLs were caused by empty candidate sets before LLM picking.
+- OpenSERP health showed Google as `circuit_open`; logs showed Google CAPTCHA responses from the Railway egress path.
+- worker now runs smaller 4-row batches, skips rows already marked `no url picked`, and records OpenSERP backend failures as retryable `search error` instead of false `no url picked`.
+- OpenSERP config now disables endpoint fallback, reduces retry pressure, extends cache TTL, and slows Google direct requests.
+
 Rebuild direction:
 
 - worker first.

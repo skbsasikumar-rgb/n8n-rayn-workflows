@@ -24,10 +24,11 @@ RUN apt-get update \
   && chown chrome:chrome /usr/src/app
 
 COPY --from=build /out/openserp /usr/local/bin/openserp
+COPY config.yaml /usr/src/app/config.yaml
 
 ENV OPENSERP_APP_BROWSER_PATH=/headless-shell/headless-shell
 
 USER chrome
 
 ENTRYPOINT []
-CMD ["sh", "-c", "exec openserp serve -a 0.0.0.0 -p ${PORT:-7000}"]
+CMD ["sh", "-c", "exec openserp serve -a 0.0.0.0 -p ${PORT:-7000} -c /usr/src/app/config.yaml"]
