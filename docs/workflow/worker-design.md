@@ -102,7 +102,7 @@ Rules:
 - write `contact_search_status = contact_not_found` when all approved role buckets are exhausted.
 - never output `needs_review` from the contact-search stage.
 
-Detailed design: `docs/workflow/contact-search-design.md`.
+Detailed design: `docs/workflow/contact-search-design.md`. Build strategy: `docs/workflow/contact-search-strategy.md`.
 
 ## Canonical-Domain Dedupe
 

@@ -2,6 +2,8 @@
 
 This stage finds one validated person-specific outreach email for each enriched company.
 
+Detailed implementation strategy: `docs/workflow/contact-search-strategy.md`.
+
 ## Goal
 
 For each company with a usable `canonical_domain`, find the best senior or managerial contact who is publicly associated with the company, generate person-specific email permutations, validate them through No2Bounce, and store the first clearly deliverable email.

@@ -40,6 +40,23 @@ Verify:
 8. Add contact search after company enrichment.
    Verify: role buckets are attempted in priority order, generic inboxes are not generated, No2Bounce accepts only deliverable person-specific emails, and exhausted rows end as `contact_search_status = contact_not_found`.
 
+## Contact Search Build Loop
+
+1. Confirm contact-search columns exist.
+   Verify: eligible completed enrichment rows can be initialized with `contact_search_status = pending`.
+
+2. Run the Python contact worker offline before n8n wiring.
+   Verify: OpenSERP role queries produce candidate lists without spending No2Bounce credits.
+
+3. Add email permutation and No2Bounce validation.
+   Verify: only person-specific emails are generated and only deliverable non-catch-all emails are accepted.
+
+4. Wire n8n contact orchestration.
+   Verify: rows are claimed as `processing`, then finish as `contact_found`, `contact_not_found`, `failed`, or `skipped`.
+
+5. Add scale controls.
+   Verify: batch size, provider errors, validation spend, and terminal row counts are reported per run.
+
 ## Rerun Process
 
 1. Disable the live workflow.

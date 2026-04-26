@@ -101,3 +101,11 @@ Contact search plan:
 - No2Bounce is the validation authority, and only non-catch-all deliverable emails are accepted.
 - exhausted contact searches will write `contact_search_status = contact_not_found`; contact search must not output `needs_review`.
 - detailed plan added in `docs/workflow/contact-search-design.md`.
+
+Contact search strategy update:
+
+- contact search should be built as a separate post-enrichment stage with its own `contact_search_status`.
+- recommended architecture is n8n orchestration plus a Python contact-search worker for role queues, candidate ranking, email permutations, and No2Bounce polling.
+- OpenSERP remains the planned search interface, but provider failures must be recorded as provider failures rather than `contact_not_found`.
+- first test slice should generate candidate lists before spending No2Bounce credits.
+- detailed strategy added in `docs/workflow/contact-search-strategy.md`.
