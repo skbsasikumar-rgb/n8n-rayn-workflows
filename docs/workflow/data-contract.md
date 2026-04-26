@@ -8,8 +8,8 @@ This document defines the rebuild contract for the lead enrichment table.
 
 ## Worker Output Fields
 
-- `url_picked`: first-pass LLM-selected URL from the first 10 OpenSERP Google results.
-- `status`: current workflow state.
+- `url_picked`: first-pass LLM-selected URL from the first 10 Google SERP results.
+- `status`: queue-control source of truth. Only `pending` rows are normally eligible to run.
 - `best_url`: clean official homepage root URL.
 - `homepage_root_url`: same canonical homepage root used by downstream steps.
 - `canonical_domain`: domain used for dedupe.
@@ -24,17 +24,36 @@ This document defines the rebuild contract for the lead enrichment table.
 - `last_stage`: last completed stage.
 - `last_error`: actionable error if any.
 
+## Workflow Control Fields
+
+Current supported fields:
+
+- `status`: one of `pending`, `processing`, `completed`, `skipped`, `failed`, or `needs_review`.
+- `status_reason`: stable row outcome or claim reason such as `processing:crawl`, `url_picked`, `duplicate_canonical_domain`, `enrichment_completed`, or `partial_crawl`.
+- `run_id`: workflow execution identifier for the current or latest run.
+- `processing_started_at`: timestamp when the row was claimed.
+- `processing_finished_at`: timestamp when the row reached a terminal status.
+- `last_attempted_at`: timestamp of the latest attempt.
+- `attempt_count`: number of attempts recorded by the worker.
+- `error_type`: stable technical or business error category.
+- `error_message`: technical or business error detail.
+- `retry_eligible`: `true` or `false` flag written by the worker.
+- `source_row_created_at`: snapshot of the row `CreatedAt` at claim time.
+- `source_row_updated_at`: snapshot of the row `UpdatedAt` at claim time.
+- `last_stage`: technical pipeline stage such as `url_discovery`, `url_pick`, `dedupe`, `crawl`, `crawled`, `partial`, or `enrichment_error`.
+- `last_error`: short actionable error or final skip reason.
+- `notes`: human-readable evidence and status detail.
+
 ## Status Values
 
-- `url picked`: first-pass URL selection completed.
-- `no url picked`: first-pass search did not produce a clearly official URL.
 - `pending`: ready for worker.
 - `processing`: claimed by worker.
-- `enriched`: completed with sufficient official evidence.
-- `partial`: useful output exists, but one or more enrichment stages failed.
-- `no official homepage`: no official homepage verified.
-- `url duplicate`: canonical domain matched an existing row and enrichment was skipped.
-- `error`: unrecoverable workflow failure.
+- `completed`: completed with sufficient official evidence.
+- `skipped`: intentionally not processed further, such as no official URL, duplicate domain, invalid URL, excluded category, or robots restriction.
+- `failed`: attempted but failed because of a technical or provider error.
+- `needs_review`: useful output exists but the result is ambiguous, partial, low confidence, or requires human review.
+
+Do not write stage values such as `url picked`, `partial`, `skipped_url_validation_failed`, or `url duplicate` into `status`. Put those details in `last_stage`, `last_error`, and `notes`.
 
 ## URL Rules
 
@@ -48,7 +67,7 @@ This document defines the rebuild contract for the lead enrichment table.
 
 If `canonical_domain` already exists on another row:
 
-- set `status` to `url duplicate`.
+- set `status` to `skipped`.
 - set `duplicate_of_id` to the existing row ID.
 - skip website scraping and parent-company inference.
 - keep enough notes to explain the duplicate match.
@@ -57,6 +76,6 @@ If `canonical_domain` already exists on another row:
 
 ## Rerun Boundaries
 
-URL discovery reruns may update `url_picked`, `canonical_domain`, `duplicate_of_id`, `search_evidence_json`, `status`, `last_stage`, and `last_error`.
+URL discovery reruns may update `url_picked`, `canonical_domain`, `duplicate_of_id`, `search_evidence_json`, `status`, `status_reason`, `run_id`, processing timestamps, retry fields, `last_stage`, and `last_error`.
 
-Enrichment reruns must preserve `url_picked` and must not call OpenSERP. They may update only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `last_stage`, and `last_error`.
+Enrichment reruns must preserve `url_picked` and must not call the Google SERP provider. They may update only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `status`, `status_reason`, `run_id`, processing timestamps, retry fields, `last_stage`, and `last_error`.

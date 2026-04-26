@@ -2240,6 +2240,20 @@ def save_outputs(records: list[EnrichmentRecord], base_dir: str) -> Path:
     return run_dir
 
 
+def terminal_status(record: EnrichmentRecord) -> str:
+    if record.crawl_status == "crawled":
+        return "completed"
+    if record.crawl_status == "partial":
+        return "needs_review"
+    if record.crawl_status in {"crawl_failed", "enrichment_error"}:
+        return "failed"
+    if record.crawl_status == "blocked_by_robots" or record.crawl_status.startswith("skipped_"):
+        return "skipped"
+    if not record.best_url:
+        return "needs_review"
+    return "completed"
+
+
 def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
     notes_parts = [record.enrichment_notes]
     if record.url_validation_status:
@@ -2252,6 +2266,7 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
         notes_parts.append("Errors: " + " | ".join(record.error_notes[:5]))
     return {
         "Id": record.row_id,
+        "status": terminal_status(record),
         "best_url": record.best_url,
         "homepage_root_url": record.best_url,
         "company_homepage_name": record.company_homepage_name,

@@ -25,7 +25,9 @@ DEFAULT_FIELDS = (
     "Id,company_name,hia_batch,status,best_url,homepage_root_url,evidence_url,scrape_url,canonical_domain,"
     "website_scrape,operating_company_root_name,company_homepage_name,parent_company,confidence,notes,"
     "source_urls,fallback_used,evidence_gap,last_stage,last_error,candidate_homepage,candidate_domain,"
-    "discovery_category,discovery_area,discovered_at,UpdatedAt"
+    "discovery_category,discovery_area,status_reason,run_id,processing_started_at,processing_finished_at,"
+    "last_attempted_at,attempt_count,error_type,error_message,retry_eligible,source_row_created_at,"
+    "source_row_updated_at,discovered_at,UpdatedAt"
 )
 
 RESET_PRESERVE_FIELDS = (
@@ -39,6 +41,17 @@ RESET_PRESERVE_FIELDS = (
 
 RESET_CLEAR_FIELDS = (
     "status",
+    "status_reason",
+    "run_id",
+    "processing_started_at",
+    "processing_finished_at",
+    "last_attempted_at",
+    "attempt_count",
+    "error_type",
+    "error_message",
+    "retry_eligible",
+    "source_row_created_at",
+    "source_row_updated_at",
     "best_url",
     "canonical_domain",
     "website_content",

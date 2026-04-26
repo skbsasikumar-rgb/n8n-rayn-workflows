@@ -61,6 +61,17 @@ Enrichment rerun fix:
 - Primary now has explicit `OPENSERP_BASE_URL` so the worker does not depend on the hardcoded fallback.
 - deterministic cleanup now rejects common website-vendor/service-title text from `company_homepage_name` and rejects doctor-background or professional-body phrases such as taskforces, residency programmes, federations, teams, hospitals, nutrition/dietetics memberships, and bare acronyms from `parent_company`.
 
+Status control-plane update:
+
+- `status` is now treated as the queue-control source of truth.
+- batch selectors read only rows with `status = pending`.
+- selected rows are claimed with `status = processing` before URL discovery or website enrichment.
+- terminal writeback maps outcomes to `completed`, `skipped`, `failed`, or `needs_review`.
+- tracking columns now store `run_id`, processing timestamps, attempt counts, retry eligibility, status reasons, and error details.
+- OpenSERP/browser scraping hit Google CAPTCHA and circuit-breaker failures from Railway egress, so the worker now uses the existing Serper Google API credential for stable Google SERP candidates.
+- URL-pick preparation now preserves claim metadata through the LLM picker so terminal rows keep audit controls.
+- terminal URL-pick skips and canonical-domain duplicates now stamp `processing_finished_at`, not just enrichment outcomes.
+
 Rebuild direction:
 
 - worker first.

@@ -60,7 +60,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(url_picked,blank)~and(status,neq,no url picked)&fields=Id,company_name,url_picked,status&limit=4",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,pending)~and(url_picked,blank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=1",
         "sendHeaders": false,
         "options": {
           "timeout": 60000
@@ -86,7 +86,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(url_picked,notblank)~and(best_url,blank)&fields=Id,company_name,url_picked,best_url,status&limit=1000",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,pending)~and(url_picked,notblank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=3",
         "sendHeaders": false,
         "options": {
           "timeout": 60000
@@ -112,7 +112,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const payload = ($json.body && Object.keys($json.body).length ? $json.body : $json) || {};\nconst idValue = payload.Id ?? payload.id ?? '';\nconst companyName = String(payload.company_name || '').trim();\nif (!idValue || !companyName) {\n  throw new Error('Webhook payload requires Id and company_name');\n}\nconst urlPicked = String(payload.url_picked || '').trim();\nreturn {\n  json: {\n    Id: idValue,\n    company_name: companyName,\n    ...(urlPicked ? { url_picked: urlPicked } : {})\n  }\n};"
+        "jsCode": "const payload = ($json.body && Object.keys($json.body).length ? $json.body : $json) || {};\nconst idValue = payload.Id ?? payload.id ?? '';\nconst companyName = String(payload.company_name || '').trim();\nif (!idValue || !companyName) {\n  throw new Error('Webhook payload requires Id and company_name');\n}\nconst urlPicked = String(payload.url_picked || '').trim();\nreturn {\n  json: {\n    Id: idValue,\n    company_name: companyName,\n    ...(urlPicked ? { url_picked: urlPicked } : {}),\n    status: 'pending',\n    attempt_count: String(payload.attempt_count || '0').trim() || '0',\n    run_id: String(payload.run_id || '').trim(),\n    processing_started_at: String(payload.processing_started_at || '').trim(),\n    processing_finished_at: String(payload.processing_finished_at || '').trim(),\n    last_attempted_at: String(payload.last_attempted_at || '').trim(),\n    status_reason: String(payload.status_reason || '').trim(),\n    error_type: String(payload.error_type || '').trim(),\n    error_message: String(payload.error_message || '').trim(),\n    retry_eligible: String(payload.retry_eligible || '').trim(),\n    source_row_created_at: String(payload.source_row_created_at || payload.CreatedAt || '').trim(),\n    source_row_updated_at: String(payload.source_row_updated_at || payload.UpdatedAt || '').trim(),\n    CreatedAt: String(payload.CreatedAt || '').trim(),\n    UpdatedAt: String(payload.UpdatedAt || '').trim()\n  }\n};"
       }
     },
     {
@@ -126,7 +126,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim())\n  .map((row, index) => ({ json: { Id: row.Id, company_name: String(row.company_name).trim() }, pairedItem: { item: index } }));"
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.status || '').trim() === 'pending')\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked || '').trim(),\n      status: 'pending',\n      attempt_count: String(row.attempt_count || '').trim() || '0',\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim()\n    },\n    pairedItem: { item: index }\n  }));"
       }
     },
     {
@@ -140,7 +140,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.url_picked || '').trim())\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked).trim(),\n      status: row.status || 'url picked'\n    },\n    pairedItem: { item: index }\n  }));"
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.url_picked || '').trim() && String(row.status || '').trim() === 'pending')\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked).trim(),\n      status: 'pending',\n      attempt_count: String(row.attempt_count || '').trim() || '0',\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim()\n    },\n    pairedItem: { item: index }\n  }));"
       }
     },
     {
@@ -149,7 +149,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1000,
+        1520,
         300
       ],
       "parameters": {
@@ -163,18 +163,29 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1260,
+        1780,
         300
       ],
       "parameters": {
-        "method": "GET",
-        "url": "={{ $json.openserp_url }}",
-        "sendHeaders": false,
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ q: $json.openserp_query, num: 10 }) }}",
         "options": {
           "timeout": 60000
         }
       },
-      "continueOnFail": true
+      "continueOnFail": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      }
     },
     {
       "id": "prepare-openserp-pick",
@@ -182,12 +193,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1520,
+        2040,
         300
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = $('Build OpenSERP Query').all().map((item) => item.json || {});\nconst searchItems = $('Search OpenSERP').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
+        "jsCode": "const rows = $('Build OpenSERP Query').all().map((item) => item.json || {});\nconst searchItems = $('Search OpenSERP').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error || payload?.body);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      status: String(row.status || '').trim(),\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim(),\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
       }
     },
     {
@@ -196,7 +207,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1780,
+        2300,
         300
       ],
       "parameters": {
@@ -226,12 +237,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2040,
+        2560,
         300
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nfunction canonicalDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\\/\\/)?([^\\s\\/?#]+)/i);\n  if (!match) return '';\n  let hostname = match[1].split('@').pop().split(':')[0];\n  hostname = hostname.toLowerCase().replace(/^www\\./, '');\n  const parts = hostname.split('.').filter(Boolean);\n  if (parts.length <= 2) return hostname;\n  const suffix2 = parts.slice(-2).join('.');\n  const sgSecondLevel = new Set(['com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg', 'per.sg']);\n  if (sgSecondLevel.has(suffix2) && parts.length >= 3) return parts.slice(-3).join('.');\n  return parts.slice(-2).join('.');\n}\nconst prepared = $('Prepare OpenSERP Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst searchFailed = Boolean(prepared.openserp_error) && (!Array.isArray(prepared.openserp_results) || prepared.openserp_results.length === 0);\nconst pickedUrl = searchFailed ? '' : normalizeUrl(parsed.url || '');\nconst canonical = canonicalDomain(pickedUrl);\nconst reason = searchFailed ? 'OpenSERP search failed before candidate selection.' : String(parsed.reason || '').trim();\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  canonical_domain: canonical,\n  search_error: prepared.openserp_error || '',\n  reason,\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    canonical_domain: canonical,\n    duplicate_of_id: null,\n    search_evidence_json: JSON.stringify(evidence),\n    status: searchFailed ? 'search error' : (pickedUrl ? 'url picked' : 'no url picked'),\n    last_stage: searchFailed ? 'search' : 'url_pick',\n    last_error: searchFailed ? ('OpenSERP search failed: ' + prepared.openserp_error) : (pickedUrl ? '' : 'No official URL selected from first 10 OpenSERP Google results')\n  }\n};"
+        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nfunction canonicalDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\\/\\/)?([^\\s\\/?#]+)/i);\n  if (!match) return '';\n  let hostname = match[1].split('@').pop().split(':')[0];\n  hostname = hostname.toLowerCase().replace(/^www\\./, '');\n  const parts = hostname.split('.').filter(Boolean);\n  if (parts.length <= 2) return hostname;\n  const suffix2 = parts.slice(-2).join('.');\n  const sgSecondLevel = new Set(['com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg', 'per.sg']);\n  if (sgSecondLevel.has(suffix2) && parts.length >= 3) return parts.slice(-3).join('.');\n  return parts.slice(-2).join('.');\n}\nconst prepared = $('Prepare OpenSERP Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst searchFailed = Boolean(prepared.openserp_error) && (!Array.isArray(prepared.openserp_results) || prepared.openserp_results.length === 0);\nconst pickedUrl = searchFailed ? '' : normalizeUrl(parsed.url || '');\nconst canonical = canonicalDomain(pickedUrl);\nconst finishedAt = pickedUrl ? String(prepared.processing_finished_at || '') : new Date().toISOString();\nconst noUrlMessage = 'No official URL selected from first 10 Google SERP results';\nconst errorMessage = searchFailed ? ('Google SERP search failed: ' + prepared.openserp_error) : (pickedUrl ? '' : noUrlMessage);\nconst statusReason = searchFailed ? 'search_failed' : (pickedUrl ? 'url_picked' : 'no_official_url_found');\nconst reason = searchFailed ? 'Google SERP search failed before candidate selection.' : String(parsed.reason || '').trim();\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  canonical_domain: canonical,\n  search_error: prepared.openserp_error || '',\n  reason,\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    canonical_domain: canonical,\n    duplicate_of_id: null,\n    search_evidence_json: JSON.stringify(evidence),\n    status: searchFailed ? 'failed' : (pickedUrl ? 'processing' : 'skipped'),\n    last_stage: searchFailed ? 'url_discovery' : 'url_pick',\n    last_error: errorMessage,\n    status_reason: statusReason,\n    run_id: String(prepared.run_id || ''),\n    processing_started_at: String(prepared.processing_started_at || ''),\n    processing_finished_at: finishedAt,\n    last_attempted_at: String(prepared.last_attempted_at || ''),\n    attempt_count: String(prepared.attempt_count || '').trim() || '1',\n    error_type: searchFailed ? 'search_error' : (pickedUrl ? '' : 'no_official_url'),\n    error_message: errorMessage,\n    retry_eligible: searchFailed ? 'true' : 'false',\n    source_row_created_at: String(prepared.source_row_created_at || prepared.CreatedAt || ''),\n    source_row_updated_at: String(prepared.source_row_updated_at || prepared.UpdatedAt || '')\n  }\n};"
       }
     },
     {
@@ -240,7 +251,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2820,
+        3340,
         300
       ],
       "parameters": {
@@ -249,7 +260,7 @@
         "sendHeaders": false,
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, url_picked: $json.url_picked, canonical_domain: $json.canonical_domain, duplicate_of_id: $json.duplicate_of_id, search_evidence_json: $json.search_evidence_json, status: $json.status, last_stage: $json.last_stage, last_error: $json.last_error }]) }}",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, url_picked: $json.url_picked, canonical_domain: $json.canonical_domain, duplicate_of_id: $json.duplicate_of_id, search_evidence_json: $json.search_evidence_json, status: $json.status, last_stage: $json.last_stage, last_error: $json.last_error, status_reason: $json.status_reason, run_id: $json.run_id, processing_started_at: $json.processing_started_at, processing_finished_at: $json.processing_finished_at, last_attempted_at: $json.last_attempted_at, attempt_count: $json.attempt_count, error_type: $json.error_type, error_message: $json.error_message, retry_eligible: $json.retry_eligible, source_row_created_at: $json.source_row_created_at, source_row_updated_at: $json.source_row_updated_at }]) }}",
         "options": {
           "timeout": 30000
         },
@@ -272,7 +283,7 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2300,
+        2820,
         300
       ],
       "parameters": {
@@ -299,12 +310,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2560,
+        3080,
         300
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "const picked = $('Parse URL Pick').all()[$itemIndex]?.json || {};\nconst lookup = $json || {};\nconst dbMatches = Array.isArray(lookup.list) ? lookup.list : [];\nconst parsedItems = $('Parse URL Pick').all().map((item) => item.json || {});\nconst earlierBatchDuplicate = parsedItems\n  .filter((item) => item.canonical_domain && item.canonical_domain === picked.canonical_domain)\n  .filter((item) => Number(item.Id) < Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst dbDuplicate = dbMatches\n  .filter((row) => Number(row.Id) !== Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst duplicate = dbDuplicate || earlierBatchDuplicate || null;\nif (picked.canonical_domain && duplicate) {\n  return {\n    json: {\n      ...picked,\n      duplicate_of_id: Number(duplicate.Id),\n      status: 'url duplicate',\n      last_stage: 'dedupe',\n      last_error: 'Duplicate canonical_domain ' + picked.canonical_domain + ' of row ' + duplicate.Id\n    }\n  };\n}\nreturn { json: picked };"
+        "jsCode": "const picked = $('Parse URL Pick').all()[$itemIndex]?.json || {};\nconst lookup = $json || {};\nconst dbMatches = Array.isArray(lookup.list) ? lookup.list : [];\nconst parsedItems = $('Parse URL Pick').all().map((item) => item.json || {});\nconst earlierBatchDuplicate = parsedItems\n  .filter((item) => item.canonical_domain && item.canonical_domain === picked.canonical_domain)\n  .filter((item) => Number(item.Id) < Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst dbDuplicate = dbMatches\n  .filter((row) => Number(row.Id) !== Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst duplicate = dbDuplicate || earlierBatchDuplicate || null;\nif (picked.canonical_domain && duplicate) {\n  const errorMessage = 'Duplicate canonical_domain ' + picked.canonical_domain + ' of row ' + duplicate.Id;\n  return {\n    json: {\n      ...picked,\n      duplicate_of_id: Number(duplicate.Id),\n      status: 'skipped',\n      last_stage: 'dedupe',\n      last_error: errorMessage,\n      status_reason: 'duplicate_canonical_domain',\n      processing_finished_at: new Date().toISOString(),\n      error_type: 'duplicate',\n      error_message: errorMessage,\n      retry_eligible: 'false'\n    }\n  };\n}\nreturn { json: picked };"
       }
     },
     {
@@ -313,12 +324,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2820,
-        460
+        1520,
+        520
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "return $input.all().flatMap((item) => {\n  const row = item.json || {};\n  if (row.status !== 'url picked') {\n    return [];\n  }\n  const urlPicked = String(row.url_picked || '').trim();\n  if (!urlPicked || row.duplicate_of_id) {\n    return [];\n  }\n  return [{\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name || '').trim(),\n      url_picked: urlPicked,\n      page_limit: 5,\n      page_timeout_ms: 20000,\n      request_delay_seconds: 0.3,\n      scrape_char_limit: 60000\n    },\n    pairedItem: item.pairedItem\n  }];\n});"
+        "jsCode": "return $input.all().flatMap((item) => {\n  const row = item.json || {};\n  if (row.status !== 'processing') {\n    return [];\n  }\n  const urlPicked = String(row.url_picked || '').trim();\n  if (!urlPicked || row.duplicate_of_id) {\n    return [];\n  }\n  return [{\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name || '').trim(),\n      url_picked: urlPicked,\n      page_limit: 5,\n      page_timeout_ms: 20000,\n      request_delay_seconds: 0.3,\n      scrape_char_limit: 60000,\n      run_id: String(row.run_id || ''),\n      processing_started_at: String(row.processing_started_at || ''),\n      last_attempted_at: String(row.last_attempted_at || ''),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || ''),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '')\n    },\n    pairedItem: item.pairedItem\n  }];\n});"
       }
     },
     {
@@ -327,8 +338,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3080,
-        460
+        1780,
+        520
       ],
       "parameters": {
         "method": "POST",
@@ -338,7 +349,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-            "timeout": 300000
+          "timeout": 300000
         }
       },
       "continueOnFail": true,
@@ -352,12 +363,12 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3340,
-        460
+        2040,
+        520
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const sourceItems = $('Prepare Public Enrichment').all();\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  if (payload && payload.patch && payload.patch.Id) {\n    return { json: payload.patch, pairedItem: item.pairedItem };\n  }\n  const errorText = stringify(payload.error || payload.message || payload.code || 'Public enrichment request failed');\n  return {\n    json: {\n      Id: source.Id,\n      last_stage: 'enrichment_error',\n      last_error: errorText,\n      notes: errorText\n    },\n    pairedItem: item.pairedItem\n  };\n});"
+        "jsCode": "const sourceItems = $('Prepare Public Enrichment').all();\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction terminalStatus(patch) {\n  const stage = String(patch.last_stage || patch.crawl_status || '').trim();\n  if (stage === 'crawled') return 'completed';\n  if (stage === 'partial') return 'needs_review';\n  if (stage === 'crawl_failed' || stage === 'enrichment_error') return 'failed';\n  if (stage === 'blocked_by_robots' || stage.startsWith('skipped_')) return 'skipped';\n  if (!String(patch.best_url || '').trim()) return 'needs_review';\n  return 'completed';\n}\nfunction statusReason(status, patch) {\n  const stage = String(patch.last_stage || patch.crawl_status || '').trim();\n  if (status === 'completed') return 'enrichment_completed';\n  if (status === 'needs_review') return stage === 'partial' ? 'partial_crawl' : 'ambiguous_enrichment';\n  if (status === 'skipped') return stage || 'skipped';\n  return stage || 'failed';\n}\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const finishedAt = new Date().toISOString();\n  if (payload && payload.patch && payload.patch.Id) {\n    const patch = { ...payload.patch };\n    const finalStatus = terminalStatus(patch);\n    const lastError = stringify(patch.last_error || '');\n    patch.status = finalStatus;\n    patch.run_id = String(source.run_id || '');\n    patch.processing_started_at = String(source.processing_started_at || '');\n    patch.processing_finished_at = finishedAt;\n    patch.last_attempted_at = String(source.last_attempted_at || '');\n    patch.attempt_count = String(source.attempt_count || '').trim() || '1';\n    patch.status_reason = statusReason(finalStatus, patch);\n    patch.error_type = finalStatus === 'failed' ? (String(patch.last_stage || patch.crawl_status || '').trim() || 'enrichment_error') : '';\n    patch.error_message = finalStatus === 'failed' ? lastError : '';\n    patch.retry_eligible = finalStatus === 'failed' ? 'true' : 'false';\n    patch.source_row_created_at = String(source.source_row_created_at || '');\n    patch.source_row_updated_at = String(source.source_row_updated_at || '');\n    return { json: patch, pairedItem: item.pairedItem };\n  }\n  const errorText = stringify(payload.error || payload.message || payload.code || 'Public enrichment request failed');\n  return {\n    json: {\n      Id: source.Id,\n      status: 'failed',\n      last_stage: 'enrichment_error',\n      last_error: errorText,\n      notes: errorText,\n      run_id: String(source.run_id || ''),\n      processing_started_at: String(source.processing_started_at || ''),\n      processing_finished_at: finishedAt,\n      last_attempted_at: String(source.last_attempted_at || ''),\n      attempt_count: String(source.attempt_count || '').trim() || '1',\n      status_reason: 'enrichment_error',\n      error_type: 'enrichment_error',\n      error_message: errorText,\n      retry_eligible: 'true',\n      source_row_created_at: String(source.source_row_created_at || ''),\n      source_row_updated_at: String(source.source_row_updated_at || '')\n    },\n    pairedItem: item.pairedItem\n  };\n});"
       }
     },
     {
@@ -366,8 +377,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3600,
-        460
+        2300,
+        520
       ],
       "parameters": {
         "method": "PATCH",
@@ -391,6 +402,112 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000
+    },
+    {
+      "id": "claim-discovery-row",
+      "name": "Claim Discovery Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        300
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, status: 'processing', last_stage: 'url_discovery', last_error: '', run_id: String($execution.id || ''), processing_started_at: $now.toISO(), processing_finished_at: '', last_attempted_at: $now.toISO(), attempt_count: String((Number($json.attempt_count || 0) || 0) + 1), status_reason: 'processing:url_discovery', error_type: '', error_message: '', retry_eligible: 'true', source_row_created_at: String($json.source_row_created_at || $json.CreatedAt || ''), source_row_updated_at: String($json.source_row_updated_at || $json.UpdatedAt || '') }]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "continue-discovery-claim",
+      "name": "Continue Discovery Claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map((item, index) => {\n  const row = item.json || {};\n  return {\n    json: {\n      ...row,\n      status: 'processing',\n      last_stage: 'url_discovery',\n      last_error: '',\n      status_reason: 'processing:url_discovery'\n    },\n    pairedItem: { item: index }\n  };\n});"
+      }
+    },
+    {
+      "id": "claim-enrichment-row",
+      "name": "Claim Enrichment Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        620
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, status: 'processing', last_stage: 'crawl', last_error: '', run_id: String($execution.id || ''), processing_started_at: $now.toISO(), processing_finished_at: '', last_attempted_at: $now.toISO(), attempt_count: String((Number($json.attempt_count || 0) || 0) + 1), status_reason: 'processing:crawl', error_type: '', error_message: '', retry_eligible: 'true', source_row_created_at: String($json.source_row_created_at || $json.CreatedAt || ''), source_row_updated_at: String($json.source_row_updated_at || $json.UpdatedAt || '') }]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "continue-enrichment-claim",
+      "name": "Continue Enrichment Claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        620
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map((item, index) => {\n  const row = item.json || {};\n  return {\n    json: {\n      ...row,\n      status: 'processing',\n      last_stage: 'crawl',\n      last_error: '',\n      status_reason: 'processing:crawl'\n    },\n    pairedItem: { item: index }\n  };\n});"
+      }
+    },
+    {
+      "id": "continue-url-pick-patch",
+      "name": "Continue URL Pick Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3600,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sourceItems = $('Apply Dedupe Result').all();\nreturn sourceItems.map((item, index) => ({\n  json: item.json || {},\n  pairedItem: { item: index }\n}));"
+      }
     }
   ],
   "connections": {
@@ -419,6 +536,11 @@
     "Webhook Batch Trigger": {
       "main": [
         [
+          {
+            "node": "Get Blank URL Picked Rows",
+            "type": "main",
+            "index": 0
+          },
           {
             "node": "Get Enrichment Rows",
             "type": "main",
@@ -453,7 +575,7 @@
       "main": [
         [
           {
-            "node": "Build OpenSERP Query",
+            "node": "Claim Discovery Row",
             "type": "main",
             "index": 0
           }
@@ -464,7 +586,7 @@
       "main": [
         [
           {
-            "node": "Prepare Public Enrichment",
+            "node": "Claim Enrichment Row",
             "type": "main",
             "index": 0
           }
@@ -475,7 +597,7 @@
       "main": [
         [
           {
-            "node": "Build OpenSERP Query",
+            "node": "Claim Discovery Row",
             "type": "main",
             "index": 0
           }
@@ -555,11 +677,6 @@
             "node": "Patch URL Picked",
             "type": "main",
             "index": 0
-          },
-          {
-            "node": "Prepare Public Enrichment",
-            "type": "main",
-            "index": 0
           }
         ]
       ]
@@ -591,6 +708,72 @@
         [
           {
             "node": "Patch Enrichment Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Discovery Row": {
+      "main": [
+        [
+          {
+            "node": "Continue Discovery Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Discovery Claim": {
+      "main": [
+        [
+          {
+            "node": "Build OpenSERP Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Enrichment Row": {
+      "main": [
+        [
+          {
+            "node": "Continue Enrichment Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Enrichment Claim": {
+      "main": [
+        [
+          {
+            "node": "Prepare Public Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch URL Picked": {
+      "main": [
+        [
+          {
+            "node": "Continue URL Pick Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue URL Pick Patch": {
+      "main": [
+        [
+          {
+            "node": "Prepare Public Enrichment",
             "type": "main",
             "index": 0
           }
