@@ -54,3 +54,9 @@ If `canonical_domain` already exists on another row:
 - keep enough notes to explain the duplicate match.
 
 `canonical_domain` is derived from the selected URL, not from the raw company name. It removes protocol, path, query, fragment, port, credentials, and leading `www`, then stores the registrable root domain. Singapore suffixes such as `com.sg`, `org.sg`, and `net.sg` remain intact.
+
+## Rerun Boundaries
+
+URL discovery reruns may update `url_picked`, `canonical_domain`, `duplicate_of_id`, `search_evidence_json`, `status`, `last_stage`, and `last_error`.
+
+Enrichment reruns must preserve `url_picked` and must not call OpenSERP. They may update only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `last_stage`, and `last_error`.

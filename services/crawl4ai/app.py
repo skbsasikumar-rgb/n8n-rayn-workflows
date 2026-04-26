@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from pydantic import BaseModel, Field, HttpUrl
 from playwright.async_api import Browser, Page, Playwright, async_playwright
+import public_web_enrichment as public_enrichment
 
 
 SERVICE_DIR = Path(__file__).resolve().parent
@@ -218,6 +219,16 @@ class ScrapeResponse(BaseModel):
     signals: SignalPayload = Field(default_factory=SignalPayload)
     quality: QualityPayload = Field(default_factory=QualityPayload)
     error: str = ""
+
+
+class PublicEnrichmentRequest(BaseModel):
+    Id: int | str
+    company_name: str = Field(min_length=1, max_length=300)
+    url_picked: str = Field(default="", max_length=2000)
+    page_limit: int = Field(default=5, ge=1, le=12)
+    page_timeout_ms: int = Field(default=20000, ge=5000, le=60000)
+    request_delay_seconds: float = Field(default=0.3, ge=0.0, le=5.0)
+    scrape_char_limit: int = Field(default=60000, ge=2000, le=120000)
 
 
 def compact_whitespace(value: Any) -> str:
@@ -963,3 +974,59 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
         quality=quality,
         error="",
     )
+
+
+@app.post("/public-enrich")
+async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
+    input_row = public_enrichment.InputRow(
+        row_id=request.Id,
+        company_name=request.company_name,
+        url_picked=request.url_picked,
+    )
+    session = public_enrichment.build_requests_session()
+    browser_config = public_enrichment.BrowserConfig(
+        browser_type="chromium",
+        headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
+        viewport_width=1280,
+        viewport_height=1800,
+        ignore_https_errors=True,
+        verbose=os.getenv("CRAWL4AI_VERBOSE", "false").lower() == "true",
+    )
+    try:
+        async with scrape_semaphore:
+            async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:
+                record = await public_enrichment.enrich_row(
+                    row=input_row,
+                    crawler=crawler,
+                    session=session,
+                    page_limit=request.page_limit,
+                    page_timeout_ms=request.page_timeout_ms,
+                    request_delay_seconds=request.request_delay_seconds,
+                    scrape_char_limit=request.scrape_char_limit,
+                )
+    except Exception as exc:
+        error_text = compact_whitespace(str(exc)) or "public enrichment failed"
+        patch = {
+            "Id": request.Id,
+            "last_stage": "enrichment_error",
+            "last_error": error_text,
+            "notes": error_text,
+        }
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": error_text,
+            "patch": patch,
+            "record": {},
+        }
+    finally:
+        session.close()
+
+    patch = public_enrichment.build_noco_patch(record)
+    return {
+        "ok": record.crawl_status in {"crawled", "partial"},
+        "row_id": record.row_id,
+        "error": " | ".join(record.error_notes[:8]),
+        "patch": patch,
+        "record": public_enrichment.record_to_json(record),
+    }

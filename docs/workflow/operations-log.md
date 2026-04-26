@@ -50,6 +50,17 @@ OpenSERP candidate outage:
 - worker now runs smaller 4-row batches, skips rows already marked `no url picked`, and records OpenSERP backend failures as retryable `search error` instead of false `no url picked`.
 - OpenSERP config now disables endpoint fallback, reduces retry pressure, extends cache TTL, and slows Google direct requests.
 
+## 2026-04-26
+
+Enrichment rerun fix:
+
+- full-table rerun exposed that the batch webhook was still entering the OpenSERP search branch.
+- rows with existing `url_picked` were being searched again instead of going straight to website enrichment.
+- live workflow now has a separate enrichment branch: `Webhook Batch Trigger` -> `Get Enrichment Rows` -> `Rows To Enrichment Items` -> `Prepare Public Enrichment`.
+- URL discovery is restored to the small `url_picked` blank-row slice and OpenSERP is no longer called during enrichment-only reruns.
+- Primary now has explicit `OPENSERP_BASE_URL` so the worker does not depend on the hardcoded fallback.
+- deterministic cleanup now rejects common website-vendor/service-title text from `company_homepage_name` and rejects doctor-background or professional-body phrases such as taskforces, residency programmes, federations, teams, hospitals, nutrition/dietetics memberships, and bare acronyms from `parent_company`.
+
 Rebuild direction:
 
 - worker first.

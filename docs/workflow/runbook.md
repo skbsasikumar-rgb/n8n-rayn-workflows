@@ -39,11 +39,34 @@ Verify:
 
 ## Rerun Process
 
-1. Clear stale executions.
-2. Reset target rows to `pending`.
-3. Run a small test set first.
-4. Inspect raw search, selected URL, scrape result, and final writeback.
-5. Scale only after the small set passes.
+1. Disable the live workflow.
+2. Stop or wait for any in-flight executions to finish.
+3. Clear old execution history for the workflow under test.
+4. Reset only the target rows for the rerun.
+5. For URL discovery reruns, clear stale URL-pick fields such as `status`, `last_stage`, `last_error`, `url_picked`, `canonical_domain`, `duplicate_of_id`, and `search_evidence_json`.
+6. For enrichment reruns, preserve `url_picked` and clear only downstream fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `last_stage`, and `last_error`.
+7. Add a fresh rerun batch marker when possible.
+8. Re-enable the workflow.
+9. Run a small test set first.
+10. Inspect raw search, selected URL, scrape result, and final writeback.
+11. Scale only after the small set passes.
+
+For enrichment reruns, keep the n8n Crawl4AI HTTP timeout higher than the per-page timeout budget. The current worker uses a 300s n8n request timeout because five-page public crawls can exceed 120s on heavier sites.
+
+## Webhook Paths
+
+- `rayn-url-picker-v1`: single-row URL discovery path; may call OpenSERP and OpenRouter.
+- `rayn-url-picker-batch`: enrichment rerun path for rows with existing `url_picked`; must not call OpenSERP.
+
+## Restart Rule
+
+Restart `primary` only when:
+
+- executions are stuck.
+- the workflow was changed and n8n state appears inconsistent.
+- webhooks or credentials behave differently from the saved workflow definition.
+
+Do not restart NocoDB just to clear stale executions. Old execution state lives in n8n, not in the table service.
 
 ## Scale Rule
 

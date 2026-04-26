@@ -43,6 +43,19 @@ The first rebuild slice is intentionally smaller than the full worker:
 
 No input normalization, scraping, parent-company inference, or discovery logic belongs in this slice.
 
+## Enrichment Rerun Branch
+
+The batch enrichment webhook is separate from URL discovery.
+
+1. Read rows with `company_name`, non-blank `url_picked`, and blank `best_url`.
+2. Convert NocoDB rows directly into enrichment items.
+3. Call the Crawl4AI public enrichment endpoint.
+4. Write `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `last_stage`, and `last_error`.
+
+This branch must not call OpenSERP or OpenRouter. Existing `url_picked` values are treated as the source of truth for website scraping unless validation rejects the URL.
+
+The Crawl4AI HTTP node uses a 300s timeout. Do not lower this without reducing `page_limit` or `page_timeout_ms`, because legitimate five-page crawls can exceed 120s and otherwise get written back as false `enrichment_error` rows.
+
 ## Success Criteria
 
 The worker is successful when:

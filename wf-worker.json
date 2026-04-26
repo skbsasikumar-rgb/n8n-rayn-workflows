@@ -34,6 +34,22 @@
       }
     },
     {
+      "id": "webhook-batch-trigger",
+      "name": "Webhook Batch Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        620
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-url-picker-batch",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
       "id": "get-blank-url-picked",
       "name": "Get Blank URL Picked Rows",
       "type": "n8n-nodes-base.httpRequest",
@@ -60,6 +76,46 @@
       }
     },
     {
+      "id": "get-enrichment-rows",
+      "name": "Get Enrichment Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        620
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(url_picked,notblank)~and(best_url,blank)&fields=Id,company_name,url_picked,best_url,status&limit=1000",
+        "sendHeaders": false,
+        "options": {
+          "timeout": 60000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "id": "webhook-to-item",
+      "name": "Webhook To Item",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const payload = ($json.body && Object.keys($json.body).length ? $json.body : $json) || {};\nconst idValue = payload.Id ?? payload.id ?? '';\nconst companyName = String(payload.company_name || '').trim();\nif (!idValue || !companyName) {\n  throw new Error('Webhook payload requires Id and company_name');\n}\nconst urlPicked = String(payload.url_picked || '').trim();\nreturn {\n  json: {\n    Id: idValue,\n    company_name: companyName,\n    ...(urlPicked ? { url_picked: urlPicked } : {})\n  }\n};"
+      }
+    },
+    {
       "id": "rows-to-items",
       "name": "Rows To Items",
       "type": "n8n-nodes-base.code",
@@ -71,6 +127,20 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim())\n  .map((row, index) => ({ json: { Id: row.Id, company_name: String(row.company_name).trim() }, pairedItem: { item: index } }));"
+      }
+    },
+    {
+      "id": "rows-to-enrichment-items",
+      "name": "Rows To Enrichment Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        620
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.url_picked || '').trim())\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked).trim(),\n      status: row.status || 'url picked'\n    },\n    pairedItem: { item: index }\n  }));"
       }
     },
     {
@@ -236,6 +306,91 @@
         "mode": "runOnceForEachItem",
         "jsCode": "const picked = $('Parse URL Pick').all()[$itemIndex]?.json || {};\nconst lookup = $json || {};\nconst dbMatches = Array.isArray(lookup.list) ? lookup.list : [];\nconst parsedItems = $('Parse URL Pick').all().map((item) => item.json || {});\nconst earlierBatchDuplicate = parsedItems\n  .filter((item) => item.canonical_domain && item.canonical_domain === picked.canonical_domain)\n  .filter((item) => Number(item.Id) < Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst dbDuplicate = dbMatches\n  .filter((row) => Number(row.Id) !== Number(picked.Id))\n  .sort((a, b) => Number(a.Id) - Number(b.Id))[0];\nconst duplicate = dbDuplicate || earlierBatchDuplicate || null;\nif (picked.canonical_domain && duplicate) {\n  return {\n    json: {\n      ...picked,\n      duplicate_of_id: Number(duplicate.Id),\n      status: 'url duplicate',\n      last_stage: 'dedupe',\n      last_error: 'Duplicate canonical_domain ' + picked.canonical_domain + ' of row ' + duplicate.Id\n    }\n  };\n}\nreturn { json: picked };"
       }
+    },
+    {
+      "id": "prepare-public-enrichment",
+      "name": "Prepare Public Enrichment",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2820,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().flatMap((item) => {\n  const row = item.json || {};\n  if (row.status !== 'url picked') {\n    return [];\n  }\n  const urlPicked = String(row.url_picked || '').trim();\n  if (!urlPicked || row.duplicate_of_id) {\n    return [];\n  }\n  return [{\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name || '').trim(),\n      url_picked: urlPicked,\n      page_limit: 5,\n      page_timeout_ms: 20000,\n      request_delay_seconds: 0.3,\n      scrape_char_limit: 60000\n    },\n    pairedItem: item.pairedItem\n  }];\n});"
+      }
+    },
+    {
+      "id": "crawl4ai-public-enrich",
+      "name": "Crawl4AI Public Enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        460
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/public-enrich') }}",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+            "timeout": 300000
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "prepare-enrichment-patch",
+      "name": "Prepare Enrichment Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        460
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sourceItems = $('Prepare Public Enrichment').all();\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  if (payload && payload.patch && payload.patch.Id) {\n    return { json: payload.patch, pairedItem: item.pairedItem };\n  }\n  const errorText = stringify(payload.error || payload.message || payload.code || 'Public enrichment request failed');\n  return {\n    json: {\n      Id: source.Id,\n      last_stage: 'enrichment_error',\n      last_error: errorText,\n      notes: errorText\n    },\n    pairedItem: item.pairedItem\n  };\n});"
+      }
+    },
+    {
+      "id": "patch-enrichment-result",
+      "name": "Patch Enrichment Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3600,
+        460
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([$json]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
     }
   ],
   "connections": {
@@ -254,7 +409,18 @@
       "main": [
         [
           {
-            "node": "Get Blank URL Picked Rows",
+            "node": "Webhook To Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Batch Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Enrichment Rows",
             "type": "main",
             "index": 0
           }
@@ -272,7 +438,40 @@
         ]
       ]
     },
+    "Get Enrichment Rows": {
+      "main": [
+        [
+          {
+            "node": "Rows To Enrichment Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Rows To Items": {
+      "main": [
+        [
+          {
+            "node": "Build OpenSERP Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rows To Enrichment Items": {
+      "main": [
+        [
+          {
+            "node": "Prepare Public Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook To Item": {
       "main": [
         [
           {
@@ -354,6 +553,44 @@
         [
           {
             "node": "Patch URL Picked",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Public Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Public Enrichment": {
+      "main": [
+        [
+          {
+            "node": "Crawl4AI Public Enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crawl4AI Public Enrich": {
+      "main": [
+        [
+          {
+            "node": "Prepare Enrichment Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Enrichment Patch": {
+      "main": [
+        [
+          {
+            "node": "Patch Enrichment Result",
             "type": "main",
             "index": 0
           }

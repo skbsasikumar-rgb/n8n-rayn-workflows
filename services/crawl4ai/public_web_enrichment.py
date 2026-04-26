@@ -347,6 +347,7 @@ class EnrichmentRecord:
     website_scrape: str = ""
     raw_pages: list[dict[str, Any]] = field(default_factory=list)
     crawl_context: dict[str, Any] = field(default_factory=dict)
+    timing_ms: dict[str, float] = field(default_factory=dict)
 
 
 def require_python_311() -> None:
@@ -364,6 +365,10 @@ def compact_whitespace(value: Any) -> str:
 
 def limit_text(value: str, max_chars: int) -> str:
     return compact_whitespace(value)[:max_chars]
+
+
+def elapsed_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000.0, 1)
 
 
 def dedupe_strings(values: list[str], limit: int | None = None) -> list[str]:
@@ -1345,6 +1350,9 @@ def clean_name_candidate(value: str) -> str:
     text = compact_whitespace(value)
     if not text:
         return ""
+    text = re.sub(r"\s*\.?\s*all rights reserved\b.*$", "", text, flags=re.I)
+    text = re.sub(r"\s*\b(?:project|website|designed|developed|powered)\s+by\b.*$", "", text, flags=re.I)
+    text = re.sub(r"\s*\.?\s*all rights reserved\.?\s*$", "", text, flags=re.I)
     parts = [part.strip() for part in re.split(r"\s+[|\-–—]\s+", text) if part.strip()]
     if parts:
         text = parts[0]
@@ -1374,6 +1382,10 @@ def is_generic_name_candidate(value: str) -> bool:
     if lowered in generic_values:
         return True
     if re.fullmatch(r"(?:dental|medical|health|clinic|services?)\s+(?:clinic|services?|singapore)", lowered):
+        return True
+    if re.search(r"\b(?:screening|surgery|treatment|therapy|checkup|check-up|specialist|specialists)\b", lowered) and re.search(
+        r"\b(?:singapore|\d{4})\b", lowered
+    ):
         return True
     if len(lowered.split()) > 9:
         return True
@@ -1603,9 +1615,46 @@ def clean_parent_candidate(value: str, company_homepage_name: str) -> str:
         return ""
     if lowered.startswith(("solution ", "programme ", "program ", "service ", "care ", "treatment ")):
         return ""
+    if any(
+        term in lowered
+        for term in (
+            "aesthetic medicine",
+            "taskforce",
+            "federation",
+            "foundation",
+            "residency",
+            "residency programme",
+            "residency program",
+            "training programme",
+            "training program",
+            "medical school",
+            "business school",
+            "nutrition",
+            "dietetics",
+            "dental care",
+            "children benefit",
+            "university",
+            "polytechnic",
+            "award",
+            "team",
+            "faculty",
+            "fellowship",
+            "ministry",
+            "hospital",
+        )
+    ):
+        return ""
+    if re.fullmatch(r"[A-Z0-9]{2,8}", candidate) and not re.search(
+        r"\b(?:group|health|healthcare|medical|clinic|holdings?|partners?)\b", lowered
+    ):
+        return ""
+    if re.search(r"\d+[a-z]", lowered):
+        return ""
     if company_homepage_name and token_overlap_score(candidate, company_homepage_name) >= 2:
         return ""
     if any(term in lowered for term in ("privacy policy", "terms", "cookie", "website", "wordpress")):
+        return ""
+    if any(term in lowered for term in ("association", "society", "college", "academy", "council")):
         return ""
     return candidate
 
@@ -1834,10 +1883,19 @@ async def enrich_row(
     request_delay_seconds: float,
     scrape_char_limit: int,
 ) -> EnrichmentRecord:
+    total_started = time.perf_counter()
+    timings: dict[str, float] = {}
+
+    def stamp(record: EnrichmentRecord) -> EnrichmentRecord:
+        record.timing_ms = {**timings, "total_ms": elapsed_ms(total_started)}
+        return record
+
     errors: list[str] = []
+    normalize_started = time.perf_counter()
     normalization = canonical_root_url(row.url_picked)
+    timings["normalize_ms"] = elapsed_ms(normalize_started)
     if not normalization.best_url:
-        return EnrichmentRecord(
+        return stamp(EnrichmentRecord(
             row_id=row.row_id,
             company_name=row.company_name,
             url_picked=row.url_picked,
@@ -1866,12 +1924,14 @@ async def enrich_row(
             http_status=0,
             redirect_chain=[],
             url_validation_status="failed_no_candidate",
-        )
+        ))
 
+    validation_started = time.perf_counter()
     validation = validate_best_url_candidate(session, normalization)
+    timings["validation_ms"] = elapsed_ms(validation_started)
     if not validation.ok:
         error_text = validation.error or validation.url_validation_status
-        return EnrichmentRecord(
+        return stamp(EnrichmentRecord(
             row_id=row.row_id,
             company_name=row.company_name,
             url_picked=row.url_picked,
@@ -1900,12 +1960,14 @@ async def enrich_row(
             http_status=validation.http_status,
             redirect_chain=validation.redirect_chain,
             url_validation_status=validation.url_validation_status,
-        )
+        ))
 
     best_url = validation.best_url
+    robots_started = time.perf_counter()
     robots_policy = fetch_robots_policy(session, best_url)
+    timings["robots_ms"] = elapsed_ms(robots_started)
     if not robots_policy.allowed_homepage:
-        return EnrichmentRecord(
+        return stamp(EnrichmentRecord(
             row_id=row.row_id,
             company_name=row.company_name,
             url_picked=row.url_picked,
@@ -1935,17 +1997,19 @@ async def enrich_row(
             redirect_chain=validation.redirect_chain,
             url_validation_status=validation.url_validation_status,
             crawl_context={"robots": {"url": robots_policy.robots_url, "note": robots_policy.note}},
-        )
+        ))
 
     crawled_pages: list[PageArtifact] = []
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
 
     try:
+        homepage_started = time.perf_counter()
         homepage_result = await crawl_url(crawler, best_url, page_timeout_ms)
+        timings["homepage_crawl_ms"] = elapsed_ms(homepage_started)
     except Exception as exc:
         error_text = compact_whitespace(exc)
-        return EnrichmentRecord(
+        return stamp(EnrichmentRecord(
             row_id=row.row_id,
             company_name=row.company_name,
             url_picked=row.url_picked,
@@ -1975,14 +2039,16 @@ async def enrich_row(
             redirect_chain=validation.redirect_chain,
             url_validation_status=validation.url_validation_status,
             crawl_context={"robots": {"url": robots_policy.robots_url, "note": robots_policy.note}},
-        )
+        ))
 
     homepage_page = extract_page_artifact(homepage_result)
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
     if resolved_homepage.best_url:
         best_url = resolved_homepage.best_url
         if not same_host(normalization.best_url, best_url):
+            robots_started = time.perf_counter()
             robots_policy = fetch_robots_policy(session, best_url)
+            timings["robots_ms"] = timings.get("robots_ms", 0.0) + elapsed_ms(robots_started)
 
     crawled_pages.append(homepage_page)
     seen_urls.add(homepage_page.url)
@@ -2002,7 +2068,9 @@ async def enrich_row(
             continue
         await asyncio.sleep(delay_seconds)
         try:
+            candidate_started = time.perf_counter()
             candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms)
+            timings["candidate_crawls_ms"] = timings.get("candidate_crawls_ms", 0.0) + elapsed_ms(candidate_started)
         except Exception as exc:
             errors.append(f"{candidate_url}: {compact_whitespace(exc)}")
             continue
@@ -2016,6 +2084,7 @@ async def enrich_row(
         if page.content_hash:
             seen_hashes.add(page.content_hash)
 
+    extraction_started = time.perf_counter()
     all_text = "\n\n".join(page.text for page in crawled_pages if page.text)
     company_homepage_name, company_homepage_name_evidence = detect_company_homepage_name(
         crawled_pages,
@@ -2033,6 +2102,7 @@ async def enrich_row(
         crawled_pages,
         company_homepage_name,
     )
+    timings["extraction_ms"] = elapsed_ms(extraction_started)
     solo_or_group = detect_solo_or_group(organization_type, locations, leadership_signals, affiliation_signals, all_text)
     size_signals = detect_size_signals(crawled_pages, locations, leadership_signals, affiliation_signals)
     social_links = dedupe_strings([link for page in crawled_pages for link in page.social_links], limit=20)
@@ -2098,7 +2168,7 @@ async def enrich_row(
         },
     )
     record.confidence_score = confidence_score_for_record(record)
-    return record
+    return stamp(record)
 
 
 def output_directory(base_dir: str) -> Path:
@@ -2147,6 +2217,7 @@ def record_to_csv_row(record: EnrichmentRecord) -> dict[str, str]:
         "enrichment_notes": record.enrichment_notes,
         "confidence_score": str(record.confidence_score),
         "error_notes": json.dumps(record.error_notes, ensure_ascii=True),
+        "timing_ms": json.dumps(record.timing_ms, ensure_ascii=True),
     }
 
 
@@ -2248,6 +2319,25 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def print_summary(records: list[EnrichmentRecord], run_dir: Path) -> None:
+    timing_totals: Counter[str] = Counter()
+    slowest_rows = sorted(
+        (
+            {
+                "row_id": record.row_id,
+                "company_name": record.company_name,
+                "crawl_status": record.crawl_status,
+                "total_ms": record.timing_ms.get("total_ms", 0.0),
+                "pages_crawled_count": record.pages_crawled_count,
+                "errors": len(record.error_notes),
+            }
+            for record in records
+        ),
+        key=lambda item: item["total_ms"],
+        reverse=True,
+    )[:5]
+    for record in records:
+        for key, value in record.timing_ms.items():
+            timing_totals[key] += float(value)
     summary = {
         "rows": len(records),
         "crawled": sum(1 for record in records if record.crawl_status == "crawled"),
@@ -2256,6 +2346,10 @@ def print_summary(records: list[EnrichmentRecord], run_dir: Path) -> None:
         "crawl_failed": sum(1 for record in records if record.crawl_status == "crawl_failed"),
         "skipped": sum(1 for record in records if record.crawl_status.startswith("skipped_")),
         "output_dir": str(run_dir),
+        "avg_timing_ms": {
+            key: round(value / len(records), 1) for key, value in sorted(timing_totals.items()) if records
+        },
+        "slowest_rows": slowest_rows,
     }
     print(json.dumps(summary, ensure_ascii=True))
 
