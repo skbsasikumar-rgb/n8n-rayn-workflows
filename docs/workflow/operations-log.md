@@ -92,3 +92,12 @@ Principles adopted:
 - search provider order.
 - whether raw search logs should be stored in NocoDB or execution-only.
 - whether parent-company extraction should be deterministic first, LLM-assisted second, or LLM-only after scrape.
+
+Contact search plan:
+
+- next enrichment stage will search senior and managerial contacts after company URL enrichment.
+- OpenSERP queries will run role bucket by role bucket, starting with the most valuable outreach roles and moving down only if no deliverable email is found.
+- email generation will use only person-specific permutations against `canonical_domain`; generic inboxes are explicitly excluded.
+- No2Bounce is the validation authority, and only non-catch-all deliverable emails are accepted.
+- exhausted contact searches will write `contact_search_status = contact_not_found`; contact search must not output `needs_review`.
+- detailed plan added in `docs/workflow/contact-search-design.md`.

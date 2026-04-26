@@ -24,6 +24,36 @@ This document defines the rebuild contract for the lead enrichment table.
 - `last_stage`: last completed stage.
 - `last_error`: actionable error if any.
 
+## Contact Search Fields
+
+Contact search must use separate fields so company enrichment state is not overwritten.
+
+- `contact_search_status`: one of `pending`, `processing`, `contact_found`, `contact_not_found`, `failed`, or `skipped`.
+- `contact_search_reason`: concise reason for the current or terminal contact-search state.
+- `contact_search_started_at`: timestamp when contact search was claimed.
+- `contact_search_finished_at`: timestamp when contact search reached a terminal state.
+- `contact_search_run_id`: contact-search execution identifier.
+- `contact_candidates_json`: ranked public person candidates and evidence.
+- `contact_search_evidence_json`: attempted role buckets, OpenSERP queries, search results, extraction notes, and stop reason.
+- `selected_contact_name`: accepted contact full name.
+- `selected_contact_first_name`: accepted first name.
+- `selected_contact_last_name`: accepted last name.
+- `selected_contact_title`: accepted role/title.
+- `selected_contact_role_bucket`: accepted priority bucket.
+- `selected_contact_role_priority`: numeric priority of the accepted bucket.
+- `selected_contact_source_url`: strongest evidence URL.
+- `selected_contact_confidence`: confidence for person-company match and role relevance.
+- `person_company_match_status`: `validated`, `weak`, or `rejected`.
+- `email_candidates_json`: generated person-specific permutations and validation outcomes.
+- `validated_email`: accepted deliverable person-specific email.
+- `email_validation_status`: No2Bounce status for the accepted email.
+- `email_validation_provider`: `no2bounce`.
+- `email_validation_evidence_json`: No2Bounce tracking and response summary.
+- `permutation_pattern`: accepted email pattern.
+- `discovered_at`: accepted contact timestamp.
+
+Do not create or accept generic inboxes for this stage. Do not output `needs_review`; use `contact_not_found` when no deliverable person-specific contact is found.
+
 ## Workflow Control Fields
 
 Current supported fields:
@@ -79,3 +109,5 @@ If `canonical_domain` already exists on another row:
 URL discovery reruns may update `url_picked`, `canonical_domain`, `duplicate_of_id`, `search_evidence_json`, `status`, `status_reason`, `run_id`, processing timestamps, retry fields, `last_stage`, and `last_error`.
 
 Enrichment reruns must preserve `url_picked` and must not call the Google SERP provider. They may update only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `status`, `status_reason`, `run_id`, processing timestamps, retry fields, `last_stage`, and `last_error`.
+
+Contact-search reruns must preserve URL and company enrichment fields. They may update only contact-search fields, including candidates, selected contact, generated email candidates, No2Bounce validation evidence, and contact-search status fields.

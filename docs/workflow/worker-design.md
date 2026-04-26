@@ -73,6 +73,7 @@ The worker is successful when:
 - duplicate canonical domains stop enrichment and set `duplicate_of_id`.
 - parent company is populated only when evidence supports it.
 - failed scrape does not erase a verified homepage.
+- contact search uses person-specific emails only and writes `contact_not_found` when no deliverable contact is found.
 - all claimed rows reach `completed`, `skipped`, `failed`, or `needs_review`.
 
 ## Non-Goals
@@ -84,6 +85,24 @@ The worker does not:
 - guess parent companies from weak signals.
 - hardcode one-off company URL hints as normal logic.
 - enrich rows when canonical-domain duplicate detection has already matched an existing lead.
+- use generic contact inboxes for people outreach.
+
+## Contact Search Extension
+
+Contact search runs after company URL enrichment and must not overwrite company facts. It uses `canonical_domain` as the email domain, OpenSERP for public people discovery, and No2Bounce as the validation authority.
+
+Rules:
+
+- search senior and managerial role buckets in priority order.
+- validate person-company association before generating emails.
+- generate only person-specific email permutations.
+- do not generate generic inboxes such as `info@`, `contact@`, `admin@`, `hello@`, `enquiry@`, `appointments@`, `clinic@`, or `reception@`.
+- accept only No2Bounce `deliverable` results that are not catch-all, risky, invalid, bounce, spam, unknown, or timeout.
+- stop at the first validated contact and email.
+- write `contact_search_status = contact_not_found` when all approved role buckets are exhausted.
+- never output `needs_review` from the contact-search stage.
+
+Detailed design: `docs/workflow/contact-search-design.md`.
 
 ## Canonical-Domain Dedupe
 

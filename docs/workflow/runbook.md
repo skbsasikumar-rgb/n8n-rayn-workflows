@@ -37,6 +37,9 @@ Verify:
 7. Add parent-company extraction.
    Verify: parent is populated only with clear evidence.
 
+8. Add contact search after company enrichment.
+   Verify: role buckets are attempted in priority order, generic inboxes are not generated, No2Bounce accepts only deliverable person-specific emails, and exhausted rows end as `contact_search_status = contact_not_found`.
+
 ## Rerun Process
 
 1. Disable the live workflow.
@@ -46,13 +49,14 @@ Verify:
 5. Reset only the target rows for the rerun and set eligible rows to `status = pending`.
 6. For URL discovery reruns, clear stale URL-pick fields such as `last_stage`, `last_error`, `url_picked`, `canonical_domain`, `duplicate_of_id`, and `search_evidence_json`.
 7. For enrichment reruns, preserve `url_picked` and clear only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `last_stage`, and `last_error`.
-8. Do not use blank output fields as the processing selector. The workflow should pick up only `status = pending`.
-9. Add a fresh rerun batch marker when possible.
-10. Re-enable the workflow.
-11. Run a small test set first.
-12. Inspect raw search, selected URL, scrape result, and final writeback.
-13. Confirm every claimed row reached `completed`, `skipped`, `failed`, or `needs_review`.
-14. Scale only after the small set passes.
+8. For contact-search reruns, preserve URL/company enrichment fields and reset only contact fields such as `contact_search_status`, `contact_search_reason`, `contact_candidates_json`, `contact_search_evidence_json`, selected contact fields, email validation fields, and contact timestamps.
+9. Do not use blank output fields as the processing selector. The workflow should pick up only `status = pending`, while contact search should use `contact_search_status = pending`.
+10. Add a fresh rerun batch marker when possible.
+11. Re-enable the workflow.
+12. Run a small test set first.
+13. Inspect raw search, selected URL, scrape result, contact candidates, No2Bounce result, and final writeback.
+14. Confirm every claimed company-enrichment row reached `completed`, `skipped`, `failed`, or `needs_review`, and every claimed contact row reached `contact_found`, `contact_not_found`, `failed`, or `skipped`.
+15. Scale only after the small set passes.
 
 For enrichment reruns, keep the n8n Crawl4AI HTTP timeout higher than the per-page timeout budget. The current worker uses a 300s n8n request timeout because five-page public crawls can exceed 120s on heavier sites.
 
