@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from pydantic import BaseModel, Field, HttpUrl
 from playwright.async_api import Browser, Page, Playwright, async_playwright
+import contact_enrichment
 import public_web_enrichment as public_enrichment
 
 
@@ -229,6 +230,17 @@ class PublicEnrichmentRequest(BaseModel):
     page_timeout_ms: int = Field(default=20000, ge=5000, le=60000)
     request_delay_seconds: float = Field(default=0.3, ge=0.0, le=5.0)
     scrape_char_limit: int = Field(default=60000, ge=2000, le=120000)
+
+
+class ContactSearchRequest(BaseModel):
+    Id: int | str
+    company_name: str = Field(min_length=1, max_length=300)
+    company_homepage_name: str = Field(default="", max_length=300)
+    canonical_domain: str = Field(default="", max_length=300)
+    best_url: str = Field(default="", max_length=2000)
+    website_content: str = Field(default="", max_length=120000)
+    search_attempts: list[dict[str, Any]] = Field(default_factory=list)
+    validate_email: bool = True
 
 
 def compact_whitespace(value: Any) -> str:
@@ -1029,4 +1041,47 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
         "error": " | ".join(record.error_notes[:8]),
         "patch": patch,
         "record": public_enrichment.record_to_json(record),
+    }
+
+
+@app.post("/contact-enrich")
+async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
+    payload = request.model_dump()
+    try:
+        result = contact_enrichment.enrich_contact(
+            payload,
+            validate_email=request.validate_email,
+        )
+    except Exception as exc:
+        error_text = compact_whitespace(str(exc)) or "contact enrichment failed"
+        patch = {
+            "Id": request.Id,
+            "contact_search_status": "failed",
+            "contact_search_reason": "contact_worker_error",
+            "contact_candidates_json": "[]",
+            "email_candidates_json": "[]",
+            "email_validation_provider": "no2bounce",
+            "email_validation_status": "worker_error",
+            "email_validation_evidence_json": json.dumps({"error": error_text}),
+            "contact_search_finished_at": contact_enrichment.now_iso(),
+        }
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": error_text,
+            "patch": patch,
+            "record": {},
+        }
+
+    patch = contact_enrichment.build_patch(result)
+    return {
+        "ok": result.contact_search_status == "contact_found",
+        "row_id": request.Id,
+        "error": "" if result.contact_search_status in {"contact_found", "contact_not_found"} else result.contact_search_reason,
+        "patch": patch,
+        "record": {
+            "contact_candidates": result.contact_candidates,
+            "email_candidates": result.email_candidates,
+            "email_validation_evidence": result.email_validation_evidence,
+        },
     }

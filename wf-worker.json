@@ -508,6 +508,241 @@
         "mode": "runOnceForAllItems",
         "jsCode": "const sourceItems = $('Apply Dedupe Result').all();\nreturn sourceItems.map((item, index) => ({\n  json: item.json || {},\n  pairedItem: { item: index }\n}));"
       }
+    },
+    {
+      "id": "webhook-contact-search-trigger",
+      "name": "Webhook Contact Search Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        820
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-contact-search-batch",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "4b6d2f56-0e9f-4c57-930c-67e94cf59f84"
+    },
+    {
+      "id": "get-contact-search-rows",
+      "name": "Get Contact Search Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        820
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,completed)~and(canonical_domain,notblank)~and(best_url,notblank)~and(duplicate_of_id,blank)~and(contact_search_status,eq,pending)&fields=Id,company_name,company_homepage_name,best_url,canonical_domain,duplicate_of_id,website_content,contact_search_status,contact_search_reason,contact_candidates_json,selected_contact_name,selected_contact_role,selected_contact_seniority,selected_contact_source_url,selected_contact_confidence,email_candidates_json,validated_email,email_validation_status,email_validation_provider,email_validation_evidence_json,contact_search_started_at,contact_search_finished_at,contact_search_run_id,CreatedAt,UpdatedAt&limit=5",
+        "sendHeaders": false,
+        "options": {
+          "timeout": 60000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "id": "rows-to-contact-items",
+      "name": "Rows To Contact Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.canonical_domain || '').trim() && String(row.contact_search_status || '').trim() === 'pending')\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name || '').trim(),\n      company_homepage_name: String(row.company_homepage_name || '').trim(),\n      best_url: String(row.best_url || '').trim(),\n      canonical_domain: String(row.canonical_domain || '').trim(),\n      duplicate_of_id: String(row.duplicate_of_id || '').trim(),\n      website_content: String(row.website_content || '').slice(0, 50000),\n      contact_search_status: 'pending',\n      contact_search_reason: String(row.contact_search_reason || '').trim(),\n      contact_search_started_at: String(row.contact_search_started_at || '').trim(),\n      contact_search_finished_at: String(row.contact_search_finished_at || '').trim(),\n      contact_search_run_id: String(row.contact_search_run_id || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim()\n    },\n    pairedItem: { item: index }\n  }));"
+      }
+    },
+    {
+      "id": "claim-contact-row",
+      "name": "Claim Contact Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        820
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, contact_search_status: 'processing', contact_search_reason: 'processing:contact_search', contact_search_started_at: $now.toISO(), contact_search_finished_at: '', contact_search_run_id: String($execution.id || '') }]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "continue-contact-claim",
+      "name": "Continue Contact Claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return $input.all().map((item, index) => {\n  const row = item.json || {};\n  return {\n    json: {\n      ...row,\n      contact_search_status: 'processing',\n      contact_search_reason: 'processing:contact_search',\n      contact_search_started_at: row.contact_search_started_at || new Date().toISOString(),\n      contact_search_finished_at: '',\n      contact_search_run_id: String($execution.id || '')\n    },\n    pairedItem: { item: index }\n  };\n});"
+      }
+    },
+    {
+      "id": "build-contact-search-queries",
+      "name": "Build Contact Search Queries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const roleBuckets = [\n  { bucket: 'c_suite', seniority: 'executive', priority: 1, roles: ['CEO', 'Founder', 'Owner', 'Managing Director', 'Executive Director', 'General Manager'] },\n  { bucket: 'compliance_privacy_security', seniority: 'senior_manager', priority: 2, roles: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager'] },\n  { bucket: 'it_technology', seniority: 'manager', priority: 3, roles: ['IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'] },\n  { bucket: 'operations', seniority: 'manager', priority: 4, roles: ['Operations Manager', 'Ops Manager', 'Clinic Operations Manager', 'Practice Manager'] },\n  { bucket: 'clinic_leadership', seniority: 'manager', priority: 5, roles: ['Clinic Manager', 'Clinical Manager', 'Medical Director', 'Head Doctor', 'Principal Doctor'] },\n  { bucket: 'care_clinical', seniority: 'manager', priority: 6, roles: ['Head of Nursing', 'Nursing Manager', 'Clinical Lead', 'Care Manager'] }\n];\nconst maxQueries = Math.max(1, Number($env.CONTACT_SEARCH_MAX_QUERIES_PER_ROW || 12) || 12);\nconst output = [];\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  const companyName = String(row.company_name || '').replace(/\"/g, '').trim();\n  const homepageName = String(row.company_homepage_name || '').replace(/\"/g, '').trim();\n  const canonicalDomain = String(row.canonical_domain || '').replace(/^www\\./, '').trim();\n  const seen = new Set();\n  let count = 0;\n  for (const group of roleBuckets) {\n    for (const role of group.roles) {\n      const candidates = [companyName + ' Singapore ' + role];\n      if (homepageName && homepageName.toLowerCase() !== companyName.toLowerCase()) {\n        candidates.push(homepageName + ' Singapore ' + role);\n      }\n      if (canonicalDomain) {\n        candidates.push('site:' + canonicalDomain + ' \"' + role + '\"');\n      }\n      for (const query of candidates) {\n        const key = query.toLowerCase();\n        if (!query.trim() || seen.has(key)) continue;\n        seen.add(key);\n        output.push({\n          json: {\n            ...row,\n            contact_query: query,\n            contact_role: role,\n            contact_role_bucket: group.bucket,\n            contact_role_priority: group.priority,\n            contact_seniority: group.seniority,\n            body: { q: query, num: 10 }\n          },\n          pairedItem: item.pairedItem\n        });\n        count += 1;\n        if (count >= maxQueries) break;\n      }\n      if (count >= maxQueries) break;\n    }\n    if (count >= maxQueries) break;\n  }\n}\nreturn output;"
+      }
+    },
+    {
+      "id": "search-contact-serp",
+      "name": "Search Contact SERP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1780,
+        820
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://google.serper.dev/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "rNWf15tU6OmVJqMC",
+          "name": "serper"
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "prepare-contact-payload",
+      "name": "Prepare Contact Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const queryItems = $('Build Contact Search Queries').all().map((item) => item.json || {});\nconst searchItems = $('Search Contact SERP').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.items)) return payload.items;\n  return [];\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  return String(payload?.message || body.message || payload?.error || body.error || '').trim();\n}\nconst rows = new Map();\nqueryItems.forEach((query) => {\n  const id = String(query.Id);\n  if (!rows.has(id)) {\n    rows.set(id, {\n      Id: query.Id,\n      company_name: query.company_name,\n      company_homepage_name: query.company_homepage_name,\n      canonical_domain: query.canonical_domain,\n      best_url: query.best_url,\n      website_content: query.website_content,\n      contact_search_started_at: query.contact_search_started_at,\n      contact_search_run_id: query.contact_search_run_id,\n      search_attempts: []\n    });\n  }\n});\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const query = queryItems[index] || {};\n  const row = rows.get(String(query.Id));\n  if (!row) return;\n  const payload = item.json || {};\n  const results = extractResults(payload).slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || result.position || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.snippet || result.content || result.description || '').trim()\n  }));\n  row.search_attempts.push({\n    query: query.contact_query,\n    role: query.contact_role,\n    role_bucket: query.contact_role_bucket,\n    role_priority: query.contact_role_priority,\n    seniority: query.contact_seniority,\n    error: extractError(payload),\n    results\n  });\n});\nreturn Array.from(rows.values()).map((row) => ({ json: { ...row, validate_email: true } }));"
+      }
+    },
+    {
+      "id": "contact-enrich",
+      "name": "Contact Enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2300,
+        820
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/contact-enrich') }}",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "prepare-contact-patch",
+      "name": "Prepare Contact Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sourceItems = $('Prepare Contact Payload').all();\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'contact_enrich_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'contact_enrich_failed') })\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+      }
+    },
+    {
+      "id": "patch-contact-result",
+      "name": "Patch Contact Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2820,
+        820
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([$json]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
     }
   ],
   "connections": {
@@ -774,6 +1009,116 @@
         [
           {
             "node": "Prepare Public Enrichment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Contact Search Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Contact Search Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact Search Rows": {
+      "main": [
+        [
+          {
+            "node": "Rows To Contact Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rows To Contact Items": {
+      "main": [
+        [
+          {
+            "node": "Claim Contact Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Contact Row": {
+      "main": [
+        [
+          {
+            "node": "Continue Contact Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Contact Claim": {
+      "main": [
+        [
+          {
+            "node": "Build Contact Search Queries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Contact Search Queries": {
+      "main": [
+        [
+          {
+            "node": "Search Contact SERP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Contact SERP": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact Payload": {
+      "main": [
+        [
+          {
+            "node": "Contact Enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Enrich": {
+      "main": [
+        [
+          {
+            "node": "Prepare Contact Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Contact Patch": {
+      "main": [
+        [
+          {
+            "node": "Patch Contact Result",
             "type": "main",
             "index": 0
           }

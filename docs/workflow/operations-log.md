@@ -106,7 +106,7 @@ Contact search strategy update:
 
 - contact search should be built as a separate post-enrichment stage with its own `contact_search_status`.
 - recommended architecture is n8n orchestration plus a Python contact-search worker for role queues, candidate ranking, email permutations, and No2Bounce polling.
-- OpenSERP remains the planned search interface, but provider failures must be recorded as provider failures rather than `contact_not_found`.
+- search-provider failures must be recorded as provider failures rather than `contact_not_found`.
 - first test slice should generate candidate lists before spending No2Bounce credits.
 - detailed strategy added in `docs/workflow/contact-search-strategy.md`.
 
@@ -115,3 +115,13 @@ Contact search provider decision:
 - MailScout will not be used.
 - email permutations will be implemented directly in our contact-search worker.
 - No2Bounce remains the only email validation authority for this stage.
+
+Contact search implementation checkpoint:
+
+- added a separate contact-search webhook branch at `rayn-contact-search-batch`; it runs only after company enrichment is `completed`.
+- added contact-search NocoDB columns and a reproducible schema helper in `scripts/ensure_rayn_contact_columns.py`.
+- added `/contact-enrich` to the Crawl4AI worker for candidate extraction, person-specific email permutations, and No2Bounce polling.
+- contact search currently uses the existing Serper Google credential in n8n for role-driven public search results.
+- extraction is intentionally conservative: only official-domain pages, LinkedIn snippets, and professional public pages can create email permutations.
+- 5-row live dry test: rows 273, 274, and 276 found plausible person candidates; rows 275 and 277 ended `contact_not_found`.
+- No2Bounce is not configured in Railway yet, so candidate rows currently stop as `failed` with `email_validation_not_configured`; no `validated_email` is selected until `NO2BOUNCE_API_TOKEN` is added.

@@ -34,7 +34,7 @@ NocoDB pending contact rows
   -> n8n contact-search batch workflow
   -> claim row as contact_search_status=processing
   -> Python contact-search endpoint
-  -> OpenSERP role search
+  -> Serper Google role search
   -> candidate extraction and ranking
   -> person-company validation
   -> email permutation generation
@@ -78,14 +78,14 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary planned interface: OpenSERP Google endpoint.
+Primary implemented interface: Serper Google endpoint via the existing n8n `serper` credential.
 
-Known risk: Railway-hosted browser SERP has previously hit Google CAPTCHA and circuit-breaker failures. For the first implementation, keep OpenSERP as the active interface because that is the chosen direction, but build the search client behind a provider adapter.
+Reasoning: Railway-hosted browser SERP has previously hit Google CAPTCHA and circuit-breaker failures. Serper is already wired into the workflow and gives stable Google SERP candidates for this stage.
 
 Provider adapter behavior:
 
-1. Call OpenSERP with simple role-specific Google queries.
-2. If OpenSERP returns an empty result set, provider error, circuit breaker, CAPTCHA, or timeout, mark the role attempt as `search_provider_failed`.
+1. Call Serper with simple role-specific Google queries.
+2. If Serper returns an empty result set, provider error, or timeout, mark the role attempt as `search_provider_failed`.
 3. Do not convert provider failures into `contact_not_found`.
 4. Stop the row as `failed` if all attempted queries fail due to provider errors.
 5. Add a fallback provider later only with explicit approval.

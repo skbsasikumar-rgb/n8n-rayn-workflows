@@ -34,23 +34,17 @@ Contact search must use separate fields so company enrichment state is not overw
 - `contact_search_finished_at`: timestamp when contact search reached a terminal state.
 - `contact_search_run_id`: contact-search execution identifier.
 - `contact_candidates_json`: ranked public person candidates and evidence.
-- `contact_search_evidence_json`: attempted role buckets, OpenSERP queries, search results, extraction notes, and stop reason.
+- `contact_search_evidence_json`: optional future field for attempted role buckets, search results, extraction notes, and stop reason.
 - `selected_contact_name`: accepted contact full name.
-- `selected_contact_first_name`: accepted first name.
-- `selected_contact_last_name`: accepted last name.
-- `selected_contact_title`: accepted role/title.
-- `selected_contact_role_bucket`: accepted priority bucket.
-- `selected_contact_role_priority`: numeric priority of the accepted bucket.
+- `selected_contact_role`: accepted role/title.
+- `selected_contact_seniority`: accepted seniority bucket.
 - `selected_contact_source_url`: strongest evidence URL.
 - `selected_contact_confidence`: confidence for person-company match and role relevance.
-- `person_company_match_status`: `validated`, `weak`, or `rejected`.
 - `email_candidates_json`: generated person-specific permutations and validation outcomes.
 - `validated_email`: accepted deliverable person-specific email.
 - `email_validation_status`: No2Bounce status for the accepted email.
 - `email_validation_provider`: `no2bounce`.
 - `email_validation_evidence_json`: No2Bounce tracking and response summary.
-- `permutation_pattern`: accepted email pattern.
-- `discovered_at`: accepted contact timestamp.
 
 Do not create or accept generic inboxes for this stage. Do not output `needs_review`; use `contact_not_found` when no deliverable person-specific contact is found.
 
