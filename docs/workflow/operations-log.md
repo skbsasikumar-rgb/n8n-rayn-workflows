@@ -109,3 +109,9 @@ Contact search strategy update:
 - OpenSERP remains the planned search interface, but provider failures must be recorded as provider failures rather than `contact_not_found`.
 - first test slice should generate candidate lists before spending No2Bounce credits.
 - detailed strategy added in `docs/workflow/contact-search-strategy.md`.
+
+Contact search provider decision:
+
+- MailScout will not be used.
+- email permutations will be implemented directly in our contact-search worker.
+- No2Bounce remains the only email validation authority for this stage.

@@ -102,17 +102,11 @@ No2Bounce flow:
 4. Accept only a clearly deliverable, non-catch-all result.
 5. Reject catch-all, invalid, bounce, spam, unknown, timeout, and provider-error outcomes.
 
-### MailScout
+### Email Discovery Libraries
 
-Do not use MailScout as the main validator.
+Do not use third-party SMTP probing libraries for this stage. Implement deterministic name normalization and email permutations inside our own worker, then validate only through No2Bounce.
 
-Useful ideas to borrow:
-
-- name normalization.
-- permutation generation.
-- catch-all concept.
-
-Do not use direct SMTP probing without explicit approval. Outbound port 25 is often blocked in cloud environments, and SMTP probing can create operational and reputation risk.
+Do not perform direct SMTP probing without explicit approval. Outbound port 25 is often blocked in cloud environments, and SMTP probing can create operational and reputation risk.
 
 ## Role Queue Strategy
 
