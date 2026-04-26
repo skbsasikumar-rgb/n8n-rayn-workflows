@@ -71,6 +71,7 @@ Status control-plane update:
 - OpenSERP/browser scraping hit Google CAPTCHA and circuit-breaker failures from Railway egress, so the worker now uses the existing Serper Google API credential for stable Google SERP candidates.
 - URL-pick preparation now preserves claim metadata through the LLM picker so terminal rows keep audit controls.
 - terminal URL-pick skips and canonical-domain duplicates now stamp `processing_finished_at`, not just enrichment outcomes.
+- homepage validation now accepts final HTTP `202`, and same-domain subpage `404`s are treated as non-fatal crawl warnings instead of `needs_review`.
 
 Rebuild direction:
 

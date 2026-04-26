@@ -114,7 +114,7 @@ NON_ORG_HOST_SUFFIXES = (
     "google.com",
     "google.com.sg",
 )
-VALID_FINAL_STATUSES = {200, 203}
+VALID_FINAL_STATUSES = {200, 202, 203}
 REDIRECT_STATUSES = {301, 302, 307, 308}
 SG_PUBLIC_SUFFIXES = {
     "com.sg",
@@ -1809,6 +1809,20 @@ def confidence_score_for_record(record: EnrichmentRecord) -> float:
     return round(max(0.0, min(score, 0.98)), 2)
 
 
+def split_crawl_errors(best_url: str, errors: list[str]) -> tuple[list[str], list[str]]:
+    fatal_errors: list[str] = []
+    ignored_errors: list[str] = []
+    for error in errors:
+        match = re.match(r"^(https?://\S+): HTTP (\d{3})\b", error)
+        if match:
+            error_url, status_code_text = match.groups()
+            if int(status_code_text) == 404 and same_registered_domain(error_url, best_url):
+                ignored_errors.append(error)
+                continue
+        fatal_errors.append(error)
+    return fatal_errors, ignored_errors
+
+
 def confidence_label(score: float) -> str:
     if score >= 0.75:
         return "High"
@@ -2107,11 +2121,14 @@ async def enrich_row(
     size_signals = detect_size_signals(crawled_pages, locations, leadership_signals, affiliation_signals)
     social_links = dedupe_strings([link for page in crawled_pages for link in page.social_links], limit=20)
     structured_data = structured_data_summary(crawled_pages, sitemap_urls)
+    fatal_errors, ignored_errors = split_crawl_errors(best_url, errors)
     notes = (
         f"Crawled {len(crawled_pages)} public pages from {registered_domain(normalization.hostname)}; "
         f"found {len(locations)} location signals, {len(services)} service signals, and {len(leadership_signals)} team signals."
     )
-    crawl_status = "partial" if errors else "crawled"
+    if ignored_errors:
+        notes += f" Ignored {len(ignored_errors)} same-domain subpage 404 warnings."
+    crawl_status = "partial" if fatal_errors else "crawled"
     record = EnrichmentRecord(
         row_id=row.row_id,
         company_name=row.company_name,
@@ -2136,7 +2153,7 @@ async def enrich_row(
         structured_data_detected=structured_data,
         enrichment_notes=notes,
         confidence_score=0.0,
-        error_notes=errors,
+        error_notes=fatal_errors,
         best_url_candidate=validation.best_url_candidate,
         http_status=validation.http_status,
         redirect_chain=validation.redirect_chain,
