@@ -373,7 +373,16 @@ def email_permutations(candidate: ContactCandidate, domain: str) -> list[dict[st
 
 def status_text(value: Any) -> str:
     if isinstance(value, dict):
-        for key in ("status", "result", "state", "deliverability", "email_status", "verification_status", "validation result"):
+        for key in (
+            "finalScoreValue",
+            "status",
+            "result",
+            "state",
+            "deliverability",
+            "email_status",
+            "verification_status",
+            "validation result",
+        ):
             matched = dict_get_case_insensitive(value, key)
             if matched:
                 return compact(matched, 80).lower()
@@ -389,10 +398,14 @@ def dict_get_case_insensitive(value: dict[str, Any], key: str) -> Any:
 
 
 def is_deliverable_result(result: Any) -> bool:
-    text = json.dumps(result, default=str).lower() if isinstance(result, (dict, list)) else str(result).lower()
-    if any(bad in text for bad in ("catch", "invalid", "bounce", "spam", "disposable", "unknown", "risky", "blocked", "incomplete", "undeliver")):
+    status = status_text(result)
+    if isinstance(result, dict):
+        catchall = dict_get_case_insensitive(result, "catchall")
+        if str(catchall).strip().lower() == "true":
+            return False
+    if any(bad in status for bad in ("acceptall", "catchall", "invalid", "bounce", "spam", "disposable", "unknown", "risky", "blocked", "incomplete", "undeliver")):
         return False
-    return "deliverable" in text or status_text(result) in {"valid", "ok"}
+    return "deliverable" in status or status in {"valid", "ok"}
 
 
 def find_no2bounce_download_url(payload: Any) -> str:

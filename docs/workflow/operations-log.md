@@ -140,3 +140,10 @@ Contact search evidence update:
 - added `contact_search_evidence_json` as a long-text audit field for role queries, top Serper results, provider errors, and candidate counts.
 - worker writeback now records compact search evidence even when the final status is `contact_not_found`.
 - the April 27 control rerun showed Serper returning `400 Not enough credits` for every role query; those rows should be treated as `failed` with `search_provider_failed`, not as true `contact_not_found`.
+
+Contact search deliverability normalization:
+
+- Serper credit top-up restored search results: the 15-row control slice returned zero search-provider errors and normal result counts.
+- No2Bounce CSV rows use `finalScoreValue` such as `Deliverable`, `UnDeliverable`, and `Deliverable/AcceptAll`; the worker now normalizes that field directly.
+- catch-all rejection now checks explicit catch-all/accept-all status instead of rejecting every result containing the `catchall` field name.
+- expected effect: person-specific `Deliverable` results with `catchall=false` can be accepted, while accept-all/catch-all/risky/unknown/undeliverable results remain rejected.
