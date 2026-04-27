@@ -18,7 +18,7 @@ import urllib.request
 from typing import Any
 
 
-DEFAULT_WORKFLOW_ID = "bAyrbtzx6m3FRe44"
+DEFAULT_WORKFLOW_ID = "BQEa6M2pKYmuEYMV"
 
 
 def env(name: str) -> str:
