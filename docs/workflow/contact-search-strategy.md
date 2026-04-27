@@ -102,8 +102,19 @@ No2Bounce flow:
 1. Send generated emails to `POST /v2/n2b_validate_bulk` with `emailList`.
 2. Store the returned `trackingId`.
 3. Poll `GET /v2/n2b_validate_bulk?trackingId=...`.
-4. Accept only a clearly deliverable, non-catch-all result.
-5. Reject catch-all, invalid, bounce, spam, unknown, timeout, and provider-error outcomes.
+4. Classify every result into `sendable`, `risky_sendable`, or `rejected`.
+5. Accept `sendable` and `risky_sendable` person-specific results, but preserve the bucket in `email_validation_status`.
+6. Reject invalid, bad, undeliverable, bounce, spam, disposable, unknown, blocked, incomplete, low-score accept-all, timeout, and provider-error outcomes.
+
+No2Bounce decision buckets:
+
+- `Deliverable`, `Valid`, or `OK` -> `sendable`.
+- `Deliverable/AcceptAll` with `finalScore >= 90` and a named person -> `risky_sendable`.
+- `Deliverable/AcceptAll` with `finalScore < 90` -> `rejected`.
+- `UnDeliverable`, `Invalid`, `Bad`, or `UnDeliverable/AcceptAll` -> `rejected`.
+- `catchall=true` by itself is not enough to reject.
+- `catchall=true` with `finalScore >= 90` and `Deliverable/AcceptAll` -> `risky_sendable`.
+- `catchall=true` with `finalScore < 90` -> `rejected`.
 
 ### Email Discovery Libraries
 
@@ -295,7 +306,7 @@ Write both accepted contact fields and full evidence.
 When found:
 
 - `contact_search_status = contact_found`
-- `contact_search_reason = deliverable_person_specific_email_found`
+- `contact_search_reason = sendable_person_specific_email_found` or `risky_sendable_person_specific_email_found`
 - `selected_contact_name`
 - `selected_contact_first_name`
 - `selected_contact_last_name`
@@ -405,7 +416,7 @@ Verify:
 Verify:
 
 - generic inboxes are never generated.
-- catch-all and non-deliverable results are rejected.
+- high-score `Deliverable/AcceptAll` results tied to a named person are selected as `risky_sendable`; low-score catch-all and non-deliverable results are rejected.
 - validation evidence is stored.
 
 ### Phase 4: n8n Contact Workflow

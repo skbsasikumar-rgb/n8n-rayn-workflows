@@ -184,3 +184,10 @@ Contact name-pattern update:
 - n8n preflight now treats a high-confidence official-site contact as decisive even when No2Bounce rejects all generated emails, reducing Serper fallback spend.
 - public-web crawling now probes common team, doctor, provider, leadership, management, board, about, and contact paths in addition to homepage links and sitemap candidates.
 - April 27 row 278 validation: `Tan Chin Beng Melvyn` was extracted from `website_content`; No2Bounce rejected generated emails; n8n wrote `contact_not_found` with `query_attempts_count=0`.
+
+Contact email decision buckets:
+
+- replaced the boolean No2Bounce accept/reject gate with `sendable`, `risky_sendable`, and `rejected`.
+- `Deliverable`, `Valid`, and `OK` are `sendable`.
+- `Deliverable/AcceptAll` with `finalScore >= 90` and a named person is `risky_sendable`, even when `catchall=true`.
+- low-score accept-all, undeliverable, invalid, bad, bounce, spam, disposable, unknown, blocked, and incomplete results remain rejected.

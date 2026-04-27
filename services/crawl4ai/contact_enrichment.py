@@ -15,7 +15,7 @@ import requests
 
 HONORIFICS_RE = re.compile(r"^(?:dr|doctor|mr|mrs|ms|miss|mdm|prof|professor|assoc\.?\s*prof|a/?prof)\.?\s+", re.I)
 NAME_TOKEN_RE = r"[A-Z][a-zA-Z'’-]+"
-NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,3}})"
+NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,4}})"
 NAME_RE = re.compile(rf"\b(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?{NAME_CAPTURE_RE}\b")
 EMAIL_SAFE_RE = re.compile(r"[^a-z0-9]")
 GENERIC_LOCAL_PARTS = {
@@ -239,7 +239,7 @@ def clean_name(name: str) -> str:
 def parse_name(name: str) -> tuple[str, str] | None:
     cleaned = clean_name(name)
     parts = [p for p in cleaned.replace("’", "'").split() if p]
-    if len(parts) < 2 or len(parts) > 4:
+    if len(parts) < 2 or len(parts) > 5:
         return None
     lowered = [part.lower().strip("-'") for part in parts]
     if any(part in {"and", "the", "our"} for part in lowered):
@@ -573,15 +573,43 @@ def dict_get_case_insensitive(value: dict[str, Any], key: str) -> Any:
     return None
 
 
-def is_deliverable_result(result: Any) -> bool:
+def final_score(result: Any) -> float:
+    if not isinstance(result, dict):
+        return 0.0
+    value = dict_get_case_insensitive(result, "finalScore")
+    if value is None:
+        value = dict_get_case_insensitive(result, "score")
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def email_decision(result: Any, has_named_person: bool) -> str:
     status = status_text(result)
+    score = final_score(result)
+    catchall = False
     if isinstance(result, dict):
-        catchall = dict_get_case_insensitive(result, "catchall")
-        if str(catchall).strip().lower() == "true":
-            return False
-    if any(bad in status for bad in ("acceptall", "catchall", "invalid", "bounce", "spam", "disposable", "unknown", "risky", "blocked", "incomplete", "undeliver")):
-        return False
-    return "deliverable" in status or status in {"valid", "ok"}
+        catchall = str(dict_get_case_insensitive(result, "catchall")).strip().lower() == "true"
+
+    hard_reject_terms = ("undeliver", "invalid", "bad", "bounce", "spam", "disposable", "unknown", "blocked", "incomplete")
+    if any(term in status for term in hard_reject_terms):
+        return "rejected"
+
+    is_accept_all = "acceptall" in status or "accept all" in status
+    is_deliverable_accept_all = "deliverable" in status and is_accept_all
+    if is_deliverable_accept_all:
+        if score >= 90 and has_named_person:
+            return "risky_sendable"
+        return "rejected"
+
+    if catchall and score < 90:
+        return "rejected"
+
+    if "deliverable" in status or status in {"valid", "ok"}:
+        return "sendable"
+
+    return "rejected"
 
 
 def find_no2bounce_download_url(payload: Any) -> str:
@@ -862,15 +890,18 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     for result in validation.get("results", []):
         email = result_email(result)
         if email in by_email:
+            decision = email_decision(result, bool(by_email[email].get("name")))
             by_email[email]["validation_result"] = result
             by_email[email]["status"] = status_text(result) or "validated"
-        if email in by_email and is_deliverable_result(result):
+            by_email[email]["decision"] = decision
+        if email in by_email and by_email[email].get("decision") in {"sendable", "risky_sendable"}:
             selected_candidate = next((candidate for candidate in candidates if candidate.name == by_email[email]["name"]), candidates[0])
             by_email[email]["accepted"] = True
+            decision = str(by_email[email].get("decision") or "sendable")
             return ContactResult(
                 row_id=row_id,
                 contact_search_status="contact_found",
-                contact_search_reason="deliverable_person_specific_email_found",
+                contact_search_reason=f"{decision}_person_specific_email_found",
                 contact_candidates=candidate_dicts,
                 contact_search_evidence=search_evidence,
                 email_candidates=list(by_email.values()),
@@ -880,7 +911,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 selected_contact_source_url=selected_candidate.source_url,
                 selected_contact_confidence=selected_candidate.confidence,
                 validated_email=email,
-                email_validation_status=status_text(result) or "deliverable",
+                email_validation_status=decision,
                 email_validation_evidence=validation_evidence,
             )
 
