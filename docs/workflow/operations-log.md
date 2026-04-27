@@ -147,3 +147,11 @@ Contact search deliverability normalization:
 - No2Bounce CSV rows use `finalScoreValue` such as `Deliverable`, `UnDeliverable`, and `Deliverable/AcceptAll`; the worker now normalizes that field directly.
 - catch-all rejection now checks explicit catch-all/accept-all status instead of rejecting every result containing the `catchall` field name.
 - expected effect: person-specific `Deliverable` results with `catchall=false` can be accepted, while accept-all/catch-all/risky/unknown/undeliverable results remain rejected.
+
+Contact search post-top-up run:
+
+- continued the contact-search run after Serper credit top-up across 48 eligible rows; rows 281 and 285 remained untouched because no URL is available.
+- actual Serper usage was 576 searches for 48 processed rows, which is exactly 12 role queries per row.
+- actual No2Bounce usage was 171 email validations across 19 rows with validated contact candidates; rows without safe candidates did not spend No2Bounce validations.
+- final contact status summary: 8 `contact_found`, 40 `contact_not_found`, 2 blank/not eligible.
+- no Serper provider errors were observed after top-up.
