@@ -159,7 +159,7 @@
     },
     {
       "id": "search-openserp",
-      "name": "Search URL Discovery Serper",
+      "name": "Search URL Discovery OpenSERP Google",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -198,7 +198,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = $('Build URL Discovery Query').all().map((item) => item.json || {});\nconst searchItems = $('Search URL Discovery Serper').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error || payload?.body);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      status: String(row.status || '').trim(),\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim(),\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
+        "jsCode": "const rows = $('Build URL Discovery Query').all().map((item) => item.json || {});\nconst searchItems = $('Search URL Discovery OpenSERP Google').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error || payload?.body);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      status: String(row.status || '').trim(),\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim(),\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
       }
     },
     {
@@ -1215,18 +1215,7 @@
       "main": [
         [
           {
-            "node": "Search URL Discovery Serper",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Search URL Discovery Serper": {
-      "main": [
-        [
-          {
-            "node": "Prepare URL Discovery Pick",
+            "node": "Search URL Discovery OpenSERP Google",
             "type": "main",
             "index": 0
           }
@@ -1238,6 +1227,17 @@
         [
           {
             "node": "OpenRouter URL Pick",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search URL Discovery OpenSERP Google": {
+      "main": [
+        [
+          {
+            "node": "Prepare URL Discovery Pick",
             "type": "main",
             "index": 0
           }

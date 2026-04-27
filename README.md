@@ -38,5 +38,5 @@ All workflow changes must follow the four engineering principles in [WORKING-INS
 
 ## Search Backend
 
-The worker uses Google-only OpenSERP for homepage discovery. The container lives in `services/openserp/`.
+The worker uses OpenSERP Google for homepage discovery and OpenSERP provider cascade for contact search. The container lives in `services/openserp/`.
 Set `OPENSERP_BASE_URL` in the worker runtime to point at the deployed service.

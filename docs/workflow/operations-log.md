@@ -172,7 +172,7 @@ Contact search official-site preflight:
 
 - added a zero-Serper preflight branch after contact row claim: n8n calls `/contact-enrich` with `site_fast_path_only=true`, `search_attempts=[]`, and `validate_email=true`.
 - if preflight returns `contact_found`, the workflow writes the result immediately and skips Serper entirely.
-- if preflight cannot produce a deliverable person-specific email, the workflow falls back to the existing bundled Serper query path.
+- at this checkpoint, if preflight could not produce a deliverable person-specific email, the workflow fell back to the then-current bundled Serper query path. Later entries supersede this with OpenSERP-primary routing.
 - April 27 validation: row 280 returned `Etienne Ding` / `etienne@amplab.sg` with `query_attempts_count=0`.
 - April 27 five-row smoke: rows 276, 280, and 286 completed with zero Serper queries; row 273 used fallback and completed; row 274 used fallback and ended `contact_not_found`.
 
