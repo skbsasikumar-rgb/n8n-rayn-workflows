@@ -113,7 +113,7 @@ Do not perform direct SMTP probing without explicit approval. Outbound port 25 i
 
 ## Role Queue Strategy
 
-Process official-site content before spending search queries. If no deliverable email is found, process role bundles in priority order. Each bundle carries multiple role labels so the row can usually be decided in six searches or fewer, and rows with useful `website_content` should stay at four searches or fewer.
+Process official-site content before spending search queries. If the official site yields a high-confidence senior contact, finish from that preflight result even when No2Bounce rejects the generated emails, because Serper usually rediscovered the same person and spent queries without improving deliverability. If no official-site contact is found, process role bundles in priority order.
 
 1. C-suite and owner
    - CEO
@@ -147,6 +147,8 @@ Process official-site content before spending search queries. If no deliverable 
    - Medical Director
    - Head Doctor
    - Principal Doctor
+   - Doctor in charge
+   - Senior Doctor
 6. Care and clinical management
    - Head of Nursing
    - Nursing Manager
@@ -171,7 +173,7 @@ Current live query builder uses three bundled families:
    - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "Head of Security" OR "Cybersecurity Manager" OR "IT Manager" OR "Head of IT" OR "CTO" OR "Technology Manager" OR "Systems Manager")`
    - site query: `site:{canonical_domain} ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "IT Manager" OR "Head of IT" OR "CTO")`
 
-If `website_content` exists, cap the row at four total queries. If `website_content` is missing, allow up to six. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
+If `website_content` has no official-site contact, cap the fallback row at four total queries. If `website_content` is missing, allow up to six. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
 
 ## Candidate Extraction Strategy
 
@@ -196,7 +198,7 @@ Candidate record fields:
 
 Extraction should be deterministic first:
 
-- parse `website_content` before spending search queries and treat official-domain people mentions as highest-value evidence.
+- parse `website_content` before spending search queries and treat official-domain senior doctor, doctor-in-charge, founder, owner, and management mentions as highest-value evidence.
 - parse search result titles and snippets.
 - parse official-domain pages when public and accessible.
 - prefer official website, clinic team pages, about pages, leadership pages, professional directories, and public social snippets.

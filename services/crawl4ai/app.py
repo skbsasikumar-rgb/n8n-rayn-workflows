@@ -1076,8 +1076,14 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
         }
 
     patch = contact_enrichment.build_patch(result)
+    site_preflight_decided = bool(
+        request.site_fast_path_only
+        and result.contact_candidates
+        and result.contact_search_status in {"contact_found", "contact_not_found"}
+    )
     return {
         "ok": result.contact_search_status == "contact_found",
+        "site_preflight_decided": site_preflight_decided,
         "row_id": request.Id,
         "error": "" if result.contact_search_status in {"contact_found", "contact_not_found"} else result.contact_search_reason,
         "patch": patch,

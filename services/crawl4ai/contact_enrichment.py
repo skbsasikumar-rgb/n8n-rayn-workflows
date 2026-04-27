@@ -14,7 +14,9 @@ from urllib.parse import urlparse
 import requests
 
 HONORIFICS_RE = re.compile(r"^(?:dr|doctor|mr|mrs|ms|miss|mdm|prof|professor|assoc\.?\s*prof|a/?prof)\.?\s+", re.I)
-NAME_RE = re.compile(r"\b(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+){1,3})\b")
+NAME_TOKEN_RE = r"[A-Z][a-zA-Z'’-]+"
+NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,3}})"
+NAME_RE = re.compile(rf"\b(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?{NAME_CAPTURE_RE}\b")
 EMAIL_SAFE_RE = re.compile(r"[^a-z0-9]")
 GENERIC_LOCAL_PARTS = {
     "info",
@@ -36,7 +38,7 @@ ROLE_BUCKETS: list[dict[str, Any]] = [
     {"bucket": "compliance_privacy_security", "seniority": "senior_manager", "priority": 2, "roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Head of Security", "Cybersecurity Manager"]},
     {"bucket": "it_technology", "seniority": "manager", "priority": 3, "roles": ["IT Manager", "Head of IT", "CTO", "Technology Manager", "Systems Manager"]},
     {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Clinic Operations Manager", "Practice Manager"]},
-    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Medical Director", "Head Doctor", "Principal Doctor"]},
+    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Senior Doctor"]},
     {"bucket": "care_clinical", "seniority": "manager", "priority": 6, "roles": ["Head of Nursing", "Nursing Manager", "Clinical Lead", "Care Manager"]},
 ]
 ROLE_TERMS = {role.lower(): group for group in ROLE_BUCKETS for role in group["roles"]}
@@ -111,6 +113,24 @@ NOISE_NAME_WORDS = {
     "ciso",
     "founder",
     "owner",
+}
+CREDENTIAL_WORDS = {
+    "bao",
+    "bch",
+    "bds",
+    "fams",
+    "fracgp",
+    "frcs",
+    "gdfm",
+    "graduate",
+    "lrcp",
+    "mb",
+    "mbbs",
+    "mmed",
+    "mrcp",
+    "md",
+    "phd",
+    "si",
 }
 
 
@@ -210,7 +230,10 @@ def clean_name(name: str) -> str:
         text = new_text
     text = re.sub(r"[^A-Za-z'’\-\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip(" -'’")
-    return text
+    parts = [part for part in text.split() if part]
+    while parts and parts[-1].lower().strip(".-'’") in CREDENTIAL_WORDS:
+        parts.pop()
+    return " ".join(parts)
 
 
 def parse_name(name: str) -> tuple[str, str] | None:
@@ -228,6 +251,11 @@ def parse_name(name: str) -> tuple[str, str] | None:
     return parts[0], parts[-1]
 
 
+def name_parts(name: str) -> list[str]:
+    cleaned = clean_name(name)
+    return [part for part in cleaned.replace("’", "'").split() if part]
+
+
 def role_near_name(evidence: str, name_start: int, name_end: int, role: str) -> bool:
     window = evidence[max(0, name_start - 90) : min(len(evidence), name_end + 90)].lower()
     role_text = role.lower()
@@ -240,13 +268,12 @@ def role_near_name(evidence: str, name_start: int, name_end: int, role: str) -> 
 def name_matches_for_role(evidence: str, role: str) -> list[tuple[str, int, int]]:
     role_pattern = f"(?i:{re.escape(role)}s?)"
     honorific = r"(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?"
-    name = r"([A-Z][a-zA-Z'’-]+(?:[ \t]+[A-Z][a-zA-Z'’-]+){1,3})"
     patterns = [
-        rf"{honorific}{name}(?:,\s*(?:[A-Z][A-Za-z.]{{1,10}}|MBBS|AuD|MD|PhD))*\s*,\s*\b{role_pattern}\b",
-        rf"\b{role_pattern}\b(?:\s*[:,-]|\s+)(?!at\b|of\b|for\b)[^.|\n]{{0,50}}?{honorific}{name}",
-        rf"{honorific}{name}[^.|\n]{{0,100}}?\b{role_pattern}\b",
-        rf"^\\s*{honorific}{name}\\s+-\\s+[^|\n]{{0,160}}?\\b{role_pattern}\\b",
-        rf"{honorific}{name}\\s*\\.\\s*\\b{role_pattern}\\b",
+        rf"{honorific}{NAME_CAPTURE_RE}(?:,\s*(?:[A-Z][A-Za-z.]{{1,10}}|MBBS|AuD|MD|PhD))*\s*,\s*\b{role_pattern}\b",
+        rf"\b{role_pattern}\b(?:\s*[:,-]|\s+)(?!at\b|of\b|for\b)[^.|\n]{{0,50}}?{honorific}{NAME_CAPTURE_RE}",
+        rf"{honorific}{NAME_CAPTURE_RE}[^.|\n]{{0,100}}?\b{role_pattern}\b",
+        rf"^\\s*{honorific}{NAME_CAPTURE_RE}\\s+-\\s+[^|\n]{{0,160}}?\\b{role_pattern}\\b",
+        rf"{honorific}{NAME_CAPTURE_RE}\\s*\\.\\s*\\b{role_pattern}\\b",
     ]
     matches: list[tuple[str, int, int]] = []
     seen: set[str] = set()
@@ -308,9 +335,9 @@ def extract_candidates_from_website_content(
                         last_name=last_name,
                     )
                 )
-    clinical_fallback_group = next((group for group in ROLE_BUCKETS if group["bucket"] == "care_clinical"), None)
+    clinical_fallback_group = next((group for group in ROLE_BUCKETS if group["bucket"] == "clinic_leadership"), None)
     if clinical_fallback_group:
-        for match in re.finditer(r"\bDr\.?\s+([A-Z][a-zA-Z'’-]+[ \t]+[A-Z][a-zA-Z'’-]+)\b", raw_content):
+        for match in re.finditer(rf"\bDr\.?\s+{NAME_CAPTURE_RE}\b", raw_content):
             name = clean_name(match.group(1))
             if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
                 continue
@@ -325,12 +352,12 @@ def extract_candidates_from_website_content(
             seen.add(key)
             first_name, last_name = parsed
             candidates.append(
-                ContactCandidate(
-                    name=name,
-                    role="Clinical Lead",
-                    seniority=clinical_fallback_group["seniority"],
-                    role_bucket=clinical_fallback_group["bucket"],
-                    role_priority=int(clinical_fallback_group["priority"]),
+                    ContactCandidate(
+                        name=name,
+                        role="Senior Doctor",
+                        seniority=clinical_fallback_group["seniority"],
+                        role_bucket=clinical_fallback_group["bucket"],
+                        role_priority=int(clinical_fallback_group["priority"]),
                     source_url=best_url or f"https://{canonical_domain}/",
                     source_type="official_domain",
                     evidence_text=raw_content[max(0, match.start(1) - 120) : min(len(raw_content), match.end(1) + 200)],
@@ -472,21 +499,44 @@ def safe_local_part(value: str) -> str:
 
 
 def email_permutations(candidate: ContactCandidate, domain: str) -> list[dict[str, str]]:
-    first = safe_local_part(candidate.first_name)
-    last = safe_local_part(candidate.last_name)
-    if not first or not last:
+    parts = name_parts(candidate.name)
+    if len(parts) < 2:
         return []
-    patterns = [
-        ("first.last", f"{first}.{last}"),
-        ("first", first),
-        ("firstlast", f"{first}{last}"),
-        ("f.last", f"{first[0]}.{last}"),
-        ("firstl", f"{first}{last[0]}"),
-        ("flast", f"{first[0]}{last}"),
-        ("last.first", f"{last}.{first}"),
-        ("first_last", f"{first}_{last}"),
-        ("first-last", f"{first}-{last}"),
-    ]
+    family = safe_local_part(parts[0])
+    western_first = safe_local_part(candidate.first_name)
+    western_last = safe_local_part(candidate.last_name)
+    given = safe_local_part(parts[-1])
+    middle = "".join(safe_local_part(part) for part in parts[1:-1])
+    all_parts = "".join(safe_local_part(part) for part in parts)
+
+    identity_pairs = []
+    if len(parts) >= 3 and given and family:
+        identity_pairs.append((given, family))
+    identity_pairs.append((western_first, western_last))
+
+    patterns: list[tuple[str, str]] = []
+    for index, (first, last) in enumerate(identity_pairs):
+        if not first or not last:
+            continue
+        suffix = "" if index == 0 else "_given_family"
+        patterns.extend(
+            [
+                (f"first.last{suffix}", f"{first}.{last}"),
+                (f"first{suffix}", first),
+                (f"firstlast{suffix}", f"{first}{last}"),
+                (f"f.last{suffix}", f"{first[0]}.{last}"),
+                (f"firstl{suffix}", f"{first}{last[0]}"),
+                (f"flast{suffix}", f"{first[0]}{last}"),
+                (f"last.first{suffix}", f"{last}.{first}"),
+                (f"first_last{suffix}", f"{first}_{last}"),
+                (f"first-last{suffix}", f"{first}-{last}"),
+            ]
+        )
+    if len(parts) >= 3 and all_parts:
+        patterns.append(("full_name_compact", all_parts))
+    if len(parts) >= 4 and family and middle and given:
+        patterns.append(("family_middle_given", f"{family}{middle}{given}"))
+
     output = []
     seen = set()
     for pattern, local in patterns:
@@ -754,7 +804,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     for candidate in candidates[:5]:
         if candidate.confidence not in {"High", "Medium"}:
             continue
-        generated = email_permutations(candidate, domain)[:9]
+        generated = email_permutations(candidate, domain)[:14]
         for item in generated:
             item.update({"name": candidate.name, "role": candidate.role, "source_url": candidate.source_url})
         email_candidates.extend(generated)

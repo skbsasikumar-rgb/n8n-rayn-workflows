@@ -176,3 +176,11 @@ Contact search official-site preflight:
 - if preflight cannot produce a deliverable person-specific email, the workflow falls back to the existing bundled Serper query path.
 - April 27 validation: row 280 returned `Etienne Ding` / `etienne@amplab.sg` with `query_attempts_count=0`.
 - April 27 five-row smoke: rows 276, 280, and 286 completed with zero Serper queries; row 273 used fallback and completed; row 274 used fallback and ended `contact_not_found`.
+
+Contact name-pattern update:
+
+- expanded official-site extraction for Singapore naming patterns: 3-4 token names, doctor-in-charge labels, senior-doctor fallback, and credential trimming.
+- email permutations now prioritize given-name/family-name order for multi-token names while still testing Western first/last patterns.
+- n8n preflight now treats a high-confidence official-site contact as decisive even when No2Bounce rejects all generated emails, reducing Serper fallback spend.
+- public-web crawling now probes common team, doctor, provider, leadership, management, board, about, and contact paths in addition to homepage links and sitemap candidates.
+- April 27 row 278 validation: `Tan Chin Beng Melvyn` was extracted from `website_content`; No2Bounce rejected generated emails; n8n wrote `contact_not_found` with `query_attempts_count=0`.

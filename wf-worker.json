@@ -657,7 +657,7 @@
           "conditions": [
             {
               "id": "contact-found",
-              "leftValue": "={{ String($json.ok || ($json.body && $json.body.ok) || '') }}",
+              "leftValue": "={{ String($json.ok || $json.site_preflight_decided || ($json.body && ($json.body.ok || $json.body.site_preflight_decided)) || '') }}",
               "rightValue": "true",
               "operator": {
                 "type": "string",

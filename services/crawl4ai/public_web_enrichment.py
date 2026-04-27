@@ -150,6 +150,24 @@ HIGH_VALUE_KEYWORDS = (
     "news",
     "careers",
 )
+COMMON_FOLLOW_PATHS = (
+    "/about",
+    "/about-us",
+    "/our-story",
+    "/who-we-are",
+    "/team",
+    "/our-team",
+    "/leadership",
+    "/management",
+    "/board",
+    "/doctors",
+    "/our-doctors",
+    "/doctor",
+    "/physicians",
+    "/providers",
+    "/contact",
+    "/contact-us",
+)
 TEAM_KEYWORDS = (
     "doctor",
     "doctors",
@@ -1021,6 +1039,16 @@ def choose_candidate_pages(
         if score <= 0:
             continue
         ranked.append((score, href))
+        seen_urls.add(href)
+
+    for path in COMMON_FOLLOW_PATHS:
+        href = urljoin(homepage_url, path)
+        if href in seen_urls:
+            continue
+        score = candidate_page_score(homepage_url, href, path)
+        if score <= 0:
+            continue
+        ranked.append((score - 1, href))
         seen_urls.add(href)
 
     for sitemap_url in sitemap_urls:
