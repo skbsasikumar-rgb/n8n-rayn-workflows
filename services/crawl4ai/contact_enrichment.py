@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import re
@@ -370,10 +372,19 @@ def email_permutations(candidate: ContactCandidate, domain: str) -> list[dict[st
 
 def status_text(value: Any) -> str:
     if isinstance(value, dict):
-        for key in ("status", "result", "state", "deliverability", "email_status", "verification_status"):
-            if value.get(key):
-                return compact(value.get(key), 80).lower()
+        for key in ("status", "result", "state", "deliverability", "email_status", "verification_status", "validation result"):
+            matched = dict_get_case_insensitive(value, key)
+            if matched:
+                return compact(matched, 80).lower()
     return compact(value, 80).lower()
+
+
+def dict_get_case_insensitive(value: dict[str, Any], key: str) -> Any:
+    lowered = key.lower()
+    for candidate_key, candidate_value in value.items():
+        if str(candidate_key).lower() == lowered:
+            return candidate_value
+    return None
 
 
 def is_deliverable_result(result: Any) -> bool:
@@ -381,6 +392,52 @@ def is_deliverable_result(result: Any) -> bool:
     if any(bad in text for bad in ("catch", "invalid", "bounce", "spam", "disposable", "unknown", "risky", "blocked", "incomplete", "undeliver")):
         return False
     return "deliverable" in text or status_text(result) in {"valid", "ok"}
+
+
+def find_no2bounce_download_url(payload: Any) -> str:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if str(key).lower() == "downloadfile" and isinstance(value, str) and value.startswith(("http://", "https://")):
+                return value
+            nested = find_no2bounce_download_url(value)
+            if nested:
+                return nested
+    if isinstance(payload, list):
+        for item in payload:
+            nested = find_no2bounce_download_url(item)
+            if nested:
+                return nested
+    return ""
+
+
+def sanitize_no2bounce_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        output: dict[str, Any] = {}
+        for key, value in payload.items():
+            if str(key).lower() == "downloadfile":
+                output[key] = "[redacted_download_url]" if value else ""
+            else:
+                output[key] = sanitize_no2bounce_payload(value)
+        return output
+    if isinstance(payload, list):
+        return [sanitize_no2bounce_payload(item) for item in payload]
+    return payload
+
+
+def download_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
+    download_url = find_no2bounce_download_url(payload)
+    if not download_url:
+        return []
+    response = requests.get(download_url, timeout=30)
+    if response.status_code >= 400:
+        return []
+    csv_text = response.text.lstrip("\ufeff")
+    reader = csv.DictReader(io.StringIO(csv_text))
+    return [
+        {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
+        for row in reader
+        if any(str(value or "").strip() for value in row.values())
+    ]
 
 
 def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
@@ -392,6 +449,13 @@ def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            nested = extract_no2bounce_results(value)
+            if nested:
+                return nested
+    downloaded = download_no2bounce_results(payload)
+    if downloaded:
+        return downloaded
     return []
 
 
@@ -415,7 +479,16 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int = 90) -> dict[str
 
     tracking_id = ""
     if isinstance(post_payload, dict):
-        tracking_id = compact(post_payload.get("trackingId") or post_payload.get("tracking_id") or post_payload.get("id"), 200)
+        nested = post_payload.get("data") if isinstance(post_payload.get("data"), dict) else {}
+        tracking_id = compact(
+            post_payload.get("trackingId")
+            or post_payload.get("tracking_id")
+            or post_payload.get("id")
+            or nested.get("trackingId")
+            or nested.get("tracking_id")
+            or nested.get("id"),
+            200,
+        )
     if not tracking_id:
         return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
 
@@ -429,15 +502,30 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int = 90) -> dict[str
             poll_payload = {"raw": poll.text}
         results = extract_no2bounce_results(poll_payload)
         if results:
-            return {"configured": True, "error": "", "trackingId": tracking_id, "post_response": post_payload, "poll_response": poll_payload, "results": results}
+            return {
+                "configured": True,
+                "error": "",
+                "trackingId": tracking_id,
+                "post_response": sanitize_no2bounce_payload(post_payload),
+                "poll_response": sanitize_no2bounce_payload(poll_payload),
+                "results": results,
+            }
         time.sleep(3)
-    return {"configured": True, "error": "poll_timeout", "trackingId": tracking_id, "post_response": post_payload, "poll_response": poll_payload, "results": []}
+    return {
+        "configured": True,
+        "error": "poll_timeout",
+        "trackingId": tracking_id,
+        "post_response": sanitize_no2bounce_payload(post_payload),
+        "poll_response": sanitize_no2bounce_payload(poll_payload),
+        "results": [],
+    }
 
 
 def result_email(result: dict[str, Any]) -> str:
-    for key in ("email", "address", "emailAddress", "mail"):
-        if result.get(key):
-            return compact(result.get(key), 320).lower()
+    for key in ("email", "email address", "email_address", "address", "emailAddress", "mail"):
+        matched = dict_get_case_insensitive(result, key)
+        if matched:
+            return compact(matched, 320).lower()
     return ""
 
 

@@ -125,3 +125,12 @@ Contact search implementation checkpoint:
 - extraction is intentionally conservative: only official-domain pages, LinkedIn snippets, and professional public pages can create email permutations.
 - 5-row live dry test: rows 273, 274, and 276 found plausible person candidates; rows 275 and 277 ended `contact_not_found`.
 - No2Bounce is not configured in Railway yet, so candidate rows currently stop as `failed` with `email_validation_not_configured`; no `validated_email` is selected until `NO2BOUNCE_API_TOKEN` is added.
+
+Contact search 10-row validation:
+
+- `NO2BOUNCE_API_TOKEN` is configured in Railway as an environment variable, not in repo files.
+- deployed Crawl4AI worker now exposes `/contact-enrich` and `/public-enrich`; earlier deploys were serving only `/health` and `/scrape`.
+- No2Bounce completion can return per-email results through a signed CSV `downloadFile`; the worker now downloads and parses that CSV and redacts the signed URL before storing evidence.
+- rows 278, 279, 280, 282, 283, 284, 286, 287, 288, and 289 all ended `contact_not_found` with `no_validated_person_found`.
+- this 10-row run did not spend No2Bounce validation on table rows because no contact candidate survived extraction.
+- next contact-quality fix should store search attempts for `contact_not_found` rows or pull raw Serper results during debugging, otherwise misses are hard to explain after the run.
