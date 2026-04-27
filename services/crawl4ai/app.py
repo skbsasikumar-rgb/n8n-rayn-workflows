@@ -239,7 +239,11 @@ class ContactSearchRequest(BaseModel):
     canonical_domain: str = Field(default="", max_length=300)
     best_url: str = Field(default="", max_length=2000)
     website_content: str = Field(default="", max_length=120000)
+    search_queries: list[dict[str, Any]] = Field(default_factory=list)
     search_attempts: list[dict[str, Any]] = Field(default_factory=list)
+    excluded_candidate_names: list[str] = Field(default_factory=list)
+    excluded_email_candidates: list[str] = Field(default_factory=list)
+    fallback_reason: str = Field(default="", max_length=160)
     validate_email: bool = True
     site_fast_path_only: bool = False
 
@@ -1029,6 +1033,8 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
             "ok": False,
             "row_id": request.Id,
             "error": error_text,
+            "preflight_action": "fail" if request.site_fast_path_only else "",
+            "preflight_reason": "preflight_worker_error" if request.site_fast_path_only else "",
             "patch": patch,
             "record": {},
         }
@@ -1076,16 +1082,50 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
         }
 
     patch = contact_enrichment.build_patch(result)
-    site_preflight_decided = bool(
-        request.site_fast_path_only
-        and result.contact_candidates
-        and result.contact_search_status in {"contact_found", "contact_not_found"}
-    )
+    preflight_action = ""
+    preflight_reason = ""
+    if request.site_fast_path_only:
+        if result.contact_search_status == "contact_found":
+            preflight_action = "stop"
+            preflight_reason = "preflight_contact_found"
+        elif result.contact_search_status == "failed":
+            preflight_action = "fail"
+            preflight_reason = "preflight_validation_provider_failed" if result.contact_search_reason in {
+                "email_validation_provider_failed",
+                "email_validation_not_configured",
+            } else "preflight_worker_error"
+        elif result.contact_candidates:
+            preflight_action = "fallback"
+            preflight_reason = "preflight_candidate_email_rejected"
+        else:
+            preflight_action = "fallback"
+            preflight_reason = "preflight_no_person_candidate"
     return {
         "ok": result.contact_search_status == "contact_found",
-        "site_preflight_decided": site_preflight_decided,
+        "site_preflight_decided": preflight_action == "stop",
+        "preflight_action": preflight_action,
+        "preflight_reason": preflight_reason,
+        "excluded_candidate_names": sorted(
+            {
+                normalized
+                for normalized in (
+                    contact_enrichment.normalize_person_name(candidate.get("name", ""))
+                    for candidate in result.contact_candidates
+                    if isinstance(candidate, dict)
+                )
+                if normalized
+            }
+        ),
+        "excluded_email_candidates": sorted(
+            {
+                compact_whitespace(candidate.get("email", "")).lower()
+                for candidate in result.email_candidates
+                if isinstance(candidate, dict) and compact_whitespace(candidate.get("email", ""))
+            }
+        ),
+        "fallback_reason": "fallback_to_openserp_alternate_contacts" if preflight_action == "fallback" else "",
         "row_id": request.Id,
-        "error": "" if result.contact_search_status in {"contact_found", "contact_not_found"} else result.contact_search_reason,
+        "error": "" if result.contact_search_status in {"contact_found", "contact_not_found"} else preflight_reason or result.contact_search_reason,
         "patch": patch,
         "record": {
             "contact_candidates": result.contact_candidates,

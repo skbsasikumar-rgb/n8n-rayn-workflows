@@ -145,7 +145,7 @@
     },
     {
       "id": "build-openserp-query",
-      "name": "Build OpenSERP Query",
+      "name": "Build URL Discovery Query",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -159,7 +159,7 @@
     },
     {
       "id": "search-openserp",
-      "name": "Search OpenSERP",
+      "name": "Search URL Discovery Serper",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -189,7 +189,7 @@
     },
     {
       "id": "prepare-openserp-pick",
-      "name": "Prepare OpenSERP Pick",
+      "name": "Prepare URL Discovery Pick",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
@@ -198,7 +198,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = $('Build OpenSERP Query').all().map((item) => item.json || {});\nconst searchItems = $('Search OpenSERP').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error || payload?.body);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      status: String(row.status || '').trim(),\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim(),\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
+        "jsCode": "const rows = $('Build URL Discovery Query').all().map((item) => item.json || {});\nconst searchItems = $('Search URL Discovery Serper').all();\nconst groupedResults = new Map();\nconst groupedErrors = new Map();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.body)) return payload.body;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.data)) return payload.data;\n  if (Array.isArray(payload?.items)) return payload.items;\n  if (payload?.title || payload?.url || payload?.link) return [payload];\n  return [];\n}\nfunction stringifyErrorPart(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number') return String(value);\n  if (typeof value === 'object') {\n    return String(value.message || value.error || value.code || value.statusCode || JSON.stringify(value));\n  }\n  return String(value);\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  const code = stringifyErrorPart(payload?.code || body.code || payload?.statusCode || body.statusCode);\n  const message = stringifyErrorPart(payload?.message || body.message || payload?.error || body.error || payload?.body);\n  if (!code && !message) return '';\n  return [code, message].filter(Boolean).join(': ');\n}\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const payload = item.json ?? {};\n  const existing = groupedResults.get(index) || [];\n  existing.push(...extractResults(payload));\n  groupedResults.set(index, existing);\n  const error = extractError(payload);\n  if (error) groupedErrors.set(index, error);\n});\nreturn rows.map((row, index) => {\n  const rawResults = groupedResults.get(index) || [];\n  const topResults = rawResults.slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.content || result.snippet || result.description || '').trim()\n  }));\n  const openserpError = groupedErrors.get(index) || '';\n  const prompt = [\n    'Pick the best official website URL from the Google search results.',\n    'Company: ' + row.company_name,\n    'Rules:',\n    '- Prefer the official company or clinic homepage.',\n    '- Reject directories, reviews, social media, maps, job boards, articles, PDFs, and unrelated pages.',\n    '- If none is clearly official, return an empty url.',\n    '- Return JSON only: {\"url\":\"\",\"reason\":\"\"}',\n    'Search results:',\n    JSON.stringify(topResults, null, 2)\n  ].join('\\n');\n  return {\n    json: {\n      Id: row.Id,\n      company_name: row.company_name,\n      openserp_query: row.openserp_query,\n      openserp_results: topResults,\n      openserp_error: openserpError,\n      status: String(row.status || '').trim(),\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      attempt_count: String(row.attempt_count || '').trim() || '1',\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim(),\n      body: {\n        model: 'deepseek/deepseek-v4-flash',\n        temperature: 0,\n        messages: [\n          { role: 'system', content: 'You select official company homepage URLs from Google search results. Return strict JSON only.' },\n          { role: 'user', content: prompt }\n        ]\n      }\n    }\n  };\n});"
       }
     },
     {
@@ -242,7 +242,7 @@
       ],
       "parameters": {
         "mode": "runOnceForEachItem",
-        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nfunction canonicalDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\\/\\/)?([^\\s\\/?#]+)/i);\n  if (!match) return '';\n  let hostname = match[1].split('@').pop().split(':')[0];\n  hostname = hostname.toLowerCase().replace(/^www\\./, '');\n  const parts = hostname.split('.').filter(Boolean);\n  if (parts.length <= 2) return hostname;\n  const suffix2 = parts.slice(-2).join('.');\n  const sgSecondLevel = new Set(['com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg', 'per.sg']);\n  if (sgSecondLevel.has(suffix2) && parts.length >= 3) return parts.slice(-3).join('.');\n  return parts.slice(-2).join('.');\n}\nconst prepared = $('Prepare OpenSERP Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst searchFailed = Boolean(prepared.openserp_error) && (!Array.isArray(prepared.openserp_results) || prepared.openserp_results.length === 0);\nconst pickedUrl = searchFailed ? '' : normalizeUrl(parsed.url || '');\nconst canonical = canonicalDomain(pickedUrl);\nconst finishedAt = pickedUrl ? String(prepared.processing_finished_at || '') : new Date().toISOString();\nconst noUrlMessage = 'No official URL selected from first 10 Google SERP results';\nconst errorMessage = searchFailed ? ('Google SERP search failed: ' + prepared.openserp_error) : (pickedUrl ? '' : noUrlMessage);\nconst statusReason = searchFailed ? 'search_failed' : (pickedUrl ? 'url_picked' : 'no_official_url_found');\nconst reason = searchFailed ? 'Google SERP search failed before candidate selection.' : String(parsed.reason || '').trim();\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  canonical_domain: canonical,\n  search_error: prepared.openserp_error || '',\n  reason,\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    canonical_domain: canonical,\n    duplicate_of_id: null,\n    search_evidence_json: JSON.stringify(evidence),\n    status: searchFailed ? 'failed' : (pickedUrl ? 'processing' : 'skipped'),\n    last_stage: searchFailed ? 'url_discovery' : 'url_pick',\n    last_error: errorMessage,\n    status_reason: statusReason,\n    run_id: String(prepared.run_id || ''),\n    processing_started_at: String(prepared.processing_started_at || ''),\n    processing_finished_at: finishedAt,\n    last_attempted_at: String(prepared.last_attempted_at || ''),\n    attempt_count: String(prepared.attempt_count || '').trim() || '1',\n    error_type: searchFailed ? 'search_error' : (pickedUrl ? '' : 'no_official_url'),\n    error_message: errorMessage,\n    retry_eligible: searchFailed ? 'true' : 'false',\n    source_row_created_at: String(prepared.source_row_created_at || prepared.CreatedAt || ''),\n    source_row_updated_at: String(prepared.source_row_updated_at || prepared.UpdatedAt || '')\n  }\n};"
+        "jsCode": "function stripFences(value) {\n  const fence = String.fromCharCode(96).repeat(3);\n  return String(value || '').replace(fence + 'json', '').replaceAll(fence, '').trim();\n}\nfunction normalizeUrl(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const withProtocol = /^[a-z][a-z0-9+.-]*:\\/\\//i.test(raw) ? raw : 'https://' + raw;\n  const match = withProtocol.match(/^(https?:\\/\\/[^\\s?#]+)(?:[?#].*)?$/i);\n  return match ? match[1].replace(/\\/+$/, '/') : '';\n}\nfunction canonicalDomain(value) {\n  const raw = String(value || '').trim();\n  if (!raw) return '';\n  const match = raw.match(/^(?:[a-z][a-z0-9+.-]*:\\/\\/)?([^\\s\\/?#]+)/i);\n  if (!match) return '';\n  let hostname = match[1].split('@').pop().split(':')[0];\n  hostname = hostname.toLowerCase().replace(/^www\\./, '');\n  const parts = hostname.split('.').filter(Boolean);\n  if (parts.length <= 2) return hostname;\n  const suffix2 = parts.slice(-2).join('.');\n  const sgSecondLevel = new Set(['com.sg', 'org.sg', 'net.sg', 'edu.sg', 'gov.sg', 'per.sg']);\n  if (sgSecondLevel.has(suffix2) && parts.length >= 3) return parts.slice(-3).join('.');\n  return parts.slice(-2).join('.');\n}\nconst prepared = $('Prepare URL Discovery Pick').all()[$itemIndex]?.json || {};\nconst response = $json || {};\nconst content = String(response.choices?.[0]?.message?.content || response.body?.choices?.[0]?.message?.content || '').trim();\nlet parsed = {};\ntry { parsed = JSON.parse(stripFences(content)); } catch {}\nconst searchFailed = Boolean(prepared.openserp_error) && (!Array.isArray(prepared.openserp_results) || prepared.openserp_results.length === 0);\nconst pickedUrl = searchFailed ? '' : normalizeUrl(parsed.url || '');\nconst canonical = canonicalDomain(pickedUrl);\nconst finishedAt = pickedUrl ? String(prepared.processing_finished_at || '') : new Date().toISOString();\nconst noUrlMessage = 'No official URL selected from first 10 Google SERP results';\nconst errorMessage = searchFailed ? ('Google SERP search failed: ' + prepared.openserp_error) : (pickedUrl ? '' : noUrlMessage);\nconst statusReason = searchFailed ? 'search_failed' : (pickedUrl ? 'url_picked' : 'no_official_url_found');\nconst reason = searchFailed ? 'Google SERP search failed before candidate selection.' : String(parsed.reason || '').trim();\nconst evidence = {\n  query: prepared.openserp_query,\n  picked_url: pickedUrl,\n  canonical_domain: canonical,\n  search_error: prepared.openserp_error || '',\n  reason,\n  first_10_results: prepared.openserp_results || [],\n  llm_raw: content\n};\nreturn {\n  json: {\n    Id: prepared.Id,\n    company_name: prepared.company_name,\n    url_picked: pickedUrl,\n    canonical_domain: canonical,\n    duplicate_of_id: null,\n    search_evidence_json: JSON.stringify(evidence),\n    status: searchFailed ? 'failed' : (pickedUrl ? 'processing' : 'skipped'),\n    last_stage: searchFailed ? 'url_discovery' : 'url_pick',\n    last_error: errorMessage,\n    status_reason: statusReason,\n    run_id: String(prepared.run_id || ''),\n    processing_started_at: String(prepared.processing_started_at || ''),\n    processing_finished_at: finishedAt,\n    last_attempted_at: String(prepared.last_attempted_at || ''),\n    attempt_count: String(prepared.attempt_count || '').trim() || '1',\n    error_type: searchFailed ? 'search_error' : (pickedUrl ? '' : 'no_official_url'),\n    error_message: errorMessage,\n    retry_eligible: searchFailed ? 'true' : 'false',\n    source_row_created_at: String(prepared.source_row_created_at || prepared.CreatedAt || ''),\n    source_row_updated_at: String(prepared.source_row_updated_at || prepared.UpdatedAt || '')\n  }\n};"
       }
     },
     {
@@ -614,7 +614,7 @@
     },
     {
       "id": "site-contact-preflight",
-      "name": "Site Contact Preflight",
+      "name": "Contact Preflight - Official Site",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
@@ -639,7 +639,7 @@
     },
     {
       "id": "site-preflight-found",
-      "name": "Site Preflight Found",
+      "name": "IF Preflight Contact Found",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
@@ -657,8 +657,8 @@
           "conditions": [
             {
               "id": "contact-found",
-              "leftValue": "={{ String($json.ok || $json.site_preflight_decided || ($json.body && ($json.body.ok || $json.body.site_preflight_decided)) || '') }}",
-              "rightValue": "true",
+              "leftValue": "={{ String($json.preflight_action || ($json.body && $json.body.preflight_action) || '') }}",
+              "rightValue": "stop",
               "operator": {
                 "type": "string",
                 "operation": "equals"
@@ -681,92 +681,64 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'site_contact_preflight_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'site_contact_preflight_failed') })\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  const preflightAction = String(payload.preflight_action || '').trim();\n  const preflightReason = String(payload.preflight_reason || '').trim();\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: preflightReason || String(payload.error || payload.message || 'preflight_worker_error'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || preflightReason || 'preflight_worker_error') }),\n    retry_eligible: 'true'\n  };\n  if (preflightAction === 'stop') {\n    patch.contact_search_reason = preflightReason || 'preflight_contact_found';\n    patch.retry_eligible = 'false';\n  } else {\n    patch.contact_search_status = 'failed';\n    patch.contact_search_reason = preflightReason || patch.contact_search_reason || 'preflight_worker_error';\n    patch.retry_eligible = 'true';\n  }\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
       }
     },
     {
       "id": "continue-contact-search-fallback",
-      "name": "Continue Contact Search Fallback",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "name": "IF Preflight Alternate Search Needed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
       "position": [
         2040,
         860
       ],
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  return { json: source, pairedItem: item.pairedItem };\n});"
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "alternate-search-needed",
+              "leftValue": "={{ String($json.preflight_action || ($json.body && $json.body.preflight_action) || '') }}",
+              "rightValue": "fallback",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
       }
     },
     {
       "id": "build-contact-search-queries",
-      "name": "Build Contact Search Queries",
+      "name": "Build Contact Search Provider Queries",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1520,
-        820
+        2300,
+        860
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const queryBundles = [\n  {\n    bucket: 'c_suite',\n    seniority: 'executive',\n    priority: 1,\n    role: 'CEO',\n    companyRoles: ['CEO', 'Founder', 'Owner', 'Managing Director', 'Executive Director', 'General Manager'],\n    domainTerms: ['Founder', 'Owner', 'CEO', 'Managing Director', 'Executive Director', 'General Manager']\n  },\n  {\n    bucket: 'clinic_leadership',\n    seniority: 'manager',\n    priority: 2,\n    role: 'Medical Director',\n    companyRoles: ['Medical Director', 'Principal Doctor', 'Head Doctor', 'Clinic Manager', 'Clinical Manager', 'Practice Manager', 'Operations Manager', 'Clinic Operations Manager'],\n    domainTerms: ['about us', 'team', 'leadership', 'management', 'founders', 'doctors', 'contact']\n  },\n  {\n    bucket: 'compliance_privacy_security',\n    seniority: 'senior_manager',\n    priority: 3,\n    role: 'DPO',\n    companyRoles: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager', 'IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'],\n    domainTerms: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'IT Manager', 'Head of IT', 'CTO']\n  }\n];\nconst maxQueries = Math.max(1, Number($env.CONTACT_SEARCH_MAX_QUERIES_PER_ROW || 6) || 6);\nfunction cleanName(value) {\n  return String(value || '').replace(/\"/g, '').trim();\n}\nfunction quote(value) {\n  return '\"' + String(value || '').replace(/\"/g, '').trim() + '\"';\n}\nfunction groupedTerms(values) {\n  const parts = values.map((value) => cleanName(value)).filter(Boolean);\n  return parts.length ? '(' + parts.map(quote).join(' OR ') + ')' : '';\n}\nfunction targetNames(companyName, homepageName) {\n  const names = [cleanName(companyName)];\n  const companyLower = companyName.toLowerCase();\n  const homepageLower = homepageName.toLowerCase();\n  if (homepageName && homepageLower !== companyLower && !homepageLower.includes(companyLower) && !companyLower.includes(homepageLower)) names.push(cleanName(homepageName));\n  return groupedTerms(Array.from(new Set(names.filter(Boolean))));\n}\nconst output = [];\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  const companyName = cleanName(row.company_name);\n  const homepageName = cleanName(row.company_homepage_name);\n  const canonicalDomain = String(row.canonical_domain || '').replace(/^www\\./, '').trim();\n  const namesClause = targetNames(companyName, homepageName);\n  const effectiveMaxQueries = String(row.website_content || '').trim() ? Math.min(maxQueries, 4) : maxQueries;\n  const seen = new Set();\n  let count = 0;\n  for (const bundle of queryBundles) {\n    const candidates = [];\n    if (namesClause) {\n      candidates.push(namesClause + ' Singapore ' + groupedTerms(bundle.companyRoles));\n    }\n    if (canonicalDomain) {\n      candidates.push('site:' + canonicalDomain + ' ' + groupedTerms(bundle.domainTerms));\n    }\n    for (const query of candidates) {\n      const normalized = cleanName(query);\n      const key = normalized.toLowerCase();\n      if (!normalized || seen.has(key)) continue;\n      seen.add(key);\n      output.push({\n        json: {\n          ...row,\n          contact_query: normalized,\n          contact_role: bundle.role,\n          contact_role_bucket: bundle.bucket,\n          contact_role_priority: bundle.priority,\n          contact_seniority: bundle.seniority,\n          body: { q: normalized, num: 10 }\n        },\n        pairedItem: item.pairedItem\n      });\n      count += 1;\n      if (count >= effectiveMaxQueries) break;\n    }\n    if (count >= effectiveMaxQueries) break;\n  }\n}\nreturn output;"
+        "jsCode": "const queryBundles = [\n  {\n    bucket: 'c_suite',\n    seniority: 'executive',\n    priority: 1,\n    role: 'CEO',\n    companyRoles: ['CEO', 'Founder', 'Owner', 'Managing Director', 'Executive Director', 'General Manager'],\n    domainTerms: ['Founder', 'Owner', 'CEO', 'Managing Director', 'Executive Director', 'General Manager']\n  },\n  {\n    bucket: 'clinic_leadership',\n    seniority: 'manager',\n    priority: 2,\n    role: 'Medical Director',\n    companyRoles: ['Medical Director', 'Principal Doctor', 'Head Doctor', 'Clinic Manager', 'Clinical Manager', 'Practice Manager', 'Operations Manager', 'Clinic Operations Manager'],\n    domainTerms: ['about us', 'team', 'leadership', 'management', 'founders', 'doctors', 'contact']\n  },\n  {\n    bucket: 'compliance_privacy_security',\n    seniority: 'senior_manager',\n    priority: 3,\n    role: 'DPO',\n    companyRoles: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager', 'IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'],\n    domainTerms: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'IT Manager', 'Head of IT', 'CTO']\n  }\n];\nconst maxQueries = Math.max(1, Number($env.CONTACT_SEARCH_MAX_QUERIES_PER_ROW || 6) || 6);\nfunction cleanName(value) {\n  return String(value || '').replace(/\"/g, '').trim();\n}\nfunction quote(value) {\n  return '\"' + String(value || '').replace(/\"/g, '').trim() + '\"';\n}\nfunction groupedTerms(values) {\n  const parts = values.map((value) => cleanName(value)).filter(Boolean);\n  return parts.length ? '(' + parts.map(quote).join(' OR ') + ')' : '';\n}\nfunction targetNames(companyName, homepageName) {\n  const names = [cleanName(companyName)];\n  const companyLower = companyName.toLowerCase();\n  const homepageLower = homepageName.toLowerCase();\n  if (homepageName && homepageLower !== companyLower && !homepageLower.includes(companyLower) && !companyLower.includes(homepageLower)) names.push(cleanName(homepageName));\n  return groupedTerms(Array.from(new Set(names.filter(Boolean))));\n}\nreturn $input.all().map((item) => {\n  const row = item.json || {};\n  const companyName = cleanName(row.company_name);\n  const homepageName = cleanName(row.company_homepage_name);\n  const canonicalDomain = String(row.canonical_domain || '').replace(/^www\\./, '').trim();\n  const namesClause = targetNames(companyName, homepageName);\n  const effectiveMaxQueries = String(row.website_content || '').trim() ? Math.min(maxQueries, 4) : maxQueries;\n  const searchQueries = [];\n  const seen = new Set();\n  for (const bundle of queryBundles) {\n    const candidates = [];\n    if (namesClause) candidates.push(namesClause + ' Singapore ' + groupedTerms(bundle.companyRoles));\n    if (canonicalDomain) candidates.push('site:' + canonicalDomain + ' ' + groupedTerms(bundle.domainTerms));\n    for (const query of candidates) {\n      const normalized = cleanName(query);\n      const key = normalized.toLowerCase();\n      if (!normalized || seen.has(key)) continue;\n      seen.add(key);\n      searchQueries.push({\n        query: normalized,\n        role: bundle.role,\n        role_bucket: bundle.bucket,\n        role_priority: bundle.priority,\n        seniority: bundle.seniority\n      });\n      if (searchQueries.length >= effectiveMaxQueries) break;\n    }\n    if (searchQueries.length >= effectiveMaxQueries) break;\n  }\n  return {\n    json: {\n      ...row,\n      search_queries: searchQueries,\n      search_attempts: [],\n      validate_email: true,\n      site_fast_path_only: false\n    },\n    pairedItem: item.pairedItem\n  };\n});"
       }
     },
     {
       "id": "search-contact-serp",
-      "name": "Search Contact SERP",
+      "name": "Contact Enrich - With Search Attempts",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1780,
-        820
-      ],
-      "parameters": {
-        "method": "POST",
-        "url": "https://google.serper.dev/search",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": {
-          "timeout": 60000
-        }
-      },
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "rNWf15tU6OmVJqMC",
-          "name": "serper"
-        }
-      },
-      "continueOnFail": true,
-      "retryOnFail": true,
-      "maxTries": 2,
-      "waitBetweenTries": 1000
-    },
-    {
-      "id": "prepare-contact-payload",
-      "name": "Prepare Contact Payload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2040,
-        820
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const queryItems = $('Build Contact Search Queries').all().map((item) => item.json || {});\nconst searchItems = $('Search Contact SERP').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nfunction extractResults(payload) {\n  if (Array.isArray(payload)) return payload;\n  if (Array.isArray(payload?.organic)) return payload.organic;\n  if (Array.isArray(payload?.body?.organic)) return payload.body.organic;\n  if (Array.isArray(payload?.results)) return payload.results;\n  if (Array.isArray(payload?.items)) return payload.items;\n  return [];\n}\nfunction stringifyError(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  try { return JSON.stringify(value); } catch (error) { return String(value); }\n}\nfunction extractError(payload) {\n  const body = payload?.body && !Array.isArray(payload.body) ? payload.body : {};\n  return stringifyError(payload?.message || body.message || payload?.error || body.error || payload?.cause || body.cause).trim();\n}\nconst rows = new Map();\nqueryItems.forEach((query) => {\n  const id = String(query.Id);\n  if (!rows.has(id)) {\n    rows.set(id, {\n      Id: query.Id,\n      company_name: query.company_name,\n      company_homepage_name: query.company_homepage_name,\n      canonical_domain: query.canonical_domain,\n      best_url: query.best_url,\n      website_content: query.website_content,\n      contact_search_started_at: query.contact_search_started_at,\n      contact_search_run_id: query.contact_search_run_id,\n      search_attempts: []\n    });\n  }\n});\nsearchItems.forEach((item, fallbackIndex) => {\n  const index = sourceIndex(item, fallbackIndex);\n  const query = queryItems[index] || {};\n  const row = rows.get(String(query.Id));\n  if (!row) return;\n  const payload = item.json || {};\n  const results = extractResults(payload).slice(0, 10).map((result, resultIndex) => ({\n    rank: Number(result.rank || result.position || resultIndex + 1),\n    title: String(result.title || '').trim(),\n    url: String(result.url || result.link || '').trim(),\n    snippet: String(result.snippet || result.content || result.description || '').trim()\n  }));\n  row.search_attempts.push({\n    query: query.contact_query,\n    role: query.contact_role,\n    role_bucket: query.contact_role_bucket,\n    role_priority: query.contact_role_priority,\n    seniority: query.contact_seniority,\n    error: extractError(payload),\n    results\n  });\n});\nreturn Array.from(rows.values()).map((row) => ({ json: { ...row, validate_email: true } }));"
-      }
-    },
-    {
-      "id": "contact-enrich",
-      "name": "Contact Enrich",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2300,
-        820
+        2560,
+        860
       ],
       "parameters": {
         "method": "POST",
@@ -782,20 +754,20 @@
       "continueOnFail": true,
       "retryOnFail": true,
       "maxTries": 2,
-      "waitBetweenTries": 2000
+      "waitBetweenTries": 1000
     },
     {
       "id": "prepare-contact-patch",
-      "name": "Prepare Contact Patch",
+      "name": "Patch Contact Search Result",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2560,
-        820
+        2820,
+        860
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const sourceItems = $('Prepare Contact Payload').all();\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'contact_enrich_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'contact_enrich_failed') })\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+        "jsCode": "const sourceItems = $('Build Contact Search Provider Queries').all();\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'contact_enrich_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'contact_enrich_failed') }),\n    retry_eligible: 'true'\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
       }
     },
     {
@@ -829,6 +801,20 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 1000
+    },
+    {
+      "id": "prepare-contact-search-fallback",
+      "name": "Prepare Contact Search Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        860
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  return {\n    json: {\n      ...source,\n      excluded_candidate_names: Array.isArray(payload.excluded_candidate_names) ? payload.excluded_candidate_names : [],\n      excluded_email_candidates: Array.isArray(payload.excluded_email_candidates) ? payload.excluded_email_candidates : [],\n      fallback_reason: String(payload.fallback_reason || 'fallback_to_openserp_alternate_contacts').trim(),\n      preflight_reason: String(payload.preflight_reason || '').trim()\n    },\n    pairedItem: item.pairedItem\n  };\n});"
+      }
     }
   ],
   "connections": {
@@ -919,39 +905,6 @@
         [
           {
             "node": "Claim Discovery Row",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Build OpenSERP Query": {
-      "main": [
-        [
-          {
-            "node": "Search OpenSERP",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Search OpenSERP": {
-      "main": [
-        [
-          {
-            "node": "Prepare OpenSERP Pick",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare OpenSERP Pick": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter URL Pick",
             "type": "main",
             "index": 0
           }
@@ -1050,7 +1003,7 @@
       "main": [
         [
           {
-            "node": "Build OpenSERP Query",
+            "node": "Build URL Discovery Query",
             "type": "main",
             "index": 0
           }
@@ -1149,36 +1102,7 @@
       "main": [
         [
           {
-            "node": "Site Contact Preflight",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Site Contact Preflight": {
-      "main": [
-        [
-          {
-            "node": "Site Preflight Found",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Site Preflight Found": {
-      "main": [
-        [
-          {
-            "node": "Prepare Site Preflight Patch",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Continue Contact Search Fallback",
+            "node": "Contact Preflight - Official Site",
             "type": "main",
             "index": 0
           }
@@ -1196,66 +1120,124 @@
         ]
       ]
     },
-    "Continue Contact Search Fallback": {
+    "Contact Preflight - Official Site": {
       "main": [
         [
           {
-            "node": "Build Contact Search Queries",
+            "node": "IF Preflight Contact Found",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Build Contact Search Queries": {
+    "IF Preflight Contact Found": {
       "main": [
         [
           {
-            "node": "Search Contact SERP",
+            "node": "Prepare Site Preflight Patch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF Preflight Alternate Search Needed",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Search Contact SERP": {
+    "IF Preflight Alternate Search Needed": {
       "main": [
         [
           {
-            "node": "Prepare Contact Payload",
+            "node": "Prepare Contact Search Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Site Preflight Patch",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Contact Payload": {
+    "Prepare Contact Search Fallback": {
       "main": [
         [
           {
-            "node": "Contact Enrich",
+            "node": "Build Contact Search Provider Queries",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Contact Enrich": {
+    "Build Contact Search Provider Queries": {
       "main": [
         [
           {
-            "node": "Prepare Contact Patch",
+            "node": "Contact Enrich - With Search Attempts",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Prepare Contact Patch": {
+    "Contact Enrich - With Search Attempts": {
+      "main": [
+        [
+          {
+            "node": "Patch Contact Search Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Contact Search Result": {
       "main": [
         [
           {
             "node": "Patch Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build URL Discovery Query": {
+      "main": [
+        [
+          {
+            "node": "Search URL Discovery Serper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search URL Discovery Serper": {
+      "main": [
+        [
+          {
+            "node": "Prepare URL Discovery Pick",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare URL Discovery Pick": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter URL Pick",
             "type": "main",
             "index": 0
           }

@@ -35,7 +35,8 @@ NocoDB pending contact rows
   -> claim row as contact_search_status=processing
   -> Python contact-search endpoint in official-site-only preflight mode
   -> write immediately if a deliverable official-site contact is found
-  -> Serper Google role search only when preflight cannot select a deliverable email
+  -> if preflight candidate emails are rejected, fall through to alternate-contact search
+  -> Python contact-search endpoint executes OpenSERP provider cascade
   -> candidate extraction and ranking
   -> person-company validation
   -> email permutation generation
@@ -79,19 +80,19 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary implemented interface: official-site preflight first, then Serper Google endpoint via the existing n8n `serper` credential only when needed.
-
-Reasoning: Railway-hosted browser SERP has previously hit Google CAPTCHA and circuit-breaker failures. Serper is already wired into the workflow and gives stable Google SERP candidates for this stage.
+Primary implemented interface: official-site preflight first, then OpenSERP provider cascade inside the Python worker.
 
 Provider adapter behavior:
 
 1. Call `/contact-enrich` with `site_fast_path_only = true`, `search_attempts = []`, and `validate_email = true`.
-2. If preflight returns `contact_found`, write the contact result directly and spend zero Serper queries for that row.
-3. If preflight returns no deliverable official-site contact, call Serper with a small set of bundled Google queries instead of one query per role label.
-4. If Serper returns an empty result set, provider error, or timeout, mark the role attempt as `search_provider_failed`.
-5. Do not convert provider failures into `contact_not_found`.
-6. Stop the row as `failed` if all attempted queries fail due to provider errors.
-7. Add a fallback provider later only with explicit approval.
+2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
+3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP with provider order `openserp_bing -> openserp_duckduckgo -> openserp_google`.
+4. If preflight returns `preflight_candidate_email_rejected`, run the same OpenSERP fallback but exclude the preflight candidate names and rejected email permutations.
+5. If preflight returns `preflight_validation_provider_failed` or `preflight_worker_error`, stop the row as `failed` and make it retryable. Do not call OpenSERP.
+6. For each bundled query, call the first healthy provider. If usable results are fewer than five or the provider fails, try the next provider in order.
+7. Serper is disabled by default. It is emergency-only and runs only when `SERPER_FALLBACK_ENABLED=true`.
+8. Do not convert provider failures into `contact_not_found`.
+9. Stop the row as `failed` with `search_provider_failed` if every provider attempt fails.
 
 ### Email Validation
 
@@ -120,11 +121,11 @@ No2Bounce decision buckets:
 
 Do not use third-party SMTP probing libraries for this stage. Implement deterministic name normalization and email permutations inside our own worker, then validate only through No2Bounce.
 
-Do not perform direct SMTP probing without explicit approval. Outbound port 25 is often blocked in cloud environments, and SMTP probing can create operational and reputation risk.
+Do not perform direct SMTP probing. No direct mailbox verification over ports `25`, `465`, or `587` is part of this workflow.
 
 ## Role Queue Strategy
 
-Process official-site content before spending search queries. If the official site yields a high-confidence senior contact, finish from that preflight result even when No2Bounce rejects the generated emails, because Serper usually rediscovered the same person and spent queries without improving deliverability. If no official-site contact is found, process role bundles in priority order.
+Process official-site content before spending search queries. If the official site yields a deliverable senior contact, finish there. If the official site yields a person but their generated emails are rejected, continue to alternate-contact OpenSERP search while excluding that same person from fallback validation. If no official-site contact is found, process role bundles in priority order.
 
 1. C-suite and owner
    - CEO
@@ -286,7 +287,7 @@ For each row:
 2. generate permutations only for the highest-ranked validated candidate first.
 3. validate a small batch for that candidate.
 4. stop immediately on accepted deliverable email.
-5. only move to the next candidate when the current candidate has no deliverable non-catch-all email.
+5. only move to the next candidate when the current candidate has no `sendable` or `risky_sendable` email.
 6. cap candidates per row during tests.
 
 Suggested first-test caps:

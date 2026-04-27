@@ -23,7 +23,7 @@ If no deliverable person-specific email is found, write `contact_search_status =
 Do not:
 
 - use generic inboxes such as `info@`, `contact@`, `hello@`, `admin@`, `enquiry@`, `appointments@`, `clinic@`, or `reception@`.
-- accept catch-all, invalid, risky, unknown, spam, bounce, or timeout validation results.
+- accept low-score accept-all, invalid, risky, unknown, spam, bounce, or timeout validation results.
 - infer employment from weak mentions alone.
 - scrape login-only pages, bypass access controls, submit forms, or run security probes.
 - overwrite company URL enrichment fields.
@@ -44,16 +44,19 @@ Search highest-value roles first and move down only when no deliverable email is
 For each eligible company:
 
 1. Read `company_name`, `company_homepage_name`, `canonical_domain`, `best_url`, and `website_content`.
-2. Build role-specific OpenSERP Google queries from the priority order.
-3. Store the first-page public results for each attempted role bucket.
-4. Extract candidate names, titles, source URLs, and snippets.
-5. Validate company association using official-domain evidence, public profile text, search snippets, and fuzzy company-name matching.
-6. Generate email permutations only for validated people.
-7. Send generated emails to No2Bounce in small batches.
-8. Poll No2Bounce until completion or timeout.
-9. Accept the first candidate with a deliverable, non-catch-all result.
-10. Stop searching once an accepted contact is found.
-11. If all role buckets are exhausted, write `contact_search_status = contact_not_found`.
+2. Run official-site preflight first against `website_content`.
+3. If preflight finds a deliverable contact, stop and write the result immediately.
+4. If preflight finds no usable person candidate, or the preflight candidate's emails are all rejected, run bundled OpenSERP queries with provider order `bing -> duckduckgo -> google`.
+5. Store the normalized results for each attempted provider and query.
+6. Extract candidate names, titles, source URLs, and snippets.
+7. Validate company association using official-domain evidence, public profile text, search snippets, and fuzzy company-name matching.
+8. Generate email permutations only for validated people.
+9. Exclude preflight candidate names and already-rejected email permutations before fallback validation.
+10. Send generated emails to No2Bounce in small batches only after local person/domain checks pass.
+11. Poll No2Bounce until completion or timeout.
+12. Accept the first candidate with a `sendable` or `risky_sendable` result.
+13. Stop searching once an accepted contact is found.
+14. If all role buckets are exhausted, write `contact_search_status = contact_not_found`.
 
 ## Query Shape
 
@@ -97,19 +100,17 @@ No2Bounce is the validation authority.
 
 Accept only:
 
-- deliverable person-specific emails.
-- validation evidence that does not identify the address as catch-all, invalid, bounce, spam, risky, or unknown.
+- `sendable` person-specific emails.
+- `risky_sendable` person-specific emails when No2Bounce reports `Deliverable/AcceptAll` with `finalScore >= 90` for a named person.
 
 Reject:
 
-- catch-all results.
-- invalid results.
-- bounce/spam results.
-- unknown, timeout, or provider-error results.
+- invalid, bad, bounce, spam, disposable, unknown, blocked, incomplete, and undeliverable results.
+- low-score accept-all results.
 - generic inbox addresses.
-- emails on domains that do not match `canonical_domain` unless explicitly approved later.
+- emails on domains that do not match `canonical_domain`.
 
-Use MX lookup only as a cheap precheck. Do not perform direct SMTP probing unless separately approved.
+Use MX lookup only as a cheap precheck when DNS support is available. Do not perform direct SMTP probing.
 
 ## Output Fields
 
@@ -158,7 +159,7 @@ Do not output `needs_review` from contact search.
 2. Create a standalone contact-search branch or workflow after website enrichment is stable.
 3. Select rows where company enrichment is complete, `canonical_domain` is present, and `contact_search_status = pending`.
 4. Claim each row with `contact_search_status = processing` and contact run metadata.
-5. Run role-priority OpenSERP searches with conservative rate limits.
+5. Run role-priority OpenSERP searches with conservative rate limits and provider order `bing -> duckduckgo -> google`.
 6. Extract and rank person candidates deterministically first.
 7. Generate person-specific permutations.
 8. Validate with No2Bounce.

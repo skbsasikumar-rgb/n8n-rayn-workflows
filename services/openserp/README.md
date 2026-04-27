@@ -1,6 +1,6 @@
 # OpenSERP Service
 
-Google-only search backend for the worker.
+Primary public-search backend for the worker.
 
 Build and run the container with:
 
@@ -9,9 +9,18 @@ docker build -t openserp .
 docker run -p 7000:7000 openserp
 ```
 
-The workflow expects the service base URL to expose `/google/search?text=...&limit=10`.
+The worker uses the dedicated engine routes exposed by OpenSERP `v0.7.2`:
+
+- `/bing/search?text=...&limit=10`
+- `/duck/search?text=...&limit=10`
+- `/google/search?text=...&limit=10`
+
+`/duck/search` is the DuckDuckGo route in this release.
 On Railway, the container binds to `${PORT:-7000}` and runs OpenSERP in browser mode.
-The image now pins OpenSERP `v0.7.2` and patches Chromium launch flags with `no-sandbox` / `disable-setuid-sandbox`; without this, Railway can fail Chromium startup with sandbox permission errors.
-OpenSERP `v0.7.2` already returns dedicated search responses as envelopes with a top-level `results` array, and the current picker logic in `wf-worker.json` already reads `results`.
-The service uses `config.yaml` to keep Google direct-search pressure low, cache successful results longer, and leave endpoint fallback disabled.
+The Docker image pins `ARG OPENSERP_REF=v0.7.2`.
+The Railway patch still adds Chromium `no-sandbox` / `disable-setuid-sandbox` launch flags; this is kept because Railway has previously failed Chromium startup without them.
+OpenSERP `v0.7.2` returns dedicated search responses as envelopes with a top-level `results` array.
+The service uses `config.yaml` to keep Google pressure low, prefer cache reuse for contact-search queries, and leave endpoint fallback disabled.
+RAYN contact search prefers Bing first, then DuckDuckGo, then Google when available. Serper is disabled by default and only used as an explicit emergency fallback outside this service.
+No CAPTCHA-solving is enabled here. `captcha.solver_enabled` remains `false`.
 Railway healthchecks must use `/health`.

@@ -68,7 +68,7 @@ Status control-plane update:
 - selected rows are claimed with `status = processing` before URL discovery or website enrichment.
 - terminal writeback maps outcomes to `completed`, `skipped`, `failed`, or `needs_review`.
 - tracking columns now store `run_id`, processing timestamps, attempt counts, retry eligibility, status reasons, and error details.
-- OpenSERP/browser scraping hit Google CAPTCHA and circuit-breaker failures from Railway egress, so the worker now uses the existing Serper Google API credential for stable Google SERP candidates.
+- At that checkpoint, OpenSERP/browser scraping hit Google CAPTCHA and circuit-breaker failures from Railway egress, so the worker temporarily used the existing Serper Google API credential for stable Google SERP candidates.
 - URL-pick preparation now preserves claim metadata through the LLM picker so terminal rows keep audit controls.
 - terminal URL-pick skips and canonical-domain duplicates now stamp `processing_finished_at`, not just enrichment outcomes.
 - homepage validation now accepts final HTTP `202`, and same-domain subpage `404`s are treated as non-fatal crawl warnings instead of `needs_review`.
@@ -89,7 +89,6 @@ Principles adopted:
 ## Open Decisions
 
 - exact worker test set.
-- search provider order.
 - whether raw search logs should be stored in NocoDB or execution-only.
 - whether parent-company extraction should be deterministic first, LLM-assisted second, or LLM-only after scrape.
 
@@ -98,7 +97,7 @@ Contact search plan:
 - next enrichment stage will search senior and managerial contacts after company URL enrichment.
 - OpenSERP queries will run role bucket by role bucket, starting with the most valuable outreach roles and moving down only if no deliverable email is found.
 - email generation will use only person-specific permutations against `canonical_domain`; generic inboxes are explicitly excluded.
-- No2Bounce is the validation authority, and only non-catch-all deliverable emails are accepted.
+- No2Bounce is the validation authority, and the final decision buckets are `sendable`, `risky_sendable`, and `rejected`.
 - exhausted contact searches will write `contact_search_status = contact_not_found`; contact search must not output `needs_review`.
 - detailed plan added in `docs/workflow/contact-search-design.md`.
 
@@ -121,7 +120,7 @@ Contact search implementation checkpoint:
 - added a separate contact-search webhook branch at `rayn-contact-search-batch`; it runs only after company enrichment is `completed`.
 - added contact-search NocoDB columns and a reproducible schema helper in `scripts/ensure_rayn_contact_columns.py`.
 - added `/contact-enrich` to the Crawl4AI worker for candidate extraction, person-specific email permutations, and No2Bounce polling.
-- contact search currently uses the existing Serper Google credential in n8n for role-driven public search results.
+- This initial checkpoint used the existing Serper Google credential in n8n for role-driven public search results; later entries document the OpenSERP-primary switch.
 - extraction is intentionally conservative: only official-domain pages, LinkedIn snippets, and professional public pages can create email permutations.
 - 5-row live dry test: rows 273, 274, and 276 found plausible person candidates; rows 275 and 277 ended `contact_not_found`.
 - No2Bounce is not configured in Railway yet, so candidate rows currently stop as `failed` with `email_validation_not_configured`; no `validated_email` is selected until `NO2BOUNCE_API_TOKEN` is added.
@@ -191,3 +190,20 @@ Contact email decision buckets:
 - `Deliverable`, `Valid`, and `OK` are `sendable`.
 - `Deliverable/AcceptAll` with `finalScore >= 90` and a named person is `risky_sendable`, even when `catchall=true`.
 - low-score accept-all, undeliverable, invalid, bad, bounce, spam, disposable, unknown, blocked, and incomplete results remain rejected.
+
+Contact search OpenSERP-primary routing:
+
+- contact-search fallback is now executed inside the Python worker with provider order `openserp_bing -> openserp_duckduckgo -> openserp_google`.
+- Serper is now disabled by default for contact search and only remains as an explicit emergency fallback behind `SERPER_FALLBACK_ENABLED=true`.
+- official-site preflight now falls through to alternate-contact OpenSERP search when a named person is found but every generated email is rejected.
+- preflight now passes `excluded_candidate_names`, `excluded_email_candidates`, and `fallback_reason` into fallback so the same person and rejected permutations are not retried.
+- provider failures now end rows as `failed/search_provider_failed` instead of false `contact_not_found`, and contact-search rows remain limited to `contact_found`, `contact_not_found`, `failed`, or `skipped`.
+- expanded fallback title recognition now includes long-form executive/security/technology titles such as `Chief Executive Officer`, `Chief Information Security Officer`, and `Chief Technology Officer`.
+
+Contact search OpenSERP acceptance checks:
+
+- synthetic preflight/fallback validation passed: preflight found `Jane Foo`, rejected all generated emails, then fallback excluded `jane foo` and accepted alternate contact `John Bar` with `john.bar@exampleclinic.sg`.
+- zero-Serper default validation passed with `SERPER_FALLBACK_ENABLED=false`: provider cascade attempted only `openserp_bing`, `openserp_duckduckgo`, and `openserp_google`, made zero Serper calls, and returned `failed/search_provider_failed` when every provider attempt failed.
+- live OpenSERP probe on April 27 for `Amaris B Clinic Singapore`: Bing returned `circuit breaker is open - engine temporarily disabled`, while DuckDuckGo and Google both returned normalized official-site results.
+- Google-failure isolation validation passed: a simulated Google CAPTCHA disabled only `openserp_google`, then the same query continued to Bing and still produced usable results.
+- No2Bounce decision bucket validation passed: `Deliverable`, `Valid`, and `OK` map to `sendable`; high-score named-person `Deliverable/AcceptAll` maps to `risky_sendable`; low-score or undeliverable accept-all results remain `rejected`.
