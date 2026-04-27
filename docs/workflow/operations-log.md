@@ -134,3 +134,9 @@ Contact search 10-row validation:
 - rows 278, 279, 280, 282, 283, 284, 286, 287, 288, and 289 all ended `contact_not_found` with `no_validated_person_found`.
 - this 10-row run did not spend No2Bounce validation on table rows because no contact candidate survived extraction.
 - next contact-quality fix should store search attempts for `contact_not_found` rows or pull raw Serper results during debugging, otherwise misses are hard to explain after the run.
+
+Contact search evidence update:
+
+- added `contact_search_evidence_json` as a long-text audit field for role queries, top Serper results, provider errors, and candidate counts.
+- worker writeback now records compact search evidence even when the final status is `contact_not_found`.
+- the April 27 control rerun showed Serper returning `400 Not enough credits` for every role query; those rows should be treated as `failed` with `search_provider_failed`, not as true `contact_not_found`.

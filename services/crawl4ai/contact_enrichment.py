@@ -141,6 +141,7 @@ class ContactResult:
     contact_search_status: str
     contact_search_reason: str
     contact_candidates: list[dict[str, Any]] = field(default_factory=list)
+    contact_search_evidence: dict[str, Any] = field(default_factory=dict)
     email_candidates: list[dict[str, Any]] = field(default_factory=list)
     selected_contact_name: str = ""
     selected_contact_role: str = ""
@@ -529,6 +530,47 @@ def result_email(result: dict[str, Any]) -> str:
     return ""
 
 
+def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    attempts = payload.get("search_attempts") if isinstance(payload.get("search_attempts"), list) else []
+    output_attempts: list[dict[str, Any]] = []
+    total_results = 0
+    error_count = 0
+    for attempt in attempts[:20]:
+        results = attempt.get("results") if isinstance(attempt, dict) and isinstance(attempt.get("results"), list) else []
+        error = compact(attempt.get("error") if isinstance(attempt, dict) else "", 300)
+        if error:
+            error_count += 1
+        total_results += len(results)
+        output_attempts.append(
+            {
+                "query": compact(attempt.get("query") if isinstance(attempt, dict) else "", 300),
+                "role": compact(attempt.get("role") if isinstance(attempt, dict) else "", 100),
+                "role_bucket": compact(attempt.get("role_bucket") if isinstance(attempt, dict) else "", 100),
+                "error": error,
+                "results_count": len(results),
+                "top_results": [
+                    {
+                        "rank": result.get("rank"),
+                        "title": compact(result.get("title"), 180),
+                        "url": compact(result.get("url"), 500),
+                        "snippet": compact(result.get("snippet"), 300),
+                    }
+                    for result in results[:3]
+                    if isinstance(result, dict)
+                ],
+            }
+        )
+    return {
+        "query_attempts_count": len(attempts),
+        "stored_attempts_count": len(output_attempts),
+        "total_results_count": total_results,
+        "search_error_count": error_count,
+        "candidate_count": len(candidates),
+        "candidate_names": [compact(candidate.get("name"), 120) for candidate in candidates[:10]],
+        "attempts": output_attempts,
+    }
+
+
 def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> ContactResult:
     row_id = payload.get("Id") or payload.get("row_id") or ""
     domain = compact(payload.get("canonical_domain")).lower().removeprefix("www.")
@@ -537,12 +579,26 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
 
     candidates = extract_candidates(payload)
     candidate_dicts = [candidate.to_dict() for candidate in candidates]
+    search_evidence = build_contact_search_evidence(payload, candidate_dicts)
     if not candidates:
+        if search_evidence["query_attempts_count"] and search_evidence["search_error_count"] >= search_evidence["query_attempts_count"]:
+            return ContactResult(
+                row_id=row_id,
+                contact_search_status="failed",
+                contact_search_reason="search_provider_failed",
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_validation_evidence={
+                    "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
+                    "skipped": "search_provider_failed",
+                },
+            )
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
             contact_search_reason="no_validated_person_found",
             contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
             email_validation_evidence={"configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()), "skipped": "no_candidates"},
         )
 
@@ -563,6 +619,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_status="contact_not_found",
             contact_search_reason="no_safe_email_permutations",
             contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
             email_candidates=email_candidates,
         )
 
@@ -573,6 +630,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_status="contact_not_found",
             contact_search_reason="dry_run_email_validation_skipped",
             contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
             email_candidates=email_candidates,
             email_validation_evidence=validation_evidence,
         )
@@ -585,6 +643,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_status="failed",
             contact_search_reason="email_validation_not_configured",
             contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
             email_candidates=email_candidates,
             email_validation_status="not_configured",
             email_validation_evidence=validation_evidence,
@@ -595,6 +654,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_status="failed",
             contact_search_reason="email_validation_provider_failed",
             contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
             email_candidates=email_candidates,
             email_validation_status=str(validation.get("error")),
             email_validation_evidence=validation_evidence,
@@ -614,6 +674,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_search_status="contact_found",
                 contact_search_reason="deliverable_person_specific_email_found",
                 contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
                 email_candidates=list(by_email.values()),
                 selected_contact_name=selected_candidate.name,
                 selected_contact_role=selected_candidate.role,
@@ -630,6 +691,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         contact_search_status="contact_not_found",
         contact_search_reason="no_deliverable_person_specific_email_found",
         contact_candidates=candidate_dicts,
+        contact_search_evidence=search_evidence,
         email_candidates=list(by_email.values()),
         email_validation_status="no_deliverable_email",
         email_validation_evidence=validation_evidence,
@@ -642,6 +704,7 @@ def build_patch(result: ContactResult) -> dict[str, Any]:
         "contact_search_status": result.contact_search_status,
         "contact_search_reason": result.contact_search_reason,
         "contact_candidates_json": json.dumps(result.contact_candidates, ensure_ascii=False),
+        "contact_search_evidence_json": json.dumps(result.contact_search_evidence, ensure_ascii=False),
         "selected_contact_name": result.selected_contact_name,
         "selected_contact_role": result.selected_contact_role,
         "selected_contact_seniority": result.selected_contact_seniority,

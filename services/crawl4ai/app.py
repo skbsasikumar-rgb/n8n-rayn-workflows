@@ -1059,6 +1059,7 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
             "contact_search_status": "failed",
             "contact_search_reason": "contact_worker_error",
             "contact_candidates_json": "[]",
+            "contact_search_evidence_json": json.dumps({"error": error_text}),
             "email_candidates_json": "[]",
             "email_validation_provider": "no2bounce",
             "email_validation_status": "worker_error",

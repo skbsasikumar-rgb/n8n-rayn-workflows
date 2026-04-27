@@ -12,6 +12,7 @@ CONTACT_COLUMNS: list[tuple[str, str, str]] = [
     ("contact_search_status", "SingleLineText", "text"),
     ("contact_search_reason", "SingleLineText", "text"),
     ("contact_candidates_json", "LongText", "text"),
+    ("contact_search_evidence_json", "LongText", "text"),
     ("selected_contact_name", "SingleLineText", "text"),
     ("selected_contact_role", "SingleLineText", "text"),
     ("selected_contact_seniority", "SingleLineText", "text"),
