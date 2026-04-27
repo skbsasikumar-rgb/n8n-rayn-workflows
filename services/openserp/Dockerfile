@@ -1,6 +1,6 @@
 FROM golang:1.24.6-bookworm AS build
 
-ARG OPENSERP_REF=e4a84d8914a8e283a18b4152650d092c9f009164
+ARG OPENSERP_REF=7a0fb21dafae258da0fc1d9a8a225cd6b5a0c9a6
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git \

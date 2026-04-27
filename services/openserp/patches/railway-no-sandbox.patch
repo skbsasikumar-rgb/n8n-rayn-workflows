@@ -13,16 +13,3 @@ index 5c6363c..8ae5f08 100644
  	if opts.IsHeadless {
  		l = l.HeadlessNew(true)
  	} else {
-diff --git a/core/server.go b/core/server.go
-index e8767f8..1de62b5 100644
---- a/core/server.go
-+++ b/core/server.go
-@@ -281,7 +281,7 @@ func (s *Server) handleDedicatedEndpoint(c *fiber.Ctx, engine SearchEngine, isIm
- 	WithRequest(completionCtx).
- 		WithFields(logrus.Fields{"action": action, "results_count": len(res)}).
- 		Info("Search completed")
--	return c.JSON(res)
-+	return c.JSON(fiber.Map{"results": res})
- }
- 
- // HealthStatus is returned by /health and summarizes service state.
