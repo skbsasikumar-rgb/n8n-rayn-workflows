@@ -241,6 +241,7 @@ class ContactSearchRequest(BaseModel):
     website_content: str = Field(default="", max_length=120000)
     search_attempts: list[dict[str, Any]] = Field(default_factory=list)
     validate_email: bool = True
+    site_fast_path_only: bool = False
 
 
 def compact_whitespace(value: Any) -> str:

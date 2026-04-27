@@ -613,6 +613,92 @@
       }
     },
     {
+      "id": "site-contact-preflight",
+      "name": "Site Contact Preflight",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1520,
+        700
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/contact-enrich') }}",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({}, $json, { search_attempts: [], validate_email: true, site_fast_path_only: true })) }}",
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "continueOnFail": true,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000
+    },
+    {
+      "id": "site-preflight-found",
+      "name": "Site Preflight Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1780,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "contact-found",
+              "leftValue": "={{ String($json.ok || ($json.body && $json.body.ok) || '') }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "prepare-site-preflight-patch",
+      "name": "Prepare Site Preflight Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        620
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'site_contact_preflight_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'site_contact_preflight_failed') })\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+      }
+    },
+    {
+      "id": "continue-contact-search-fallback",
+      "name": "Continue Contact Search Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2040,
+        860
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  return { json: source, pairedItem: item.pairedItem };\n});"
+      }
+    },
+    {
       "id": "build-contact-search-queries",
       "name": "Build Contact Search Queries",
       "type": "n8n-nodes-base.code",
@@ -623,7 +709,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const roleBuckets = [\n  { bucket: 'c_suite', seniority: 'executive', priority: 1, roles: ['CEO', 'Founder', 'Owner', 'Managing Director', 'Executive Director', 'General Manager'] },\n  { bucket: 'compliance_privacy_security', seniority: 'senior_manager', priority: 2, roles: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager'] },\n  { bucket: 'it_technology', seniority: 'manager', priority: 3, roles: ['IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'] },\n  { bucket: 'operations', seniority: 'manager', priority: 4, roles: ['Operations Manager', 'Ops Manager', 'Clinic Operations Manager', 'Practice Manager'] },\n  { bucket: 'clinic_leadership', seniority: 'manager', priority: 5, roles: ['Clinic Manager', 'Clinical Manager', 'Medical Director', 'Head Doctor', 'Principal Doctor'] },\n  { bucket: 'care_clinical', seniority: 'manager', priority: 6, roles: ['Head of Nursing', 'Nursing Manager', 'Clinical Lead', 'Care Manager'] }\n];\nconst maxQueries = Math.max(1, Number($env.CONTACT_SEARCH_MAX_QUERIES_PER_ROW || 12) || 12);\nconst output = [];\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  const companyName = String(row.company_name || '').replace(/\"/g, '').trim();\n  const homepageName = String(row.company_homepage_name || '').replace(/\"/g, '').trim();\n  const canonicalDomain = String(row.canonical_domain || '').replace(/^www\\./, '').trim();\n  const seen = new Set();\n  let count = 0;\n  for (const group of roleBuckets) {\n    for (const role of group.roles) {\n      const candidates = [companyName + ' Singapore ' + role];\n      if (homepageName && homepageName.toLowerCase() !== companyName.toLowerCase()) {\n        candidates.push(homepageName + ' Singapore ' + role);\n      }\n      if (canonicalDomain) {\n        candidates.push('site:' + canonicalDomain + ' \"' + role + '\"');\n      }\n      for (const query of candidates) {\n        const key = query.toLowerCase();\n        if (!query.trim() || seen.has(key)) continue;\n        seen.add(key);\n        output.push({\n          json: {\n            ...row,\n            contact_query: query,\n            contact_role: role,\n            contact_role_bucket: group.bucket,\n            contact_role_priority: group.priority,\n            contact_seniority: group.seniority,\n            body: { q: query, num: 10 }\n          },\n          pairedItem: item.pairedItem\n        });\n        count += 1;\n        if (count >= maxQueries) break;\n      }\n      if (count >= maxQueries) break;\n    }\n    if (count >= maxQueries) break;\n  }\n}\nreturn output;"
+        "jsCode": "const queryBundles = [\n  {\n    bucket: 'c_suite',\n    seniority: 'executive',\n    priority: 1,\n    role: 'CEO',\n    companyRoles: ['CEO', 'Founder', 'Owner', 'Managing Director', 'Executive Director', 'General Manager'],\n    domainTerms: ['Founder', 'Owner', 'CEO', 'Managing Director', 'Executive Director', 'General Manager']\n  },\n  {\n    bucket: 'clinic_leadership',\n    seniority: 'manager',\n    priority: 2,\n    role: 'Medical Director',\n    companyRoles: ['Medical Director', 'Principal Doctor', 'Head Doctor', 'Clinic Manager', 'Clinical Manager', 'Practice Manager', 'Operations Manager', 'Clinic Operations Manager'],\n    domainTerms: ['about us', 'team', 'leadership', 'management', 'founders', 'doctors', 'contact']\n  },\n  {\n    bucket: 'compliance_privacy_security',\n    seniority: 'senior_manager',\n    priority: 3,\n    role: 'DPO',\n    companyRoles: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager', 'IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'],\n    domainTerms: ['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'IT Manager', 'Head of IT', 'CTO']\n  }\n];\nconst maxQueries = Math.max(1, Number($env.CONTACT_SEARCH_MAX_QUERIES_PER_ROW || 6) || 6);\nfunction cleanName(value) {\n  return String(value || '').replace(/\"/g, '').trim();\n}\nfunction quote(value) {\n  return '\"' + String(value || '').replace(/\"/g, '').trim() + '\"';\n}\nfunction groupedTerms(values) {\n  const parts = values.map((value) => cleanName(value)).filter(Boolean);\n  return parts.length ? '(' + parts.map(quote).join(' OR ') + ')' : '';\n}\nfunction targetNames(companyName, homepageName) {\n  const names = [cleanName(companyName)];\n  const companyLower = companyName.toLowerCase();\n  const homepageLower = homepageName.toLowerCase();\n  if (homepageName && homepageLower !== companyLower && !homepageLower.includes(companyLower) && !companyLower.includes(homepageLower)) names.push(cleanName(homepageName));\n  return groupedTerms(Array.from(new Set(names.filter(Boolean))));\n}\nconst output = [];\nfor (const item of $input.all()) {\n  const row = item.json || {};\n  const companyName = cleanName(row.company_name);\n  const homepageName = cleanName(row.company_homepage_name);\n  const canonicalDomain = String(row.canonical_domain || '').replace(/^www\\./, '').trim();\n  const namesClause = targetNames(companyName, homepageName);\n  const effectiveMaxQueries = String(row.website_content || '').trim() ? Math.min(maxQueries, 4) : maxQueries;\n  const seen = new Set();\n  let count = 0;\n  for (const bundle of queryBundles) {\n    const candidates = [];\n    if (namesClause) {\n      candidates.push(namesClause + ' Singapore ' + groupedTerms(bundle.companyRoles));\n    }\n    if (canonicalDomain) {\n      candidates.push('site:' + canonicalDomain + ' ' + groupedTerms(bundle.domainTerms));\n    }\n    for (const query of candidates) {\n      const normalized = cleanName(query);\n      const key = normalized.toLowerCase();\n      if (!normalized || seen.has(key)) continue;\n      seen.add(key);\n      output.push({\n        json: {\n          ...row,\n          contact_query: normalized,\n          contact_role: bundle.role,\n          contact_role_bucket: bundle.bucket,\n          contact_role_priority: bundle.priority,\n          contact_seniority: bundle.seniority,\n          body: { q: normalized, num: 10 }\n        },\n        pairedItem: item.pairedItem\n      });\n      count += 1;\n      if (count >= effectiveMaxQueries) break;\n    }\n    if (count >= effectiveMaxQueries) break;\n  }\n}\nreturn output;"
       }
     },
     {
@@ -1060,6 +1146,57 @@
       ]
     },
     "Continue Contact Claim": {
+      "main": [
+        [
+          {
+            "node": "Site Contact Preflight",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Site Contact Preflight": {
+      "main": [
+        [
+          {
+            "node": "Site Preflight Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Site Preflight Found": {
+      "main": [
+        [
+          {
+            "node": "Prepare Site Preflight Patch",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue Contact Search Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Site Preflight Patch": {
+      "main": [
+        [
+          {
+            "node": "Patch Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Contact Search Fallback": {
       "main": [
         [
           {

@@ -155,3 +155,24 @@ Contact search post-top-up run:
 - actual No2Bounce usage was 171 email validations across 19 rows with validated contact candidates; rows without safe candidates did not spend No2Bounce validations.
 - final contact status summary: 8 `contact_found`, 40 `contact_not_found`, 2 blank/not eligible.
 - no Serper provider errors were observed after top-up.
+
+Contact search query reduction:
+
+- the contact-search query builder now uses three bundled search families instead of exploding into one query per role label.
+- each row now emits at most six queries by default: leadership, clinic or operations, and compliance or IT, each in one company-name form and one site-domain form.
+- the candidate extractor is unchanged, so evidence still maps back to the concrete matched role found in the result title or snippet.
+
+Contact search site-first pass:
+
+- official-site candidate extraction now runs before search-result-only matching and can recover named contacts directly from `website_content`.
+- rows with usable `website_content` now cap at four Serper queries instead of six, because official-domain evidence is treated as the first pass.
+- April 27 smoke rerun on rows 273, 274, 276, 280, and 286 finished with 4 queries per row and recovered row 276 (`Jayne Wee`) from homepage content while keeping row 274 as `contact_not_found`.
+- smoke result summary: 4 `contact_found` (`273`, `276`, `280`, `286`) and 1 `contact_not_found` (`274`).
+
+Contact search official-site preflight:
+
+- added a zero-Serper preflight branch after contact row claim: n8n calls `/contact-enrich` with `site_fast_path_only=true`, `search_attempts=[]`, and `validate_email=true`.
+- if preflight returns `contact_found`, the workflow writes the result immediately and skips Serper entirely.
+- if preflight cannot produce a deliverable person-specific email, the workflow falls back to the existing bundled Serper query path.
+- April 27 validation: row 280 returned `Etienne Ding` / `etienne@amplab.sg` with `query_attempts_count=0`.
+- April 27 five-row smoke: rows 276, 280, and 286 completed with zero Serper queries; row 273 used fallback and completed; row 274 used fallback and ended `contact_not_found`.

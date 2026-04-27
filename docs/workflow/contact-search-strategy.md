@@ -33,8 +33,9 @@ Recommended flow:
 NocoDB pending contact rows
   -> n8n contact-search batch workflow
   -> claim row as contact_search_status=processing
-  -> Python contact-search endpoint
-  -> Serper Google role search
+  -> Python contact-search endpoint in official-site-only preflight mode
+  -> write immediately if a deliverable official-site contact is found
+  -> Serper Google role search only when preflight cannot select a deliverable email
   -> candidate extraction and ranking
   -> person-company validation
   -> email permutation generation
@@ -78,17 +79,19 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary implemented interface: Serper Google endpoint via the existing n8n `serper` credential.
+Primary implemented interface: official-site preflight first, then Serper Google endpoint via the existing n8n `serper` credential only when needed.
 
 Reasoning: Railway-hosted browser SERP has previously hit Google CAPTCHA and circuit-breaker failures. Serper is already wired into the workflow and gives stable Google SERP candidates for this stage.
 
 Provider adapter behavior:
 
-1. Call Serper with simple role-specific Google queries.
-2. If Serper returns an empty result set, provider error, or timeout, mark the role attempt as `search_provider_failed`.
-3. Do not convert provider failures into `contact_not_found`.
-4. Stop the row as `failed` if all attempted queries fail due to provider errors.
-5. Add a fallback provider later only with explicit approval.
+1. Call `/contact-enrich` with `site_fast_path_only = true`, `search_attempts = []`, and `validate_email = true`.
+2. If preflight returns `contact_found`, write the contact result directly and spend zero Serper queries for that row.
+3. If preflight returns no deliverable official-site contact, call Serper with a small set of bundled Google queries instead of one query per role label.
+4. If Serper returns an empty result set, provider error, or timeout, mark the role attempt as `search_provider_failed`.
+5. Do not convert provider failures into `contact_not_found`.
+6. Stop the row as `failed` if all attempted queries fail due to provider errors.
+7. Add a fallback provider later only with explicit approval.
 
 ### Email Validation
 
@@ -110,7 +113,7 @@ Do not perform direct SMTP probing without explicit approval. Outbound port 25 i
 
 ## Role Queue Strategy
 
-Process role buckets in priority order. Within each bucket, search multiple role labels before moving down.
+Process official-site content before spending search queries. If no deliverable email is found, process role bundles in priority order. Each bundle carries multiple role labels so the row can usually be decided in six searches or fewer, and rows with useful `website_content` should stay at four searches or fewer.
 
 1. C-suite and owner
    - CEO
@@ -156,14 +159,19 @@ Stop once an accepted contact is found. Do not keep spending validation credits 
 
 Keep queries simple and auditable.
 
-For each role label, try:
+Current live query builder uses three bundled families:
 
-1. `{company_name} Singapore {role}`
-2. `{company_homepage_name} Singapore {role}` when different from `company_name`.
-3. `site:{canonical_domain} "{role}"`
-4. `site:{canonical_domain} "{person name}"` only after a public candidate is found.
+1. C-suite bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("CEO" OR "Founder" OR "Owner" OR "Managing Director" OR "Executive Director" OR "General Manager")`
+   - site query: `site:{canonical_domain} ("Founder" OR "Owner" OR "CEO" OR "Managing Director" OR "Executive Director" OR "General Manager")`
+2. Clinic leadership bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Medical Director" OR "Principal Doctor" OR "Head Doctor" OR "Clinic Manager" OR "Clinical Manager" OR "Practice Manager" OR "Operations Manager" OR "Clinic Operations Manager")`
+   - site query: `site:{canonical_domain} ("about us" OR "team" OR "leadership" OR "management" OR "founders" OR "doctors" OR "contact")`
+3. Compliance or IT bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "Head of Security" OR "Cybersecurity Manager" OR "IT Manager" OR "Head of IT" OR "CTO" OR "Technology Manager" OR "Systems Manager")`
+   - site query: `site:{canonical_domain} ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "IT Manager" OR "Head of IT" OR "CTO")`
 
-Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name as a secondary query.
+If `website_content` exists, cap the row at four total queries. If `website_content` is missing, allow up to six. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
 
 ## Candidate Extraction Strategy
 
@@ -188,6 +196,7 @@ Candidate record fields:
 
 Extraction should be deterministic first:
 
+- parse `website_content` before spending search queries and treat official-domain people mentions as highest-value evidence.
 - parse search result titles and snippets.
 - parse official-domain pages when public and accessible.
 - prefer official website, clinic team pages, about pages, leadership pages, professional directories, and public social snippets.

@@ -238,9 +238,9 @@ def role_near_name(evidence: str, name_start: int, name_end: int, role: str) -> 
 
 
 def name_matches_for_role(evidence: str, role: str) -> list[tuple[str, int, int]]:
-    role_pattern = f"(?i:{re.escape(role)})"
+    role_pattern = f"(?i:{re.escape(role)}s?)"
     honorific = r"(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?"
-    name = r"([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+){1,3})"
+    name = r"([A-Z][a-zA-Z'’-]+(?:[ \t]+[A-Z][a-zA-Z'’-]+){1,3})"
     patterns = [
         rf"{honorific}{name}(?:,\s*(?:[A-Z][A-Za-z.]{{1,10}}|MBBS|AuD|MD|PhD))*\s*,\s*\b{role_pattern}\b",
         rf"\b{role_pattern}\b(?:\s*[:,-]|\s+)(?!at\b|of\b|for\b)[^.|\n]{{0,50}}?{honorific}{name}",
@@ -258,6 +258,130 @@ def name_matches_for_role(evidence: str, role: str) -> list[tuple[str, int, int]
                 seen.add(key)
                 matches.append((candidate, match.start(1), match.end(1)))
     return matches
+
+
+def extract_candidates_from_website_content(
+    website_content: str,
+    company_name: str,
+    homepage_name: str,
+    canonical_domain: str,
+    best_url: str,
+) -> list[ContactCandidate]:
+    raw_content = str(website_content or "")[:50000]
+    normalized_content = compact(raw_content, 50000)
+    if not normalized_content or not company_match(normalized_content, company_name, homepage_name, canonical_domain):
+        return []
+
+    candidates: list[ContactCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for group in ROLE_BUCKETS:
+        for role in group["roles"]:
+            for name, name_start, name_end in name_matches_for_role(raw_content, role):
+                if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                    continue
+                if re.search(r"[’']s$", name):
+                    continue
+                if not role_near_name(raw_content, name_start, name_end, role):
+                    continue
+                parsed = parse_name(name)
+                if not parsed:
+                    continue
+                key = (name.lower(), role.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                first_name, last_name = parsed
+                candidates.append(
+                    ContactCandidate(
+                        name=name,
+                        role=role,
+                        seniority=group["seniority"],
+                        role_bucket=group["bucket"],
+                        role_priority=int(group["priority"]),
+                        source_url=best_url or f"https://{canonical_domain}/",
+                        source_type="official_domain",
+                        evidence_text=raw_content[max(0, name_start - 160) : min(len(raw_content), name_end + 200)],
+                        confidence="High",
+                        confidence_score=0.92,
+                        company_match=True,
+                        first_name=first_name,
+                        last_name=last_name,
+                    )
+                )
+    clinical_fallback_group = next((group for group in ROLE_BUCKETS if group["bucket"] == "care_clinical"), None)
+    if clinical_fallback_group:
+        for match in re.finditer(r"\bDr\.?\s+([A-Z][a-zA-Z'’-]+[ \t]+[A-Z][a-zA-Z'’-]+)\b", raw_content):
+            name = clean_name(match.group(1))
+            if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                continue
+            if re.search(r"[’']s$", name):
+                continue
+            key = (name.lower(), "clinical lead")
+            if key in seen:
+                continue
+            parsed = parse_name(name)
+            if not parsed:
+                continue
+            seen.add(key)
+            first_name, last_name = parsed
+            candidates.append(
+                ContactCandidate(
+                    name=name,
+                    role="Clinical Lead",
+                    seniority=clinical_fallback_group["seniority"],
+                    role_bucket=clinical_fallback_group["bucket"],
+                    role_priority=int(clinical_fallback_group["priority"]),
+                    source_url=best_url or f"https://{canonical_domain}/",
+                    source_type="official_domain",
+                    evidence_text=raw_content[max(0, match.start(1) - 120) : min(len(raw_content), match.end(1) + 200)],
+                    confidence="High",
+                    confidence_score=0.85,
+                    company_match=True,
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+            )
+    operations_fallback_group = next((group for group in ROLE_BUCKETS if group["bucket"] == "operations"), None)
+    if operations_fallback_group:
+        manager_patterns = [
+            r"\bManager\b\s*[:\-]\s*([A-Z][a-zA-Z'’-]+[ \t]+[A-Z][a-zA-Z'’-]+)",
+            r"([A-Z][a-zA-Z'’-]+[ \t]+[A-Z][a-zA-Z'’-]+)\s*,\s*Manager\b",
+            r"\bManaging (?!Director\b)[A-Z][a-zA-Z]+\b,\s*([A-Z][a-zA-Z'’-]+[ \t]+[A-Z][a-zA-Z'’-]+)",
+        ]
+        for pattern in manager_patterns:
+            for match in re.finditer(pattern, raw_content):
+                name = clean_name(match.group(1))
+                if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                    continue
+                if re.search(r"[’']s$", name):
+                    continue
+                key = (name.lower(), "practice manager")
+                if key in seen:
+                    continue
+                parsed = parse_name(name)
+                if not parsed:
+                    continue
+                seen.add(key)
+                first_name, last_name = parsed
+                candidates.append(
+                    ContactCandidate(
+                        name=name,
+                        role="Practice Manager",
+                        seniority=operations_fallback_group["seniority"],
+                        role_bucket=operations_fallback_group["bucket"],
+                        role_priority=int(operations_fallback_group["priority"]),
+                        source_url=best_url or f"https://{canonical_domain}/",
+                        source_type="official_domain",
+                        evidence_text=raw_content[max(0, match.start(1) - 120) : min(len(raw_content), match.end(1) + 200)],
+                        confidence="High",
+                        confidence_score=0.88,
+                        company_match=True,
+                        first_name=first_name,
+                        last_name=last_name,
+                    )
+                )
+    candidates.sort(key=lambda item: (item.role_priority, -item.confidence_score, item.name.lower()))
+    return candidates
 
 
 def source_type(url: str, canonical_domain: str) -> str:
@@ -280,9 +404,11 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
     company_name = compact(payload.get("company_name"))
     homepage_name = compact(payload.get("company_homepage_name"))
     canonical_domain = compact(payload.get("canonical_domain")).lower().removeprefix("www.")
+    best_url = compact(payload.get("best_url"), 500)
+    website_content = payload.get("website_content") if isinstance(payload.get("website_content"), str) else ""
     attempts = payload.get("search_attempts") if isinstance(payload.get("search_attempts"), list) else []
-    candidates: list[ContactCandidate] = []
-    seen: set[tuple[str, str]] = set()
+    candidates = extract_candidates_from_website_content(website_content, company_name, homepage_name, canonical_domain, best_url)
+    seen: set[tuple[str, str]] = {(candidate.name.lower(), candidate.role.lower()) for candidate in candidates}
 
     for attempt in attempts:
         query_role = compact(attempt.get("role"))
@@ -293,6 +419,7 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
             url = compact(result.get("url") or result.get("link"), 1000)
             if is_search_asset(url):
                 continue
+            stype = source_type(url, canonical_domain)
             evidence = compact(" | ".join(part for part in (title, snippet) if part), 1600)
             matched_role, group = role_match(evidence, query_role=query_role)
             if not group:
@@ -304,13 +431,12 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
                     continue
                 if not role_near_name(evidence, name_start, name_end, matched_role):
                     continue
-                if not company_near_name(evidence, name_start, name_end, company_name, homepage_name, canonical_domain):
+                if stype != "official_domain" and not company_near_name(evidence, name_start, name_end, company_name, homepage_name, canonical_domain):
                     continue
                 parsed = parse_name(name)
                 if not parsed:
                     continue
                 first_name, last_name = parsed
-                stype = source_type(url, canonical_domain)
                 if stype == "public_search_result":
                     continue
                 key = (name.lower(), matched_role.lower())
@@ -590,7 +716,16 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     if not domain:
         return ContactResult(row_id=row_id, contact_search_status="skipped", contact_search_reason="missing_canonical_domain")
 
-    candidates = extract_candidates(payload)
+    if payload.get("site_fast_path_only"):
+        candidates = extract_candidates_from_website_content(
+            payload.get("website_content") if isinstance(payload.get("website_content"), str) else "",
+            compact(payload.get("company_name")),
+            compact(payload.get("company_homepage_name")),
+            domain,
+            compact(payload.get("best_url"), 500),
+        )
+    else:
+        candidates = extract_candidates(payload)
     candidate_dicts = [candidate.to_dict() for candidate in candidates]
     search_evidence = build_contact_search_evidence(payload, candidate_dicts)
     if not candidates:
@@ -732,22 +867,77 @@ def build_patch(result: ContactResult) -> dict[str, Any]:
     }
 
 
-def build_role_queries(company_name: str, homepage_name: str, canonical_domain: str, max_queries: int = 12) -> list[dict[str, Any]]:
+def build_role_queries(
+    company_name: str,
+    homepage_name: str,
+    canonical_domain: str,
+    website_content: str = "",
+    max_queries: int = 6,
+) -> list[dict[str, Any]]:
+    def grouped_terms(values: list[str]) -> str:
+        terms = [f'"{compact(value, 120)}"' for value in values if compact(value, 120)]
+        return f"({' OR '.join(terms)})" if terms else ""
+
+    cleaned_company = compact(company_name, 160).replace('"', "")
+    cleaned_homepage = compact(homepage_name, 160).replace('"', "")
+    cleaned_domain = compact(canonical_domain, 160).lower().removeprefix("www.")
+    names = [cleaned_company]
+    company_lower = cleaned_company.lower()
+    homepage_lower = cleaned_homepage.lower()
+    if cleaned_homepage and homepage_lower != company_lower and company_lower not in homepage_lower and homepage_lower not in company_lower:
+        names.append(cleaned_homepage)
+    names_clause = grouped_terms(list(dict.fromkeys(name for name in names if name)))
+
+    bundles = [
+        {
+            "bucket": "c_suite",
+            "seniority": "executive",
+            "priority": 1,
+            "role": "CEO",
+            "company_roles": ["CEO", "Founder", "Owner", "Managing Director", "Executive Director", "General Manager"],
+            "domain_terms": ["Founder", "Owner", "CEO", "Managing Director", "Executive Director", "General Manager"],
+        },
+        {
+            "bucket": "clinic_leadership",
+            "seniority": "manager",
+            "priority": 2,
+            "role": "Medical Director",
+            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Clinic Manager", "Clinical Manager", "Practice Manager", "Operations Manager", "Clinic Operations Manager"],
+            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "contact"],
+        },
+        {
+            "bucket": "compliance_privacy_security",
+            "seniority": "senior_manager",
+            "priority": 3,
+            "role": "DPO",
+            "company_roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Head of Security", "Cybersecurity Manager", "IT Manager", "Head of IT", "CTO", "Technology Manager", "Systems Manager"],
+            "domain_terms": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "IT Manager", "Head of IT", "CTO"],
+        },
+    ]
+
     queries: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for group in ROLE_BUCKETS:
-        for role in group["roles"]:
-            raw_queries = [f"{company_name} Singapore {role}".strip()]
-            if homepage_name and homepage_name.lower() != company_name.lower():
-                raw_queries.append(f"{homepage_name} Singapore {role}".strip())
-            if canonical_domain:
-                raw_queries.append(f"site:{canonical_domain} \"{role}\"")
-            for query in raw_queries:
-                key = query.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                queries.append({"query": query, "role": role, "role_bucket": group["bucket"], "role_priority": group["priority"], "seniority": group["seniority"]})
-                if len(queries) >= max_queries:
-                    return queries
+    effective_max_queries = min(max_queries, 4) if compact(website_content, 2000) else max_queries
+    for bundle in bundles:
+        raw_queries: list[str] = []
+        if names_clause:
+            raw_queries.append(f"{names_clause} Singapore {grouped_terms(bundle['company_roles'])}".strip())
+        if cleaned_domain:
+            raw_queries.append(f"site:{cleaned_domain} {grouped_terms(bundle['domain_terms'])}".strip())
+        for query in raw_queries:
+            key = query.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            queries.append(
+                {
+                    "query": query,
+                    "role": bundle["role"],
+                    "role_bucket": bundle["bucket"],
+                    "role_priority": bundle["priority"],
+                    "seniority": bundle["seniority"],
+                }
+            )
+            if len(queries) >= effective_max_queries:
+                return queries
     return queries
