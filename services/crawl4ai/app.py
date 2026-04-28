@@ -239,6 +239,7 @@ class ContactSearchRequest(BaseModel):
     canonical_domain: str = Field(default="", max_length=300)
     best_url: str = Field(default="", max_length=2000)
     website_content: str = Field(default="", max_length=120000)
+    contact_search_run_id: str = Field(default="", max_length=120)
     search_queries: list[dict[str, Any]] = Field(default_factory=list)
     search_attempts: list[dict[str, Any]] = Field(default_factory=list)
     excluded_candidate_names: list[str] = Field(default_factory=list)

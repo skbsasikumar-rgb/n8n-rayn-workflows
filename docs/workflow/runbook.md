@@ -77,6 +77,36 @@ Verify:
 
 For enrichment reruns, keep the n8n Crawl4AI HTTP timeout higher than the per-page timeout budget. The current worker uses a 300s n8n request timeout because five-page public crawls can exceed 120s on heavier sites.
 
+## API Versus MCP Rule
+
+Use direct REST/API helpers for repeated operational work, bulk row reads, resets, execution polling, and provider diagnostics. Use MCP only for small inspection/control tasks where the tool response is naturally compact.
+
+Token-saving defaults:
+
+- NocoDB API is preferred for table scans, row status summaries, targeted resets, and writebacks because it can request only narrow fields and avoid large evidence columns.
+- n8n API is preferred for execution polling, cleanup, and workflow status checks because it can return compact execution metadata without loading workflow JSON.
+- Railway API is preferred for deployment/service diagnostics where a targeted GraphQL query can return only the needed service, deployment, or variable status.
+- MCP remains useful for quick one-off checks, schema discovery, or when the API shape is unknown, but do not use it to dump `website_content`, `website_scrape`, `search_evidence_json`, `contact_search_evidence_json`, `contact_candidates_json`, or `email_candidates_json`.
+- Keep API tokens in local environment variables only. Do not commit keys, paste them into docs, or bake them into workflow JSON.
+
+Local helper:
+
+```bash
+export NOCO_BASE_URL="https://nocodb-production-f802.up.railway.app"
+export NOCO_PROJECT_ID="pb7f1zou786xyqc"
+export NOCO_TABLE_ID="mey3zgihq7o4at9"
+export NOCO_API_TOKEN="<local-only-token>"
+python3 scripts/rayn_api_tools.py noco-contact-summary --where "(contact_search_status,neq,contact_found)" --limit 100
+```
+
+Useful compact commands:
+
+- `python3 scripts/rayn_api_tools.py noco-rows --ids 273,274 --fields Id,company_name,status,contact_search_status,contact_search_reason,validated_email`
+- `python3 scripts/rayn_api_tools.py noco-contact-summary --limit 100 --include-rows`
+- `python3 scripts/rayn_api_tools.py noco-reset-contact --ids 273,274 --reason targeted_contact_rerun --dry-run`
+- `python3 scripts/rayn_api_tools.py n8n-executions --workflow-id BQEa6M2pKYmuEYMV --limit 20`
+- `python3 scripts/rayn_api_tools.py railway-graphql --query 'query { projectToken { projectId environmentId } }' --rate-headers`
+
 ## Webhook Paths
 
 - `rayn-url-picker-v1`: single-row URL discovery path; may call the configured Google SERP provider and OpenRouter.

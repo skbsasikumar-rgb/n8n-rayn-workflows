@@ -93,6 +93,10 @@ Provider adapter behavior:
 7. Serper is disabled by default. It is emergency-only and runs only when `SERPER_FALLBACK_ENABLED=true`.
 8. Do not convert provider failures into `contact_not_found`.
 9. Stop the row as `failed` with `search_provider_failed` if every provider attempt fails.
+10. Treat a single timeout as an attempt-level miss only. Do not disable a provider on the first timeout.
+11. Timeout disable is threshold-based: temporarily disable only after `3` recent timeouts inside a `180` second window, using a short `90` second cooldown.
+12. Explicit CAPTCHA and circuit-open signals still disable providers immediately, but only for their own provider slot.
+13. Reset provider health on a new `contact_search_run_id` so stale failures do not poison later batches.
 
 ### Email Validation
 
@@ -168,6 +172,14 @@ Process official-site content before spending search queries. If the official si
    - Care Manager
 
 Stop once an accepted contact is found. Do not keep spending validation credits after success.
+
+Candidate progression is bounded and explicit:
+
+- continue from candidate 1 to candidate 2 and onward when the current candidate's emails are all rejected.
+- cap at `5` validated candidates per row by default.
+- cap at `8` generated person-specific permutations per candidate by default.
+- cap at `24` uncached No2Bounce validations per row by default.
+- if validated candidates existed but every checked permutation was rejected, end as `contact_not_found / candidates_found_but_no_sendable_email`.
 
 ## Query Strategy
 
@@ -247,19 +259,10 @@ Generate only person-specific emails using `canonical_domain`.
 
 Default patterns:
 
-1. `first.last`
-2. `first`
-3. `flast`
-4. `firstl`
-5. `first_last`
-6. `first-last`
-7. `last.first`
-8. `last`
-9. `f.last`
-10. `first.middle.last`
-11. `firstlast`
-12. `firstinitiallastname`
-13. `firstname_lastname`
+1. Two-token Western names keep the standard set headed by `first.last`, `first`, `firstlast`, `f.last`, `firstl`, `flast`, `last.first`, `first_last`, and `first-last`.
+2. Three- and four-token source-order names try family-name-first permutations before Westernized permutations.
+3. For `Tan Chin Beng Melvyn`, the source-order pass tries `tan.chinbengmelvyn`, `tan.melvyn`, `tanchinbengmelvyn`, and `tanmelvyn` before `melvyn.tan` and `melvyntan`.
+4. Each generated email candidate stores permutation metadata so evidence shows whether the worker used `source_order` or `western` naming.
 
 Hard exclusions:
 
@@ -298,6 +301,8 @@ Suggested first-test caps:
 - max emails per candidate: 8.
 - max No2Bounce emails per row: 24.
 
+Current worker behavior matches those contact caps and also records cache hits, requested No2Bounce counts, remaining row budget, and any budget-limited skipped permutations in `email_validation_evidence_json`.
+
 Scale caps only after measuring hit rate and cost.
 
 ## Output Strategy
@@ -330,7 +335,8 @@ When found:
 When exhausted:
 
 - `contact_search_status = contact_not_found`
-- `contact_search_reason = no_deliverable_person_specific_email_found`
+- `contact_search_reason = no_deliverable_person_specific_email_found` when no validated candidate reaches a meaningful validation attempt.
+- `contact_search_reason = candidates_found_but_no_sendable_email` when validated candidates existed but every checked permutation was rejected.
 - keep `contact_candidates_json` and `contact_search_evidence_json` for audit.
 - leave `validated_email` blank.
 
@@ -379,6 +385,15 @@ For each test row, report:
 - No2Bounce outcomes.
 - terminal `contact_search_status`.
 - reason for stopping.
+
+For batch executions, also capture the reconciliation summary emitted by the workflow:
+
+- `rows_selected`
+- `rows_terminal_first_pass`
+- `rows_stuck`
+- `rows_recovered`
+- `rows_terminal_final`
+- `rows_non_terminal_final`
 
 ## Build Phases
 

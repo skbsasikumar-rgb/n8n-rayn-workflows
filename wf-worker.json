@@ -537,7 +537,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,completed)~and(canonical_domain,notblank)~and(best_url,notblank)~and(duplicate_of_id,blank)~and(contact_search_status,eq,pending)&fields=Id,company_name,company_homepage_name,best_url,canonical_domain,duplicate_of_id,website_content,contact_search_status,contact_search_reason,contact_candidates_json,selected_contact_name,selected_contact_role,selected_contact_seniority,selected_contact_source_url,selected_contact_confidence,email_candidates_json,validated_email,email_validation_status,email_validation_provider,email_validation_evidence_json,contact_search_started_at,contact_search_finished_at,contact_search_run_id,CreatedAt,UpdatedAt&limit=5",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(status,eq,completed)~and(canonical_domain,notblank)~and(best_url,notblank)~and(duplicate_of_id,blank)~and(contact_search_status,eq,pending)&fields=Id,company_name,company_homepage_name,best_url,canonical_domain,duplicate_of_id,website_content,contact_search_status,contact_search_reason,contact_candidates_json,selected_contact_name,selected_contact_role,selected_contact_seniority,selected_contact_source_url,selected_contact_confidence,email_candidates_json,validated_email,email_validation_status,email_validation_provider,email_validation_evidence_json,contact_search_started_at,contact_search_finished_at,contact_search_run_id,CreatedAt,UpdatedAt&limit=20",
         "sendHeaders": false,
         "options": {
           "timeout": 60000
@@ -629,7 +629,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify(Object.assign({}, $json, { search_attempts: [], validate_email: true, site_fast_path_only: true })) }}",
         "options": {
-          "timeout": 180000
+          "timeout": 600000
         }
       },
       "continueOnFail": true,
@@ -657,7 +657,7 @@
           "conditions": [
             {
               "id": "contact-found",
-              "leftValue": "={{ String($json.preflight_action || ($json.body && $json.body.preflight_action) || '') }}",
+              "leftValue": "={{ (() => { const raw = $json.body !== undefined ? $json.body : $json; let payload = raw; if (typeof raw === 'string') { try { payload = JSON.parse(raw); } catch (_) { payload = {}; } } return String((payload && payload.preflight_action) || ''); })() }}",
               "rightValue": "stop",
               "operator": {
                 "type": "string",
@@ -681,7 +681,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  const preflightAction = String(payload.preflight_action || '').trim();\n  const preflightReason = String(payload.preflight_reason || '').trim();\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: preflightReason || String(payload.error || payload.message || 'preflight_worker_error'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || preflightReason || 'preflight_worker_error') }),\n    retry_eligible: 'true'\n  };\n  if (preflightAction === 'stop') {\n    patch.contact_search_reason = preflightReason || 'preflight_contact_found';\n    patch.retry_eligible = 'false';\n  } else {\n    patch.contact_search_status = 'failed';\n    patch.contact_search_reason = preflightReason || patch.contact_search_reason || 'preflight_worker_error';\n    patch.retry_eligible = 'true';\n  }\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+        "jsCode": "function parsePayload(json) {\n  const raw = json && json.body !== undefined ? json.body : json;\n  if (typeof raw === 'string') {\n    try { return JSON.parse(raw); } catch (_) { return { error: raw }; }\n  }\n  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};\n}\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nfunction sourceForPayload(claimedItems, payload, fallbackIndex) {\n  const patchId = String(payload?.patch?.Id || payload?.row_id || '').trim();\n  if (patchId) {\n    const byId = claimedItems.find((item) => String(item.json?.Id || '').trim() === patchId);\n    if (byId) return byId.json || {};\n  }\n  return claimedItems[fallbackIndex]?.json || {};\n}\nconst claimedItems = $('Continue Contact Claim').all();\nreturn $input.all().map((item, index) => {\n  const payload = parsePayload(item.json || {});\n  const source = sourceForPayload(claimedItems, payload, index);\n  const preflightAction = String(payload.preflight_action || '').trim();\n  const preflightReason = String(payload.preflight_reason || '').trim();\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: preflightReason || stringify(payload.error || payload.message || 'preflight_worker_error'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: stringify(payload.error || payload.message || preflightReason || 'preflight_worker_error') }),\n    retry_eligible: 'true'\n  };\n  if (preflightAction === 'stop' || patch.contact_search_status === 'contact_found') {\n    patch.contact_search_status = patch.contact_search_status || 'contact_found';\n    patch.contact_search_reason = preflightReason || patch.contact_search_reason || 'preflight_contact_found';\n    patch.retry_eligible = 'false';\n  } else if (preflightAction === 'fallback' && patch.contact_search_status && patch.contact_search_status !== 'failed') {\n    patch.contact_search_reason = preflightReason || patch.contact_search_reason || 'preflight_candidate_email_rejected';\n  } else {\n    patch.contact_search_status = 'failed';\n    patch.contact_search_reason = preflightReason || patch.contact_search_reason || 'preflight_worker_error';\n    patch.retry_eligible = 'true';\n  }\n  patch.contact_search_started_at = String(source.contact_search_started_at || patch.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || patch.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
       }
     },
     {
@@ -704,7 +704,7 @@
           "conditions": [
             {
               "id": "alternate-search-needed",
-              "leftValue": "={{ String($json.preflight_action || ($json.body && $json.body.preflight_action) || '') }}",
+              "leftValue": "={{ (() => { const raw = $json.body !== undefined ? $json.body : $json; let payload = raw; if (typeof raw === 'string') { try { payload = JSON.parse(raw); } catch (_) { payload = {}; } } return String((payload && payload.preflight_action) || ''); })() }}",
               "rightValue": "fallback",
               "operator": {
                 "type": "string",
@@ -748,7 +748,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-          "timeout": 180000
+          "timeout": 600000
         }
       },
       "continueOnFail": true,
@@ -767,7 +767,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const sourceItems = $('Build Contact Search Provider Queries').all();\nreturn $input.all().map((item, index) => {\n  const source = sourceItems[index]?.json || {};\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: String(payload.error || payload.message || 'contact_enrich_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: String(payload.error || payload.message || 'contact_enrich_failed') }),\n    retry_eligible: 'true'\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
+        "jsCode": "function parsePayload(json) {\n  const raw = json && json.body !== undefined ? json.body : json;\n  if (typeof raw === 'string') {\n    try { return JSON.parse(raw); } catch (_) { return { error: raw }; }\n  }\n  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};\n}\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nfunction sourceForPayload(claimedItems, payload, fallbackIndex) {\n  const patchId = String(payload?.patch?.Id || payload?.row_id || '').trim();\n  if (patchId) {\n    const byId = claimedItems.find((item) => String(item.json?.Id || '').trim() === patchId);\n    if (byId) return byId.json || {};\n  }\n  return claimedItems[fallbackIndex]?.json || {};\n}\nconst sourceItems = $('Build Contact Search Provider Queries').all();\nreturn $input.all().map((item, index) => {\n  const payload = parsePayload(item.json || {});\n  const patchId = String(payload?.patch?.Id || payload?.row_id || '').trim();\n  const source = (patchId ? sourceItems.find((candidate) => String(candidate.json?.Id || '').trim() === patchId) : sourceItems[index])?.json || {};\n  const patch = payload.patch && payload.patch.Id ? { ...payload.patch } : {\n    Id: source.Id,\n    contact_search_status: 'failed',\n    contact_search_reason: stringify(payload.error || payload.message || 'contact_enrich_failed'),\n    contact_candidates_json: '[]',\n    email_candidates_json: '[]',\n    email_validation_provider: 'no2bounce',\n    email_validation_status: 'worker_error',\n    email_validation_evidence_json: JSON.stringify({ error: stringify(payload.error || payload.message || 'contact_enrich_failed') }),\n    retry_eligible: 'true'\n  };\n  patch.contact_search_started_at = String(source.contact_search_started_at || patch.contact_search_started_at || '');\n  patch.contact_search_finished_at = patch.contact_search_finished_at || new Date().toISOString();\n  patch.contact_search_run_id = String(source.contact_search_run_id || patch.contact_search_run_id || '');\n  return { json: patch, pairedItem: item.pairedItem };\n});"
       }
     },
     {
@@ -803,6 +803,20 @@
       "waitBetweenTries": 1000
     },
     {
+      "id": "summarize-contact-search-batch",
+      "name": "Summarize Contact Search Batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3080,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const selectedItems = $('Continue Contact Claim').all().map((item) => item.json || {});\nconst firstPassItems = [\n  ...$('Prepare Site Preflight Patch').all().map((item) => item.json || {}),\n  ...$('Patch Contact Search Result').all().map((item) => item.json || {})\n];\nconst terminalStatuses = new Set(['contact_found', 'contact_not_found', 'failed', 'skipped']);\nconst selectedIds = selectedItems.map((row) => String(row.Id || '').trim()).filter(Boolean);\nconst selectedIdSet = new Set(selectedIds);\nconst patchedById = new Map();\nfor (const row of firstPassItems) {\n  const id = String(row.Id || '').trim();\n  if (!id || !selectedIdSet.has(id)) continue;\n  patchedById.set(id, row);\n}\nconst terminalIds = [];\nconst nonTerminalIds = [];\nfor (const id of selectedIds) {\n  const row = patchedById.get(id) || {};\n  const status = String(row.contact_search_status || '').trim();\n  if (terminalStatuses.has(status)) terminalIds.push(id);\n  else nonTerminalIds.push(id);\n}\nconst rowsSelected = selectedIds.length;\nconst rowsTerminalFirstPass = terminalIds.length;\nconst rowsStuck = Math.max(0, rowsSelected - rowsTerminalFirstPass);\nreturn [{\n  json: {\n    contact_search_run_summary: {\n      run_id: String(selectedItems[0]?.contact_search_run_id || $execution.id || ''),\n      rows_selected: rowsSelected,\n      rows_terminal_first_pass: rowsTerminalFirstPass,\n      rows_stuck: rowsStuck,\n      rows_recovered: 0,\n      rows_terminal_final: rowsTerminalFirstPass,\n      rows_non_terminal_final: nonTerminalIds.length,\n      selected_row_ids: selectedIds,\n      terminal_row_ids: terminalIds,\n      non_terminal_row_ids: nonTerminalIds\n    }\n  }\n}];"
+      }
+    },
+    {
       "id": "prepare-contact-search-fallback",
       "name": "Prepare Contact Search Fallback",
       "type": "n8n-nodes-base.code",
@@ -813,7 +827,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const claimedItems = $('Continue Contact Claim').all();\nfunction sourceIndex(item, fallback) {\n  const paired = item.pairedItem;\n  if (Array.isArray(paired) && Number.isInteger(paired[0]?.item)) return paired[0].item;\n  if (paired && Number.isInteger(paired.item)) return paired.item;\n  return fallback;\n}\nreturn $input.all().map((item, index) => {\n  const payload = (item.json?.body && typeof item.json.body === 'object' && !Array.isArray(item.json.body)) ? item.json.body : (item.json || {});\n  const source = claimedItems[sourceIndex(item, index)]?.json || {};\n  return {\n    json: {\n      ...source,\n      excluded_candidate_names: Array.isArray(payload.excluded_candidate_names) ? payload.excluded_candidate_names : [],\n      excluded_email_candidates: Array.isArray(payload.excluded_email_candidates) ? payload.excluded_email_candidates : [],\n      fallback_reason: String(payload.fallback_reason || 'fallback_to_openserp_alternate_contacts').trim(),\n      preflight_reason: String(payload.preflight_reason || '').trim()\n    },\n    pairedItem: item.pairedItem\n  };\n});"
+        "jsCode": "function parsePayload(json) {\n  const raw = json && json.body !== undefined ? json.body : json;\n  if (typeof raw === 'string') {\n    try { return JSON.parse(raw); } catch (_) { return { error: raw }; }\n  }\n  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};\n}\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nfunction sourceForPayload(claimedItems, payload, fallbackIndex) {\n  const patchId = String(payload?.patch?.Id || payload?.row_id || '').trim();\n  if (patchId) {\n    const byId = claimedItems.find((item) => String(item.json?.Id || '').trim() === patchId);\n    if (byId) return byId.json || {};\n  }\n  return claimedItems[fallbackIndex]?.json || {};\n}\nconst claimedItems = $('Continue Contact Claim').all();\nreturn $input.all().map((item, index) => {\n  const payload = parsePayload(item.json || {});\n  const source = sourceForPayload(claimedItems, payload, index);\n  return {\n    json: {\n      ...source,\n      excluded_candidate_names: Array.isArray(payload.excluded_candidate_names) ? payload.excluded_candidate_names : [],\n      excluded_email_candidates: Array.isArray(payload.excluded_email_candidates) ? payload.excluded_email_candidates : [],\n      fallback_reason: String(payload.fallback_reason || 'fallback_to_openserp_alternate_contacts').trim(),\n      preflight_reason: String(payload.preflight_reason || '').trim()\n    },\n    pairedItem: item.pairedItem\n  };\n});"
       }
     }
   ],
@@ -1205,6 +1219,17 @@
         [
           {
             "node": "Patch Contact Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Patch Contact Result": {
+      "main": [
+        [
+          {
+            "node": "Summarize Contact Search Batch",
             "type": "main",
             "index": 0
           }

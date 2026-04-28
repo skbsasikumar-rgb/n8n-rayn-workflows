@@ -147,16 +147,17 @@ OPENSERP_ROUTE_MAP = {
 }
 PROVIDER_DISABLE_SECONDS = {
     "captcha": 3600,
-    "circuit_open": 1800,
-    "timeout": 900,
-    "low_success": 900,
+    "circuit_open": 600,
+    "timeout": 90,
 }
 PROVIDER_HEALTH_WINDOW = 20
-PROVIDER_MIN_RECENT = 5
-PROVIDER_MIN_SUCCESS_RATIO = 0.2
+PROVIDER_TIMEOUT_DISABLE_THRESHOLD = 3
+PROVIDER_TIMEOUT_WINDOW_SECONDS = 180
 PROVIDER_LOCK = threading.Lock()
-PROVIDER_STATE = {
-    provider: {
+
+
+def new_provider_state() -> dict[str, Any]:
+    return {
         "total_recent_queries": 0,
         "success_count": 0,
         "empty_result_count": 0,
@@ -168,9 +169,10 @@ PROVIDER_STATE = {
         "disabled_until": 0.0,
         "disabled_reason": "",
         "recent_outcomes": deque(maxlen=PROVIDER_HEALTH_WINDOW),
+        "recent_timeout_timestamps": deque(maxlen=PROVIDER_HEALTH_WINDOW),
     }
-    for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")
-}
+PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
+PROVIDER_RESET_TOKEN = ""
 VALIDATION_CACHE: dict[str, dict[str, Any]] = {}
 MX_CACHE: dict[str, bool | None] = {}
 
@@ -222,6 +224,32 @@ def now_iso() -> str:
 def compact(value: Any, limit: int = 2000) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip()
     return text[:limit]
+
+
+def reset_provider_state(reset_token: str = "") -> None:
+    global PROVIDER_RESET_TOKEN
+    normalized = compact(reset_token, 160)
+    with PROVIDER_LOCK:
+        for provider in list(PROVIDER_STATE):
+            PROVIDER_STATE[provider] = new_provider_state()
+        PROVIDER_RESET_TOKEN = normalized
+
+
+def ensure_provider_state(reset_token: str) -> None:
+    normalized = compact(reset_token, 160)
+    if not normalized:
+        return
+    with PROVIDER_LOCK:
+        if normalized == PROVIDER_RESET_TOKEN:
+            return
+    reset_provider_state(normalized)
+
+
+def trim_recent_timeouts(state: dict[str, Any], now_ts: float) -> list[float]:
+    timestamps = state["recent_timeout_timestamps"]
+    while timestamps and now_ts - float(timestamps[0]) > PROVIDER_TIMEOUT_WINDOW_SECONDS:
+        timestamps.popleft()
+    return list(timestamps)
 
 
 def domain_from_url(value: str) -> str:
@@ -603,48 +631,63 @@ def email_permutations(candidate: ContactCandidate, domain: str) -> list[dict[st
     parts = name_parts(candidate.name)
     if len(parts) < 2:
         return []
-    family = safe_local_part(parts[0])
+    compact_parts = [safe_local_part(part) for part in parts]
+    family = compact_parts[0]
+    given_tail = compact_parts[-1]
+    source_given = "".join(compact_parts[1:])
     western_first = safe_local_part(candidate.first_name)
     western_last = safe_local_part(candidate.last_name)
-    given = safe_local_part(parts[-1])
-    middle = "".join(safe_local_part(part) for part in parts[1:-1])
-    all_parts = "".join(safe_local_part(part) for part in parts)
 
-    identity_pairs = []
-    if len(parts) >= 3 and given and family:
-        identity_pairs.append((given, family))
-    identity_pairs.append((western_first, western_last))
+    output: list[dict[str, str]] = []
+    seen: set[str] = set()
 
-    patterns: list[tuple[str, str]] = []
-    for index, (first, last) in enumerate(identity_pairs):
-        if not first or not last:
-            continue
-        suffix = "" if index == 0 else "_given_family"
-        patterns.extend(
-            [
-                (f"first.last{suffix}", f"{first}.{last}"),
-                (f"first{suffix}", first),
-                (f"firstlast{suffix}", f"{first}{last}"),
-                (f"f.last{suffix}", f"{first[0]}.{last}"),
-                (f"firstl{suffix}", f"{first}{last[0]}"),
-                (f"flast{suffix}", f"{first[0]}{last}"),
-                (f"last.first{suffix}", f"{last}.{first}"),
-                (f"first_last{suffix}", f"{first}_{last}"),
-                (f"first-last{suffix}", f"{first}-{last}"),
-            ]
-        )
-    if len(parts) >= 3 and all_parts:
-        patterns.append(("full_name_compact", all_parts))
-    if len(parts) >= 4 and family and middle and given:
-        patterns.append(("family_middle_given", f"{family}{middle}{given}"))
-
-    output = []
-    seen = set()
-    for pattern, local in patterns:
-        if local in GENERIC_LOCAL_PARTS or local in seen:
-            continue
+    def add(pattern: str, local: str, *, pattern_family: str, name_order: str) -> None:
+        if not local or local in GENERIC_LOCAL_PARTS or local in seen:
+            return
         seen.add(local)
-        output.append({"email": f"{local}@{domain}", "pattern": pattern, "status": "not_validated"})
+        output.append(
+            {
+                "email": f"{local}@{domain}",
+                "pattern": pattern,
+                "pattern_family": pattern_family,
+                "name_order": name_order,
+                "status": "not_validated",
+            }
+        )
+
+    if len(parts) == 2:
+        first = compact_parts[0]
+        last = compact_parts[-1]
+        if western_first and western_last:
+            first = western_first
+            last = western_last
+        add("first.last", f"{first}.{last}", pattern_family="western", name_order="given_family")
+        add("first", first, pattern_family="western", name_order="given_family")
+        add("firstlast", f"{first}{last}", pattern_family="western", name_order="given_family")
+        add("f.last", f"{first[0]}.{last}", pattern_family="western", name_order="given_family")
+        add("firstl", f"{first}{last[0]}", pattern_family="western", name_order="given_family")
+        add("flast", f"{first[0]}{last}", pattern_family="western", name_order="given_family")
+        add("last.first", f"{last}.{first}", pattern_family="western", name_order="family_given")
+        add("first_last", f"{first}_{last}", pattern_family="western", name_order="given_family")
+        add("first-last", f"{first}-{last}", pattern_family="western", name_order="given_family")
+        return output
+
+    add("family.given_source", f"{family}.{source_given}", pattern_family="source_order", name_order="family_given")
+    add("family.given_tail_source", f"{family}.{given_tail}", pattern_family="source_order", name_order="family_given")
+    add("familygiven_source", f"{family}{source_given}", pattern_family="source_order", name_order="family_given")
+    add("familygiven_tail_source", f"{family}{given_tail}", pattern_family="source_order", name_order="family_given")
+
+    western_variants = []
+    if given_tail and family:
+        western_variants.append((given_tail, family, "western_last_token"))
+    if western_first and western_last:
+        western_variants.append((western_first, western_last, "western_candidate_fields"))
+
+    for first, last, name_order in western_variants:
+        add("first.last", f"{first}.{last}", pattern_family="western", name_order=name_order)
+        add("firstlast", f"{first}{last}", pattern_family="western", name_order=name_order)
+        add("first_last", f"{first}_{last}", pattern_family="western", name_order=name_order)
+        add("first-last", f"{first}-{last}", pattern_family="western", name_order=name_order)
     return output
 
 
@@ -875,9 +918,12 @@ def configured_provider_order() -> list[str]:
 def provider_health(provider: str) -> dict[str, Any]:
     with PROVIDER_LOCK:
         state = PROVIDER_STATE[provider]
+        now_ts = time.time()
         recent = list(state["recent_outcomes"])
+        recent_timeouts = trim_recent_timeouts(state, now_ts)
         success_rate = (sum(1 for item in recent if item) / len(recent)) if recent else 0.0
         disabled_until = float(state["disabled_until"])
+        enabled = now_ts >= disabled_until
         return {
             "provider": provider,
             "total_recent_queries": int(state["total_recent_queries"]),
@@ -889,9 +935,13 @@ def provider_health(provider: str) -> dict[str, Any]:
             "http_error_count": int(state["http_error_count"]),
             "last_error": str(state["last_error"]),
             "health_score": round(success_rate, 3),
-            "enabled": time.time() >= disabled_until,
-            "disabled_reason": str(state["disabled_reason"]),
+            "enabled": enabled,
+            "disabled_reason": "" if enabled else str(state["disabled_reason"]),
             "disabled_until": disabled_until,
+            "recent_timeout_count": len(recent_timeouts),
+            "timeout_disable_threshold": PROVIDER_TIMEOUT_DISABLE_THRESHOLD,
+            "timeout_window_seconds": PROVIDER_TIMEOUT_WINDOW_SECONDS,
+            "reset_token": PROVIDER_RESET_TOKEN,
         }
 
 
@@ -908,6 +958,7 @@ def record_provider_health(
 ) -> dict[str, Any]:
     with PROVIDER_LOCK:
         state = PROVIDER_STATE[provider]
+        now_ts = time.time()
         state["total_recent_queries"] += 1
         state["recent_outcomes"].append(bool(success))
         if success:
@@ -916,26 +967,25 @@ def record_provider_health(
             state["empty_result_count"] += 1
         if captcha_detected:
             state["captcha_count"] += 1
-            state["disabled_until"] = time.time() + PROVIDER_DISABLE_SECONDS["captcha"]
+            state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["captcha"]
             state["disabled_reason"] = "captcha_detected"
         elif circuit_open:
             state["circuit_open_count"] += 1
-            state["disabled_until"] = time.time() + PROVIDER_DISABLE_SECONDS["circuit_open"]
+            state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["circuit_open"]
             state["disabled_reason"] = "circuit_open"
         elif timeout:
             state["timeout_count"] += 1
-            state["disabled_until"] = time.time() + PROVIDER_DISABLE_SECONDS["timeout"]
-            state["disabled_reason"] = "timeout"
+            state["recent_timeout_timestamps"].append(now_ts)
+            recent_timeouts = trim_recent_timeouts(state, now_ts)
+            if len(recent_timeouts) >= PROVIDER_TIMEOUT_DISABLE_THRESHOLD:
+                state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["timeout"]
+                state["disabled_reason"] = "timeout_threshold_exceeded"
         elif http_error:
             state["http_error_count"] += 1
+        elif success and float(state["disabled_until"]) <= now_ts:
+            state["disabled_reason"] = ""
         if error_text:
             state["last_error"] = compact(error_text, 300)
-
-        recent = list(state["recent_outcomes"])
-        success_rate = (sum(1 for item in recent if item) / len(recent)) if recent else 0.0
-        if len(recent) >= PROVIDER_MIN_RECENT and success_rate < PROVIDER_MIN_SUCCESS_RATIO and not success:
-            state["disabled_until"] = max(float(state["disabled_until"]), time.time() + PROVIDER_DISABLE_SECONDS["low_success"])
-            state["disabled_reason"] = state["disabled_reason"] or "low_success_rate"
     return provider_health(provider)
 
 
@@ -963,17 +1013,21 @@ def normalize_search_results(results: Any) -> list[dict[str, Any]]:
 
 
 def provider_attempt_template(provider: str, query: str, error_text: str = "") -> dict[str, Any]:
+    health = provider_health(provider)
     return {
         "provider": provider,
         "query": compact(query, 300),
         "results": [],
+        "result_count": 0,
         "provider_error": compact(error_text, 300),
         "captcha_detected": False,
         "circuit_open": False,
         "timeout": False,
         "http_error": False,
+        "provider_disabled": not health["enabled"],
+        "provider_disabled_reason": str(health["disabled_reason"]) if not health["enabled"] else "",
         "usable_results_count": 0,
-        "provider_health": provider_health(provider),
+        "provider_health": health,
     }
 
 
@@ -986,6 +1040,8 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     health = provider_health(provider)
     if not health["enabled"]:
         attempt = provider_attempt_template(provider, query, f"provider_disabled:{health['disabled_reason']}")
+        attempt["provider_disabled"] = True
+        attempt["provider_disabled_reason"] = str(health["disabled_reason"])
         attempt["provider_health"] = health
         return attempt
 
@@ -1032,11 +1088,14 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
         "provider": provider,
         "query": compact(query, 300),
         "results": results,
+        "result_count": len(results),
         "provider_error": raw_error,
         "captcha_detected": captcha_detected,
         "circuit_open": circuit_open,
         "timeout": timeout_hit,
         "http_error": http_error,
+        "provider_disabled": not health_after["enabled"],
+        "provider_disabled_reason": str(health_after["disabled_reason"]) if not health_after["enabled"] else "",
         "usable_results_count": len(results),
         "provider_health": health_after,
     }
@@ -1053,6 +1112,8 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
     health = provider_health(provider)
     if not health["enabled"]:
         attempt = provider_attempt_template(provider, query, f"provider_disabled:{health['disabled_reason']}")
+        attempt["provider_disabled"] = True
+        attempt["provider_disabled_reason"] = str(health["disabled_reason"])
         attempt["provider_health"] = health
         return attempt
 
@@ -1096,11 +1157,14 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         "provider": provider,
         "query": compact(query, 300),
         "results": results,
+        "result_count": len(results),
         "provider_error": raw_error,
         "captcha_detected": "captcha" in lowered_error,
         "circuit_open": "circuit_open" in lowered_error or "circuit open" in lowered_error,
         "timeout": timeout_hit,
         "http_error": http_error,
+        "provider_disabled": not health_after["enabled"],
+        "provider_disabled_reason": str(health_after["disabled_reason"]) if not health_after["enabled"] else "",
         "usable_results_count": len(results),
         "provider_health": health_after,
     }
@@ -1142,7 +1206,8 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def candidate_email_candidates(candidate: ContactCandidate, domain: str, excluded_emails: set[str]) -> list[dict[str, Any]]:
-    generated = email_permutations(candidate, domain)[:14]
+    max_emails = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "8")))
+    generated = email_permutations(candidate, domain)[: max(max_emails, 1)]
     output: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in generated:
@@ -1169,7 +1234,7 @@ def candidate_email_candidates(candidate: ContactCandidate, domain: str, exclude
     return output
 
 
-def validate_email_candidates(email_candidates: list[dict[str, Any]], domain: str) -> dict[str, Any]:
+def validate_email_candidates(email_candidates: list[dict[str, Any]], domain: str, max_remote_emails: int | None = None) -> dict[str, Any]:
     mx_exists = domain_has_mx_record(domain)
     cache_hits: list[str] = []
     cached_results: list[dict[str, Any]] = []
@@ -1183,13 +1248,32 @@ def validate_email_candidates(email_candidates: list[dict[str, Any]], domain: st
         else:
             missing_emails.append(email)
 
-    validation = {"configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()), "error": "", "results": [], "cache_hits": cache_hits, "mx_exists": mx_exists}
+    validation = {
+        "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
+        "error": "",
+        "results": [],
+        "cache_hits": cache_hits,
+        "mx_exists": mx_exists,
+        "requested_remote_email_count": 0,
+        "budget_limited": False,
+        "unvalidated_emails": [],
+    }
     if mx_exists is False:
         return validation
+    if max_remote_emails is not None and max_remote_emails >= 0 and len(missing_emails) > max_remote_emails:
+        validation["budget_limited"] = True
+        validation["unvalidated_emails"] = missing_emails[max_remote_emails:]
+        missing_emails = missing_emails[:max_remote_emails]
     if missing_emails:
+        validation["requested_remote_email_count"] = len(missing_emails)
+        budget_limited = bool(validation["budget_limited"])
+        unvalidated_emails = list(validation["unvalidated_emails"])
         validation = validate_no2bounce(missing_emails)
         validation["cache_hits"] = cache_hits
         validation["mx_exists"] = mx_exists
+        validation["requested_remote_email_count"] = len(missing_emails)
+        validation["budget_limited"] = budget_limited
+        validation["unvalidated_emails"] = unvalidated_emails
         if not validation.get("error"):
             for result in validation.get("results", []):
                 email = result_email(result)
@@ -1225,13 +1309,15 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
                 "query": compact(attempt.get("query") if isinstance(attempt, dict) else "", 300),
                 "role": compact(attempt.get("role") if isinstance(attempt, dict) else "", 100),
                 "role_bucket": compact(attempt.get("role_bucket") if isinstance(attempt, dict) else "", 100),
+                "result_count": len(results),
                 "provider_error": error,
                 "captcha_detected": bool(attempt.get("captcha_detected")) if isinstance(attempt, dict) else False,
                 "circuit_open": bool(attempt.get("circuit_open")) if isinstance(attempt, dict) else False,
                 "timeout": bool(attempt.get("timeout")) if isinstance(attempt, dict) else False,
+                "provider_disabled": bool(attempt.get("provider_disabled")) if isinstance(attempt, dict) else False,
+                "provider_disabled_reason": compact(attempt.get("provider_disabled_reason") if isinstance(attempt, dict) else "", 160),
                 "usable_results_count": int(attempt.get("usable_results_count") or len(results)) if isinstance(attempt, dict) else len(results),
                 "provider_health": attempt.get("provider_health") if isinstance(attempt, dict) and isinstance(attempt.get("provider_health"), dict) else {},
-                "results_count": len(results),
                 "top_results": [
                     {
                         "rank": result.get("rank"),
@@ -1258,6 +1344,7 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
         "excluded_candidate_names": sorted(normalized_name_set(payload.get("excluded_candidate_names"))),
         "excluded_email_candidates": sorted(normalized_email_set(payload.get("excluded_email_candidates"))),
         "fallback_reason": compact(payload.get("fallback_reason"), 160),
+        "provider_reset_token": compact(payload.get("contact_search_run_id") or payload.get("provider_reset_token"), 160),
         "provider_order": configured_provider_order(),
         "attempts": output_attempts,
     }
@@ -1270,6 +1357,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         return ContactResult(row_id=row_id, contact_search_status="skipped", contact_search_reason="missing_canonical_domain")
 
     payload = dict(payload)
+    ensure_provider_state(compact(payload.get("provider_reset_token") or payload.get("contact_search_run_id"), 160))
     excluded_names = normalized_name_set(payload.get("excluded_candidate_names"))
     excluded_emails = normalized_email_set(payload.get("excluded_email_candidates"))
     if not payload.get("site_fast_path_only") and not isinstance(payload.get("search_attempts"), list):
@@ -1318,20 +1406,64 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
 
     aggregated_email_candidates: list[dict[str, Any]] = []
     generated_any = False
-    validation_evidence: dict[str, Any] = {"configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()), "dry_run": not validate_email}
-    for candidate in candidates[:5]:
+    validated_candidate_attempted = False
+    max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "5")))
+    max_emails_per_candidate = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "8")))
+    max_no2bounce_emails_per_row = max(1, int(os.getenv("CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW", "24")))
+    remaining_no2bounce_budget = max_no2bounce_emails_per_row
+    validation_evidence: dict[str, Any] = {
+        "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
+        "dry_run": not validate_email,
+        "max_candidates_per_row": max_candidates,
+        "max_emails_per_candidate": max_emails_per_candidate,
+        "max_no2bounce_emails_per_row": max_no2bounce_emails_per_row,
+        "remaining_no2bounce_budget": max_no2bounce_emails_per_row,
+        "total_no2bounce_requested": 0,
+        "candidate_attempts": [],
+    }
+    for candidate in candidates[:max_candidates]:
         if candidate.confidence not in {"High", "Medium"}:
             continue
         email_candidates = candidate_email_candidates(candidate, domain, excluded_emails)
         if not email_candidates:
             continue
+        email_candidates = email_candidates[:max_emails_per_candidate]
         generated_any = True
         aggregated_email_candidates.extend(email_candidates)
+        candidate_summary = {
+            "name": candidate.name,
+            "role": candidate.role,
+            "source_url": candidate.source_url,
+            "email_candidates_count": len(email_candidates),
+            "remaining_no2bounce_budget_before": remaining_no2bounce_budget,
+        }
+        validation_evidence["candidate_attempts"].append(candidate_summary)
         if not validate_email:
             continue
 
-        validation = validate_email_candidates(email_candidates, domain)
-        validation_evidence = validation
+        cached_hits = sum(1 for item in email_candidates if VALIDATION_CACHE.get(compact(item.get("email"), 320).lower()) is not None)
+        if remaining_no2bounce_budget <= 0 and cached_hits < len(email_candidates):
+            for item in email_candidates:
+                email = compact(item.get("email"), 320).lower()
+                if VALIDATION_CACHE.get(email) is None:
+                    item["status"] = "budget_skipped"
+                    item["decision"] = "rejected"
+            candidate_summary["budget_exhausted"] = True
+            validation_evidence["budget_exhausted"] = True
+            break
+
+        validated_candidate_attempted = True
+        validation = validate_email_candidates(email_candidates, domain, max_remote_emails=remaining_no2bounce_budget)
+        remaining_no2bounce_budget = max(0, remaining_no2bounce_budget - int(validation.get("requested_remote_email_count") or 0))
+        validation_evidence["remaining_no2bounce_budget"] = remaining_no2bounce_budget
+        validation_evidence["total_no2bounce_requested"] = int(validation_evidence.get("total_no2bounce_requested") or 0) + int(validation.get("requested_remote_email_count") or 0)
+        candidate_summary["cache_hits"] = list(validation.get("cache_hits") or [])
+        candidate_summary["mx_exists"] = validation.get("mx_exists")
+        candidate_summary["requested_remote_email_count"] = int(validation.get("requested_remote_email_count") or 0)
+        candidate_summary["budget_limited"] = bool(validation.get("budget_limited"))
+        candidate_summary["remaining_no2bounce_budget_after"] = remaining_no2bounce_budget
+        if validation.get("unvalidated_emails"):
+            candidate_summary["unvalidated_emails"] = list(validation.get("unvalidated_emails") or [])
         if not validation.get("configured"):
             return ContactResult(
                 row_id=row_id,
@@ -1372,6 +1504,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 by_email[email]["decision"] = decision
                 if decision in {"sendable", "risky_sendable"}:
                     by_email[email]["accepted"] = True
+                    candidate_summary["accepted_email"] = email
+                    candidate_summary["accepted_decision"] = decision
                     return ContactResult(
                         row_id=row_id,
                         contact_search_status="contact_found",
@@ -1388,6 +1522,10 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                         email_validation_status=decision,
                         email_validation_evidence=validation_evidence,
                     )
+        for email in validation.get("unvalidated_emails", []):
+            if email in by_email:
+                by_email[email]["status"] = "budget_skipped"
+                by_email[email]["decision"] = "rejected"
         excluded_emails.update(by_email.keys())
 
     if not generated_any:
@@ -1413,7 +1551,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     return ContactResult(
         row_id=row_id,
         contact_search_status="contact_not_found",
-        contact_search_reason="no_deliverable_person_specific_email_found",
+        contact_search_reason="candidates_found_but_no_sendable_email" if validated_candidate_attempted else "no_deliverable_person_specific_email_found",
         contact_candidates=candidate_dicts,
         contact_search_evidence=search_evidence,
         email_candidates=aggregated_email_candidates,

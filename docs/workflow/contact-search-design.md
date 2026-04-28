@@ -52,11 +52,13 @@ For each eligible company:
 7. Validate company association using official-domain evidence, public profile text, search snippets, and fuzzy company-name matching.
 8. Generate email permutations only for validated people.
 9. Exclude preflight candidate names and already-rejected email permutations before fallback validation.
-10. Send generated emails to No2Bounce in small batches only after local person/domain checks pass.
-11. Poll No2Bounce until completion or timeout.
-12. Accept the first candidate with a `sendable` or `risky_sendable` result.
-13. Stop searching once an accepted contact is found.
-14. If all role buckets are exhausted, write `contact_search_status = contact_not_found`.
+10. Progress candidate-by-candidate when emails are rejected: continue from candidate 1 to candidate 2 and onward until a capped search budget is exhausted.
+11. Send generated emails to No2Bounce in small batches only after local person/domain checks pass.
+12. Poll No2Bounce until completion or timeout.
+13. Accept the first candidate with a `sendable` or `risky_sendable` result.
+14. Stop searching once an accepted contact is found.
+15. If validated candidates were found but every person-specific permutation was rejected, write `contact_search_reason = candidates_found_but_no_sendable_email`.
+16. If all role buckets are exhausted with no validated person candidate, write `contact_search_status = contact_not_found`.
 
 ## Query Shape
 
@@ -76,21 +78,12 @@ Do not require LinkedIn. Public LinkedIn snippets can be used as evidence, but l
 
 ## Email Permutations
 
-Generate person-specific patterns in this order:
+Generate person-specific patterns in a bounded order:
 
-1. `first.last@domain`
-2. `first@domain`
-3. `flast@domain`
-4. `firstl@domain`
-5. `first_last@domain`
-6. `first-last@domain`
-7. `last.first@domain`
-8. `last@domain`
-9. `f.last@domain`
-10. `first.middle.last@domain`
-11. `firstlast@domain`
-12. `firstinitiallastname@domain`
-13. `firstname_lastname@domain`
+1. For 2-token Western names, keep the standard sequence headed by `first.last`, `first`, `firstlast`, `f.last`, `firstl`, `flast`, `last.first`, and underscore or hyphen variants.
+2. For 3- and 4-token source-order names, try source-order family-name patterns first, such as `family.givenall`, `family.giventail`, `familygivenall`, and `familygiventail`.
+3. After the source-order pass, try Westernized tail-first variants such as `melvyn.tan` and `melvyntan` when the evidence supports that reading.
+4. Cap generation at `8` permutations per candidate, `5` candidates per row, and `24` No2Bounce validations per row by default.
 
 Normalize names by lowercasing, removing punctuation, stripping honorifics, and transliterating diacritics. Do not generate role or generic mailbox addresses.
 
@@ -111,6 +104,14 @@ Reject:
 - emails on domains that do not match `canonical_domain`.
 
 Use MX lookup only as a cheap precheck when DNS support is available. Do not perform direct SMTP probing.
+
+OpenSERP timeout handling is deliberately conservative:
+
+- a single provider timeout is recorded as an attempt-level failure only.
+- timeout does not disable a provider on the first miss.
+- a provider is temporarily disabled for timeout only after `3` recent timeouts inside a `180` second window.
+- timeout cooldown is short (`90` seconds by default), while explicit CAPTCHA and circuit-open signals use longer cooldowns.
+- provider health resets on a new `contact_search_run_id` so one poisoned batch does not suppress later runs indefinitely.
 
 ## Output Fields
 
@@ -140,6 +141,15 @@ Recommended contact-search fields:
 - `permutation_pattern`: pattern that produced the accepted email.
 - `discovered_at`: accepted contact timestamp.
 
+Execution-level batch reconciliation lives in the n8n run output, not in the lead row. Each contact batch emits:
+
+- `rows_selected`
+- `rows_terminal_first_pass`
+- `rows_stuck`
+- `rows_recovered`
+- `rows_terminal_final`
+- `rows_non_terminal_final`
+
 ## Status Contract
 
 The main enrichment `status` remains the row-level processing source of truth. Contact search should use `contact_search_status` for contact-stage outcomes so company enrichment results are not overwritten.
@@ -152,6 +162,12 @@ Contact terminal statuses:
 - `skipped`: row is not eligible, such as missing `canonical_domain` or duplicate row.
 
 Do not output `needs_review` from contact search.
+
+Current terminal reason split:
+
+- `candidates_found_but_no_sendable_email`: validated candidates existed, but all person-specific permutations were rejected.
+- `no_deliverable_person_specific_email_found`: no accepted email was found and no validated candidate reached a successful validation outcome.
+- `search_provider_failed`: provider failures prevented a reliable search result and the row should stay retryable.
 
 ## Implementation Plan
 

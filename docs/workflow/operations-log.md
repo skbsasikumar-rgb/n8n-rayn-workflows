@@ -2,6 +2,16 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-04-28
+
+API token-saving setup:
+
+- added a compact API helper for NocoDB, n8n, and Railway operational checks.
+- NocoDB table inspection and contact-search summaries should use narrow-field API calls instead of MCP dumps when checking many rows.
+- n8n execution polling should use the API helper for compact execution metadata.
+- Railway diagnostics should use targeted GraphQL queries rather than broad dashboard/tool payloads.
+- local secrets must stay in environment variables; no API keys are stored in repo files.
+
 ## 2026-04-25
 
 State after reset:
@@ -207,3 +217,22 @@ Contact search OpenSERP acceptance checks:
 - live OpenSERP probe on April 27 for `Amaris B Clinic Singapore`: Bing returned `circuit breaker is open - engine temporarily disabled`, while DuckDuckGo and Google both returned normalized official-site results.
 - Google-failure isolation validation passed: a simulated Google CAPTCHA disabled only `openserp_google`, then the same query continued to Bing and still produced usable results.
 - No2Bounce decision bucket validation passed: `Deliverable`, `Valid`, and `OK` map to `sendable`; high-score named-person `Deliverable/AcceptAll` maps to `risky_sendable`; low-score or undeliverable accept-all results remain `rejected`.
+
+Contact search timeout and fallback hardening:
+
+- OpenSERP timeout handling is now less aggressive: a single timeout is recorded per attempt and the provider cascade continues to the next provider without globally disabling the first provider.
+- timeout-based provider disable now happens only after `3` recent timeouts inside a `180` second window, with a short `90` second cooldown; CAPTCHA and circuit-open still disable immediately with longer cooldowns.
+- provider health now resets on a new `contact_search_run_id`, so a poisoned batch no longer suppresses later rows forever.
+- fallback candidate progression now continues past a rejected first candidate up to the configured caps of `5` candidates, `8` emails per candidate, and `24` No2Bounce validations per row.
+- contact-search misses now distinguish `candidates_found_but_no_sendable_email` from `no_deliverable_person_specific_email_found`.
+- multi-token source-order names now generate source-order family-name permutations before Westernized variants; `Tan Chin Beng Melvyn` now yields `tan.chinbengmelvyn`, `tan.melvyn`, `tanchinbengmelvyn`, `tanmelvyn`, and then `melvyn.tan`.
+- the contact n8n branch now emits a batch reconciliation summary with `rows_selected`, `rows_terminal_first_pass`, `rows_stuck`, `rows_recovered`, `rows_terminal_final`, and `rows_non_terminal_final`.
+
+Local acceptance checks for this patch:
+
+- timeout isolation passed: Bing timeout did not disable Bing on the first miss, and the cascade continued to DuckDuckGo and Google.
+- repeated-timeout disable passed: Bing became temporarily disabled only after the third timeout, with disabled reason `timeout_threshold_exceeded`.
+- alternate-candidate progression passed: a rejected first candidate fell through to candidate 2 and selected the second candidate's deliverable email while staying within the row budget.
+- reject-all progression passed: validated candidates with only rejected emails ended as `contact_not_found / candidates_found_but_no_sendable_email`.
+- row-278-style name handling passed: source-order permutations are emitted first, and Westernized `melvyn.tan` remains available later in the list.
+- zero-Serper default still passed: provider order remained `openserp_bing -> openserp_duckduckgo -> openserp_google` with no Serper default path.
