@@ -287,3 +287,10 @@ Contact search row-runner fix:
 - the row runner keeps DuckDuckGo then Google as the only active OpenSERP providers, with Serper still disabled by default.
 - worker service now requires the NocoDB env vars `NOCO_BASE_URL`, `NOCO_PROJECT_ID`, `NOCO_TABLE_ID`, and `NOCO_API_TOKEN` because contact row selection and writeback moved from n8n into `/contact-enrich-batch`.
 - live smoke test after deploy selected row 278 in dry-run mode, then processed rows 278, 279, 280, 282, and 283 with terminal results: 2 `contact_found` total so far including cached row 276, 1 new `contact_not_found`, and 3 new retryable failures caused by No2Bounce poll timeout or search-provider failure.
+
+Dependency update pass:
+
+- updated the worker pins to `crawl4ai==0.8.6`, `fastapi==0.136.1`, `requests==2.33.1`, `beautifulsoup4==4.14.3`, and `uvicorn[standard]==0.46.0`.
+- kept `playwright==1.58.0` because it is current, and kept `lxml==5.4.0` because `crawl4ai==0.8.6` requires `lxml~=5.3` and rejects `lxml 6.x`.
+- updated the n8n base image pin from `n8nio/n8n:2.12.3` to `n8nio/n8n:2.19.0`; Docker Hub metadata confirms the tag exists.
+- dependency resolution was checked with the worker virtualenv's `pip --dry-run`; Docker image build was not checked locally because Docker is not installed on this machine.
