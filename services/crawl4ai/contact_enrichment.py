@@ -938,7 +938,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def configured_provider_order() -> list[str]:
     raw = os.getenv(
         "CONTACT_SEARCH_PROVIDER_ORDER",
-        "openserp_bing,openserp_duckduckgo,openserp_google",
+        "openserp_duckduckgo,openserp_google,openserp_bing",
     ).strip()
     output: list[str] = []
     seen: set[str] = set()

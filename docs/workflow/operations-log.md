@@ -244,3 +244,11 @@ Provider degradation follow-up:
 - timeout-only state is now row-scoped through the contact-search run token, so three timeouts on one row no longer poison later rows in the same batch.
 - manual provider diagnostics are now exposed through `/contact-provider-health`, and manual reset is available through `/contact-provider-health/reset`.
 - no CAPTCHA-solving, stealth automation, or proxy-rotation bypass tooling was added.
+
+Live OpenSERP provider poll:
+
+- tested five contact-search-style queries across `/bing/search`, `/duck/search`, and `/google/search`.
+- DuckDuckGo had `5/5` usable responses, average `10` results, and average latency around `3.8s`.
+- Google had `5/5` usable responses, average `9.4` results, and average latency around `8.5s`.
+- Bing had `0/5` usable responses: one timeout followed by four `circuit breaker is open - engine temporarily disabled` responses.
+- contact-search default provider order is now `openserp_duckduckgo -> openserp_google -> openserp_bing`, with Serper still disabled by default.

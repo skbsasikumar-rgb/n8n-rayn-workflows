@@ -183,7 +183,7 @@ Provider cooldown contract:
 2. Create a standalone contact-search branch or workflow after website enrichment is stable.
 3. Select rows where company enrichment is complete, `canonical_domain` is present, and `contact_search_status = pending`.
 4. Claim each row with `contact_search_status = processing` and contact run metadata.
-5. Run role-priority OpenSERP searches with conservative rate limits and provider order `bing -> duckduckgo -> google`.
+5. Run role-priority OpenSERP searches with conservative rate limits and provider order `duckduckgo -> google -> bing`.
 6. Extract and rank person candidates deterministically first.
 7. Generate person-specific permutations.
 8. Validate with No2Bounce.
