@@ -857,7 +857,7 @@ def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
-def validate_no2bounce(emails: list[str], timeout_seconds: int = 90) -> dict[str, Any]:
+def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) -> dict[str, Any]:
     token = os.getenv("NO2BOUNCE_API_TOKEN", "").strip()
     if not token:
         return {"configured": False, "error": "NO2BOUNCE_API_TOKEN is not configured", "results": []}
@@ -890,6 +890,9 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int = 90) -> dict[str
     if not tracking_id:
         return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
 
+    if timeout_seconds is None:
+        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "30")))
+    poll_interval_seconds = max(2, int(os.getenv("NO2BOUNCE_POLL_INTERVAL_SECONDS", "3")))
     deadline = time.time() + timeout_seconds
     poll_payload: Any = {}
     while time.time() < deadline:
@@ -908,7 +911,7 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int = 90) -> dict[str
                 "poll_response": sanitize_no2bounce_payload(poll_payload),
                 "results": results,
             }
-        time.sleep(3)
+        time.sleep(poll_interval_seconds)
     return {
         "configured": True,
         "error": "poll_timeout",
