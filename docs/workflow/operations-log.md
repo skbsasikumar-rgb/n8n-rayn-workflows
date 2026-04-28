@@ -278,3 +278,10 @@ Full rerun after Bing removal:
 - contact search was not safe to run at the old scale: two 20-row batches saturated the worker, and even a 5-row batch left 4 rows stuck in `processing` while No2Bounce polling waited.
 - reduced the contact-search NocoDB batch selector from 20 to 5 and bounded No2Bounce polling with `NO2BOUNCE_POLL_TIMEOUT_SECONDS`, defaulting to 30 seconds.
 - contact rerun result after recovery: row 276 found `jayne@amber-pharmacy.com` from cache with zero new No2Bounce spend; rows 273, 274, 275, and 277 are marked retryable failed due contact batch timeout; the remaining 40 completed company rows are left as `contact_search_status = pending`.
+
+Contact search row-runner fix:
+
+- added `/contact-enrich-batch` to the worker so contact-search selection, row claiming, preflight, fallback search, No2Bounce validation, and NocoDB writeback happen inside one row-level worker path.
+- rewired the contact-search webhook to call the worker batch runner directly; the old multi-item n8n contact branch remains in the file for reference but is no longer connected from the webhook trigger.
+- default contact webhook batch size is one row unless `CONTACT_SEARCH_BATCH_LIMIT` or request `limit` is supplied, which prevents one slow No2Bounce validation from leaving several rows stuck in `processing`.
+- the row runner keeps DuckDuckGo then Google as the only active OpenSERP providers, with Serper still disabled by default.

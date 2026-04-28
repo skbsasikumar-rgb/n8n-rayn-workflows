@@ -31,18 +31,21 @@ Recommended flow:
 
 ```text
 NocoDB pending contact rows
-  -> n8n contact-search batch workflow
-  -> claim row as contact_search_status=processing
-  -> Python contact-search endpoint in official-site-only preflight mode
+  -> n8n contact-search webhook trigger
+  -> Python /contact-enrich-batch runner selects and claims one small batch
+  -> worker claims each row as contact_search_status=processing
+  -> worker runs official-site-only preflight
   -> write immediately if a deliverable official-site contact is found
   -> if preflight candidate emails are rejected, fall through to alternate-contact search
-  -> Python contact-search endpoint executes OpenSERP provider cascade
+  -> worker executes OpenSERP provider cascade
   -> candidate extraction and ranking
   -> person-company validation
   -> email permutation generation
   -> No2Bounce validation
-  -> NocoDB contact writeback
+  -> worker writes the terminal NocoDB contact result per row
 ```
+
+The contact webhook now calls the Python batch runner directly instead of holding a multi-item n8n branch open. This keeps row claiming, No2Bounce polling, fallback search, and final writeback inside one row-level worker transaction, so one slow validation cannot leave the whole n8n branch stuck in `processing`.
 
 ## Eligibility Rules
 
@@ -80,15 +83,15 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary implemented interface: official-site preflight first, then OpenSERP provider cascade inside the Python worker.
+Primary implemented interface: worker-side `/contact-enrich-batch` row runner. It performs official-site preflight first, then OpenSERP provider cascade inside the Python worker when fallback is needed.
 
 Provider adapter behavior:
 
-1. Call `/contact-enrich` with `site_fast_path_only = true`, `search_attempts = []`, and `validate_email = true`.
+1. n8n calls `/contact-enrich-batch` with a small `limit` and the worker selects eligible `pending` rows.
 2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
 3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP with provider order `openserp_duckduckgo -> openserp_google`.
 4. If preflight returns `preflight_candidate_email_rejected`, run the same OpenSERP fallback but exclude the preflight candidate names and rejected email permutations.
-5. If preflight returns `preflight_validation_provider_failed` or `preflight_worker_error`, stop the row as `failed` and make it retryable. Do not call OpenSERP.
+5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call OpenSERP.
 6. For each bundled query, call the first healthy provider. If usable results are fewer than five or the provider fails, try the next provider in order.
 7. Serper is disabled by default. It is emergency-only and runs only when `SERPER_FALLBACK_ENABLED=true`.
 8. Do not convert provider failures into `contact_not_found`.

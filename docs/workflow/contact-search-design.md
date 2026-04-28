@@ -46,7 +46,7 @@ For each eligible company:
 1. Read `company_name`, `company_homepage_name`, `canonical_domain`, `best_url`, and `website_content`.
 2. Run official-site preflight first against `website_content`.
 3. If preflight finds a deliverable contact, stop and write the result immediately.
-4. If preflight finds no usable person candidate, or the preflight candidate's emails are all rejected, run bundled OpenSERP queries with provider order `bing -> duckduckgo -> google`.
+4. If preflight finds no usable person candidate, or the preflight candidate's emails are all rejected, run bundled OpenSERP queries with provider order `duckduckgo -> google`.
 5. Store the normalized results for each attempted provider and query.
 6. Extract candidate names, titles, source URLs, and snippets.
 7. Validate company association using official-domain evidence, public profile text, search snippets, and fuzzy company-name matching.
@@ -183,7 +183,7 @@ Provider cooldown contract:
 2. Create a standalone contact-search branch or workflow after website enrichment is stable.
 3. Select rows where company enrichment is complete, `canonical_domain` is present, and `contact_search_status = pending`.
 4. Claim each row with `contact_search_status = processing` and contact run metadata.
-5. Run role-priority OpenSERP searches with conservative rate limits and provider order `duckduckgo -> google -> bing`.
+5. Run role-priority OpenSERP searches with conservative rate limits and provider order `duckduckgo -> google`.
 6. Extract and rank person candidates deterministically first.
 7. Generate person-specific permutations.
 8. Validate with No2Bounce.

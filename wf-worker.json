@@ -831,6 +831,35 @@
         "mode": "runOnceForAllItems",
         "jsCode": "function parsePayload(json) {\n  const raw = json && json.body !== undefined ? json.body : json;\n  if (typeof raw === 'string') {\n    try { return JSON.parse(raw); } catch (_) { return { error: raw }; }\n  }\n  return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};\n}\nfunction stringify(value) {\n  if (!value) return '';\n  if (typeof value === 'string') return value;\n  if (typeof value === 'number' || typeof value === 'boolean') return String(value);\n  if (typeof value === 'object') return String(value.message || value.error || value.code || JSON.stringify(value));\n  return String(value);\n}\nfunction sourceForPayload(claimedItems, payload, fallbackIndex) {\n  const patchId = String(payload?.patch?.Id || payload?.row_id || '').trim();\n  if (patchId) {\n    const byId = claimedItems.find((item) => String(item.json?.Id || '').trim() === patchId);\n    if (byId) return byId.json || {};\n  }\n  return claimedItems[fallbackIndex]?.json || {};\n}\nconst claimedItems = $('Continue Contact Claim').all();\nreturn $input.all().map((item, index) => {\n  const payload = parsePayload(item.json || {});\n  const source = sourceForPayload(claimedItems, payload, index);\n  return {\n    json: {\n      ...source,\n      excluded_candidate_names: Array.isArray(payload.excluded_candidate_names) ? payload.excluded_candidate_names : [],\n      excluded_email_candidates: Array.isArray(payload.excluded_email_candidates) ? payload.excluded_email_candidates : [],\n      fallback_reason: String(payload.fallback_reason || 'fallback_to_openserp_alternate_contacts').trim(),\n      preflight_reason: String(payload.preflight_reason || '').trim()\n    },\n    pairedItem: item.pairedItem\n  };\n});"
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/contact-enrich-batch') }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: Number(($json.body && $json.body.limit) || ($json.query && $json.query.limit) || $env.CONTACT_SEARCH_BATCH_LIMIT || 1), reset_provider_health: Boolean(($json.body && $json.body.reset_provider_health) || false), validate_email: true }) }}",
+        "options": {
+          "timeout": 300000
+        }
+      },
+      "id": "8a6c96d0-6823-4fb8-bcf8-f4c61c872077",
+      "name": "Run Contact Search Batch",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        1040
+      ]
     }
   ],
   "connections": {
@@ -1074,7 +1103,7 @@
       "main": [
         [
           {
-            "node": "Get Contact Search Rows",
+            "node": "Run Contact Search Batch",
             "type": "main",
             "index": 0
           }

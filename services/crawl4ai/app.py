@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
@@ -10,6 +11,7 @@ from bs4 import BeautifulSoup
 from fastapi import FastAPI
 from pydantic import BaseModel, Field, HttpUrl
 from playwright.async_api import Browser, Page, Playwright, async_playwright
+import requests
 import contact_enrichment
 import public_web_enrichment as public_enrichment
 
@@ -247,6 +249,14 @@ class ContactSearchRequest(BaseModel):
     fallback_reason: str = Field(default="", max_length=160)
     validate_email: bool = True
     site_fast_path_only: bool = False
+
+
+class ContactBatchRunRequest(BaseModel):
+    limit: int = Field(default=1, ge=1, le=10)
+    ids: list[int | str] = Field(default_factory=list)
+    reset_provider_health: bool = False
+    validate_email: bool = True
+    dry_run: bool = False
 
 
 def compact_whitespace(value: Any) -> str:
@@ -886,6 +896,264 @@ async def contact_provider_reset() -> dict[str, Any]:
         "ok": True,
         "provider_reset_token": contact_enrichment.PROVIDER_RESET_TOKEN,
         "providers": contact_enrichment.provider_health_snapshot(),
+    }
+
+
+CONTACT_ROW_FIELDS = ",".join(
+    [
+        "Id",
+        "company_name",
+        "company_homepage_name",
+        "best_url",
+        "canonical_domain",
+        "duplicate_of_id",
+        "website_content",
+        "contact_search_status",
+        "contact_search_reason",
+        "contact_candidates_json",
+        "selected_contact_name",
+        "selected_contact_role",
+        "selected_contact_seniority",
+        "selected_contact_source_url",
+        "selected_contact_confidence",
+        "email_candidates_json",
+        "validated_email",
+        "email_validation_status",
+        "email_validation_provider",
+        "email_validation_evidence_json",
+        "contact_search_started_at",
+        "contact_search_finished_at",
+        "contact_search_run_id",
+        "CreatedAt",
+        "UpdatedAt",
+    ]
+)
+
+
+def env_required(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
+
+def noco_headers() -> dict[str, str]:
+    return {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "user-agent": "rayn-contact-runner/1.0",
+        "xc-token": env_required("NOCO_API_TOKEN"),
+    }
+
+
+def noco_table_url(bulk: bool = False) -> str:
+    base = env_required("NOCO_BASE_URL").rstrip("/")
+    project = env_required("NOCO_PROJECT_ID")
+    table = env_required("NOCO_TABLE_ID")
+    segment = "bulk/noco" if bulk else "noco"
+    return f"{base}/api/v1/db/data/{segment}/{project}/{table}"
+
+
+def noco_request(method: str, url: str, body: Any | None = None, params: dict[str, Any] | None = None) -> Any:
+    response = requests.request(
+        method,
+        url,
+        headers=noco_headers(),
+        json=body,
+        params=params,
+        timeout=60,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(f"NocoDB {response.status_code}: {response.text[:500]}")
+    return response.json() if response.text else {}
+
+
+def noco_fetch_contact_rows(limit: int, ids: list[int | str]) -> list[dict[str, Any]]:
+    if ids:
+        clean_ids = [str(row_id).strip() for row_id in ids if str(row_id).strip()]
+        where = f"(Id,in,{','.join(clean_ids)})"
+        effective_limit = max(limit, len(clean_ids))
+    else:
+        where = "(status,eq,completed)~and(canonical_domain,notblank)~and(best_url,notblank)~and(duplicate_of_id,blank)~and(contact_search_status,eq,pending)"
+        effective_limit = limit
+    payload = noco_request(
+        "GET",
+        noco_table_url(),
+        params={
+            "where": where,
+            "fields": CONTACT_ROW_FIELDS,
+            "limit": str(effective_limit),
+            "sort": "Id",
+        },
+    )
+    rows = payload.get("list") if isinstance(payload, dict) else []
+    return rows if isinstance(rows, list) else []
+
+
+def noco_patch_rows(rows: list[dict[str, Any]]) -> Any:
+    if not rows:
+        return {}
+    return noco_request("PATCH", noco_table_url(bulk=True), body=rows)
+
+
+def terminal_contact_patch(row_id: Any, status: str, reason: str, run_id: str, started_at: str, error: str = "") -> dict[str, Any]:
+    return {
+        "Id": row_id,
+        "contact_search_status": status,
+        "contact_search_reason": reason,
+        "contact_search_started_at": started_at,
+        "contact_search_finished_at": contact_enrichment.now_iso(),
+        "contact_search_run_id": run_id,
+        "contact_candidates_json": "[]",
+        "contact_search_evidence_json": json.dumps({"error": error or reason}, ensure_ascii=False),
+        "email_candidates_json": "[]",
+        "email_validation_provider": "no2bounce",
+        "email_validation_status": "worker_error" if status == "failed" else "",
+        "email_validation_evidence_json": json.dumps({"error": error or reason}, ensure_ascii=False),
+        "retry_eligible": "true" if status == "failed" else "false",
+    }
+
+
+def contact_payload_from_row(row: dict[str, Any], run_id: str, site_fast_path_only: bool, validate_email: bool) -> dict[str, Any]:
+    max_queries = max(1, int(os.getenv("CONTACT_SEARCH_MAX_QUERIES_PER_ROW", "6")))
+    website_content = compact_whitespace(str(row.get("website_content") or ""))[:50000]
+    payload = {
+        "Id": row.get("Id", ""),
+        "company_name": compact_whitespace(row.get("company_name", "")),
+        "company_homepage_name": compact_whitespace(row.get("company_homepage_name", "")),
+        "best_url": compact_whitespace(row.get("best_url", "")),
+        "canonical_domain": compact_whitespace(row.get("canonical_domain", "")),
+        "website_content": website_content,
+        "contact_search_run_id": run_id,
+        "provider_reset_token": run_id,
+        "search_attempts": [],
+        "validate_email": validate_email,
+        "site_fast_path_only": site_fast_path_only,
+    }
+    if not site_fast_path_only:
+        payload["search_queries"] = contact_enrichment.build_role_queries(
+            payload["company_name"],
+            payload["company_homepage_name"],
+            payload["canonical_domain"],
+            website_content=website_content,
+            max_queries=max_queries,
+        )
+    return payload
+
+
+def exclusion_payload(result: contact_enrichment.ContactResult) -> tuple[list[str], list[str]]:
+    names = sorted(
+        {
+            normalized
+            for normalized in (
+                contact_enrichment.normalize_person_name(candidate.get("name", ""))
+                for candidate in result.contact_candidates
+                if isinstance(candidate, dict)
+            )
+            if normalized
+        }
+    )
+    emails = sorted(
+        {
+            compact_whitespace(candidate.get("email", "")).lower()
+            for candidate in result.email_candidates
+            if isinstance(candidate, dict) and compact_whitespace(candidate.get("email", ""))
+        }
+    )
+    return names, emails
+
+
+def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]:
+    row_id = row.get("Id")
+    started_at = contact_enrichment.now_iso()
+    run_id = f"worker:{int(time.time())}:{row_id}"
+    claim = {
+        "Id": row_id,
+        "contact_search_status": "processing",
+        "contact_search_reason": "processing:contact_search",
+        "contact_search_started_at": started_at,
+        "contact_search_finished_at": "",
+        "contact_search_run_id": run_id,
+        "selected_contact_name": "",
+        "selected_contact_role": "",
+        "selected_contact_seniority": "",
+        "selected_contact_source_url": "",
+        "selected_contact_confidence": "",
+        "validated_email": "",
+    }
+    noco_patch_rows([claim])
+
+    try:
+        preflight_payload = contact_payload_from_row(row, run_id, site_fast_path_only=True, validate_email=validate_email)
+        preflight_result = contact_enrichment.enrich_contact(preflight_payload, validate_email=validate_email)
+        if preflight_result.contact_search_status == "contact_found":
+            patch = contact_enrichment.build_patch(preflight_result)
+            patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+            noco_patch_rows([patch])
+            return {"Id": row_id, "status": patch["contact_search_status"], "reason": "preflight_contact_found", "patch": patch}
+
+        if preflight_result.contact_search_status == "failed":
+            patch = contact_enrichment.build_patch(preflight_result)
+            patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+            noco_patch_rows([patch])
+            return {"Id": row_id, "status": patch["contact_search_status"], "reason": patch["contact_search_reason"], "patch": patch}
+
+        excluded_names, excluded_emails = exclusion_payload(preflight_result)
+        fallback_payload = contact_payload_from_row(row, run_id, site_fast_path_only=False, validate_email=validate_email)
+        fallback_payload["excluded_candidate_names"] = excluded_names
+        fallback_payload["excluded_email_candidates"] = excluded_emails
+        fallback_payload["fallback_reason"] = (
+            "fallback_to_openserp_alternate_contacts"
+            if preflight_result.contact_candidates
+            else "preflight_no_person_candidate"
+        )
+        fallback_result = contact_enrichment.enrich_contact(fallback_payload, validate_email=validate_email)
+        patch = contact_enrichment.build_patch(fallback_result)
+        patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+        noco_patch_rows([patch])
+        return {"Id": row_id, "status": patch["contact_search_status"], "reason": patch["contact_search_reason"], "patch": patch}
+    except Exception as exc:
+        error_text = compact_whitespace(str(exc)) or "contact row runner failed"
+        patch = terminal_contact_patch(row_id, "failed", "contact_row_runner_error", run_id, started_at, error_text)
+        noco_patch_rows([patch])
+        return {"Id": row_id, "status": "failed", "reason": "contact_row_runner_error", "error": error_text, "patch": patch}
+
+
+@app.post("/contact-enrich-batch")
+async def contact_enrich_batch(request: ContactBatchRunRequest) -> dict[str, Any]:
+    if request.reset_provider_health:
+        contact_enrichment.reset_provider_state(f"contact-batch:{int(time.time())}", preserve_non_timeout=True)
+    started = time.time()
+    rows = noco_fetch_contact_rows(request.limit, request.ids)
+    if request.dry_run:
+        return {
+            "ok": True,
+            "dry_run": True,
+            "rows_selected": len(rows),
+            "row_ids": [row.get("Id") for row in rows],
+        }
+    results = [run_contact_row(row, validate_email=request.validate_email) for row in rows]
+    status_counts: dict[str, int] = {}
+    for result in results:
+        status = compact_whitespace(result.get("status", "")) or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
+    return {
+        "ok": all(result.get("status") != "failed" for result in results),
+        "rows_selected": len(rows),
+        "rows_processed": len(results),
+        "status_counts": status_counts,
+        "elapsed_seconds": round(time.time() - started, 2),
+        "provider_order": contact_enrichment.configured_provider_order(),
+        "results": [
+            {
+                "Id": result.get("Id"),
+                "status": result.get("status"),
+                "reason": result.get("reason"),
+                "validated_email": (result.get("patch") or {}).get("validated_email", ""),
+                "email_validation_status": (result.get("patch") or {}).get("email_validation_status", ""),
+            }
+            for result in results
+        ],
     }
 
 
