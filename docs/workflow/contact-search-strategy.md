@@ -95,8 +95,9 @@ Provider adapter behavior:
 9. Stop the row as `failed` with `search_provider_failed` if every provider attempt fails.
 10. Treat a single timeout as an attempt-level miss only. Do not disable a provider on the first timeout.
 11. Timeout disable is threshold-based: temporarily disable only after `3` recent timeouts inside a `180` second window, using a short `90` second cooldown.
-12. Explicit CAPTCHA and circuit-open signals still disable providers immediately, but only for their own provider slot.
-13. Reset provider health on a new `contact_search_run_id` so stale failures do not poison later batches.
+12. Explicit CAPTCHA and circuit-breaker signals disable only that provider immediately. The worker matches both `circuit_open` and messages such as `circuit breaker is open - engine temporarily disabled`.
+13. Timeout-only provider state resets on a new row-level `contact_search_run_id`, while active CAPTCHA and circuit-breaker cooldowns survive the reset until they expire.
+14. Every provider attempt stores `provider`, `query`, `result_count`, `provider_error`, `captcha_detected`, `circuit_open`, `timeout`, `provider_disabled`, `provider_disabled_reason`, and `cooldown_seconds`.
 
 ### Email Validation
 
@@ -126,6 +127,7 @@ No2Bounce decision buckets:
 Do not use third-party SMTP probing libraries for this stage. Implement deterministic name normalization and email permutations inside our own worker, then validate only through No2Bounce.
 
 Do not perform direct SMTP probing. No direct mailbox verification over ports `25`, `465`, or `587` is part of this workflow.
+Do not add CAPTCHA-solving, stealth automation, fingerprint-evasion packages, or proxy rotation for this workflow.
 
 ## Role Queue Strategy
 

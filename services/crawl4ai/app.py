@@ -870,6 +870,25 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/contact-provider-health")
+async def contact_provider_health() -> dict[str, Any]:
+    return {
+        "provider_order": contact_enrichment.configured_provider_order(),
+        "provider_reset_token": contact_enrichment.PROVIDER_RESET_TOKEN,
+        "providers": contact_enrichment.provider_health_snapshot(),
+    }
+
+
+@app.post("/contact-provider-health/reset")
+async def contact_provider_reset() -> dict[str, Any]:
+    contact_enrichment.reset_provider_state("", preserve_non_timeout=False)
+    return {
+        "ok": True,
+        "provider_reset_token": contact_enrichment.PROVIDER_RESET_TOKEN,
+        "providers": contact_enrichment.provider_health_snapshot(),
+    }
+
+
 @app.post("/scrape", response_model=ScrapeResponse)
 async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     timeout_ms = int(os.getenv("CRAWL4AI_PAGE_TIMEOUT_MS", "45000"))

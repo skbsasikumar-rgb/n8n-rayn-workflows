@@ -15,8 +15,8 @@ resilience:
   allow_endpoint_fallback: false
 
 circuit_breaker:
-  failures: 2
-  recovery_seconds: 600
+  failures: 3
+  recovery_seconds: 180
   successes: 1
 
 google:

@@ -169,6 +169,14 @@ Current terminal reason split:
 - `no_deliverable_person_specific_email_found`: no accepted email was found and no validated candidate reached a successful validation outcome.
 - `search_provider_failed`: provider failures prevented a reliable search result and the row should stay retryable.
 
+Provider cooldown contract:
+
+- single timeout: attempt-level miss only, no provider-wide disable.
+- repeated timeouts: disable only after `3` recent timeouts in `180` seconds, with a short `90` second cooldown and disabled reason `timeout_threshold`.
+- circuit breaker or CAPTCHA: disable only that provider immediately with the longer provider-specific cooldown.
+- row-level reset: a new `contact_search_run_id` clears timeout-only provider state for that row, but active CAPTCHA or circuit-breaker cooldowns remain in force until they expire.
+- provider evidence always carries `cooldown_seconds` so operators can tell whether a failure was transient or still under cooldown.
+
 ## Implementation Plan
 
 1. Add contact-search columns to NocoDB.
@@ -181,6 +189,12 @@ Current terminal reason split:
 8. Validate with No2Bounce.
 9. Write one accepted contact or `contact_not_found` with full evidence.
 10. Rerun a small fixed test set before scaling.
+
+Manual recovery:
+
+1. Retry rows where `contact_search_status = failed` and `contact_search_reason = search_provider_failed` by resetting only contact-search fields.
+2. Inspect provider state through the Crawl4AI provider-health endpoint before a broad rerun.
+3. Use the provider reset endpoint only when providers are wedged or after a deploy; do not use it to hide persistent upstream provider failures.
 
 ## Suggested Python Stack
 

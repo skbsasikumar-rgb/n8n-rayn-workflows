@@ -231,8 +231,16 @@ Contact search timeout and fallback hardening:
 Local acceptance checks for this patch:
 
 - timeout isolation passed: Bing timeout did not disable Bing on the first miss, and the cascade continued to DuckDuckGo and Google.
-- repeated-timeout disable passed: Bing became temporarily disabled only after the third timeout, with disabled reason `timeout_threshold_exceeded`.
+- repeated-timeout disable passed: Bing became temporarily disabled only after the third timeout, with disabled reason `timeout_threshold`.
 - alternate-candidate progression passed: a rejected first candidate fell through to candidate 2 and selected the second candidate's deliverable email while staying within the row budget.
 - reject-all progression passed: validated candidates with only rejected emails ended as `contact_not_found / candidates_found_but_no_sendable_email`.
 - row-278-style name handling passed: source-order permutations are emitted first, and Westernized `melvyn.tan` remains available later in the list.
 - zero-Serper default still passed: provider order remained `openserp_bing -> openserp_duckduckgo -> openserp_google` with no Serper default path.
+
+Provider degradation follow-up:
+
+- live failed rows showed OpenSERP returning `circuit breaker is open - engine temporarily disabled`; the worker had not been classifying that phrase as `circuit_open`, so it kept hammering the same engine instead of backing off.
+- provider signal detection now recognizes the circuit-breaker phrase directly, applies only provider-local cooldowns, and records `cooldown_seconds` in every attempt.
+- timeout-only state is now row-scoped through the contact-search run token, so three timeouts on one row no longer poison later rows in the same batch.
+- manual provider diagnostics are now exposed through `/contact-provider-health`, and manual reset is available through `/contact-provider-health/reset`.
+- no CAPTCHA-solving, stealth automation, or proxy-rotation bypass tooling was added.

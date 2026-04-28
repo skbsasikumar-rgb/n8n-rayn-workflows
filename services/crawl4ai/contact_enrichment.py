@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import math
 import os
 import re
 import threading
@@ -153,11 +154,14 @@ PROVIDER_DISABLE_SECONDS = {
 PROVIDER_HEALTH_WINDOW = 20
 PROVIDER_TIMEOUT_DISABLE_THRESHOLD = 3
 PROVIDER_TIMEOUT_WINDOW_SECONDS = 180
+CAPTCHA_ERROR_HINTS = ("captcha", "error 1010", "browser_signature_banned")
+CIRCUIT_OPEN_ERROR_HINTS = ("circuit_open", "circuit open", "circuit breaker is open", "engine temporarily disabled")
+PERSISTENT_DISABLE_REASONS = {"captcha_detected", "circuit_open"}
 PROVIDER_LOCK = threading.Lock()
 
 
-def new_provider_state() -> dict[str, Any]:
-    return {
+def new_provider_state(existing: dict[str, Any] | None = None, preserve_non_timeout: bool = False) -> dict[str, Any]:
+    state = {
         "total_recent_queries": 0,
         "success_count": 0,
         "empty_result_count": 0,
@@ -171,6 +175,20 @@ def new_provider_state() -> dict[str, Any]:
         "recent_outcomes": deque(maxlen=PROVIDER_HEALTH_WINDOW),
         "recent_timeout_timestamps": deque(maxlen=PROVIDER_HEALTH_WINDOW),
     }
+    if preserve_non_timeout and existing:
+        now_ts = time.time()
+        disabled_until = float(existing.get("disabled_until") or 0.0)
+        disabled_reason = compact(existing.get("disabled_reason"), 80)
+        if disabled_reason in PERSISTENT_DISABLE_REASONS and disabled_until > now_ts:
+            state["disabled_until"] = disabled_until
+            state["disabled_reason"] = disabled_reason
+            state["last_error"] = compact(existing.get("last_error"), 300)
+            state["captcha_count"] = int(existing.get("captcha_count") or 0)
+            state["circuit_open_count"] = int(existing.get("circuit_open_count") or 0)
+            state["http_error_count"] = int(existing.get("http_error_count") or 0)
+    return state
+
+
 PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
 PROVIDER_RESET_TOKEN = ""
 VALIDATION_CACHE: dict[str, dict[str, Any]] = {}
@@ -226,12 +244,20 @@ def compact(value: Any, limit: int = 2000) -> str:
     return text[:limit]
 
 
-def reset_provider_state(reset_token: str = "") -> None:
+def provider_cooldown_seconds(disabled_until: float, now_ts: float | None = None) -> int:
+    current = time.time() if now_ts is None else now_ts
+    return max(0, int(math.ceil(max(0.0, float(disabled_until) - current))))
+
+
+def reset_provider_state(reset_token: str = "", preserve_non_timeout: bool = False) -> None:
     global PROVIDER_RESET_TOKEN
     normalized = compact(reset_token, 160)
     with PROVIDER_LOCK:
         for provider in list(PROVIDER_STATE):
-            PROVIDER_STATE[provider] = new_provider_state()
+            PROVIDER_STATE[provider] = new_provider_state(
+                existing=PROVIDER_STATE.get(provider),
+                preserve_non_timeout=preserve_non_timeout,
+            )
         PROVIDER_RESET_TOKEN = normalized
 
 
@@ -242,7 +268,7 @@ def ensure_provider_state(reset_token: str) -> None:
     with PROVIDER_LOCK:
         if normalized == PROVIDER_RESET_TOKEN:
             return
-    reset_provider_state(normalized)
+    reset_provider_state(normalized, preserve_non_timeout=True)
 
 
 def trim_recent_timeouts(state: dict[str, Any], now_ts: float) -> list[float]:
@@ -250,6 +276,17 @@ def trim_recent_timeouts(state: dict[str, Any], now_ts: float) -> list[float]:
     while timestamps and now_ts - float(timestamps[0]) > PROVIDER_TIMEOUT_WINDOW_SECONDS:
         timestamps.popleft()
     return list(timestamps)
+
+
+def detect_provider_flags(error_text: str) -> tuple[bool, bool]:
+    lowered = compact(error_text, 300).lower()
+    captcha_detected = any(hint in lowered for hint in CAPTCHA_ERROR_HINTS)
+    circuit_open = any(hint in lowered for hint in CIRCUIT_OPEN_ERROR_HINTS)
+    return captcha_detected, circuit_open
+
+
+def provider_health_snapshot() -> dict[str, dict[str, Any]]:
+    return {provider: provider_health(provider) for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
 
 
 def domain_from_url(value: str) -> str:
@@ -938,6 +975,7 @@ def provider_health(provider: str) -> dict[str, Any]:
             "enabled": enabled,
             "disabled_reason": "" if enabled else str(state["disabled_reason"]),
             "disabled_until": disabled_until,
+            "cooldown_seconds": provider_cooldown_seconds(disabled_until, now_ts) if not enabled else 0,
             "recent_timeout_count": len(recent_timeouts),
             "timeout_disable_threshold": PROVIDER_TIMEOUT_DISABLE_THRESHOLD,
             "timeout_window_seconds": PROVIDER_TIMEOUT_WINDOW_SECONDS,
@@ -979,7 +1017,7 @@ def record_provider_health(
             recent_timeouts = trim_recent_timeouts(state, now_ts)
             if len(recent_timeouts) >= PROVIDER_TIMEOUT_DISABLE_THRESHOLD:
                 state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["timeout"]
-                state["disabled_reason"] = "timeout_threshold_exceeded"
+                state["disabled_reason"] = "timeout_threshold"
         elif http_error:
             state["http_error_count"] += 1
         elif success and float(state["disabled_until"]) <= now_ts:
@@ -1026,6 +1064,7 @@ def provider_attempt_template(provider: str, query: str, error_text: str = "") -
         "http_error": False,
         "provider_disabled": not health["enabled"],
         "provider_disabled_reason": str(health["disabled_reason"]) if not health["enabled"] else "",
+        "cooldown_seconds": int(health["cooldown_seconds"]) if not health["enabled"] else 0,
         "usable_results_count": 0,
         "provider_health": health,
     }
@@ -1042,6 +1081,7 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
         attempt = provider_attempt_template(provider, query, f"provider_disabled:{health['disabled_reason']}")
         attempt["provider_disabled"] = True
         attempt["provider_disabled_reason"] = str(health["disabled_reason"])
+        attempt["cooldown_seconds"] = int(health["cooldown_seconds"])
         attempt["provider_health"] = health
         return attempt
 
@@ -1070,9 +1110,7 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     results = normalize_search_results(payload.get("results") if isinstance(payload, dict) else [])
     if not raw_error and isinstance(payload, dict):
         raw_error = compact(payload.get("message") or payload.get("error"), 300)
-    lowered_error = raw_error.lower()
-    captcha_detected = "captcha" in lowered_error
-    circuit_open = "circuit_open" in lowered_error or "circuit open" in lowered_error
+    captcha_detected, circuit_open = detect_provider_flags(raw_error)
     success = bool(results) and not raw_error
     health_after = record_provider_health(
         provider,
@@ -1096,6 +1134,7 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
         "http_error": http_error,
         "provider_disabled": not health_after["enabled"],
         "provider_disabled_reason": str(health_after["disabled_reason"]) if not health_after["enabled"] else "",
+        "cooldown_seconds": int(health_after["cooldown_seconds"]) if not health_after["enabled"] else 0,
         "usable_results_count": len(results),
         "provider_health": health_after,
     }
@@ -1114,6 +1153,7 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         attempt = provider_attempt_template(provider, query, f"provider_disabled:{health['disabled_reason']}")
         attempt["provider_disabled"] = True
         attempt["provider_disabled_reason"] = str(health["disabled_reason"])
+        attempt["cooldown_seconds"] = int(health["cooldown_seconds"])
         attempt["provider_health"] = health
         return attempt
 
@@ -1142,13 +1182,13 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         raw_error = compact(str(exc), 300) or "request_failed"
 
     results = normalize_search_results(payload.get("organic") if isinstance(payload, dict) else [])
-    lowered_error = raw_error.lower()
+    captcha_detected, circuit_open = detect_provider_flags(raw_error)
     health_after = record_provider_health(
         provider,
         success=bool(results) and not raw_error,
         empty=not results and not raw_error,
-        captcha_detected="captcha" in lowered_error,
-        circuit_open="circuit_open" in lowered_error or "circuit open" in lowered_error,
+        captcha_detected=captcha_detected,
+        circuit_open=circuit_open,
         timeout=timeout_hit,
         http_error=http_error,
         error_text=raw_error,
@@ -1159,12 +1199,13 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         "results": results,
         "result_count": len(results),
         "provider_error": raw_error,
-        "captcha_detected": "captcha" in lowered_error,
-        "circuit_open": "circuit_open" in lowered_error or "circuit open" in lowered_error,
+        "captcha_detected": captcha_detected,
+        "circuit_open": circuit_open,
         "timeout": timeout_hit,
         "http_error": http_error,
         "provider_disabled": not health_after["enabled"],
         "provider_disabled_reason": str(health_after["disabled_reason"]) if not health_after["enabled"] else "",
+        "cooldown_seconds": int(health_after["cooldown_seconds"]) if not health_after["enabled"] else 0,
         "usable_results_count": len(results),
         "provider_health": health_after,
     }
@@ -1316,6 +1357,7 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
                 "timeout": bool(attempt.get("timeout")) if isinstance(attempt, dict) else False,
                 "provider_disabled": bool(attempt.get("provider_disabled")) if isinstance(attempt, dict) else False,
                 "provider_disabled_reason": compact(attempt.get("provider_disabled_reason") if isinstance(attempt, dict) else "", 160),
+                "cooldown_seconds": int(attempt.get("cooldown_seconds") or 0) if isinstance(attempt, dict) else 0,
                 "usable_results_count": int(attempt.get("usable_results_count") or len(results)) if isinstance(attempt, dict) else len(results),
                 "provider_health": attempt.get("provider_health") if isinstance(attempt, dict) and isinstance(attempt.get("provider_health"), dict) else {},
                 "top_results": [
