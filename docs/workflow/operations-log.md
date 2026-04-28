@@ -294,3 +294,5 @@ Dependency update pass:
 - kept `playwright==1.58.0` because it is current, and kept `lxml==5.4.0` because `crawl4ai==0.8.6` requires `lxml~=5.3` and rejects `lxml 6.x`.
 - updated the n8n base image pin from `n8nio/n8n:2.12.3` to `n8nio/n8n:2.19.0`; Docker Hub metadata confirms the tag exists.
 - dependency resolution was checked with the worker virtualenv's `pip --dry-run`; Docker image build was not checked locally because Docker is not installed on this machine.
+- deployed worker service `n8n-rayn-workflows` with Railway deployment `8d5a6af1-f742-479b-a958-ac5d41dab38f`; live `/health` and `/contact-enrich-batch` dry-run passed after deploy.
+- deployed primary n8n service with Railway deployment `14873fa5-ede6-44a2-a890-a7d6dd318ad7`; n8n API confirmed workflow `BQEa6M2pKYmuEYMV` is active, and the contact-search webhook accepted a trigger after the upgrade.
