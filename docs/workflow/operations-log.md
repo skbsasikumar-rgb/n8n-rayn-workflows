@@ -252,3 +252,12 @@ Live OpenSERP provider poll:
 - Google had `5/5` usable responses, average `9.4` results, and average latency around `8.5s`.
 - Bing had `0/5` usable responses: one timeout followed by four `circuit breaker is open - engine temporarily disabled` responses.
 - contact-search default provider order is now `openserp_duckduckgo -> openserp_google -> openserp_bing`, with Serper still disabled by default.
+
+Post-deploy OpenSERP provider poll:
+
+- redeployed `searxng-railway` from the GitHub repo as an OpenSERP `v0.7.2` service instead of relying on an opaque CLI-uploaded source.
+- reran the same five-query poll after deploy.
+- DuckDuckGo stayed strongest: `5/5` usable responses, average `10` results, average latency around `4.4s`.
+- Google stayed usable but slower: `5/5` usable responses, average `9.8` results, average latency around `9.5s`, with one slow response around `23.6s`.
+- Bing remained unhealthy: `0/5` usable responses, `3` CAPTCHA-class failures and `2` circuit-open responses.
+- current recommendation remains DuckDuckGo first, Google second, Bing last until repeated polls show Bing recovering.
