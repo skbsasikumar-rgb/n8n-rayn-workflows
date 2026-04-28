@@ -267,3 +267,14 @@ Contact search provider removal:
 - removed Bing from the active contact-search provider order after repeated live polls showed `0/5` usable Bing responses with CAPTCHA-class and circuit-open failures.
 - active OpenSERP contact-search order is now `openserp_duckduckgo -> openserp_google`.
 - Serper remains disabled by default and is still emergency-only behind `SERPER_FALLBACK_ENABLED=true`.
+
+Full rerun after Bing removal:
+
+- reset 50 rows from URL discovery onward and reran company enrichment from `status = pending`.
+- company enrichment finished with 45 completed rows and 5 expected no-official-url skips: 281, 285, 292, 306, and 314.
+- fixed public enrichment recovery after the run exposed Crawl4AI navigation failures: normal HTTP/BeautifulSoup fallback now recovers pages where Playwright navigation fails, and same-homepage subpage failures no longer force review when the homepage is usable.
+- fixed slow homepage validation by raising the public-web read timeout to 45 seconds; row 313 (`https://aaro.sg/`) now completes instead of being skipped on a 20-second validation timeout.
+- restored stable URL webhook IDs after a workflow update left `rayn-url-picker-batch` unregistered; the live batch webhook is active again.
+- contact search was not safe to run at the old scale: two 20-row batches saturated the worker, and even a 5-row batch left 4 rows stuck in `processing` while No2Bounce polling waited.
+- reduced the contact-search NocoDB batch selector from 20 to 5 and bounded No2Bounce polling with `NO2BOUNCE_POLL_TIMEOUT_SECONDS`, defaulting to 30 seconds.
+- contact rerun result after recovery: row 276 found `jayne@amber-pharmacy.com` from cache with zero new No2Bounce spend; rows 273, 274, 275, and 277 are marked retryable failed due contact batch timeout; the remaining 40 completed company rows are left as `contact_search_status = pending`.
