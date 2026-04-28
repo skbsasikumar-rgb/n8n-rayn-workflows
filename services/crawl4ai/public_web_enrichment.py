@@ -1912,6 +1912,21 @@ async def crawl_url(crawler: AsyncWebCrawler, url: str, page_timeout_ms: int) ->
     return data
 
 
+def fetch_static_url(session: requests.Session, url: str) -> dict[str, Any]:
+    response = session.get(url, timeout=(10, 30), allow_redirects=True)
+    if response.status_code >= 400:
+        raise RuntimeError(f"HTTP {response.status_code}")
+    return {
+        "success": True,
+        "url": url,
+        "redirected_url": response.url,
+        "status_code": response.status_code,
+        "html": response.text,
+        "cleaned_html": response.text,
+        "metadata": {},
+    }
+
+
 def build_homepage_links(page: PageArtifact) -> list[dict[str, str]]:
     return [{"href": href, "text": ""} for href in page.internal_links]
 
@@ -2050,38 +2065,45 @@ async def enrich_row(
         homepage_result = await crawl_url(crawler, best_url, page_timeout_ms)
         timings["homepage_crawl_ms"] = elapsed_ms(homepage_started)
     except Exception as exc:
-        error_text = compact_whitespace(exc)
-        return stamp(EnrichmentRecord(
-            row_id=row.row_id,
-            company_name=row.company_name,
-            url_picked=row.url_picked,
-            best_url=best_url,
-            crawl_status="crawl_failed",
-            pages_crawled_count=0,
-            pages_crawled_urls=[],
-            title="",
-            meta_description="",
-            organization_name_detected="",
-            organization_type_guess="Unknown",
-            solo_or_group_guess="unknown",
-            parent_or_affiliation_signals=[],
-            size_signals={"pages_crawled": 0},
-            industry_guess="Unknown",
-            services_detected=[],
-            locations_detected=[],
-            contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
-            leadership_or_team_signals=[],
-            social_links=[],
-            structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-            enrichment_notes=f"Homepage crawl failed: {error_text}",
-            confidence_score=0.05,
-            error_notes=[error_text],
-            best_url_candidate=validation.best_url_candidate,
-            http_status=validation.http_status,
-            redirect_chain=validation.redirect_chain,
-            url_validation_status=validation.url_validation_status,
-            crawl_context={"robots": {"url": robots_policy.robots_url, "note": robots_policy.note}},
-        ))
+        crawl_error_text = compact_whitespace(exc)
+        try:
+            static_started = time.perf_counter()
+            homepage_result = fetch_static_url(session, best_url)
+            timings["homepage_static_fallback_ms"] = elapsed_ms(static_started)
+            errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
+        except Exception as fallback_exc:
+            error_text = compact_whitespace(fallback_exc) or crawl_error_text
+            return stamp(EnrichmentRecord(
+                row_id=row.row_id,
+                company_name=row.company_name,
+                url_picked=row.url_picked,
+                best_url=best_url,
+                crawl_status="crawl_failed",
+                pages_crawled_count=0,
+                pages_crawled_urls=[],
+                title="",
+                meta_description="",
+                organization_name_detected="",
+                organization_type_guess="Unknown",
+                solo_or_group_guess="unknown",
+                parent_or_affiliation_signals=[],
+                size_signals={"pages_crawled": 0},
+                industry_guess="Unknown",
+                services_detected=[],
+                locations_detected=[],
+                contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
+                leadership_or_team_signals=[],
+                social_links=[],
+                structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
+                enrichment_notes=f"Homepage crawl failed: {error_text}",
+                confidence_score=0.05,
+                error_notes=[error_text],
+                best_url_candidate=validation.best_url_candidate,
+                http_status=validation.http_status,
+                redirect_chain=validation.redirect_chain,
+                url_validation_status=validation.url_validation_status,
+                crawl_context={"robots": {"url": robots_policy.robots_url, "note": robots_policy.note}},
+            ))
 
     homepage_page = extract_page_artifact(homepage_result)
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
@@ -2114,8 +2136,15 @@ async def enrich_row(
             candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms)
             timings["candidate_crawls_ms"] = timings.get("candidate_crawls_ms", 0.0) + elapsed_ms(candidate_started)
         except Exception as exc:
-            errors.append(f"{candidate_url}: {compact_whitespace(exc)}")
-            continue
+            crawl_error_text = compact_whitespace(exc)
+            try:
+                static_started = time.perf_counter()
+                candidate_result = fetch_static_url(session, candidate_url)
+                timings["candidate_static_fallback_ms"] = timings.get("candidate_static_fallback_ms", 0.0) + elapsed_ms(static_started)
+                errors.append(f"{candidate_url}: Crawl4AI fallback used after page error: {crawl_error_text}")
+            except Exception as fallback_exc:
+                errors.append(f"{candidate_url}: {compact_whitespace(fallback_exc) or crawl_error_text}")
+                continue
         page = extract_page_artifact(candidate_result)
         if page.content_hash and page.content_hash in seen_hashes:
             continue
@@ -2156,7 +2185,7 @@ async def enrich_row(
     )
     if ignored_errors:
         notes += f" Ignored {len(ignored_errors)} same-domain subpage 404 warnings."
-    crawl_status = "partial" if fatal_errors else "crawled"
+    crawl_status = "crawled" if crawled_pages else ("partial" if fatal_errors else "crawled")
     record = EnrichmentRecord(
         row_id=row.row_id,
         company_name=row.company_name,
@@ -2289,7 +2318,7 @@ def terminal_status(record: EnrichmentRecord) -> str:
     if record.crawl_status == "crawled":
         return "completed"
     if record.crawl_status == "partial":
-        return "needs_review"
+        return "completed" if record.best_url else "needs_review"
     if record.crawl_status in {"crawl_failed", "enrichment_error"}:
         return "failed"
     if record.crawl_status == "blocked_by_robots" or record.crawl_status.startswith("skipped_"):
