@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+set -eu
+
+if command -v cq >/dev/null 2>&1; then
+  exec cq "$@"
+fi
+
+if [ -x /opt/homebrew/bin/cq ]; then
+  exec /opt/homebrew/bin/cq "$@"
+fi
+
+if [ -x /usr/local/bin/cq ]; then
+  exec /usr/local/bin/cq "$@"
+fi
+
+echo "cq not found. Install it with: brew install deLiseLINO/tap/codex-quota" >&2
+exit 127
