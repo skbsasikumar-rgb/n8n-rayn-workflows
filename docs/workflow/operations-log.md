@@ -261,3 +261,9 @@ Post-deploy OpenSERP provider poll:
 - Google stayed usable but slower: `5/5` usable responses, average `9.8` results, average latency around `9.5s`, with one slow response around `23.6s`.
 - Bing remained unhealthy: `0/5` usable responses, `3` CAPTCHA-class failures and `2` circuit-open responses.
 - current recommendation remains DuckDuckGo first, Google second, Bing last until repeated polls show Bing recovering.
+
+Contact search provider removal:
+
+- removed Bing from the active contact-search provider order after repeated live polls showed `0/5` usable Bing responses with CAPTCHA-class and circuit-open failures.
+- active OpenSERP contact-search order is now `openserp_duckduckgo -> openserp_google`.
+- Serper remains disabled by default and is still emergency-only behind `SERPER_FALLBACK_ENABLED=true`.

@@ -86,7 +86,7 @@ Provider adapter behavior:
 
 1. Call `/contact-enrich` with `site_fast_path_only = true`, `search_attempts = []`, and `validate_email = true`.
 2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
-3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP with provider order `openserp_duckduckgo -> openserp_google -> openserp_bing`.
+3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP with provider order `openserp_duckduckgo -> openserp_google`.
 4. If preflight returns `preflight_candidate_email_rejected`, run the same OpenSERP fallback but exclude the preflight candidate names and rejected email permutations.
 5. If preflight returns `preflight_validation_provider_failed` or `preflight_worker_error`, stop the row as `failed` and make it retryable. Do not call OpenSERP.
 6. For each bundled query, call the first healthy provider. If usable results are fewer than five or the provider fails, try the next provider in order.

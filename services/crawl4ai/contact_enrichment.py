@@ -142,7 +142,6 @@ CREDENTIAL_WORDS = {
     "si",
 }
 OPENSERP_ROUTE_MAP = {
-    "openserp_bing": "/bing/search",
     "openserp_duckduckgo": "/duck/search",
     "openserp_google": "/google/search",
 }
@@ -938,7 +937,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def configured_provider_order() -> list[str]:
     raw = os.getenv(
         "CONTACT_SEARCH_PROVIDER_ORDER",
-        "openserp_duckduckgo,openserp_google,openserp_bing",
+        "openserp_duckduckgo,openserp_google",
     ).strip()
     output: list[str] = []
     seen: set[str] = set()

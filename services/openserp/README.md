@@ -11,7 +11,6 @@ docker run -p 7000:7000 openserp
 
 The worker uses the dedicated engine routes exposed by OpenSERP `v0.7.2`:
 
-- `/bing/search?text=...&limit=10`
 - `/duck/search?text=...&limit=10`
 - `/google/search?text=...&limit=10`
 
@@ -22,6 +21,6 @@ The Railway patch still adds Chromium `no-sandbox` / `disable-setuid-sandbox` la
 OpenSERP `v0.7.2` returns dedicated search responses as envelopes with a top-level `results` array.
 The service uses `config.yaml` to keep Google pressure low, prefer cache reuse for contact-search queries, and leave endpoint fallback disabled.
 The OpenSERP circuit breaker is intentionally shorter for RAYN contact search: it opens after `3` consecutive failures and recovers after `180` seconds, so a bad engine backs off without poisoning the full batch for too long.
-RAYN contact search prefers Bing first, then DuckDuckGo, then Google when available. Serper is disabled by default and only used as an explicit emergency fallback outside this service.
+RAYN contact search uses DuckDuckGo first, then Google. Bing is not part of the active provider order because repeated live polls showed circuit-breaker and CAPTCHA-class failures. Serper is disabled by default and only used as an explicit emergency fallback outside this service.
 No CAPTCHA-solving is enabled here. `captcha.solver_enabled` remains `false`.
 Railway healthchecks must use `/health`.

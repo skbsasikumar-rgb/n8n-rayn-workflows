@@ -24,11 +24,6 @@ google:
   rate_seconds: 60
   rate_burst: 1
 
-bing:
-  rate_requests: 10
-  rate_seconds: 60
-  rate_burst: 1
-
 duckduckgo:
   rate_requests: 10
   rate_seconds: 60
