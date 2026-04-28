@@ -31,7 +31,8 @@
         "path": "rayn-url-picker-v1",
         "responseMode": "onReceived",
         "options": {}
-      }
+      },
+      "webhookId": "a19a3db8-b7bc-4cb6-9a8d-89d2bb35a2da"
     },
     {
       "id": "webhook-batch-trigger",
@@ -47,7 +48,8 @@
         "path": "rayn-url-picker-batch",
         "responseMode": "onReceived",
         "options": {}
-      }
+      },
+      "webhookId": "31ef8c51-921c-49f8-87aa-fd177ec4c7ea"
     },
     {
       "id": "get-blank-url-picked",
