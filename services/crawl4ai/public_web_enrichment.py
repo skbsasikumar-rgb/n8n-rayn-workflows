@@ -63,6 +63,8 @@ USER_AGENT = os.environ.get(
     "PUBLIC_WEB_ENRICHMENT_USER_AGENT",
     "RAYN Public Web Enrichment/1.0 (+https://www.raynsecure.com/)",
 )
+HTTP_CONNECT_TIMEOUT_SECONDS = 10
+HTTP_READ_TIMEOUT_SECONDS = 45
 DEFAULT_FIELDS = "Id,company_name,url_picked,best_url,notes,status"
 ASSET_EXTENSIONS = (
     ".jpg",
@@ -561,7 +563,12 @@ def resolve_redirects(
 
         response = None
         try:
-            response = session.get(current_url, allow_redirects=False, timeout=(10, 20), stream=True)
+            response = session.get(
+                current_url,
+                allow_redirects=False,
+                timeout=(HTTP_CONNECT_TIMEOUT_SECONDS, HTTP_READ_TIMEOUT_SECONDS),
+                stream=True,
+            )
         except requests.RequestException as exc:
             return UrlValidationResult(
                 best_url_candidate=start_url,
