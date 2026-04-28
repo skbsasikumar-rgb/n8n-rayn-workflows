@@ -285,3 +285,5 @@ Contact search row-runner fix:
 - rewired the contact-search webhook to call the worker batch runner directly; the old multi-item n8n contact branch remains in the file for reference but is no longer connected from the webhook trigger.
 - default contact webhook batch size is one row unless `CONTACT_SEARCH_BATCH_LIMIT` or request `limit` is supplied, which prevents one slow No2Bounce validation from leaving several rows stuck in `processing`.
 - the row runner keeps DuckDuckGo then Google as the only active OpenSERP providers, with Serper still disabled by default.
+- worker service now requires the NocoDB env vars `NOCO_BASE_URL`, `NOCO_PROJECT_ID`, `NOCO_TABLE_ID`, and `NOCO_API_TOKEN` because contact row selection and writeback moved from n8n into `/contact-enrich-batch`.
+- live smoke test after deploy selected row 278 in dry-run mode, then processed rows 278, 279, 280, 282, and 283 with terminal results: 2 `contact_found` total so far including cached row 276, 1 new `contact_not_found`, and 3 new retryable failures caused by No2Bounce poll timeout or search-provider failure.
