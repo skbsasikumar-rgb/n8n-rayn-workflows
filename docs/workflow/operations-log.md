@@ -322,3 +322,4 @@ No2Bounce poll-timeout fix:
 - added more organization/title noise filters such as `graduate` and `institution` after Serper snippets produced non-person candidates like `Raffles Institution`.
 - added a final low-priority `admin_hr` role bucket with admin manager, administration manager, office manager, HR manager, human resources manager, and people manager roles.
 - full-table contact rerun exposed false-positive accepted names from company fragments and title concatenation; tightened candidate rejection for company-prefix fragments, organization words such as `home`, `commercial`, `council`, and internal honorific tokens such as `Dr`.
+- targeted reruns exposed two more false-positive patterns: company suffix names such as `SINGWEALTH HOLDINGS PTE LTD`, and roles that point to a different organization such as `CEO and Founder of Meet Doctor`; both are now rejected before email validation.

@@ -93,6 +93,7 @@ NOISE_NAME_WORDS = {
     "guide",
     "health",
     "hearing",
+    "holdings",
     "home",
     "international",
     "institution",
@@ -115,6 +116,7 @@ NOISE_NAME_WORDS = {
     "promising",
     "prep",
     "profile",
+    "pte",
     "road",
     "resolution",
     "sales",
@@ -126,6 +128,7 @@ NOISE_NAME_WORDS = {
     "team",
     "trainer",
     "treatments",
+    "ltd",
     "ceo",
     "cto",
     "ciso",
@@ -351,6 +354,25 @@ def company_near_name(evidence: str, name_start: int, name_end: int, company_nam
     return company_match(window, company_name, homepage_name, canonical_domain)
 
 
+def role_points_to_other_org(evidence: str, name_start: int, name_end: int, company_name: str, homepage_name: str, canonical_domain: str) -> bool:
+    window = evidence[name_end : min(len(evidence), name_end + 140)]
+    match = re.search(
+        r"\b(?:as\s+well\s+as\s+)?(?:CEO|Founder|Owner|Managing Director|Executive Director|General Manager|Medical Director)"
+        r"(?:\s+and\s+(?:CEO|Founder|Owner|Managing Director|Executive Director|General Manager|Medical Director))*\s+of\s+([^,|.]{2,90})",
+        window,
+        re.I,
+    )
+    if not match:
+        return False
+    org = clean_name(match.group(1))
+    if not org or parse_name(org):
+        return False
+    return not (
+        company_match(org, company_name, homepage_name, canonical_domain)
+        or company_fragment_match(org, company_name, homepage_name, canonical_domain)
+    )
+
+
 def role_match(text: str, query_role: str = "") -> tuple[str, dict[str, Any] | None]:
     haystack = compact(text).lower()
     if query_role and query_role.lower() in haystack:
@@ -496,6 +518,8 @@ def extract_candidates_from_website_content(
                 if re.search(r"[’']s$", name):
                     continue
                 if normalize_person_name(name) in blocked_names:
+                    continue
+                if role_points_to_other_org(raw_content, name_start, name_end, company_name, homepage_name, canonical_domain):
                     continue
                 if not role_near_name(raw_content, name_start, name_end, role):
                     continue
@@ -658,6 +682,8 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
                 if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                     continue
                 if normalize_person_name(name) in excluded_names:
+                    continue
+                if role_points_to_other_org(evidence, name_start, name_end, company_name, homepage_name, canonical_domain):
                     continue
                 if not role_near_name(evidence, name_start, name_end, matched_role):
                     continue
