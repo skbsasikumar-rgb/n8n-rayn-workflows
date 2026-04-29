@@ -83,7 +83,7 @@ Generate person-specific patterns in a bounded order:
 1. For 2-token Western names, keep the standard sequence headed by `first.last`, `first`, `firstlast`, `f.last`, `firstl`, `flast`, `last.first`, and underscore or hyphen variants.
 2. For 3- and 4-token source-order names, try source-order family-name patterns first, such as `family.givenall`, `family.giventail`, `familygivenall`, and `familygiventail`.
 3. After the source-order pass, try Westernized tail-first variants such as `melvyn.tan` and `melvyntan` when the evidence supports that reading.
-4. Cap generation at `8` permutations per candidate, `5` candidates per row, and `24` No2Bounce validations per row by default.
+4. Cap generation at `4` permutations per candidate, `3` candidates per row, and `16` No2Bounce validations per row by default.
 
 Normalize names by lowercasing, removing punctuation, stripping honorifics, and transliterating diacritics. Do not generate role or generic mailbox addresses.
 
@@ -200,8 +200,8 @@ Serper fallback budget:
 
 - official-site preflight runs first and spends zero search-provider credits when it finds a usable contact.
 - fallback public search defaults to Serper with `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 3`.
-- No2Bounce defaults are capped at `3` candidates, `8` emails per candidate, and `16` remote validations per row.
-- No2Bounce bulk validation is asynchronous. The worker polls the returned `trackingId`, downloads final CSV/JSON results from either `downloadFile` or documented `signedUrl` fields, redacts signed download URLs in stored evidence, and defaults `NO2BOUNCE_POLL_TIMEOUT_SECONDS` to `75`.
+- No2Bounce defaults are capped at `3` candidates, `4` emails per candidate, and `16` remote validations per row.
+- No2Bounce bulk validation is asynchronous. The worker polls the returned `trackingId`, downloads final CSV/JSON results from either `downloadFile` or documented `signedUrl` fields, redacts signed download URLs in stored evidence, and defaults `NO2BOUNCE_POLL_TIMEOUT_SECONDS` to `120`.
 
 ## Suggested Python Stack
 

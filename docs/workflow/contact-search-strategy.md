@@ -182,7 +182,7 @@ Candidate progression is bounded and explicit:
 
 - continue from candidate 1 to candidate 2 and onward when the current candidate's emails are all rejected.
 - cap at `5` validated candidates per row by default.
-- cap at `8` generated person-specific permutations per candidate by default.
+- cap at `4` generated person-specific permutations per candidate by default.
 - cap at `24` uncached No2Bounce validations per row by default.
 - if validated candidates existed but every checked permutation was rejected, end as `contact_not_found / candidates_found_but_no_sendable_email`.
 
@@ -303,7 +303,7 @@ Suggested first-test caps:
 - max role buckets per row: 3.
 - max queries per role bucket: 3.
 - max candidates per row: 5.
-- max emails per candidate: 8.
+- max emails per candidate: 4.
 - max No2Bounce emails per row: 24.
 
 Current worker behavior matches those contact caps and also records cache hits, requested No2Bounce counts, remaining row budget, and any budget-limited skipped permutations in `email_validation_evidence_json`.
@@ -315,7 +315,7 @@ No2Bounce result handling:
 - poll for final output and parse direct result lists when present.
 - if the final response contains a signed result download URL, accept both `downloadFile` and `signedUrl` style fields and parse CSV or JSON from the download.
 - redact signed result URLs before storing evidence.
-- keep the default poll timeout at `75` seconds; rows that still timeout remain retryable provider failures instead of false no-contact results.
+- keep the default poll timeout at `120` seconds; rows that still timeout remain retryable provider failures instead of false no-contact results.
 
 Scale caps only after measuring hit rate and cost.
 

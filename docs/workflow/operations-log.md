@@ -316,3 +316,5 @@ No2Bounce poll-timeout fix:
 - updated No2Bounce parsing to recognize signed/download/result/report URL fields, parse downloaded CSV or JSON, redact signed URLs in evidence, and store progress counters from the last poll.
 - increased the default No2Bounce poll timeout from 30 to 75 seconds while keeping row-level retry behavior for true slow or stuck jobs.
 - tightened person-name rejection so title-only noise such as `Group Head` is not sent to No2Bounce as a candidate name.
+- live smoke still showed No2Bounce jobs pending after 75 seconds (`87%` complete for row 278), so the worker now defaults to a 120-second poll window and reduces per-candidate remote validation from 8 to 4 emails.
+- added `Clinical Director` and `Co-founder` to role matching so Amber Family Clinic can use the official-site Dr Wong evidence instead of noisy public-profile title fragments.

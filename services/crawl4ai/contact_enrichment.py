@@ -43,11 +43,11 @@ GENERIC_LOCAL_PARTS = {
     "team",
 }
 ROLE_BUCKETS: list[dict[str, Any]] = [
-    {"bucket": "c_suite", "seniority": "executive", "priority": 1, "roles": ["CEO", "Chief Executive Officer", "Founder", "Owner", "Managing Director", "Executive Director", "General Manager"]},
+    {"bucket": "c_suite", "seniority": "executive", "priority": 1, "roles": ["CEO", "Chief Executive Officer", "Founder", "Co-founder", "Owner", "Managing Director", "Executive Director", "General Manager"]},
     {"bucket": "compliance_privacy_security", "seniority": "senior_manager", "priority": 2, "roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Chief Information Security Officer", "Head of Security", "Cybersecurity Manager"]},
     {"bucket": "it_technology", "seniority": "manager", "priority": 3, "roles": ["IT Manager", "Head of IT", "CTO", "Chief Technology Officer", "Technology Manager", "Systems Manager"]},
     {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Chief Operating Officer", "Clinic Operations Manager", "Practice Manager"]},
-    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor"]},
+    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Clinical Director", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor"]},
     {"bucket": "care_clinical", "seniority": "manager", "priority": 6, "roles": ["Head of Nursing", "Nursing Manager", "Clinical Lead", "Care Manager"]},
 ]
 ROLE_TERMS = {role.lower(): group for group in ROLE_BUCKETS for role in group["roles"]}
@@ -69,6 +69,7 @@ NOISE_NAME_WORDS = {
     "aesthetics",
     "american",
     "appointed",
+    "adjunct",
     "active",
     "ageing",
     "audiologist",
@@ -91,6 +92,7 @@ NOISE_NAME_WORDS = {
     "international",
     "laser",
     "learn",
+    "lecturer",
     "lifestyle",
     "magazine",
     "manager",
@@ -896,7 +898,27 @@ def no2bounce_progress(payload: Any) -> dict[str, Any]:
         return {}
     data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
     output: dict[str, Any] = {}
-    for key in ("taskId", "totalEmails", "completedEmails", "deliverability", "catchAll", "invalid", "bounce", "spam"):
+    for key in (
+        "taskId",
+        "trackingId",
+        "totalEmails",
+        "completedEmails",
+        "totalRecord",
+        "overallStatus",
+        "percent",
+        "creditDebited",
+        "totalCredit",
+        "deliverability",
+        "catchAll",
+        "Deliverable",
+        "Undeliverable",
+        "Deliverable/AcceptAll",
+        "UnDeliverable/AcceptAll",
+        "Risky/AcceptAll",
+        "invalid",
+        "bounce",
+        "spam",
+    ):
         value = dict_get_case_insensitive(data, key)
         if value is not None:
             output[key] = value
@@ -937,7 +959,7 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) ->
         return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
 
     if timeout_seconds is None:
-        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "75")))
+        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "120")))
     poll_interval_seconds = max(2, int(os.getenv("NO2BOUNCE_POLL_INTERVAL_SECONDS", "3")))
     deadline = time.time() + timeout_seconds
     poll_payload: Any = {}
@@ -1300,7 +1322,7 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def candidate_email_candidates(candidate: ContactCandidate, domain: str, excluded_emails: set[str]) -> list[dict[str, Any]]:
-    max_emails = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "8")))
+    max_emails = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "4")))
     generated = email_permutations(candidate, domain)[: max(max_emails, 1)]
     output: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -1503,7 +1525,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     generated_any = False
     validated_candidate_attempted = False
     max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "3")))
-    max_emails_per_candidate = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "8")))
+    max_emails_per_candidate = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "4")))
     max_no2bounce_emails_per_row = max(1, int(os.getenv("CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW", "16")))
     remaining_no2bounce_budget = max_no2bounce_emails_per_row
     validation_evidence: dict[str, Any] = {
