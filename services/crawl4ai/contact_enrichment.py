@@ -78,9 +78,11 @@ NOISE_NAME_WORDS = {
     "body",
     "bova",
     "clinic",
+    "commercial",
     "compounding",
     "contact",
     "chief",
+    "council",
     "director",
     "dispute",
     "doctor",
@@ -91,6 +93,7 @@ NOISE_NAME_WORDS = {
     "guide",
     "health",
     "hearing",
+    "home",
     "international",
     "institution",
     "laser",
@@ -103,6 +106,7 @@ NOISE_NAME_WORDS = {
     "medical",
     "more",
     "most",
+    "national",
     "novena",
     "org",
     "pharmacy",
@@ -318,6 +322,30 @@ def company_match(text: str, company_name: str, homepage_name: str, canonical_do
     return any(option and len(option) >= 4 and option in re.sub(r"[^a-z0-9]+", " ", haystack) for option in options)
 
 
+def company_fragment_match(name: str, company_name: str, homepage_name: str, canonical_domain: str) -> bool:
+    candidate = normalize_company(name)
+    if not candidate:
+        return False
+    candidate_tokens = candidate.split()
+    if len(candidate_tokens) < 2:
+        return False
+    domain_root = canonical_domain.split(".")[0].replace("-", " ") if canonical_domain else ""
+    for option in (normalize_company(company_name), normalize_company(homepage_name), normalize_company(domain_root)):
+        option_tokens = option.split()
+        if len(option_tokens) >= len(candidate_tokens) and option_tokens[: len(candidate_tokens)] == candidate_tokens:
+            return True
+    return False
+
+
+def reject_candidate_name(name: str, company_name: str, homepage_name: str, canonical_domain: str) -> bool:
+    return (
+        not name
+        or name in NOISE_NAME_TERMS
+        or company_match(name, company_name, homepage_name, canonical_domain)
+        or company_fragment_match(name, company_name, homepage_name, canonical_domain)
+    )
+
+
 def company_near_name(evidence: str, name_start: int, name_end: int, company_name: str, homepage_name: str, canonical_domain: str) -> bool:
     window = evidence[max(0, name_start - 140) : min(len(evidence), name_end + 140)]
     return company_match(window, company_name, homepage_name, canonical_domain)
@@ -356,6 +384,8 @@ def parse_name(name: str) -> tuple[str, str] | None:
         return None
     lowered = [part.lower().strip("-'") for part in parts]
     if any(part in {"and", "the", "our"} for part in lowered):
+        return None
+    if any(part in {"dr", "doctor", "mr", "mrs", "ms", "miss", "mdm", "prof", "professor"} for part in lowered):
         return None
     if any(part in NOISE_NAME_WORDS for part in lowered):
         return None
@@ -461,7 +491,7 @@ def extract_candidates_from_website_content(
     for group in ROLE_BUCKETS:
         for role in group["roles"]:
             for name, name_start, name_end in name_matches_for_role(raw_content, role):
-                if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                     continue
                 if re.search(r"[’']s$", name):
                     continue
@@ -498,7 +528,7 @@ def extract_candidates_from_website_content(
     if clinical_fallback_group:
         for match in re.finditer(rf"\bDr\.?\s+{NAME_CAPTURE_RE}\b", raw_content):
             name = clean_name(match.group(1))
-            if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+            if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                 continue
             if re.search(r"[’']s$", name):
                 continue
@@ -539,7 +569,7 @@ def extract_candidates_from_website_content(
         for pattern in manager_patterns:
             for match in re.finditer(pattern, raw_content):
                 name = clean_name(match.group(1))
-                if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                     continue
                 if re.search(r"[’']s$", name):
                     continue
@@ -625,7 +655,7 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
             if not company_match(evidence + " " + url, company_name, homepage_name, canonical_domain):
                 continue
             for name, name_start, name_end in name_matches_for_role(evidence, matched_role):
-                if not name or name in NOISE_NAME_TERMS or company_match(name, company_name, homepage_name, canonical_domain):
+                if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                     continue
                 if normalize_person_name(name) in excluded_names:
                     continue

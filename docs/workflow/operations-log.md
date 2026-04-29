@@ -321,3 +321,4 @@ No2Bounce poll-timeout fix:
 - live tracking checks showed some No2Bounce jobs can remain `Pending` with rejected aggregate counts and no download file; the worker now converts those zero-sendable partial timeouts into rejected candidate emails instead of retryable provider failures.
 - added more organization/title noise filters such as `graduate` and `institution` after Serper snippets produced non-person candidates like `Raffles Institution`.
 - added a final low-priority `admin_hr` role bucket with admin manager, administration manager, office manager, HR manager, human resources manager, and people manager roles.
+- full-table contact rerun exposed false-positive accepted names from company fragments and title concatenation; tightened candidate rejection for company-prefix fragments, organization words such as `home`, `commercial`, `council`, and internal honorific tokens such as `Dr`.
