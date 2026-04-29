@@ -1116,6 +1116,27 @@ def merge_preflight_into_fallback(
         "official_site_preflight_email_validation_evidence": preflight_result.email_validation_evidence,
         "official_site_preflight_email_candidates": preflight_result.email_candidates,
     }
+    preflight_tried_email = any(
+        isinstance(candidate, dict) and compact_whitespace(candidate.get("status", ""))
+        for candidate in preflight_result.email_candidates
+    )
+    fallback_skipped_without_candidate = (
+        fallback_result.contact_search_status == "contact_not_found"
+        and fallback_result.email_validation_status in {"", "skipped_no_verified_candidate", "skipped_no_email_candidate"}
+    )
+    if (
+        preflight_tried_email
+        and preflight_result.email_validation_status == "no_deliverable_email"
+        and fallback_skipped_without_candidate
+    ):
+        fallback_result.contact_search_reason = preflight_result.contact_search_reason
+        fallback_result.email_validation_status = preflight_result.email_validation_status
+        fallback_result.email_validation_evidence = {
+            **fallback_result.email_validation_evidence,
+            "status": preflight_result.email_validation_status,
+            "reason": "official_site_preflight_candidates_had_no_deliverable_email",
+            "promoted_from_official_site_preflight": True,
+        }
     return fallback_result
 
 

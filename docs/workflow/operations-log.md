@@ -379,3 +379,9 @@ Contact batch speed and skip-status fix:
 - contact row claims now clear stale email validation fields before processing so live rows do not show old validation state while processing.
 - no-verified-candidate outcomes now write explicit `email_validation_status` values such as `skipped_no_verified_candidate` or `skipped_no_email_candidate` instead of leaving the field blank.
 - Anymail Finder person lookup timeout default is reduced from `180` seconds to `45` seconds, still overrideable with `ANYMAILFINDER_TIMEOUT_SECONDS`.
+
+Preflight email outcome preservation:
+
+- if official-site preflight tries one or more verified people and Anymail Finder returns no deliverable email, fallback search may still run for alternate contacts.
+- when fallback finds no verified alternate, final `email_validation_status` now preserves the preflight outcome as `no_deliverable_email` instead of overwriting it with `skipped_no_verified_candidate`.
+- `skipped_no_verified_candidate` now means no verified person was ever attempted for email lookup.
