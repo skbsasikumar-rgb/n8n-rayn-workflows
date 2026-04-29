@@ -175,6 +175,13 @@ Process official-site content before spending search queries. If the official si
    - Nursing Manager
    - Clinical Lead
    - Care Manager
+7. Admin and HR
+   - Admin Manager
+   - Administration Manager
+   - Office Manager
+   - HR Manager
+   - Human Resources Manager
+   - People Manager
 
 Stop once an accepted contact is found. Do not keep spending validation credits after success.
 

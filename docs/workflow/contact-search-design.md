@@ -38,6 +38,7 @@ Search highest-value roles first and move down only when no deliverable email is
 4. Operations roles: operations manager, ops manager, clinic operations manager, practice manager.
 5. Clinic leadership roles: clinic manager, clinical manager, medical director, head doctor, principal doctor.
 6. Care and clinical management roles: head of nursing, nursing manager, clinical lead, care manager.
+7. Admin and HR roles: admin manager, administration manager, office manager, HR manager, human resources manager, people manager.
 
 ## Search Flow
 

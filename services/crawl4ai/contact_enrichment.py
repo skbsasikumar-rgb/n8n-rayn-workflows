@@ -49,6 +49,7 @@ ROLE_BUCKETS: list[dict[str, Any]] = [
     {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Chief Operating Officer", "Clinic Operations Manager", "Practice Manager"]},
     {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Clinical Director", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor"]},
     {"bucket": "care_clinical", "seniority": "manager", "priority": 6, "roles": ["Head of Nursing", "Nursing Manager", "Clinical Lead", "Care Manager"]},
+    {"bucket": "admin_hr", "seniority": "manager", "priority": 7, "roles": ["Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"]},
 ]
 ROLE_TERMS = {role.lower(): group for group in ROLE_BUCKETS for role in group["roles"]}
 NOISE_NAME_TERMS = {

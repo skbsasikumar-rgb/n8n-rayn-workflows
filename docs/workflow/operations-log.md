@@ -320,3 +320,4 @@ No2Bounce poll-timeout fix:
 - added `Clinical Director` and `Co-founder` to role matching so Amber Family Clinic can use the official-site Dr Wong evidence instead of noisy public-profile title fragments.
 - live tracking checks showed some No2Bounce jobs can remain `Pending` with rejected aggregate counts and no download file; the worker now converts those zero-sendable partial timeouts into rejected candidate emails instead of retryable provider failures.
 - added more organization/title noise filters such as `graduate` and `institution` after Serper snippets produced non-person candidates like `Raffles Institution`.
+- added a final low-priority `admin_hr` role bucket with admin manager, administration manager, office manager, HR manager, human resources manager, and people manager roles.
