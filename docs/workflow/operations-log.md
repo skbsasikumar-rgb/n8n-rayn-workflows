@@ -352,3 +352,10 @@ Preflight evidence preservation:
 
 - row `311` showed that bad fallback names were fixed, but real official-site preflight doctors could still appear only under excluded/skipped names after fallback overwrote the final candidate list.
 - final fallback writeback now preserves official-site preflight candidates, email candidates, and validation evidence alongside fallback evidence so skipped names are auditable rather than unexplained.
+
+Row 311 verifier smoke:
+
+- after deploy `a8ccf238-c235-43ae-b25d-1b6b66cc3a70`, reran row `311` through `/contact-enrich-batch`.
+- bad fallback candidates `Dental Movies UK`, `Past President`, and `Asian Diabetic` are no longer present.
+- official-site preflight doctors `Arthur Yeah`, `Jimmy Gian`, and `Joshua Loh` are preserved in `contact_candidates_json` with `candidate_stage = official_site_preflight`.
+- Anymail Finder returned `not_found` for all three doctors with `0` credits charged, so final status remains `contact_not_found / no_validated_person_found`.
