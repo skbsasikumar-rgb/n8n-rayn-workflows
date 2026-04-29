@@ -366,3 +366,9 @@ LLM candidate verifier rollout:
 - fallback candidates now fail closed when the verifier is unavailable, writing `failed / candidate_verifier_failed` instead of spending Anymail credits on unverified names.
 - raw false positives are stored under `raw_candidates` and `rejected_candidates`; `candidate_names` and `candidate_count` now mean verified accepted human candidates only.
 - configured the Railway worker with `CONTACT_LLM_VERIFIER_ENABLED=true` and `CONTACT_LLM_VERIFIER_REQUIRED_FOR_FALLBACK=true`; local OpenRouter verification currently returns `401`, so a valid worker OpenRouter key is required before broad live fallback reruns.
+
+OpenRouter verifier key rotation:
+
+- updated the Railway worker `OPENROUTER_API_KEY` secret from the user-provided key without committing it.
+- redeployed worker deployment `4594a4a3-a328-4e8d-8d3a-4f1d90f0a79b`; `/health` passed.
+- LLM verifier smoke using the `Asian Diabetic` fixture now succeeds: `candidate_names=[]`, `raw_candidate_count=1`, `verified_candidate_count=0`, `rejected_candidate_names=["Asian Diabetic"]`, `candidate_verifier=llm`, and no verifier error.
