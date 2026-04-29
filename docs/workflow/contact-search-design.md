@@ -202,6 +202,7 @@ Serper fallback budget:
 - fallback public search defaults to Serper with `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 3`.
 - No2Bounce defaults are capped at `3` candidates, `4` emails per candidate, and `16` remote validations per row.
 - No2Bounce bulk validation is asynchronous. The worker polls the returned `trackingId`, downloads final CSV/JSON results from either `downloadFile` or documented `signedUrl` fields, redacts signed download URLs in stored evidence, and defaults `NO2BOUNCE_POLL_TIMEOUT_SECONDS` to `120`.
+- If a No2Bounce job times out with only rejected aggregate counts and no sendable/risky aggregate counts, the worker treats the pending batch as conservatively rejected instead of blocking the row. If No2Bounce reports sendable/risky aggregate counts without per-email mapping, the row remains failed because the worker cannot safely select an address.
 
 ## Suggested Python Stack
 

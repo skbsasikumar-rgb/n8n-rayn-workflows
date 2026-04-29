@@ -316,6 +316,7 @@ No2Bounce result handling:
 - if the final response contains a signed result download URL, accept both `downloadFile` and `signedUrl` style fields and parse CSV or JSON from the download.
 - redact signed result URLs before storing evidence.
 - keep the default poll timeout at `120` seconds; rows that still timeout remain retryable provider failures instead of false no-contact results.
+- if a poll times out but No2Bounce aggregate progress shows completed records with zero sendable/risky counts, conservatively mark that candidate's emails as rejected with `partial_timeout_rejected` and continue. If aggregate counts show any sendable/risky result but no per-email mapping, keep the row failed rather than guessing which email is usable.
 
 Scale caps only after measuring hit rate and cost.
 

@@ -925,6 +925,47 @@ def no2bounce_progress(payload: Any) -> dict[str, Any]:
     return output
 
 
+def no2bounce_count(progress: dict[str, Any], key: str) -> int:
+    value = dict_get_case_insensitive(progress, key)
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def no2bounce_has_sendable_aggregate(progress: dict[str, Any]) -> bool:
+    return (
+        no2bounce_count(progress, "Deliverable") > 0
+        or no2bounce_count(progress, "Deliverable/AcceptAll") > 0
+        or no2bounce_count(progress, "Risky/AcceptAll") > 0
+        or no2bounce_count(progress, "deliverability") > 0
+    )
+
+
+def no2bounce_partial_rejected_results(emails: list[str], progress: dict[str, Any]) -> list[dict[str, Any]]:
+    if not progress or no2bounce_has_sendable_aggregate(progress):
+        return []
+    completed = (
+        no2bounce_count(progress, "Undeliverable")
+        + no2bounce_count(progress, "UnDeliverable/AcceptAll")
+        + no2bounce_count(progress, "invalid")
+        + no2bounce_count(progress, "bounce")
+        + no2bounce_count(progress, "spam")
+    )
+    if completed <= 0:
+        return []
+    return [
+        {
+            "email": email,
+            "finalScoreValue": "Incomplete/PendingTimeout",
+            "status": "incomplete_pending_timeout",
+            "no2bounce_partial_timeout": "true",
+            "no2bounce_progress": progress,
+        }
+        for email in emails
+    ]
+
+
 def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) -> dict[str, Any]:
     token = os.getenv("NO2BOUNCE_API_TOKEN", "").strip()
     if not token:
@@ -981,13 +1022,26 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) ->
                 "results": results,
             }
         time.sleep(poll_interval_seconds)
+    progress = no2bounce_progress(poll_payload)
+    partial_rejected_results = no2bounce_partial_rejected_results(emails, progress)
+    if partial_rejected_results:
+        return {
+            "configured": True,
+            "error": "",
+            "warning": "partial_timeout_rejected",
+            "trackingId": tracking_id,
+            "post_response": sanitize_no2bounce_payload(post_payload),
+            "poll_response": sanitize_no2bounce_payload(poll_payload),
+            "progress": progress,
+            "results": partial_rejected_results,
+        }
     return {
         "configured": True,
         "error": "poll_timeout",
         "trackingId": tracking_id,
         "post_response": sanitize_no2bounce_payload(post_payload),
         "poll_response": sanitize_no2bounce_payload(poll_payload),
-        "progress": no2bounce_progress(poll_payload),
+        "progress": progress,
         "results": [],
     }
 
@@ -1580,6 +1634,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         candidate_summary["budget_limited"] = bool(validation.get("budget_limited"))
         candidate_summary["remaining_no2bounce_budget_after"] = remaining_no2bounce_budget
         candidate_summary["validation_error"] = compact(validation.get("error"), 160)
+        candidate_summary["validation_warning"] = compact(validation.get("warning"), 160)
         candidate_summary["validation_tracking_id"] = compact(validation.get("trackingId"), 200)
         if validation.get("post_response"):
             candidate_summary["validation_post_response"] = validation.get("post_response")
