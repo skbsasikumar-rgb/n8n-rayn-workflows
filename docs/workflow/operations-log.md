@@ -398,3 +398,9 @@ Official-site specialist page follow-up:
 - added generic profile/provider/consultant/practitioner link hints plus specialist healthcare page hints such as dermatologist and cardiologist so official pages like `/our-dermatologist/` are more likely to be crawled before paid search.
 - added clinical specialist titles such as Dermatologist, Cardiologist, Consultant Dermatologist, Consultant Cardiologist, and Senior Consultant as official-site contact roles.
 - de-duplicated same-name official candidates so a specialist found with a specific title is not also emitted as a generic Senior Doctor fallback.
+
+Specialist-role false-positive guard:
+
+- fixed role matching to use token boundaries so short roles like CTO no longer match inside unrelated words such as doctors.
+- limited broad clinical specialist roles to profile-line evidence with explicit doctor/professor honorifics, preventing package names, hospitals, addresses, and headings from becoming official-site people candidates.
+- changed same-name official-site de-duplication to prefer higher-confidence profile-line evidence before role priority, so adjacent name/title blocks keep their nearest title.

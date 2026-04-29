@@ -52,6 +52,15 @@ ROLE_BUCKETS: list[dict[str, Any]] = [
     {"bucket": "admin_hr", "seniority": "manager", "priority": 7, "roles": ["Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"]},
 ]
 ROLE_TERMS = {role.lower(): group for group in ROLE_BUCKETS for role in group["roles"]}
+PROFILE_LINE_ONLY_ROLES = {
+    "senior consultant",
+    "consultant physician",
+    "consultant dermatologist",
+    "dermatologist",
+    "consultant cardiologist",
+    "cardiologist",
+    "specialist",
+}
 NOISE_NAME_TERMS = {
     "Singapore",
     "Contact Us",
@@ -425,10 +434,10 @@ def role_points_to_other_org(evidence: str, name_start: int, name_end: int, comp
 
 def role_match(text: str, query_role: str = "") -> tuple[str, dict[str, Any] | None]:
     haystack = compact(text).lower()
-    if query_role and query_role.lower() in haystack:
+    if query_role and re.search(rf"(?<![a-z0-9]){re.escape(query_role.lower())}(?![a-z0-9])", haystack):
         return query_role, ROLE_TERMS.get(query_role.lower())
     for role, group in ROLE_TERMS.items():
-        if role in haystack:
+        if re.search(rf"(?<![a-z0-9]){re.escape(role)}(?![a-z0-9])", haystack):
             canonical_role = next((r for r in group["roles"] if r.lower() == role), role.title())
             return canonical_role, group
     return "", None
@@ -455,7 +464,7 @@ def parse_name(name: str) -> tuple[str, str] | None:
     if len(parts) < 2 or len(parts) > 5:
         return None
     lowered = [part.lower().strip("-'") for part in parts]
-    if any(part in {"and", "the", "our", "of"} for part in lowered):
+    if any(part in {"and", "the", "our", "of", "in", "for", "to", "with", "from"} for part in lowered):
         return None
     if any(part in {"dr", "doctor", "mr", "mrs", "ms", "miss", "mdm", "prof", "professor"} for part in lowered):
         return None
@@ -633,6 +642,8 @@ def profile_line_candidates(
                 break
         if not group:
             continue
+        if role.lower() in PROFILE_LINE_ONLY_ROLES and not re.search(r"\b(?:Dr|Doctor|Prof|Professor)\.?\s+", line):
+            continue
         if not company_match(raw_content, company_name, homepage_name, canonical_domain):
             continue
 
@@ -660,7 +671,7 @@ def profile_line_candidates(
                     source_type="official_domain",
                     evidence_text=context,
                     confidence="High",
-                    confidence_score=0.86,
+                    confidence_score=0.95,
                     company_match=True,
                     first_name=first_name,
                     last_name=last_name,
@@ -687,6 +698,8 @@ def extract_candidates_from_website_content(
     blocked_names = excluded_names or set()
     for group in ROLE_BUCKETS:
         for role in group["roles"]:
+            if role.lower() in PROFILE_LINE_ONLY_ROLES:
+                continue
             for name, name_start, name_end in name_matches_for_role(raw_content, role):
                 if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
                     continue
@@ -815,11 +828,18 @@ def extract_candidates_from_website_content(
             canonical_domain,
             best_url,
             blocked_names,
-            seen,
+            set(),
         )
     )
-    candidates.sort(key=lambda item: (item.role_priority, -item.confidence_score, item.name.lower()))
-    return candidates
+    by_name: dict[str, ContactCandidate] = {}
+    for candidate in candidates:
+        normalized_name = normalize_person_name(candidate.name)
+        existing = by_name.get(normalized_name)
+        if not existing or (-candidate.confidence_score, candidate.role_priority) < (-existing.confidence_score, existing.role_priority):
+            by_name[normalized_name] = candidate
+    deduped = list(by_name.values())
+    deduped.sort(key=lambda item: (item.role_priority, -item.confidence_score, item.name.lower()))
+    return deduped
 
 
 def source_type(url: str, canonical_domain: str) -> str:
