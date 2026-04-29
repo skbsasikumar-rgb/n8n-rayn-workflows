@@ -9,9 +9,9 @@ Build contact search as a separate stage after company URL enrichment. Keep comp
 Target result per company:
 
 - one best senior or managerial contact.
-- one person-specific deliverable email.
+- one person-specific valid email.
 - public evidence that the person is associated with the company.
-- No2Bounce validation evidence.
+- Anymail Finder person-lookup evidence.
 - `contact_search_status = contact_found` or `contact_search_status = contact_not_found`.
 
 Do not use generic inboxes. Do not write `needs_review` for contact search.
@@ -23,7 +23,7 @@ Use n8n for orchestration and a Python contact-search worker for the hard logic.
 Reasoning:
 
 - n8n is good for table selection, row claiming, provider credentials, and writeback.
-- contact search needs ranking, retry control, candidate queues, email permutations, provider polling, and evidence normalization.
+- contact search needs ranking, retry control, candidate queues, person lookup, provider handling, and evidence normalization.
 - those rules will become difficult to maintain as large JavaScript code blocks inside `wf-worker.json`.
 - a Python worker lets us test the extraction and validation logic without constantly importing n8n workflow JSON.
 
@@ -40,12 +40,11 @@ NocoDB pending contact rows
   -> worker executes OpenSERP provider cascade
   -> candidate extraction and ranking
   -> person-company validation
-  -> email permutation generation
-  -> No2Bounce validation
+  -> Anymail Finder person lookup
   -> worker writes the terminal NocoDB contact result per row
 ```
 
-The contact webhook now calls the Python batch runner directly instead of holding a multi-item n8n branch open. This keeps row claiming, No2Bounce polling, fallback search, and final writeback inside one row-level worker transaction, so one slow validation cannot leave the whole n8n branch stuck in `processing`.
+The contact webhook now calls the Python batch runner directly instead of holding a multi-item n8n branch open. This keeps row claiming, fallback search, Anymail Finder lookup, and final writeback inside one row-level worker transaction.
 
 ## Eligibility Rules
 
@@ -90,7 +89,7 @@ Provider adapter behavior:
 1. n8n calls `/contact-enrich-batch` with a small `limit` and the worker selects eligible `pending` rows.
 2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
 3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run Serper first.
-4. If preflight returns `preflight_candidate_email_rejected`, run the same Serper fallback but exclude the preflight candidate names and rejected email permutations.
+4. If preflight returns `preflight_candidate_email_rejected`, run the same Serper fallback but exclude the preflight candidate names and rejected email candidates.
 5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call Serper.
 6. Default fallback is `serper_emergency`; OpenSERP remains available only if explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
 7. Default paid-search budget is `3` role queries per row after preflight. Rows with official-site contacts spend zero Serper queries.
@@ -104,30 +103,20 @@ Provider adapter behavior:
 
 ### Email Validation
 
-Validation authority: No2Bounce.
+Validation authority: Anymail Finder person lookup.
 
-No2Bounce flow:
+Anymail Finder flow:
 
-1. Send generated emails to `POST /v2/n2b_validate_bulk` with `emailList`.
-2. Store the returned `trackingId`.
-3. Poll `GET /v2/n2b_validate_bulk?trackingId=...`.
-4. Classify every result into `sendable`, `risky_sendable`, or `rejected`.
-5. Accept `sendable` and `risky_sendable` person-specific results, but preserve the bucket in `email_validation_status`.
-6. Reject invalid, bad, undeliverable, bounce, spam, disposable, unknown, blocked, incomplete, low-score accept-all, timeout, and provider-error outcomes.
-
-No2Bounce decision buckets:
-
-- `Deliverable`, `Valid`, or `OK` -> `sendable`.
-- `Deliverable/AcceptAll` with `finalScore >= 90` and a named person -> `risky_sendable`.
-- `Deliverable/AcceptAll` with `finalScore < 90` -> `rejected`.
-- `UnDeliverable`, `Invalid`, `Bad`, or `UnDeliverable/AcceptAll` -> `rejected`.
-- `catchall=true` by itself is not enough to reject.
-- `catchall=true` with `finalScore >= 90` and `Deliverable/AcceptAll` -> `risky_sendable`.
-- `catchall=true` with `finalScore < 90` -> `rejected`.
+1. Send one `POST https://api.anymailfinder.com/v5.1/find-email/person` request per validated candidate.
+2. Request body: `{ "domain": canonical_domain, "full_name": candidate_name }`.
+3. Accept only `email_status = valid` with a populated `valid_email` on the exact `canonical_domain`.
+4. Reject risky, blacklisted, not-found, wrong-domain, invalid, unknown, and provider-error outcomes.
+5. Continue down the ranked candidate list until a valid email is found or the candidate cap is exhausted.
+6. Store provider response, credit count, and candidate attempt order in `email_validation_evidence_json`.
 
 ### Email Discovery Libraries
 
-Do not use third-party SMTP probing libraries for this stage. Implement deterministic name normalization and email permutations inside our own worker, then validate only through No2Bounce.
+Do not use third-party SMTP probing libraries for this stage. Use deterministic name filtering and Anymail Finder person lookup; do not generate generic inboxes.
 
 Do not perform direct SMTP probing. No direct mailbox verification over ports `25`, `465`, or `587` is part of this workflow.
 Do not add CAPTCHA-solving, stealth automation, fingerprint-evasion packages, or proxy rotation for this workflow.
@@ -189,11 +178,10 @@ Stop once an accepted contact is found. Do not keep spending validation credits 
 
 Candidate progression is bounded and explicit:
 
-- continue from candidate 1 to candidate 2 and onward when the current candidate's emails are all rejected.
-- cap at `5` validated candidates per row by default.
-- cap at `4` generated person-specific permutations per candidate by default.
-- cap at `24` uncached No2Bounce validations per row by default.
-- if validated candidates existed but every checked permutation was rejected, end as `contact_not_found / candidates_found_but_no_sendable_email`.
+- continue from candidate 1 to candidate 2 and onward when Anymail Finder returns no valid same-domain email.
+- cap at `3` validated candidates per row by default.
+- run at most one Anymail Finder person lookup per candidate.
+- if validated candidates existed but every Anymail lookup was rejected or not found, end as `contact_not_found / candidates_found_but_no_sendable_email`.
 
 ## Query Strategy
 
@@ -267,16 +255,16 @@ Weak signals are not enough:
 
 If no validated person is available, continue down the role queue.
 
-## Email Permutation Strategy
+## Person Lookup Strategy
 
-Generate only person-specific emails using `canonical_domain`.
+Use Anymail Finder person lookup instead of generated permutations by default.
 
-Default patterns:
+Default behavior:
 
-1. Two-token Western names keep the standard set headed by `first.last`, `first`, `firstlast`, `f.last`, `firstl`, `flast`, `last.first`, `first_last`, and `first-last`.
-2. Three- and four-token source-order names try family-name-first permutations before Westernized permutations.
-3. For `Tan Chin Beng Melvyn`, the source-order pass tries `tan.chinbengmelvyn`, `tan.melvyn`, `tanchinbengmelvyn`, and `tanmelvyn` before `melvyn.tan` and `melvyntan`.
-4. Each generated email candidate stores permutation metadata so evidence shows whether the worker used `source_order` or `western` naming.
+1. Validate that a candidate is a probable human name, not a company, bank, clinic, group, or company-name fragment.
+2. Send `{ "domain": canonical_domain, "full_name": candidate.name }`.
+3. Accept only `email_status = valid` with a same-domain `valid_email`.
+4. Store rejected `risky`, `blacklisted`, and `not_found` responses in evidence, then continue to the next candidate.
 
 Hard exclusions:
 
@@ -296,36 +284,33 @@ Hard exclusions:
 
 ## Credit-Control Strategy
 
-No2Bounce credits should be protected.
+Anymail Finder credits should be protected.
 
 For each row:
 
-1. validate person-company association before generating emails.
-2. generate permutations only for the highest-ranked validated candidate first.
-3. validate a small batch for that candidate.
+1. validate person-company association before paid lookup.
+2. reject non-human organization fragments before paid lookup.
+3. look up only the highest-ranked validated candidate first.
 4. stop immediately on accepted deliverable email.
-5. only move to the next candidate when the current candidate has no `sendable` or `risky_sendable` email.
+5. only move to the next candidate when the current candidate has no `sendable` email.
 6. cap candidates per row during tests.
 
 Suggested first-test caps:
 
 - max role buckets per row: 3.
 - max queries per role bucket: 3.
-- max candidates per row: 5.
-- max emails per candidate: 4.
-- max No2Bounce emails per row: 24.
+- max candidates per row: 3.
+- max Anymail Finder lookups per candidate: 1.
+- max Anymail Finder lookups per row: 3.
 
-Current worker behavior matches those contact caps and also records cache hits, requested No2Bounce counts, remaining row budget, and any budget-limited skipped permutations in `email_validation_evidence_json`.
+Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, and charged credits in `email_validation_evidence_json`.
 
-No2Bounce result handling:
+Anymail Finder result handling:
 
-- use the bulk endpoint only after local person/domain filters pass.
-- treat the POST response `trackingId` as an asynchronous job, not as immediate validation output.
-- poll for final output and parse direct result lists when present.
-- if the final response contains a signed result download URL, accept both `downloadFile` and `signedUrl` style fields and parse CSV or JSON from the download.
-- redact signed result URLs before storing evidence.
-- keep the default poll timeout at `120` seconds; rows that still timeout remain retryable provider failures instead of false no-contact results.
-- if a poll times out but No2Bounce aggregate progress shows completed records with zero sendable/risky counts, conservatively mark that candidate's emails as rejected with `partial_timeout_rejected` and continue. If aggregate counts show any sendable/risky result but no per-email mapping, keep the row failed rather than guessing which email is usable.
+- use `POST /v5.1/find-email/person` only after local person/domain filters pass.
+- use a long request timeout because Anymail Finder performs real-time validation.
+- accept only `email_status = valid` and same-domain `valid_email`.
+- treat provider timeout, 401, 402, or HTTP errors as retryable provider failures instead of false no-contact results.
 
 Scale caps only after measuring hit rate and cost.
 
@@ -348,8 +333,7 @@ When found:
 - `person_company_match_status = validated`
 - `validated_email`
 - `email_validation_status`
-- `email_validation_provider = no2bounce`
-- `permutation_pattern`
+- `email_validation_provider = anymail_finder`
 - `discovered_at`
 - `contact_candidates_json`
 - `email_candidates_json`
@@ -360,7 +344,7 @@ When exhausted:
 
 - `contact_search_status = contact_not_found`
 - `contact_search_reason = no_deliverable_person_specific_email_found` when no validated candidate reaches a meaningful validation attempt.
-- `contact_search_reason = candidates_found_but_no_sendable_email` when validated candidates existed but every checked permutation was rejected.
+- `contact_search_reason = candidates_found_but_no_sendable_email` when validated candidates existed but Anymail Finder returned no valid same-domain email.
 - keep `contact_candidates_json` and `contact_search_evidence_json` for audit.
 - leave `validated_email` blank.
 
@@ -384,7 +368,7 @@ Future split:
 
 - `leads` table keeps selected/best contact fields.
 - `lead_contacts` table stores all people candidates, role evidence, and validation attempts.
-- `email_validation_attempts` table stores every No2Bounce request/result.
+- `email_validation_attempts` table stores every Anymail Finder request/result.
 
 Do this only after the first contact-search strategy proves useful.
 
@@ -405,8 +389,8 @@ For each test row, report:
 - search queries used.
 - candidate count.
 - top candidates.
-- email permutations generated.
-- No2Bounce outcomes.
+- Anymail Finder lookups attempted.
+- Anymail Finder outcomes and credits charged.
 - terminal `contact_search_status`.
 - reason for stopping.
 
@@ -445,18 +429,17 @@ Verify:
 
 - first 5 to 10 rows produce auditable candidate lists before any email validation spend.
 
-### Phase 3: Email Permutation and No2Bounce
+### Phase 3: Anymail Finder Person Lookup
 
 - implement name normalization.
-- generate person-specific permutations.
-- call No2Bounce in small batches.
-- poll by `trackingId`.
+- reject organization fragments and non-human names.
+- call Anymail Finder with `full_name` and `domain`.
 - parse accepted and rejected statuses.
 
 Verify:
 
-- generic inboxes are never generated.
-- high-score `Deliverable/AcceptAll` results tied to a named person are selected as `risky_sendable`; low-score catch-all and non-deliverable results are rejected.
+- generic inboxes are never selected.
+- only Anymail Finder `valid` same-domain results are selected.
 - validation evidence is stored.
 
 ### Phase 4: n8n Contact Workflow

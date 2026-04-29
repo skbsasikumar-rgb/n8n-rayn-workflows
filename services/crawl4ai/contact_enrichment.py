@@ -68,6 +68,7 @@ NOISE_NAME_WORDS = {
     "about",
     "aesthetic",
     "aesthetics",
+    "apex",
     "american",
     "appointed",
     "adjunct",
@@ -75,9 +76,13 @@ NOISE_NAME_WORDS = {
     "ageing",
     "audiologist",
     "australasian",
+    "bank",
     "body",
     "bova",
     "clinic",
+    "centre",
+    "center",
+    "company",
     "commercial",
     "compounding",
     "contact",
@@ -123,6 +128,7 @@ NOISE_NAME_WORDS = {
     "senior",
     "seminar",
     "service",
+    "services",
     "singapore",
     "skin",
     "team",
@@ -245,7 +251,7 @@ class ContactResult:
     selected_contact_confidence: str = ""
     validated_email: str = ""
     email_validation_status: str = ""
-    email_validation_provider: str = "no2bounce"
+    email_validation_provider: str = "anymail_finder"
     email_validation_evidence: dict[str, Any] = field(default_factory=dict)
 
 
@@ -411,9 +417,26 @@ def parse_name(name: str) -> tuple[str, str] | None:
         return None
     if any(part in NOISE_NAME_WORDS for part in lowered):
         return None
+    if sum(1 for part in lowered if len(part) == 1) > 1:
+        return None
     if len(parts) == 2 and all(len(part) <= 2 for part in parts):
         return None
     return parts[0], parts[-1]
+
+
+def probable_human_name(name: str) -> bool:
+    cleaned = clean_name(name)
+    parts = [part for part in cleaned.replace("’", "'").split() if part]
+    if not parse_name(cleaned):
+        return False
+    lowered = [part.lower().strip("-'") for part in parts]
+    if any(part in NOISE_NAME_WORDS for part in lowered):
+        return False
+    if any(re.search(r"(?:pte|ltd|llp|inc|bank|clinic|centre|center|group|services?)$", part, re.I) for part in parts):
+        return False
+    if len(parts) <= 2 and any(part in {"bank", "clinic", "group", "centre", "center"} for part in lowered):
+        return False
+    return True
 
 
 def name_parts(name: str) -> list[str]:
@@ -523,6 +546,8 @@ def extract_candidates_from_website_content(
                     continue
                 if not role_near_name(raw_content, name_start, name_end, role):
                     continue
+                if not probable_human_name(name):
+                    continue
                 parsed = parse_name(name)
                 if not parsed:
                     continue
@@ -560,6 +585,8 @@ def extract_candidates_from_website_content(
                 continue
             key = (name.lower(), "clinical lead")
             if key in seen:
+                continue
+            if not probable_human_name(name):
                 continue
             parsed = parse_name(name)
             if not parsed:
@@ -601,6 +628,8 @@ def extract_candidates_from_website_content(
                     continue
                 key = (name.lower(), "practice manager")
                 if key in seen:
+                    continue
+                if not probable_human_name(name):
                     continue
                 parsed = parse_name(name)
                 if not parsed:
@@ -688,6 +717,8 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
                 if not role_near_name(evidence, name_start, name_end, matched_role):
                     continue
                 if stype != "official_domain" and not company_match(evidence[name_end : min(len(evidence), name_end + 180)], company_name, homepage_name, canonical_domain):
+                    continue
+                if not probable_human_name(name):
                     continue
                 parsed = parse_name(name)
                 if not parsed:
@@ -1111,6 +1142,93 @@ def result_email(result: dict[str, Any]) -> str:
         if matched:
             return compact(matched, 320).lower()
     return ""
+
+
+def sanitize_anymail_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        return {str(key): sanitize_anymail_payload(value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [sanitize_anymail_payload(item) for item in payload]
+    return payload
+
+
+def anymail_decision(result: dict[str, Any], domain: str) -> tuple[str, str]:
+    status = compact(result.get("email_status"), 80).lower()
+    email = compact(result.get("valid_email") or result.get("email"), 320).lower()
+    if status == "valid" and email_syntax_valid(email) and email.partition("@")[2] == domain:
+        return "sendable", email
+    return "rejected", ""
+
+
+def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[str, Any]:
+    api_key = os.getenv("ANYMAILFINDER_API_KEY", "").strip()
+    if not api_key:
+        return {"configured": False, "error": "ANYMAILFINDER_API_KEY is not configured", "results": []}
+    if not probable_human_name(candidate.name):
+        return {"configured": True, "error": "", "results": [], "skipped": "not_probable_human_name"}
+    if domain_has_mx_record(domain) is False:
+        return {"configured": True, "error": "", "results": [], "mx_exists": False, "skipped": "mx_missing"}
+
+    cache_key = f"anymail:{domain}:{normalize_person_name(candidate.name)}"
+    cached = VALIDATION_CACHE.get(cache_key)
+    if cached is not None:
+        return {
+            "configured": True,
+            "error": "",
+            "provider": "anymail_finder",
+            "results": [cached],
+            "cache_hit": True,
+            "credits_charged": int(cached.get("credits_charged") or 0),
+            "mx_exists": domain_has_mx_record(domain),
+        }
+
+    base_url = os.getenv("ANYMAILFINDER_BASE_URL", "https://api.anymailfinder.com/v5.1/find-email/person").strip()
+    timeout_seconds = max(30, int(os.getenv("ANYMAILFINDER_TIMEOUT_SECONDS", "180")))
+    request_body = {"domain": domain, "full_name": candidate.name}
+    try:
+        response = requests.post(
+            base_url,
+            headers={"Authorization": api_key, "Content-Type": "application/json"},
+            json=request_body,
+            timeout=timeout_seconds,
+        )
+        try:
+            payload: Any = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+    except requests.Timeout:
+        return {"configured": True, "error": "timeout", "provider": "anymail_finder", "results": [], "request": request_body}
+    except requests.RequestException as exc:
+        return {"configured": True, "error": compact(str(exc), 300) or "request_failed", "provider": "anymail_finder", "results": [], "request": request_body}
+
+    if response.status_code >= 400:
+        error_text = ""
+        if isinstance(payload, dict):
+            error_text = compact(payload.get("error") or payload.get("message"), 300)
+        return {
+            "configured": True,
+            "error": error_text or f"HTTP {response.status_code}",
+            "provider": "anymail_finder",
+            "status_code": response.status_code,
+            "request": request_body,
+            "response": sanitize_anymail_payload(payload),
+            "results": [],
+        }
+
+    result = payload if isinstance(payload, dict) else {"raw": payload}
+    result = sanitize_anymail_payload(result)
+    VALIDATION_CACHE[cache_key] = result
+    return {
+        "configured": True,
+        "error": "",
+        "provider": "anymail_finder",
+        "status_code": response.status_code,
+        "request": request_body,
+        "response": result,
+        "results": [result],
+        "credits_charged": int(result.get("credits_charged") or 0) if isinstance(result, dict) else 0,
+        "mx_exists": domain_has_mx_record(domain),
+    }
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -1621,7 +1739,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_candidates=candidate_dicts,
                 contact_search_evidence=search_evidence,
                 email_validation_evidence={
-                    "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
+                    "provider": "anymail_finder",
+                    "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
                     "skipped": "search_provider_failed",
                 },
             )
@@ -1631,79 +1750,61 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_reason="no_validated_person_found",
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
-            email_validation_evidence={"configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()), "skipped": "no_candidates"},
+            email_validation_provider="anymail_finder",
+            email_validation_evidence={"provider": "anymail_finder", "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()), "skipped": "no_candidates"},
         )
 
     aggregated_email_candidates: list[dict[str, Any]] = []
     generated_any = False
     validated_candidate_attempted = False
     max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "3")))
-    max_emails_per_candidate = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "4")))
-    max_no2bounce_emails_per_row = max(1, int(os.getenv("CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW", "16")))
-    remaining_no2bounce_budget = max_no2bounce_emails_per_row
     validation_evidence: dict[str, Any] = {
-        "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
+        "provider": "anymail_finder",
+        "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
         "dry_run": not validate_email,
         "max_candidates_per_row": max_candidates,
-        "max_emails_per_candidate": max_emails_per_candidate,
-        "max_no2bounce_emails_per_row": max_no2bounce_emails_per_row,
-        "remaining_no2bounce_budget": max_no2bounce_emails_per_row,
-        "total_no2bounce_requested": 0,
+        "total_anymail_requests": 0,
+        "total_anymail_credits_charged": 0,
         "candidate_attempts": [],
     }
     for candidate in candidates[:max_candidates]:
         if candidate.confidence not in {"High", "Medium"}:
             continue
-        email_candidates = candidate_email_candidates(candidate, domain, excluded_emails)
-        if not email_candidates:
+        if not probable_human_name(candidate.name):
             continue
-        email_candidates = email_candidates[:max_emails_per_candidate]
+        email_candidates = [
+            {
+                "name": candidate.name,
+                "role": candidate.role,
+                "source_url": candidate.source_url,
+                "provider": "anymail_finder",
+                "status": "not_validated",
+            }
+        ]
         generated_any = True
         aggregated_email_candidates.extend(email_candidates)
         candidate_summary = {
             "name": candidate.name,
             "role": candidate.role,
             "source_url": candidate.source_url,
-            "email_candidates_count": len(email_candidates),
-            "remaining_no2bounce_budget_before": remaining_no2bounce_budget,
+            "provider": "anymail_finder",
+            "lookup": "person_domain",
         }
         validation_evidence["candidate_attempts"].append(candidate_summary)
         if not validate_email:
             continue
 
-        cached_hits = sum(1 for item in email_candidates if VALIDATION_CACHE.get(compact(item.get("email"), 320).lower()) is not None)
-        if remaining_no2bounce_budget <= 0 and cached_hits < len(email_candidates):
-            for item in email_candidates:
-                email = compact(item.get("email"), 320).lower()
-                if VALIDATION_CACHE.get(email) is None:
-                    item["status"] = "budget_skipped"
-                    item["decision"] = "rejected"
-            candidate_summary["budget_exhausted"] = True
-            validation_evidence["budget_exhausted"] = True
-            break
-
         validated_candidate_attempted = True
-        validation = validate_email_candidates(email_candidates, domain, max_remote_emails=remaining_no2bounce_budget)
-        remaining_no2bounce_budget = max(0, remaining_no2bounce_budget - int(validation.get("requested_remote_email_count") or 0))
-        validation_evidence["remaining_no2bounce_budget"] = remaining_no2bounce_budget
-        validation_evidence["total_no2bounce_requested"] = int(validation_evidence.get("total_no2bounce_requested") or 0) + int(validation.get("requested_remote_email_count") or 0)
-        candidate_summary["cache_hits"] = list(validation.get("cache_hits") or [])
+        validation = validate_anymail_person(candidate, domain)
+        validation_evidence["total_anymail_requests"] = int(validation_evidence.get("total_anymail_requests") or 0) + (0 if validation.get("cache_hit") else 1)
+        validation_evidence["total_anymail_credits_charged"] = int(validation_evidence.get("total_anymail_credits_charged") or 0) + int(validation.get("credits_charged") or 0)
+        candidate_summary["cache_hit"] = bool(validation.get("cache_hit"))
         candidate_summary["mx_exists"] = validation.get("mx_exists")
-        candidate_summary["requested_remote_email_count"] = int(validation.get("requested_remote_email_count") or 0)
-        candidate_summary["budget_limited"] = bool(validation.get("budget_limited"))
-        candidate_summary["remaining_no2bounce_budget_after"] = remaining_no2bounce_budget
         candidate_summary["validation_error"] = compact(validation.get("error"), 160)
-        candidate_summary["validation_warning"] = compact(validation.get("warning"), 160)
-        candidate_summary["validation_tracking_id"] = compact(validation.get("trackingId"), 200)
-        if validation.get("post_response"):
-            candidate_summary["validation_post_response"] = validation.get("post_response")
-        if validation.get("poll_response"):
-            candidate_summary["validation_poll_response"] = validation.get("poll_response")
-        if validation.get("progress"):
-            candidate_summary["validation_progress"] = validation.get("progress")
+        candidate_summary["credits_charged"] = int(validation.get("credits_charged") or 0)
+        if validation.get("response"):
+            candidate_summary["validation_response"] = validation.get("response")
         candidate_summary["validation_result_count"] = len(validation.get("results") or [])
-        if validation.get("unvalidated_emails"):
-            candidate_summary["unvalidated_emails"] = list(validation.get("unvalidated_emails") or [])
         if not validation.get("configured"):
             return ContactResult(
                 row_id=row_id,
@@ -1713,6 +1814,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_search_evidence=search_evidence,
                 email_candidates=aggregated_email_candidates,
                 email_validation_status="not_configured",
+                email_validation_provider="anymail_finder",
                 email_validation_evidence=validation_evidence,
             )
         if validation.get("error"):
@@ -1724,26 +1826,28 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_search_evidence=search_evidence,
                 email_candidates=aggregated_email_candidates,
                 email_validation_status=str(validation.get("error")),
+                email_validation_provider="anymail_finder",
                 email_validation_evidence=validation_evidence,
             )
 
-        by_email = {item["email"].lower(): item for item in email_candidates}
+        email_candidate = email_candidates[0]
         if validation.get("mx_exists") is False:
-            for item in by_email.values():
-                item["status"] = "mx_missing"
-                item["decision"] = "rejected"
-            excluded_emails.update(by_email.keys())
+            email_candidate["status"] = "mx_missing"
+            email_candidate["decision"] = "rejected"
             continue
 
         for result in validation.get("results", []):
-            email = result_email(result)
-            if email in by_email:
-                decision = email_decision(result, bool(by_email[email].get("name")))
-                by_email[email]["validation_result"] = result
-                by_email[email]["status"] = status_text(result) or "validated"
-                by_email[email]["decision"] = decision
+            if not isinstance(result, dict):
+                continue
+            decision, email = anymail_decision(result, domain)
+            email_candidate["email"] = compact(result.get("email") or result.get("valid_email"), 320).lower()
+            email_candidate["valid_email"] = email
+            email_candidate["validation_result"] = result
+            email_candidate["status"] = compact(result.get("email_status"), 80).lower() or "validated"
+            email_candidate["decision"] = decision
+            if email:
                 if decision in {"sendable", "risky_sendable"}:
-                    by_email[email]["accepted"] = True
+                    email_candidate["accepted"] = True
                     candidate_summary["accepted_email"] = email
                     candidate_summary["accepted_decision"] = decision
                     return ContactResult(
@@ -1760,22 +1864,22 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                         selected_contact_confidence=candidate.confidence,
                         validated_email=email,
                         email_validation_status=decision,
+                        email_validation_provider="anymail_finder",
                         email_validation_evidence=validation_evidence,
                     )
-        for email in validation.get("unvalidated_emails", []):
-            if email in by_email:
-                by_email[email]["status"] = "budget_skipped"
-                by_email[email]["decision"] = "rejected"
-        excluded_emails.update(by_email.keys())
+        found_email = compact(email_candidate.get("email"), 320).lower()
+        if found_email:
+            excluded_emails.add(found_email)
 
     if not generated_any:
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
-            contact_search_reason="no_safe_email_permutations",
+            contact_search_reason="no_probable_human_candidate_for_email_lookup",
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
             email_candidates=aggregated_email_candidates,
+            email_validation_provider="anymail_finder",
         )
     if not validate_email:
         return ContactResult(
@@ -1785,6 +1889,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
             email_candidates=aggregated_email_candidates,
+            email_validation_provider="anymail_finder",
             email_validation_evidence=validation_evidence,
         )
 
@@ -1796,6 +1901,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         contact_search_evidence=search_evidence,
         email_candidates=aggregated_email_candidates,
         email_validation_status="no_deliverable_email",
+        email_validation_provider="anymail_finder",
         email_validation_evidence=validation_evidence,
     )
 
@@ -1896,3 +2002,8 @@ def build_role_queries(
             if len(queries) >= effective_max_queries:
                 return queries
     return queries
+    "corporation",
+    "hospital",
+    "limited",
+    "partners",
+    "rhb",

@@ -325,3 +325,11 @@ No2Bounce poll-timeout fix:
 - targeted reruns exposed two more false-positive patterns: company suffix names such as `SINGWEALTH HOLDINGS PTE LTD`, and roles that point to a different organization such as `CEO and Founder of Meet Doctor`; both are now rejected before email validation.
 - tightened non-official candidate evidence so the target company must appear after the candidate name in the candidate-specific evidence window, preventing unrelated doctors from being selected because the target company appeared earlier in the same snippet.
 - wired admin/HR terms into the existing manager fallback Serper bundle so the final-priority `admin_hr` bucket can be found without raising default query count.
+
+Anymail Finder contact validation switch:
+
+- switched default contact email validation from generated permutations plus No2Bounce to Anymail Finder person lookup.
+- worker now sends one `{domain, full_name}` lookup per validated candidate and accepts only `email_status = valid` with same-domain `valid_email`.
+- candidate progression remains active: if candidate 1 has no valid email, the worker proceeds to candidate 2 and then candidate 3 by default.
+- tightened probable-human filtering before paid lookup so organization fragments such as banks, clinics, centres, groups, Pte/Ltd entities, and company-name prefixes are rejected before Anymail Finder spend.
+- `email_validation_provider` is now `anymail_finder`; evidence records candidate attempt order, Anymail response, cache hits, and `credits_charged`.
