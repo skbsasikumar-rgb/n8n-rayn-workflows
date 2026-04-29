@@ -120,7 +120,10 @@ NOISE_NAME_WORDS = {
     "ceo",
     "cto",
     "ciso",
+    "executive",
     "founder",
+    "group",
+    "head",
     "owner",
 }
 CREDENTIAL_WORDS = {
@@ -792,11 +795,35 @@ def email_decision(result: Any, has_named_person: bool) -> str:
     return "rejected"
 
 
+NO2BOUNCE_DOWNLOAD_URL_KEYS = {
+    "downloadfile",
+    "download_file",
+    "downloadurl",
+    "download_url",
+    "resulturl",
+    "result_url",
+    "reporturl",
+    "report_url",
+    "signedurl",
+    "signed_url",
+}
+
+
+def no2bounce_download_url_candidate(key: Any, value: Any) -> str:
+    normalized_key = re.sub(r"[^a-z0-9]+", "", str(key).lower())
+    if normalized_key not in {re.sub(r"[^a-z0-9]+", "", item) for item in NO2BOUNCE_DOWNLOAD_URL_KEYS}:
+        return ""
+    if isinstance(value, str) and value.startswith(("http://", "https://")):
+        return value
+    return ""
+
+
 def find_no2bounce_download_url(payload: Any) -> str:
     if isinstance(payload, dict):
         for key, value in payload.items():
-            if str(key).lower() == "downloadfile" and isinstance(value, str) and value.startswith(("http://", "https://")):
-                return value
+            download_url = no2bounce_download_url_candidate(key, value)
+            if download_url:
+                return download_url
             nested = find_no2bounce_download_url(value)
             if nested:
                 return nested
@@ -812,7 +839,7 @@ def sanitize_no2bounce_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         output: dict[str, Any] = {}
         for key, value in payload.items():
-            if str(key).lower() == "downloadfile":
+            if no2bounce_download_url_candidate(key, value):
                 output[key] = "[redacted_download_url]" if value else ""
             else:
                 output[key] = sanitize_no2bounce_payload(value)
@@ -829,7 +856,14 @@ def download_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
     response = requests.get(download_url, timeout=30)
     if response.status_code >= 400:
         return []
-    csv_text = response.text.lstrip("\ufeff")
+    raw_text = response.text.lstrip("\ufeff").strip()
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type or raw_text.startswith(("{", "[")):
+        try:
+            return extract_no2bounce_results(response.json())
+        except ValueError:
+            return []
+    csv_text = raw_text
     reader = csv.DictReader(io.StringIO(csv_text))
     return [
         {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
@@ -843,7 +877,7 @@ def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
         return [item for item in payload if isinstance(item, dict)]
     if not isinstance(payload, dict):
         return []
-    for key in ("results", "data", "emails", "emailList", "validations", "records"):
+    for key in ("results", "apiResponse", "api_response", "validationResults", "validation_results", "data", "emails", "emailList", "validations", "records"):
         value = payload.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
@@ -855,6 +889,18 @@ def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
     if downloaded:
         return downloaded
     return []
+
+
+def no2bounce_progress(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    output: dict[str, Any] = {}
+    for key in ("taskId", "totalEmails", "completedEmails", "deliverability", "catchAll", "invalid", "bounce", "spam"):
+        value = dict_get_case_insensitive(data, key)
+        if value is not None:
+            output[key] = value
+    return output
 
 
 def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) -> dict[str, Any]:
@@ -891,7 +937,7 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) ->
         return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
 
     if timeout_seconds is None:
-        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "30")))
+        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "75")))
     poll_interval_seconds = max(2, int(os.getenv("NO2BOUNCE_POLL_INTERVAL_SECONDS", "3")))
     deadline = time.time() + timeout_seconds
     poll_payload: Any = {}
@@ -909,6 +955,7 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) ->
                 "trackingId": tracking_id,
                 "post_response": sanitize_no2bounce_payload(post_payload),
                 "poll_response": sanitize_no2bounce_payload(poll_payload),
+                "progress": no2bounce_progress(poll_payload),
                 "results": results,
             }
         time.sleep(poll_interval_seconds)
@@ -918,6 +965,7 @@ def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) ->
         "trackingId": tracking_id,
         "post_response": sanitize_no2bounce_payload(post_payload),
         "poll_response": sanitize_no2bounce_payload(poll_payload),
+        "progress": no2bounce_progress(poll_payload),
         "results": [],
     }
 
@@ -1515,6 +1563,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             candidate_summary["validation_post_response"] = validation.get("post_response")
         if validation.get("poll_response"):
             candidate_summary["validation_poll_response"] = validation.get("poll_response")
+        if validation.get("progress"):
+            candidate_summary["validation_progress"] = validation.get("progress")
         candidate_summary["validation_result_count"] = len(validation.get("results") or [])
         if validation.get("unvalidated_emails"):
             candidate_summary["unvalidated_emails"] = list(validation.get("unvalidated_emails") or [])

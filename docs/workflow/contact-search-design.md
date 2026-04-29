@@ -201,6 +201,7 @@ Serper fallback budget:
 - official-site preflight runs first and spends zero search-provider credits when it finds a usable contact.
 - fallback public search defaults to Serper with `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 3`.
 - No2Bounce defaults are capped at `3` candidates, `8` emails per candidate, and `16` remote validations per row.
+- No2Bounce bulk validation is asynchronous. The worker polls the returned `trackingId`, downloads final CSV/JSON results from either `downloadFile` or documented `signedUrl` fields, redacts signed download URLs in stored evidence, and defaults `NO2BOUNCE_POLL_TIMEOUT_SECONDS` to `75`.
 
 ## Suggested Python Stack
 

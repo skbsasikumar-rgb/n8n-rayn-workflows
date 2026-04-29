@@ -308,6 +308,15 @@ Suggested first-test caps:
 
 Current worker behavior matches those contact caps and also records cache hits, requested No2Bounce counts, remaining row budget, and any budget-limited skipped permutations in `email_validation_evidence_json`.
 
+No2Bounce result handling:
+
+- use the bulk endpoint only after local person/domain filters pass.
+- treat the POST response `trackingId` as an asynchronous job, not as immediate validation output.
+- poll for final output and parse direct result lists when present.
+- if the final response contains a signed result download URL, accept both `downloadFile` and `signedUrl` style fields and parse CSV or JSON from the download.
+- redact signed result URLs before storing evidence.
+- keep the default poll timeout at `75` seconds; rows that still timeout remain retryable provider failures instead of false no-contact results.
+
 Scale caps only after measuring hit rate and cost.
 
 ## Output Strategy

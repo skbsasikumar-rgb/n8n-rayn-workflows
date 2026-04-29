@@ -308,3 +308,11 @@ Contact search Serper fallback switch:
 - added No2Bounce tracking evidence into each candidate attempt so timeout rows preserve `trackingId`, sanitized POST response, sanitized last poll response, and result count for later diagnosis or retry design.
 - deployed the Serper fallback patch to Railway worker service `n8n-rayn-workflows`; live `/contact-provider-health` reports provider order `serper_emergency`.
 - post-deploy smoke on rows `274`, `275`, and `277` confirmed the worker is using Serper, but all three failed with `serper_api_key_missing`; Railway worker variables currently include NocoDB and No2Bounce keys but not `SERPER_API_KEY`.
+
+No2Bounce poll-timeout fix:
+
+- checked the public No2Bounce bulk API docs: POST returns a `trackingId`, GET polls progress, and final reports can be returned as a signed download URL under `signedUrl`.
+- root cause found in the worker: the parser only recognized `downloadFile`, so completed jobs that returned `signedUrl` could be treated as no-results and eventually become `poll_timeout`.
+- updated No2Bounce parsing to recognize signed/download/result/report URL fields, parse downloaded CSV or JSON, redact signed URLs in evidence, and store progress counters from the last poll.
+- increased the default No2Bounce poll timeout from 30 to 75 seconds while keeping row-level retry behavior for true slow or stuck jobs.
+- tightened person-name rejection so title-only noise such as `Group Head` is not sent to No2Bounce as a candidate name.
