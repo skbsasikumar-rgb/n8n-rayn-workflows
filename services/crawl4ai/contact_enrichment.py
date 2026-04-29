@@ -47,7 +47,7 @@ ROLE_BUCKETS: list[dict[str, Any]] = [
     {"bucket": "compliance_privacy_security", "seniority": "senior_manager", "priority": 2, "roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Chief Information Security Officer", "Head of Security", "Cybersecurity Manager"]},
     {"bucket": "it_technology", "seniority": "manager", "priority": 3, "roles": ["IT Manager", "Head of IT", "CTO", "Chief Technology Officer", "Technology Manager", "Systems Manager"]},
     {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Chief Operating Officer", "Clinic Operations Manager", "Practice Manager", "Programme Director", "Program Director", "Programme Manager", "Program Manager", "Centre Manager", "Center Manager", "Corporate Services Manager", "Community Partnerships Manager", "Volunteer Manager", "Fundraising Manager", "Social Work Manager", "Head of Social Work", "Care Services Manager"]},
-    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Clinical Director", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor"]},
+    {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Clinical Director", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor", "Senior Consultant", "Consultant Physician", "Consultant Dermatologist", "Dermatologist", "Consultant Cardiologist", "Cardiologist", "Specialist"]},
     {"bucket": "care_clinical", "seniority": "manager", "priority": 6, "roles": ["Head of Nursing", "Nursing Manager", "Clinical Lead", "Care Manager"]},
     {"bucket": "admin_hr", "seniority": "manager", "priority": 7, "roles": ["Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"]},
 ]
@@ -734,6 +734,8 @@ def extract_candidates_from_website_content(
             if re.search(r"[’']s$", name):
                 continue
             if normalize_person_name(name) in blocked_names:
+                continue
+            if any(normalize_person_name(candidate.name) == normalize_person_name(name) for candidate in candidates):
                 continue
             key = (name.lower(), "clinical lead")
             if key in seen:

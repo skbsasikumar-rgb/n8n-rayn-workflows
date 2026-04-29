@@ -392,3 +392,9 @@ Industry-general official-site people discovery:
 - increased default official-site follow links from `2` to `4` and expanded the structured `team_text` evidence cap so names from people/board pages are more likely to reach contact extraction before paid search.
 - added official-site profile-line extraction for generic industries: adjacent name/title blocks such as `Jane Tan` followed by `Executive Director`, or `Muhammad Faisal Rahman` followed by `Programme Manager`, can now become verified official-domain candidates.
 - kept healthcare extraction intact, but it is no longer the dominant assumption; NCSS, SSA, charities, nonprofits, and general SME/enterprise leadership roles are handled in the same path.
+
+Official-site specialist page follow-up:
+
+- added generic profile/provider/consultant/practitioner link hints plus specialist healthcare page hints such as dermatologist and cardiologist so official pages like `/our-dermatologist/` are more likely to be crawled before paid search.
+- added clinical specialist titles such as Dermatologist, Cardiologist, Consultant Dermatologist, Consultant Cardiologist, and Senior Consultant as official-site contact roles.
+- de-duplicated same-name official candidates so a specialist found with a specific title is not also emitted as a generic Senior Doctor fallback.
