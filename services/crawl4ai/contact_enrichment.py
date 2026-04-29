@@ -687,7 +687,7 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
                     continue
                 if not role_near_name(evidence, name_start, name_end, matched_role):
                     continue
-                if stype != "official_domain" and not company_near_name(evidence, name_start, name_end, company_name, homepage_name, canonical_domain):
+                if stype != "official_domain" and not company_match(evidence[name_end : min(len(evidence), name_end + 180)], company_name, homepage_name, canonical_domain):
                     continue
                 parsed = parse_name(name)
                 if not parsed:
