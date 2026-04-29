@@ -1068,6 +1068,56 @@ def exclusion_names_from_result(result: contact_enrichment.ContactResult) -> lis
     return names
 
 
+def merge_preflight_into_fallback(
+    preflight_result: contact_enrichment.ContactResult,
+    fallback_result: contact_enrichment.ContactResult,
+) -> contact_enrichment.ContactResult:
+    seen_candidates: set[tuple[str, str, str]] = set()
+    merged_candidates: list[dict[str, Any]] = []
+    for stage, candidates in (
+        ("official_site_preflight", preflight_result.contact_candidates),
+        ("fallback_search", fallback_result.contact_candidates),
+    ):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            key = (
+                compact_whitespace(candidate.get("name", "")).lower(),
+                compact_whitespace(candidate.get("role", "")).lower(),
+                compact_whitespace(candidate.get("source_url", "")).lower(),
+            )
+            if key in seen_candidates:
+                continue
+            seen_candidates.add(key)
+            merged = dict(candidate)
+            merged.setdefault("candidate_stage", stage)
+            merged_candidates.append(merged)
+
+    merged_email_candidates = [
+        *(item for item in preflight_result.email_candidates if isinstance(item, dict)),
+        *(item for item in fallback_result.email_candidates if isinstance(item, dict)),
+    ]
+    fallback_result.contact_candidates = merged_candidates
+    fallback_result.email_candidates = merged_email_candidates
+    fallback_result.contact_search_evidence = {
+        **fallback_result.contact_search_evidence,
+        "official_site_preflight_candidate_count": len(preflight_result.contact_candidates),
+        "official_site_preflight_candidate_names": [
+            compact_whitespace(candidate.get("name", ""))
+            for candidate in preflight_result.contact_candidates
+            if isinstance(candidate, dict) and compact_whitespace(candidate.get("name", ""))
+        ],
+        "preflight_candidate_names_skipped_in_fallback": exclusion_names_from_result(preflight_result),
+        "preflight_skip_reason": "already_checked_by_official_site_preflight" if preflight_result.contact_candidates else "",
+    }
+    fallback_result.email_validation_evidence = {
+        **fallback_result.email_validation_evidence,
+        "official_site_preflight_email_validation_evidence": preflight_result.email_validation_evidence,
+        "official_site_preflight_email_candidates": preflight_result.email_candidates,
+    }
+    return fallback_result
+
+
 def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]:
     row_id = row.get("Id")
     started_at = contact_enrichment.now_iso()
@@ -1114,6 +1164,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
             else "preflight_no_person_candidate"
         )
         fallback_result = contact_enrichment.enrich_contact(fallback_payload, validate_email=validate_email)
+        fallback_result = merge_preflight_into_fallback(preflight_result, fallback_result)
         patch = contact_enrichment.build_patch(fallback_result)
         patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
         noco_patch_rows([patch])

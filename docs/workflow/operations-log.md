@@ -347,3 +347,8 @@ Contact candidate verifier tightening:
 - conference/event/speaker-list sources are blocked for contact selection unless the evidence is official-domain quality.
 - fallback exclusion evidence now also writes `preflight_candidate_names_skipped_in_fallback` and `preflight_skip_reason` so operators can distinguish stale skipped names from final candidates.
 - future fresh reruns should stop/clear old executions first, then reset stale table output fields, so old No2Bounce/permutation artifacts are not confused with current Anymail Finder results.
+
+Preflight evidence preservation:
+
+- row `311` showed that bad fallback names were fixed, but real official-site preflight doctors could still appear only under excluded/skipped names after fallback overwrote the final candidate list.
+- final fallback writeback now preserves official-site preflight candidates, email candidates, and validation evidence alongside fallback evidence so skipped names are auditable rather than unexplained.
