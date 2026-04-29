@@ -468,19 +468,27 @@ Verify:
 - no row silently disappears.
 - provider errors are separated from true `contact_not_found` results.
 
-## Optional LLM Verifier Policy
+## LLM Candidate Verifier
 
-Do not use an LLM as the primary candidate gate. The primary gate remains deterministic because it is cheaper, auditable, and easier to debug row-by-row.
+The worker now verifies fallback raw candidates before Anymail Finder spend. Raw extracted phrases are not written as accepted candidates. They are stored as raw/rejected evidence first, and only verified human candidates are counted in `candidate_count` and `candidate_names`.
 
-An LLM verifier may be added later only as a second-pass check for borderline candidates after deterministic filters run. It should receive only the candidate name, role, company name, canonical domain, source URL, and short evidence snippet, then return strict JSON:
+Verifier controls:
 
-```json
-{"is_human_name": true, "works_for_target_company": true, "confidence": "high", "reason": "..."}
-```
+- `CONTACT_LLM_VERIFIER_ENABLED=true` enables the OpenRouter verifier.
+- `CONTACT_LLM_VERIFIER_REQUIRED_FOR_FALLBACK=true` makes fallback fail closed when the verifier fails.
+- `CONTACT_LLM_VERIFIER_MODEL` selects the strict verifier model.
+- `CONTACT_LLM_VERIFIER_TIMEOUT_SECONDS` bounds verifier latency.
 
-Hard rules for any future LLM verifier:
+Fail-closed behavior:
 
-- never invent names, roles, emails, or company relationships.
-- never override deterministic hard rejects for obvious organization/title fragments.
-- never trigger Anymail Finder lookup unless `is_human_name=true` and `works_for_target_company=true`.
-- store the verifier result in evidence for audit.
+- official-domain preflight can continue through deterministic checks when the verifier is unavailable.
+- fallback search candidates must pass the LLM verifier before Anymail Finder when required mode is enabled.
+- verifier errors write `contact_search_status = failed` and `contact_search_reason = candidate_verifier_failed`.
+
+Evidence contract:
+
+- `raw_candidate_count` counts extracted raw phrases.
+- `verified_candidate_count` and `candidate_count` count accepted human candidates only.
+- `candidate_names` and `verified_candidate_names` contain accepted human names only.
+- `rejected_candidate_names` and `rejected_candidates` contain false positives such as organization names, title-only phrases, weak snippets, and already-tried people.
+- `previously_tried_candidate_names` records official-site preflight candidates skipped during fallback.

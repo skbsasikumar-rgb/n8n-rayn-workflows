@@ -93,8 +93,6 @@ NOISE_NAME_WORDS = {
     "doctor",
     "doctors",
     "doing",
-    "dental",
-    "diabetic",
     "general",
     "graduate",
     "guide",
@@ -111,7 +109,6 @@ NOISE_NAME_WORDS = {
     "magazine",
     "manager",
     "managing",
-    "materials",
     "medical",
     "more",
     "most",
@@ -146,10 +143,6 @@ NOISE_NAME_WORDS = {
     "group",
     "head",
     "owner",
-    "past",
-    "president",
-    "movies",
-    "speaker",
     "symposium",
     "uk",
     "usa",
@@ -180,6 +173,8 @@ WEAK_THIRD_PARTY_SOURCE_HINTS = (
     "webinar",
     "speaker",
 )
+LLM_VERIFIER_PROMPT_VERSION = "v1"
+TARGET_ROLE_BUCKETS = [group["bucket"] for group in ROLE_BUCKETS]
 CREDENTIAL_WORDS = {
     "bao",
     "bch",
@@ -270,6 +265,18 @@ class ContactCandidate:
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
+
+
+@dataclass
+class CandidateVerification:
+    accepted: list[ContactCandidate] = field(default_factory=list)
+    rejected_candidates: list[dict[str, Any]] = field(default_factory=list)
+    needs_more_evidence_candidates: list[dict[str, Any]] = field(default_factory=list)
+    previously_tried_candidate_details: list[dict[str, Any]] = field(default_factory=list)
+    raw_candidates: list[dict[str, Any]] = field(default_factory=list)
+    verifier: str = "deterministic"
+    prompt_version: str = LLM_VERIFIER_PROMPT_VERSION
+    error: str = ""
 
 
 @dataclass
@@ -732,6 +739,115 @@ def source_type(url: str, canonical_domain: str) -> str:
     if any(label in domain for label in ("doctor", "health", "clinic", "medical", "dental")):
         return "professional_public_page"
     return "public_search_result"
+
+
+def source_strength(url: str, source_type_value: str, evidence: str, company_name: str, homepage_name: str, canonical_domain: str) -> str:
+    domain = domain_from_url(url)
+    lowered = compact(evidence, 1200).lower()
+    if source_type_value == "official_domain":
+        return "official_domain"
+    if "linkedin.com" in domain and company_match(evidence, company_name, homepage_name, canonical_domain):
+        if any(term in lowered for term in ("comment", "comments", "likes", "activity", "report this")):
+            return "very_weak_activity_snippet"
+        return "strong_professional_profile"
+    if any(site in domain for site in ("facebook.com", "instagram.com", "youtube.com")) and company_match(evidence, company_name, homepage_name, canonical_domain):
+        return "official_social"
+    if source_type_value == "professional_public_page" and company_match(evidence, company_name, homepage_name, canonical_domain):
+        return "professional_directory"
+    if weak_third_party_source(url):
+        return "very_weak_event_or_speaker_page"
+    return "weak_snippet"
+
+
+def raw_candidate_key(raw_candidate: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        normalize_person_name(raw_candidate.get("raw_name", "")),
+        compact(raw_candidate.get("role_detected"), 100).lower(),
+        compact(raw_candidate.get("source_url"), 500).lower(),
+    )
+
+
+def raw_candidate_from_match(
+    *,
+    raw_name: str,
+    role: str,
+    group: dict[str, Any],
+    source_url: str,
+    source_type_value: str,
+    title: str,
+    snippet: str,
+    evidence: str,
+    query: str,
+    company_name: str,
+    homepage_name: str,
+    canonical_domain: str,
+    name_start: int,
+    name_end: int,
+) -> dict[str, Any]:
+    return {
+        "raw_name": clean_name(raw_name),
+        "role_detected": role,
+        "role_bucket": group.get("bucket", ""),
+        "role_priority": int(group.get("priority") or 0),
+        "seniority": group.get("seniority", ""),
+        "source_url": source_url,
+        "source_type": source_type_value,
+        "source_strength": source_strength(source_url, source_type_value, evidence, company_name, homepage_name, canonical_domain),
+        "title": compact(title, 400),
+        "snippet": compact(snippet, 1200),
+        "evidence_text": compact(evidence, 1600),
+        "query": compact(query, 300),
+        "name_start": name_start,
+        "name_end": name_end,
+    }
+
+
+def extract_raw_candidates_from_search(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    company_name = compact(payload.get("company_name"))
+    homepage_name = compact(payload.get("company_homepage_name"))
+    canonical_domain = compact(payload.get("canonical_domain")).lower().removeprefix("www.")
+    attempts = payload.get("search_attempts") if isinstance(payload.get("search_attempts"), list) else []
+    raw_candidates: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for attempt in attempts:
+        query_role = compact(attempt.get("role"))
+        query = compact(attempt.get("query"), 300)
+        results = attempt.get("results") if isinstance(attempt.get("results"), list) else []
+        for result in results[:10]:
+            title = compact(result.get("title"), 400)
+            snippet = compact(result.get("snippet") or result.get("content") or result.get("description"), 1200)
+            url = compact(result.get("url") or result.get("link"), 1000)
+            if is_search_asset(url):
+                continue
+            stype = source_type(url, canonical_domain)
+            evidence = compact(" | ".join(part for part in (title, snippet) if part), 1600)
+            matched_role, group = role_match(evidence, query_role=query_role)
+            if not group:
+                continue
+            for name, name_start, name_end in name_matches_for_role(evidence, matched_role):
+                raw_candidate = raw_candidate_from_match(
+                    raw_name=name,
+                    role=matched_role,
+                    group=group,
+                    source_url=url,
+                    source_type_value=stype,
+                    title=title,
+                    snippet=snippet,
+                    evidence=evidence,
+                    query=query,
+                    company_name=company_name,
+                    homepage_name=homepage_name,
+                    canonical_domain=canonical_domain,
+                    name_start=name_start,
+                    name_end=name_end,
+                )
+                key = raw_candidate_key(raw_candidate)
+                if not key[0] or key in seen:
+                    continue
+                seen.add(key)
+                raw_candidates.append(raw_candidate)
+    raw_candidates.sort(key=lambda item: (int(item.get("role_priority") or 0), item.get("raw_name", "").lower()))
+    return raw_candidates[:30]
 
 
 def is_search_asset(url: str) -> bool:
@@ -1706,7 +1822,219 @@ def validate_email_candidates(email_candidates: list[dict[str, Any]], domain: st
     return validation
 
 
-def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict[str, Any]]) -> dict[str, Any]:
+def accepted_candidate_from_raw(raw_candidate: dict[str, Any], accepted: dict[str, Any] | None = None) -> ContactCandidate | None:
+    accepted = accepted or {}
+    name = clean_name(accepted.get("name") or raw_candidate.get("raw_name"))
+    if not probable_human_name(name):
+        return None
+    parsed = parse_name(name)
+    if not parsed:
+        return None
+    role = compact(accepted.get("role") or raw_candidate.get("role_detected"), 120)
+    role_bucket = compact(accepted.get("role_bucket") or raw_candidate.get("role_bucket"), 120)
+    group = next((item for item in ROLE_BUCKETS if item["bucket"] == role_bucket), None)
+    if not group:
+        return None
+    confidence_value = accepted.get("confidence", 0.0)
+    try:
+        confidence_score = float(confidence_value)
+    except (TypeError, ValueError):
+        confidence_score = 0.7
+    if confidence_score > 1:
+        confidence_score = confidence_score / 100
+    first_name, last_name = parsed
+    return ContactCandidate(
+        name=name,
+        role=role,
+        seniority=compact(accepted.get("seniority") or group["seniority"], 80),
+        role_bucket=role_bucket,
+        role_priority=int(group["priority"]),
+        source_url=compact(raw_candidate.get("source_url"), 1000),
+        source_type=compact(raw_candidate.get("source_type"), 120),
+        evidence_text=compact(raw_candidate.get("evidence_text") or raw_candidate.get("snippet"), 1600),
+        confidence="High" if confidence_score >= 0.85 else "Medium",
+        confidence_score=max(0.0, min(confidence_score or 0.7, 1.0)),
+        company_match=True,
+        first_name=first_name,
+        last_name=last_name,
+    )
+
+
+def deterministic_rejection_reason(raw_candidate: dict[str, Any], company_name: str, homepage_name: str, canonical_domain: str, previously_tried: set[str]) -> str:
+    raw_name = clean_name(raw_candidate.get("raw_name"))
+    normalized = normalize_person_name(raw_name)
+    if not raw_name or len(name_parts(raw_name)) < 2:
+        return "not_human"
+    if normalized in previously_tried:
+        return "already_tried"
+    if not probable_human_name(raw_name):
+        return "not_human"
+    if company_fragment_match(raw_name, company_name, homepage_name, canonical_domain) or company_match(raw_name, company_name, homepage_name, canonical_domain):
+        return "organization_name"
+    if str(raw_candidate.get("source_strength")) in {"very_weak_activity_snippet", "very_weak_event_or_speaker_page"}:
+        return "weak_source"
+    if raw_candidate.get("source_type") != "official_domain" and not non_official_candidate_company_link(
+        compact(raw_candidate.get("evidence_text"), 1600),
+        int(raw_candidate.get("name_start") or 0),
+        int(raw_candidate.get("name_end") or 0),
+        compact(raw_candidate.get("role_detected"), 120),
+        company_name,
+        homepage_name,
+        canonical_domain,
+    ):
+        return "not_target_company"
+    return ""
+
+
+def deterministic_verify_contact_candidates(payload: dict[str, Any], raw_candidates: list[dict[str, Any]]) -> CandidateVerification:
+    company_name = compact(payload.get("company_name"))
+    homepage_name = compact(payload.get("company_homepage_name"))
+    canonical_domain = compact(payload.get("canonical_domain")).lower().removeprefix("www.")
+    previously_tried = normalized_name_set(payload.get("excluded_candidate_names"))
+    accepted: list[ContactCandidate] = []
+    rejected: list[dict[str, Any]] = []
+    previously_tried_details: list[dict[str, Any]] = []
+    for raw_candidate in raw_candidates:
+        reason_code = deterministic_rejection_reason(raw_candidate, company_name, homepage_name, canonical_domain, previously_tried)
+        if reason_code:
+            item = {
+                "raw_name": compact(raw_candidate.get("raw_name"), 160),
+                "decision": "reject",
+                "reason_code": reason_code,
+                "reason": f"deterministic verifier rejected candidate as {reason_code}",
+                "source_url": raw_candidate.get("source_url", ""),
+            }
+            rejected.append(item)
+            if reason_code == "already_tried":
+                previously_tried_details.append(item)
+            continue
+        candidate = accepted_candidate_from_raw(raw_candidate, {"confidence": 0.85})
+        if candidate:
+            accepted.append(candidate)
+        else:
+            rejected.append(
+                {
+                    "raw_name": compact(raw_candidate.get("raw_name"), 160),
+                    "decision": "reject",
+                    "reason_code": "insufficient_evidence",
+                    "reason": "could not convert raw candidate into a safe contact candidate",
+                    "source_url": raw_candidate.get("source_url", ""),
+                }
+            )
+    return CandidateVerification(
+        accepted=accepted,
+        rejected_candidates=rejected,
+        previously_tried_candidate_details=previously_tried_details,
+        raw_candidates=raw_candidates,
+        verifier="deterministic",
+    )
+
+
+def llm_verifier_prompt(payload: dict[str, Any], raw_candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
+    previously_tried = [
+        {"name": name, "stage": "official_site_preflight", "email_lookup_result": "not_found"}
+        for name in sorted(normalized_name_set(payload.get("excluded_candidate_names")))
+    ]
+    user_payload = {
+        "company_name": compact(payload.get("company_name"), 180),
+        "company_homepage_name": compact(payload.get("company_homepage_name"), 180),
+        "canonical_domain": compact(payload.get("canonical_domain"), 180),
+        "target_role_buckets": TARGET_ROLE_BUCKETS,
+        "previously_tried_candidates": previously_tried,
+        "raw_candidates": raw_candidates[:20],
+    }
+    system = (
+        "You are a strict contact-candidate verifier. Return strict JSON only. "
+        "Accept candidates only when the name is a real human full name, the evidence links the person to the target company, "
+        "the role belongs to the target company, and the role is managerial/senior/executive/clinical/compliance/IT/operations/admin/HR. "
+        "Reject organizations, clinics, centres, publications, events, products, departments, locations, role titles, title-only phrases, "
+        "comments/activity snippets, people tied to other organizations, already tried candidates, and weak evidence."
+    )
+    schema = (
+        "Return exactly this JSON shape: "
+        '{"accepted_candidates":[{"name":"string","role":"string","role_bucket":"string","seniority":"executive|senior_manager|manager","is_human":true,"target_company_match":"direct|probable","source_strength":"official_domain|strong_professional_profile|professional_directory|official_social|weak_snippet","confidence":0.0,"reason":"string"}],'
+        '"rejected_candidates":[{"raw_name":"string","decision":"reject","reason_code":"not_human|organization_name|role_title_only|role_belongs_to_other_org|weak_source|not_target_company|already_tried|not_managerial_role|insufficient_evidence","reason":"string"}],'
+        '"needs_more_evidence_candidates":[{"raw_name":"string","reason":"string"}]}'
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": schema + "\nInput:\n" + json.dumps(user_payload, ensure_ascii=False)},
+    ]
+
+
+def parse_llm_json(text: str) -> dict[str, Any]:
+    cleaned = compact(text, 20000)
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return json.loads(cleaned)
+
+
+def verify_contact_candidates_with_llm(payload: dict[str, Any], raw_candidates: list[dict[str, Any]]) -> CandidateVerification:
+    if not raw_candidates:
+        return CandidateVerification(verifier="llm", raw_candidates=[])
+    fake_response = os.getenv("CONTACT_LLM_VERIFIER_FAKE_RESPONSE", "").strip()
+    if fake_response:
+        llm_payload = parse_llm_json(fake_response)
+    else:
+        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if not api_key:
+            return CandidateVerification(verifier="llm", raw_candidates=raw_candidates, error="OPENROUTER_API_KEY is not configured")
+        model = os.getenv("CONTACT_LLM_VERIFIER_MODEL", "deepseek/deepseek-v4-flash").strip()
+        timeout_seconds = max(5, int(os.getenv("CONTACT_LLM_VERIFIER_TIMEOUT_SECONDS", "20")))
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "temperature": 0, "messages": llm_verifier_prompt(payload, raw_candidates)},
+            timeout=timeout_seconds,
+        )
+        if response.status_code >= 400:
+            return CandidateVerification(verifier="llm", raw_candidates=raw_candidates, error=f"llm_http_{response.status_code}")
+        data = response.json()
+        content = compact(data.get("choices", [{}])[0].get("message", {}).get("content"), 20000)
+        try:
+            llm_payload = parse_llm_json(content)
+        except Exception as exc:
+            return CandidateVerification(verifier="llm", raw_candidates=raw_candidates, error=f"llm_json_parse_failed:{compact(exc, 120)}")
+
+    accepted_candidates: list[ContactCandidate] = []
+    rejected = [item for item in llm_payload.get("rejected_candidates", []) if isinstance(item, dict)]
+    needs_more = [item for item in llm_payload.get("needs_more_evidence_candidates", []) if isinstance(item, dict)]
+    raw_by_name = {normalize_person_name(item.get("raw_name", "")): item for item in raw_candidates}
+    for accepted in llm_payload.get("accepted_candidates", []):
+        if not isinstance(accepted, dict):
+            continue
+        raw = raw_by_name.get(normalize_person_name(accepted.get("name", "")))
+        if not raw:
+            rejected.append({"raw_name": compact(accepted.get("name"), 160), "decision": "reject", "reason_code": "insufficient_evidence", "reason": "LLM accepted a name that was not in raw candidates"})
+            continue
+        candidate = accepted_candidate_from_raw(raw, accepted)
+        if candidate:
+            accepted_candidates.append(candidate)
+    return CandidateVerification(
+        accepted=accepted_candidates,
+        rejected_candidates=rejected,
+        needs_more_evidence_candidates=needs_more,
+        previously_tried_candidate_details=[item for item in rejected if item.get("reason_code") == "already_tried"],
+        raw_candidates=raw_candidates,
+        verifier="llm",
+    )
+
+
+def verify_candidates(payload: dict[str, Any], candidates: list[ContactCandidate], raw_candidates: list[dict[str, Any]]) -> CandidateVerification:
+    if payload.get("site_fast_path_only"):
+        return CandidateVerification(
+            accepted=candidates,
+            raw_candidates=[candidate.to_dict() for candidate in candidates],
+            verifier="deterministic_official_site",
+        )
+    enabled = env_flag("CONTACT_LLM_VERIFIER_ENABLED", default=True)
+    if enabled:
+        return verify_contact_candidates_with_llm(payload, raw_candidates)
+    return deterministic_verify_contact_candidates(payload, raw_candidates)
+
+
+def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict[str, Any]], verification: CandidateVerification | None = None) -> dict[str, Any]:
     attempts = payload.get("search_attempts") if isinstance(payload.get("search_attempts"), list) else []
     output_attempts: list[dict[str, Any]] = []
     total_results = 0
@@ -1754,6 +2082,10 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
                 ],
             }
         )
+    verification = verification or CandidateVerification()
+    raw_candidates = verification.raw_candidates
+    rejected_candidates = verification.rejected_candidates
+    previously_tried_names = sorted(normalized_name_set(payload.get("excluded_candidate_names")))
     return {
         "query_attempts_count": len({compact(attempt.get("query"), 300) for attempt in attempts if isinstance(attempt, dict) and compact(attempt.get("query"), 300)}),
         "provider_attempts_count": len(attempts),
@@ -1763,8 +2095,21 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
         "timeout_count": timeout_count,
         "captcha_count": captcha_count,
         "circuit_open_count": circuit_open_count,
+        "raw_candidate_count": len(raw_candidates),
+        "verified_candidate_count": len(candidates),
+        "rejected_candidate_count": len(rejected_candidates),
         "candidate_count": len(candidates),
         "candidate_names": [compact(candidate.get("name"), 120) for candidate in candidates[:10]],
+        "verified_candidate_names": [compact(candidate.get("name"), 120) for candidate in candidates[:10]],
+        "rejected_candidate_names": [compact(candidate.get("raw_name"), 120) for candidate in rejected_candidates[:20]],
+        "rejected_candidates": rejected_candidates[:30],
+        "needs_more_evidence_candidates": verification.needs_more_evidence_candidates[:20],
+        "raw_candidates": raw_candidates[:30],
+        "candidate_verifier": verification.verifier,
+        "candidate_verifier_prompt_version": verification.prompt_version,
+        "candidate_verifier_error": verification.error,
+        "previously_tried_candidate_names": previously_tried_names,
+        "previously_tried_candidate_details": verification.previously_tried_candidate_details[:20],
         "excluded_candidate_names": sorted(normalized_name_set(payload.get("excluded_candidate_names"))),
         "preflight_candidate_names_skipped_in_fallback": sorted(normalized_name_set(payload.get("excluded_candidate_names"))),
         "preflight_skip_reason": "already_checked_by_official_site_preflight" if normalized_name_set(payload.get("excluded_candidate_names")) else "",
@@ -1801,9 +2146,68 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             excluded_names=excluded_names,
         )
     else:
-        candidates = extract_candidates(payload)
-    candidate_dicts = [candidate.to_dict() for candidate in candidates]
-    search_evidence = build_contact_search_evidence(payload, candidate_dicts)
+        raw_candidates = extract_raw_candidates_from_search(payload)
+        deterministic_candidates = extract_candidates(payload)
+        verification = verify_candidates(payload, deterministic_candidates, raw_candidates)
+        candidates = verification.accepted
+        if verification.error and env_flag("CONTACT_LLM_VERIFIER_REQUIRED_FOR_FALLBACK", default=True):
+            candidate_dicts = [candidate.to_dict() for candidate in candidates]
+            search_evidence = build_contact_search_evidence(payload, candidate_dicts, verification)
+            return ContactResult(
+                row_id=row_id,
+                contact_search_status="failed",
+                contact_search_reason="candidate_verifier_failed",
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_validation_provider="anymail_finder",
+                email_validation_evidence={
+                    "provider": "anymail_finder",
+                    "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+                    "skipped": "candidate_verifier_failed",
+                    "candidate_verifier_error": verification.error,
+                },
+            )
+        candidate_dicts = [candidate.to_dict() for candidate in candidates]
+        search_evidence = build_contact_search_evidence(payload, candidate_dicts, verification)
+        # Continue into the common no-candidate / Anymail path below.
+        if not candidates:
+            if (
+                search_evidence["provider_attempts_count"]
+                and search_evidence["search_error_count"] >= search_evidence["provider_attempts_count"]
+                and search_evidence["total_results_count"] == 0
+            ):
+                return ContactResult(
+                    row_id=row_id,
+                    contact_search_status="failed",
+                    contact_search_reason="search_provider_failed",
+                    contact_candidates=candidate_dicts,
+                    contact_search_evidence=search_evidence,
+                    email_validation_evidence={
+                        "provider": "anymail_finder",
+                        "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+                        "skipped": "search_provider_failed",
+                    },
+                )
+            return ContactResult(
+                row_id=row_id,
+                contact_search_status="contact_not_found",
+                contact_search_reason="no_validated_person_found",
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_validation_provider="anymail_finder",
+                email_validation_evidence={"provider": "anymail_finder", "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()), "skipped": "no_candidates"},
+            )
+        # Candidate list has been verified. Skip rebuilding evidence below.
+        candidate_dicts = [candidate.to_dict() for candidate in candidates]
+        search_evidence = search_evidence
+        goto_common = True
+    if payload.get("site_fast_path_only"):
+        verification = verify_candidates(payload, candidates, [])
+        candidate_dicts = [candidate.to_dict() for candidate in candidates]
+        search_evidence = build_contact_search_evidence(payload, candidate_dicts, verification)
+    elif 'goto_common' not in locals():
+        candidate_dicts = [candidate.to_dict() for candidate in candidates]
+        search_evidence = build_contact_search_evidence(payload, candidate_dicts)
     if not candidates:
         if (
             search_evidence["provider_attempts_count"]
@@ -2033,8 +2437,8 @@ def build_role_queries(
             "seniority": "executive",
             "priority": 1,
             "role": "CEO",
-            "company_roles": ["CEO", "Founder", "Owner", "Managing Director", "Executive Director", "General Manager"],
-            "domain_terms": ["Founder", "Owner", "CEO", "Managing Director", "Executive Director", "General Manager"],
+            "company_roles": ["CEO", "Founder", "Managing Director", "Executive Director", "General Manager"],
+            "domain_terms": ["Founder", "CEO", "Managing Director", "Executive Director", "General Manager"],
         },
         {
             "bucket": "clinic_leadership",
@@ -2080,8 +2484,3 @@ def build_role_queries(
             if len(queries) >= effective_max_queries:
                 return queries
     return queries
-    "corporation",
-    "hospital",
-    "limited",
-    "partners",
-    "rhb",

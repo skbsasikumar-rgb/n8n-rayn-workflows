@@ -359,3 +359,10 @@ Row 311 verifier smoke:
 - bad fallback candidates `Dental Movies UK`, `Past President`, and `Asian Diabetic` are no longer present.
 - official-site preflight doctors `Arthur Yeah`, `Jimmy Gian`, and `Joshua Loh` are preserved in `contact_candidates_json` with `candidate_stage = official_site_preflight`.
 - Anymail Finder returned `not_found` for all three doctors with `0` credits charged, so final status remains `contact_not_found / no_validated_person_found`.
+
+LLM candidate verifier rollout:
+
+- added a worker-side LLM verifier between raw candidate extraction and Anymail Finder lookup.
+- fallback candidates now fail closed when the verifier is unavailable, writing `failed / candidate_verifier_failed` instead of spending Anymail credits on unverified names.
+- raw false positives are stored under `raw_candidates` and `rejected_candidates`; `candidate_names` and `candidate_count` now mean verified accepted human candidates only.
+- configured the Railway worker with `CONTACT_LLM_VERIFIER_ENABLED=true` and `CONTACT_LLM_VERIFIER_REQUIRED_FOR_FALLBACK=true`; local OpenRouter verification currently returns `401`, so a valid worker OpenRouter key is required before broad live fallback reruns.
