@@ -306,3 +306,5 @@ Contact search Serper fallback switch:
 - reduced default remote validation exposure to `CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW=3` and `CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW=16`; `CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE` remains `8`.
 - No2Bounce issue observed: the bulk endpoint returns a tracking ID, but polling often has no results within `NO2BOUNCE_POLL_TIMEOUT_SECONDS=30`, so rows fail as `email_validation_provider_failed / poll_timeout` even though the POST succeeds.
 - added No2Bounce tracking evidence into each candidate attempt so timeout rows preserve `trackingId`, sanitized POST response, sanitized last poll response, and result count for later diagnosis or retry design.
+- deployed the Serper fallback patch to Railway worker service `n8n-rayn-workflows`; live `/contact-provider-health` reports provider order `serper_emergency`.
+- post-deploy smoke on rows `274`, `275`, and `277` confirmed the worker is using Serper, but all three failed with `serper_api_key_missing`; Railway worker variables currently include NocoDB and No2Bounce keys but not `SERPER_API_KEY`.
