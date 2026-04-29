@@ -254,6 +254,7 @@ class ContactSearchRequest(BaseModel):
 class ContactBatchRunRequest(BaseModel):
     limit: int = Field(default=1, ge=1, le=10)
     ids: list[int | str] = Field(default_factory=list)
+    concurrency: int = Field(default=0, ge=0, le=10)
     reset_provider_health: bool = False
     validate_email: bool = True
     dry_run: bool = False
@@ -1135,6 +1136,10 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         "selected_contact_source_url": "",
         "selected_contact_confidence": "",
         "validated_email": "",
+        "email_candidates_json": "",
+        "email_validation_status": "",
+        "email_validation_provider": "",
+        "email_validation_evidence_json": "",
     }
     noco_patch_rows([claim])
 
@@ -1189,7 +1194,15 @@ async def contact_enrich_batch(request: ContactBatchRunRequest) -> dict[str, Any
             "rows_selected": len(rows),
             "row_ids": [row.get("Id") for row in rows],
         }
-    results = [run_contact_row(row, validate_email=request.validate_email) for row in rows]
+    concurrency = request.concurrency or max(1, int(os.getenv("CONTACT_BATCH_CONCURRENCY", "1")))
+    concurrency = max(1, min(concurrency, len(rows) or 1, request.limit))
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def run_contact_row_thread(row: dict[str, Any]) -> dict[str, Any]:
+        async with semaphore:
+            return await asyncio.to_thread(run_contact_row, row, request.validate_email)
+
+    results = await asyncio.gather(*(run_contact_row_thread(row) for row in rows))
     status_counts: dict[str, int] = {}
     for result in results:
         status = compact_whitespace(result.get("status", "")) or "unknown"
@@ -1198,6 +1211,7 @@ async def contact_enrich_batch(request: ContactBatchRunRequest) -> dict[str, Any
         "ok": all(result.get("status") != "failed" for result in results),
         "rows_selected": len(rows),
         "rows_processed": len(results),
+        "concurrency": concurrency,
         "status_counts": status_counts,
         "elapsed_seconds": round(time.time() - started, 2),
         "provider_order": contact_enrichment.configured_provider_order(),

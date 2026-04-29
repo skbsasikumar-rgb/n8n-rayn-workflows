@@ -132,7 +132,7 @@ Recommended contact-search fields:
 - `person_company_match_status`: `validated`, `weak`, or `rejected`.
 - `email_candidates_json`: generated emails and validation outcomes.
 - `validated_email`: accepted deliverable person-specific email.
-- `email_validation_status`: accepted provider result.
+- `email_validation_status`: accepted provider result, rejected result, or explicit skip state such as `skipped_no_verified_candidate`.
 - `email_validation_provider`: `anymail_finder`.
 - `email_validation_evidence_json`: Anymail Finder request tracking, response summary, candidate progression, and credit count.
 - `discovered_at`: accepted contact timestamp.
@@ -145,6 +145,9 @@ Execution-level batch reconciliation lives in the n8n run output, not in the lea
 - `rows_recovered`
 - `rows_terminal_final`
 - `rows_non_terminal_final`
+- `concurrency`
+
+The worker may process rows inside a batch concurrently. Default concurrency is controlled by `CONTACT_BATCH_CONCURRENCY`; callers can override with the `/contact-enrich-batch` `concurrency` field.
 
 ## Status Contract
 

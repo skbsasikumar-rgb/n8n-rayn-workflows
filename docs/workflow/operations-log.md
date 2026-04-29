@@ -372,3 +372,10 @@ OpenRouter verifier key rotation:
 - updated the Railway worker `OPENROUTER_API_KEY` secret from the user-provided key without committing it.
 - redeployed worker deployment `4594a4a3-a328-4e8d-8d3a-4f1d90f0a79b`; `/health` passed.
 - LLM verifier smoke using the `Asian Diabetic` fixture now succeeds: `candidate_names=[]`, `raw_candidate_count=1`, `verified_candidate_count=0`, `rejected_candidate_names=["Asian Diabetic"]`, `candidate_verifier=llm`, and no verifier error.
+
+Contact batch speed and skip-status fix:
+
+- `/contact-enrich-batch` now supports conservative row-level concurrency via request `concurrency` or `CONTACT_BATCH_CONCURRENCY`; the default remains serial unless configured.
+- contact row claims now clear stale email validation fields before processing so live rows do not show old validation state while processing.
+- no-verified-candidate outcomes now write explicit `email_validation_status` values such as `skipped_no_verified_candidate` or `skipped_no_email_candidate` instead of leaving the field blank.
+- Anymail Finder person lookup timeout default is reduced from `180` seconds to `45` seconds, still overrideable with `ANYMAILFINDER_TIMEOUT_SECONDS`.

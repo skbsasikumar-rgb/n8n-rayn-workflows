@@ -1375,7 +1375,7 @@ def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[st
         }
 
     base_url = os.getenv("ANYMAILFINDER_BASE_URL", "https://api.anymailfinder.com/v5.1/find-email/person").strip()
-    timeout_seconds = max(30, int(os.getenv("ANYMAILFINDER_TIMEOUT_SECONDS", "180")))
+    timeout_seconds = max(10, int(os.getenv("ANYMAILFINDER_TIMEOUT_SECONDS", "45")))
     request_body = {"domain": domain, "full_name": candidate.name}
     try:
         response = requests.post(
@@ -2194,8 +2194,15 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_search_reason="no_validated_person_found",
                 contact_candidates=candidate_dicts,
                 contact_search_evidence=search_evidence,
+                email_validation_status="skipped_no_verified_candidate",
                 email_validation_provider="anymail_finder",
-                email_validation_evidence={"provider": "anymail_finder", "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()), "skipped": "no_candidates"},
+                email_validation_evidence={
+                    "provider": "anymail_finder",
+                    "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+                    "status": "skipped_no_verified_candidate",
+                    "skipped": "no_verified_candidates",
+                    "reason": "candidate verifier accepted no fallback candidates",
+                },
             )
         # Candidate list has been verified. Skip rebuilding evidence below.
         candidate_dicts = [candidate.to_dict() for candidate in candidates]
@@ -2232,8 +2239,15 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_reason="no_validated_person_found",
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
+            email_validation_status="skipped_no_verified_candidate",
             email_validation_provider="anymail_finder",
-            email_validation_evidence={"provider": "anymail_finder", "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()), "skipped": "no_candidates"},
+            email_validation_evidence={
+                "provider": "anymail_finder",
+                "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+                "status": "skipped_no_verified_candidate",
+                "skipped": "no_verified_candidates",
+                "reason": "no candidates passed verifier/human filters",
+            },
         )
 
     aggregated_email_candidates: list[dict[str, Any]] = []
@@ -2361,7 +2375,13 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
             email_candidates=aggregated_email_candidates,
+            email_validation_status="skipped_no_email_candidate",
             email_validation_provider="anymail_finder",
+            email_validation_evidence={
+                **validation_evidence,
+                "status": "skipped_no_email_candidate",
+                "skipped": "no_probable_human_candidate_for_email_lookup",
+            },
         )
     if not validate_email:
         return ContactResult(
@@ -2371,8 +2391,9 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_candidates=candidate_dicts,
             contact_search_evidence=search_evidence,
             email_candidates=aggregated_email_candidates,
+            email_validation_status="skipped_dry_run",
             email_validation_provider="anymail_finder",
-            email_validation_evidence=validation_evidence,
+            email_validation_evidence={**validation_evidence, "status": "skipped_dry_run", "skipped": "dry_run"},
         )
 
     return ContactResult(

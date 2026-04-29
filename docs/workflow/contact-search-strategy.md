@@ -308,7 +308,7 @@ Current worker behavior records candidate attempts, cache hits, Anymail Finder r
 Anymail Finder result handling:
 
 - use `POST /v5.1/find-email/person` only after local person/domain filters pass.
-- use a long request timeout because Anymail Finder performs real-time validation.
+- use a bounded request timeout; default worker timeout is `45` seconds and can be changed with `ANYMAILFINDER_TIMEOUT_SECONDS`.
 - accept only `email_status = valid` and same-domain `valid_email`.
 - treat provider timeout, 401, 402, or HTTP errors as retryable provider failures instead of false no-contact results.
 
@@ -402,6 +402,9 @@ For batch executions, also capture the reconciliation summary emitted by the wor
 - `rows_recovered`
 - `rows_terminal_final`
 - `rows_non_terminal_final`
+- `concurrency`
+
+The Python batch runner processes rows concurrently when `CONTACT_BATCH_CONCURRENCY` or request `concurrency` is greater than `1`. Keep this conservative because each row can call Serper, the LLM verifier, and Anymail Finder.
 
 ## Build Phases
 
