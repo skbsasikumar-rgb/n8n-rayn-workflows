@@ -112,6 +112,46 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual([candidate.name for candidate in verification.accepted], ["Sharon Tan"])
         self.assertEqual(verification.rejected_candidates, [])
 
+    def test_llm_verifier_rejects_accepted_candidate_not_in_raw_list(self):
+        raw = [
+            {
+                "raw_name": "Sharon Tan",
+                "role_detected": "Operations Manager",
+                "role_bucket": "operations",
+                "role_priority": 4,
+                "seniority": "manager",
+                "source_url": "https://sg.linkedin.com/in/sharon-tan",
+                "source_type": "public_linkedin_snippet",
+                "source_strength": "strong_professional_profile",
+                "title": "Sharon Tan - Operations Manager - Asian Heart & Vascular Centre",
+                "snippet": "Operations Manager at Asian Heart & Vascular Centre",
+                "evidence_text": "Sharon Tan - Operations Manager - Asian Heart & Vascular Centre",
+            }
+        ]
+        fake = {
+            "accepted_candidates": [
+                {
+                    "name": "Invented Person",
+                    "role": "CEO",
+                    "role_bucket": "c_suite",
+                    "seniority": "executive",
+                    "is_human": True,
+                    "target_company_match": "direct",
+                    "source_strength": "strong_professional_profile",
+                    "confidence": 0.9,
+                    "reason": "Should not be accepted because this name is not in raw candidates.",
+                }
+            ],
+            "rejected_candidates": [],
+            "needs_more_evidence_candidates": [],
+        }
+        payload = {"company_name": "Asian Heart & Vascular Centre", "company_homepage_name": "Asian Heart & Vascular Centre", "canonical_domain": "ahvc.com.sg"}
+        with patch.dict(os.environ, {"CONTACT_LLM_VERIFIER_FAKE_RESPONSE": json.dumps(fake)}, clear=False):
+            verification = c.verify_contact_candidates_with_llm(payload, raw)
+        self.assertEqual(verification.accepted, [])
+        self.assertEqual(verification.rejected_candidates[0]["raw_name"], "Invented Person")
+        self.assertEqual(verification.rejected_candidates[0]["reason_code"], "llm_candidate_not_in_raw_candidates")
+
 
 if __name__ == "__main__":
     unittest.main()

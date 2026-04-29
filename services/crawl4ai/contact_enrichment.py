@@ -1945,6 +1945,7 @@ def llm_verifier_prompt(payload: dict[str, Any], raw_candidates: list[dict[str, 
     }
     system = (
         "You are a strict contact-candidate verifier. Return strict JSON only. "
+        "You must only accept or reject candidates that appear in raw_candidates. Do not invent, rename, complete, or add a new person. "
         "Accept candidates only when the name is a real human full name, the evidence links the person to the target company, "
         "the role belongs to the target company, and the role is managerial/senior/executive/clinical/compliance/IT/operations/admin/HR. "
         "Reject organizations, clinics, centres, publications, events, products, departments, locations, role titles, title-only phrases, "
@@ -2006,7 +2007,7 @@ def verify_contact_candidates_with_llm(payload: dict[str, Any], raw_candidates: 
             continue
         raw = raw_by_name.get(normalize_person_name(accepted.get("name", "")))
         if not raw:
-            rejected.append({"raw_name": compact(accepted.get("name"), 160), "decision": "reject", "reason_code": "insufficient_evidence", "reason": "LLM accepted a name that was not in raw candidates"})
+            rejected.append({"raw_name": compact(accepted.get("name"), 160), "decision": "reject", "reason_code": "llm_candidate_not_in_raw_candidates", "reason": "LLM accepted a name that was not in raw candidates"})
             continue
         candidate = accepted_candidate_from_raw(raw, accepted)
         if candidate:
