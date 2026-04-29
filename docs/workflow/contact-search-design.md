@@ -183,7 +183,7 @@ Provider cooldown contract:
 2. Create a standalone contact-search branch or workflow after website enrichment is stable.
 3. Select rows where company enrichment is complete, `canonical_domain` is present, and `contact_search_status = pending`.
 4. Claim each row with `contact_search_status = processing` and contact run metadata.
-5. Run role-priority OpenSERP searches with conservative rate limits and provider order `duckduckgo -> google`.
+5. Run role-priority Serper searches only after official-site preflight misses.
 6. Extract and rank person candidates deterministically first.
 7. Generate person-specific permutations.
 8. Validate with No2Bounce.
@@ -195,6 +195,12 @@ Manual recovery:
 1. Retry rows where `contact_search_status = failed` and `contact_search_reason = search_provider_failed` by resetting only contact-search fields.
 2. Inspect provider state through the Crawl4AI provider-health endpoint before a broad rerun.
 3. Use the provider reset endpoint only when providers are wedged or after a deploy; do not use it to hide persistent upstream provider failures.
+
+Serper fallback budget:
+
+- official-site preflight runs first and spends zero search-provider credits when it finds a usable contact.
+- fallback public search defaults to Serper with `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 3`.
+- No2Bounce defaults are capped at `3` candidates, `8` emails per candidate, and `16` remote validations per row.
 
 ## Suggested Python Stack
 

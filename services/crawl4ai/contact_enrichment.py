@@ -940,7 +940,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def configured_provider_order() -> list[str]:
     raw = os.getenv(
         "CONTACT_SEARCH_PROVIDER_ORDER",
-        "openserp_duckduckgo,openserp_google",
+        "serper_emergency",
     ).strip()
     output: list[str] = []
     seen: set[str] = set()
@@ -949,9 +949,12 @@ def configured_provider_order() -> list[str]:
         if provider in OPENSERP_ROUTE_MAP and provider not in seen:
             output.append(provider)
             seen.add(provider)
+        if provider == "serper_emergency" and provider not in seen:
+            output.append(provider)
+            seen.add(provider)
     if env_flag("SERPER_FALLBACK_ENABLED", default=False) and "serper_emergency" not in seen:
         output.append("serper_emergency")
-    return output or ["openserp_google"]
+    return output or ["serper_emergency"]
 
 
 def provider_health(provider: str) -> dict[str, Any]:
@@ -1144,7 +1147,7 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
 
 def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
     provider = "serper_emergency"
-    if not env_flag("SERPER_FALLBACK_ENABLED", default=False):
+    if provider not in configured_provider_order() and not env_flag("SERPER_FALLBACK_ENABLED", default=False):
         return provider_attempt_template(provider, query, "serper_fallback_disabled")
     api_key = os.getenv("SERPER_API_KEY", "").strip()
     if not api_key:
@@ -1214,7 +1217,7 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
 
 
 def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    query_limit = max(1, int(payload.get("max_queries") or os.getenv("CONTACT_SEARCH_MAX_QUERIES_PER_ROW", "6") or 6))
+    query_limit = max(1, int(payload.get("max_queries") or os.getenv("CONTACT_SEARCH_MAX_QUERIES_PER_ROW", "3") or 3))
     raw_queries = payload.get("search_queries") if isinstance(payload.get("search_queries"), list) else []
     queries = raw_queries or build_role_queries(
         compact(payload.get("company_name")),
@@ -1451,9 +1454,9 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     aggregated_email_candidates: list[dict[str, Any]] = []
     generated_any = False
     validated_candidate_attempted = False
-    max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "5")))
+    max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "3")))
     max_emails_per_candidate = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "8")))
-    max_no2bounce_emails_per_row = max(1, int(os.getenv("CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW", "24")))
+    max_no2bounce_emails_per_row = max(1, int(os.getenv("CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW", "16")))
     remaining_no2bounce_budget = max_no2bounce_emails_per_row
     validation_evidence: dict[str, Any] = {
         "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
@@ -1506,6 +1509,13 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         candidate_summary["requested_remote_email_count"] = int(validation.get("requested_remote_email_count") or 0)
         candidate_summary["budget_limited"] = bool(validation.get("budget_limited"))
         candidate_summary["remaining_no2bounce_budget_after"] = remaining_no2bounce_budget
+        candidate_summary["validation_error"] = compact(validation.get("error"), 160)
+        candidate_summary["validation_tracking_id"] = compact(validation.get("trackingId"), 200)
+        if validation.get("post_response"):
+            candidate_summary["validation_post_response"] = validation.get("post_response")
+        if validation.get("poll_response"):
+            candidate_summary["validation_poll_response"] = validation.get("poll_response")
+        candidate_summary["validation_result_count"] = len(validation.get("results") or [])
         if validation.get("unvalidated_emails"):
             candidate_summary["unvalidated_emails"] = list(validation.get("unvalidated_emails") or [])
         if not validation.get("configured"):

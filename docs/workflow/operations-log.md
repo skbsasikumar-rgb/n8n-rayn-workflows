@@ -296,3 +296,13 @@ Dependency update pass:
 - dependency resolution was checked with the worker virtualenv's `pip --dry-run`; Docker image build was not checked locally because Docker is not installed on this machine.
 - deployed worker service `n8n-rayn-workflows` with Railway deployment `8d5a6af1-f742-479b-a958-ac5d41dab38f`; live `/health` and `/contact-enrich-batch` dry-run passed after deploy.
 - deployed primary n8n service with Railway deployment `14873fa5-ede6-44a2-a890-a7d6dd318ad7`; n8n API confirmed workflow `BQEa6M2pKYmuEYMV` is active, and the contact-search webhook accepted a trigger after the upgrade.
+
+Contact search Serper fallback switch:
+
+- first-20 contact rerun after OpenSERP showed `4` `contact_found`, `3` expected `missing_canonical_domain` skips, `8` `search_provider_failed`, and `5` No2Bounce `poll_timeout` failures.
+- OpenSERP provider health after the run showed DuckDuckGo disabled by circuit breaker and Google disabled by CAPTCHA detection, so OpenSERP is no longer reliable enough as the default fallback.
+- switched default fallback provider order to `serper_emergency`; OpenSERP remains available only when explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
+- reduced default paid-search budget to `CONTACT_SEARCH_MAX_QUERIES_PER_ROW=3`.
+- reduced default remote validation exposure to `CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW=3` and `CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW=16`; `CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE` remains `8`.
+- No2Bounce issue observed: the bulk endpoint returns a tracking ID, but polling often has no results within `NO2BOUNCE_POLL_TIMEOUT_SECONDS=30`, so rows fail as `email_validation_provider_failed / poll_timeout` even though the POST succeeds.
+- added No2Bounce tracking evidence into each candidate attempt so timeout rows preserve `trackingId`, sanitized POST response, sanitized last poll response, and result count for later diagnosis or retry design.

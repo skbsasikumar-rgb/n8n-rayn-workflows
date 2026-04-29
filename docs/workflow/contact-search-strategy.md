@@ -83,17 +83,17 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary implemented interface: worker-side `/contact-enrich-batch` row runner. It performs official-site preflight first, then OpenSERP provider cascade inside the Python worker when fallback is needed.
+Primary implemented interface: worker-side `/contact-enrich-batch` row runner. It performs official-site preflight first, then Serper fallback inside the Python worker when public search is needed.
 
 Provider adapter behavior:
 
 1. n8n calls `/contact-enrich-batch` with a small `limit` and the worker selects eligible `pending` rows.
 2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
-3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP with provider order `openserp_duckduckgo -> openserp_google`.
-4. If preflight returns `preflight_candidate_email_rejected`, run the same OpenSERP fallback but exclude the preflight candidate names and rejected email permutations.
-5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call OpenSERP.
-6. For each bundled query, call the first healthy provider. If usable results are fewer than five or the provider fails, try the next provider in order.
-7. Serper is disabled by default. It is emergency-only and runs only when `SERPER_FALLBACK_ENABLED=true`.
+3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run Serper first.
+4. If preflight returns `preflight_candidate_email_rejected`, run the same Serper fallback but exclude the preflight candidate names and rejected email permutations.
+5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call Serper.
+6. Default fallback is `serper_emergency`; OpenSERP remains available only if explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
+7. Default paid-search budget is `3` role queries per row after preflight. Rows with official-site contacts spend zero Serper queries.
 8. Do not convert provider failures into `contact_not_found`.
 9. Stop the row as `failed` with `search_provider_failed` if every provider attempt fails.
 10. Treat a single timeout as an attempt-level miss only. Do not disable a provider on the first timeout.
