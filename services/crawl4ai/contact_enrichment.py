@@ -1857,8 +1857,8 @@ def build_role_queries(
             "seniority": "manager",
             "priority": 2,
             "role": "Medical Director",
-            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Clinic Manager", "Clinical Manager", "Practice Manager", "Operations Manager", "Clinic Operations Manager"],
-            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "contact"],
+            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Clinic Manager", "Clinical Manager", "Practice Manager", "Operations Manager", "Clinic Operations Manager", "Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"],
+            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "contact", "admin manager", "office manager", "HR manager", "human resources"],
         },
         {
             "bucket": "compliance_privacy_security",

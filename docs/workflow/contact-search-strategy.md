@@ -183,6 +183,8 @@ Process official-site content before spending search queries. If the official si
    - Human Resources Manager
    - People Manager
 
+Admin and HR terms are included in the manager fallback search bundle to avoid increasing default Serper query count. Candidate ranking still treats them as the final bucket through `role_priority = 7`.
+
 Stop once an accepted contact is found. Do not keep spending validation credits after success.
 
 Candidate progression is bounded and explicit:
