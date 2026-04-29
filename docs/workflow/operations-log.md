@@ -385,3 +385,10 @@ Preflight email outcome preservation:
 - if official-site preflight tries one or more verified people and Anymail Finder returns no deliverable email, fallback search may still run for alternate contacts.
 - when fallback finds no verified alternate, final `email_validation_status` now preserves the preflight outcome as `no_deliverable_email` instead of overwriting it with `skipped_no_verified_candidate`.
 - `skipped_no_verified_candidate` now means no verified person was ever attempted for email lookup.
+
+Industry-general official-site people discovery:
+
+- widened website scrape follow-link discovery beyond clinic pages to include people, staff, board, trustees, governance, committee, council, management, directors, and nonprofit/social-service leadership pages.
+- increased default official-site follow links from `2` to `4` and expanded the structured `team_text` evidence cap so names from people/board pages are more likely to reach contact extraction before paid search.
+- added official-site profile-line extraction for generic industries: adjacent name/title blocks such as `Jane Tan` followed by `Executive Director`, or `Muhammad Faisal Rahman` followed by `Programme Manager`, can now become verified official-domain candidates.
+- kept healthcare extraction intact, but it is no longer the dominant assumption; NCSS, SSA, charities, nonprofits, and general SME/enterprise leadership roles are handled in the same path.

@@ -43,10 +43,10 @@ GENERIC_LOCAL_PARTS = {
     "team",
 }
 ROLE_BUCKETS: list[dict[str, Any]] = [
-    {"bucket": "c_suite", "seniority": "executive", "priority": 1, "roles": ["CEO", "Chief Executive Officer", "Founder", "Co-founder", "Owner", "Managing Director", "Executive Director", "General Manager"]},
+    {"bucket": "c_suite", "seniority": "executive", "priority": 1, "roles": ["CEO", "Chief Executive Officer", "Chief Executive", "Founder", "Co-founder", "Owner", "Managing Director", "Executive Director", "General Manager", "Chairman", "Chairperson", "President", "Vice President", "Board Chair", "Board Member", "Board Director", "Board of Directors", "Trustee", "Honorary Secretary", "Secretary", "Treasurer"]},
     {"bucket": "compliance_privacy_security", "seniority": "senior_manager", "priority": 2, "roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Chief Information Security Officer", "Head of Security", "Cybersecurity Manager"]},
     {"bucket": "it_technology", "seniority": "manager", "priority": 3, "roles": ["IT Manager", "Head of IT", "CTO", "Chief Technology Officer", "Technology Manager", "Systems Manager"]},
-    {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Chief Operating Officer", "Clinic Operations Manager", "Practice Manager"]},
+    {"bucket": "operations", "seniority": "manager", "priority": 4, "roles": ["Operations Manager", "Ops Manager", "Chief Operating Officer", "Clinic Operations Manager", "Practice Manager", "Programme Director", "Program Director", "Programme Manager", "Program Manager", "Centre Manager", "Center Manager", "Corporate Services Manager", "Community Partnerships Manager", "Volunteer Manager", "Fundraising Manager", "Social Work Manager", "Head of Social Work", "Care Services Manager"]},
     {"bucket": "clinic_leadership", "seniority": "manager", "priority": 5, "roles": ["Clinic Manager", "Clinical Manager", "Clinical Director", "Medical Director", "Head Doctor", "Principal Doctor", "Doctor in charge", "Doctor-in-Charge", "Senior Doctor"]},
     {"bucket": "care_clinical", "seniority": "manager", "priority": 6, "roles": ["Head of Nursing", "Nursing Manager", "Clinical Lead", "Care Manager"]},
     {"bucket": "admin_hr", "seniority": "manager", "priority": 7, "roles": ["Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"]},
@@ -455,7 +455,7 @@ def parse_name(name: str) -> tuple[str, str] | None:
     if len(parts) < 2 or len(parts) > 5:
         return None
     lowered = [part.lower().strip("-'") for part in parts]
-    if any(part in {"and", "the", "our"} for part in lowered):
+    if any(part in {"and", "the", "our", "of"} for part in lowered):
         return None
     if any(part in {"dr", "doctor", "mr", "mrs", "ms", "miss", "mdm", "prof", "professor"} for part in lowered):
         return None
@@ -588,6 +588,85 @@ def name_matches_for_role(evidence: str, role: str) -> list[tuple[str, int, int]
                 seen.add(key)
                 matches.append((candidate, match.start(1), match.end(1)))
     return matches
+
+
+def profile_line_candidates(
+    raw_content: str,
+    company_name: str,
+    homepage_name: str,
+    canonical_domain: str,
+    best_url: str,
+    blocked_names: set[str],
+    seen: set[tuple[str, str]],
+) -> list[ContactCandidate]:
+    lines = [compact(line, 240) for line in str(raw_content or "").splitlines()]
+    lines = [line for line in lines if line]
+    candidates: list[ContactCandidate] = []
+    for index, line in enumerate(lines):
+        if len(line) > 90:
+            continue
+        possible_names: list[tuple[str, int, int]] = []
+        if probable_human_name(line):
+            possible_names.append((clean_name(line), 0, len(line)))
+        else:
+            for match in NAME_RE.finditer(line):
+                name = clean_name(match.group(1))
+                if probable_human_name(name):
+                    possible_names.append((name, match.start(1), match.end(1)))
+        if not possible_names:
+            continue
+
+        context_lines = lines[max(0, index - 2) : min(len(lines), index + 3)]
+        context = " | ".join(context_lines)
+        role = ""
+        group = None
+        for candidate_context in (
+            line,
+            lines[index + 1] if index + 1 < len(lines) else "",
+            lines[index - 1] if index > 0 else "",
+            " | ".join(lines[index + 1 : min(len(lines), index + 3)]),
+            " | ".join(lines[max(0, index - 2) : index]),
+            context,
+        ):
+            role, group = role_match(candidate_context)
+            if group:
+                break
+        if not group:
+            continue
+        if not company_match(raw_content, company_name, homepage_name, canonical_domain):
+            continue
+
+        for name, _, _ in possible_names:
+            if reject_candidate_name(name, company_name, homepage_name, canonical_domain):
+                continue
+            if normalize_person_name(name) in blocked_names:
+                continue
+            parsed = parse_name(name)
+            if not parsed:
+                continue
+            key = (name.lower(), role.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            first_name, last_name = parsed
+            candidates.append(
+                ContactCandidate(
+                    name=name,
+                    role=role,
+                    seniority=group["seniority"],
+                    role_bucket=group["bucket"],
+                    role_priority=int(group["priority"]),
+                    source_url=best_url or f"https://{canonical_domain}/",
+                    source_type="official_domain",
+                    evidence_text=context,
+                    confidence="High",
+                    confidence_score=0.86,
+                    company_match=True,
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+            )
+    return candidates
 
 
 def extract_candidates_from_website_content(
@@ -726,6 +805,17 @@ def extract_candidates_from_website_content(
                         last_name=last_name,
                     )
                 )
+    candidates.extend(
+        profile_line_candidates(
+            raw_content,
+            company_name,
+            homepage_name,
+            canonical_domain,
+            best_url,
+            blocked_names,
+            seen,
+        )
+    )
     candidates.sort(key=lambda item: (item.role_priority, -item.confidence_score, item.name.lower()))
     return candidates
 

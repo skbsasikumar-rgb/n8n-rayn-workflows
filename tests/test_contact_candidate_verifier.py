@@ -152,6 +152,49 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(verification.rejected_candidates[0]["raw_name"], "Invented Person")
         self.assertEqual(verification.rejected_candidates[0]["reason_code"], "llm_candidate_not_in_raw_candidates")
 
+    def test_official_site_profile_lines_support_general_industries(self):
+        content = """
+        # Structured Website Evidence
+        ## About
+        ABC Community Services is a Singapore social service agency.
+        ## Team
+        Board of Directors
+        Jane Tan
+        Executive Director
+        Muhammad Faisal Rahman
+        Programme Manager
+        """
+        candidates = c.extract_candidates_from_website_content(
+            content,
+            "ABC Community Services",
+            "ABC Community Services",
+            "abccommunity.org.sg",
+            "https://abccommunity.org.sg/",
+        )
+        by_name = {candidate.name: candidate for candidate in candidates}
+        self.assertEqual(by_name["Jane Tan"].role, "Executive Director")
+        self.assertEqual(by_name["Jane Tan"].role_bucket, "c_suite")
+        self.assertEqual(by_name["Muhammad Faisal Rahman"].role, "Programme Manager")
+        self.assertEqual(by_name["Muhammad Faisal Rahman"].role_bucket, "operations")
+
+    def test_official_site_profile_lines_do_not_accept_title_only(self):
+        content = """
+        # Structured Website Evidence
+        ## Team
+        Example Charity Singapore
+        Executive Director
+        Board of Directors
+        Operations Manager
+        """
+        candidates = c.extract_candidates_from_website_content(
+            content,
+            "Example Charity",
+            "Example Charity",
+            "examplecharity.org.sg",
+            "https://examplecharity.org.sg/",
+        )
+        self.assertEqual(candidates, [])
+
 
 if __name__ == "__main__":
     unittest.main()
