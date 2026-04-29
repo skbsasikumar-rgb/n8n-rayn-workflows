@@ -333,3 +333,9 @@ Anymail Finder contact validation switch:
 - candidate progression remains active: if candidate 1 has no valid email, the worker proceeds to candidate 2 and then candidate 3 by default.
 - tightened probable-human filtering before paid lookup so organization fragments such as banks, clinics, centres, groups, Pte/Ltd entities, and company-name prefixes are rejected before Anymail Finder spend.
 - `email_validation_provider` is now `anymail_finder`; evidence records candidate attempt order, Anymail response, cache hits, and `credits_charged`.
+
+Anymail Finder live smoke:
+
+- deployed worker patch `d96d857` to Railway deployment `83f37241-d7b9-4fc4-ba0d-aaf09840f942` and verified `/health`.
+- live smoke on rows `307`, `315`, and `320`: row `315` found `sharon.tan@ahvc.com.sg` with `1` Anymail credit; row `307` had no validated person; row `320` had candidate `Charis Au` but Anymail returned `not_found` with `0` credits.
+- targeted rerun of row `289` confirmed the new human-name filter removes the prior non-person candidate `RHB Bank`; the row now has no candidates and used `0` Anymail credits.
