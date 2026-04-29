@@ -319,3 +319,4 @@ No2Bounce poll-timeout fix:
 - live smoke still showed No2Bounce jobs pending after 75 seconds (`87%` complete for row 278), so the worker now defaults to a 120-second poll window and reduces per-candidate remote validation from 8 to 4 emails.
 - added `Clinical Director` and `Co-founder` to role matching so Amber Family Clinic can use the official-site Dr Wong evidence instead of noisy public-profile title fragments.
 - live tracking checks showed some No2Bounce jobs can remain `Pending` with rejected aggregate counts and no download file; the worker now converts those zero-sendable partial timeouts into rejected candidate emails instead of retryable provider failures.
+- added more organization/title noise filters such as `graduate` and `institution` after Serper snippets produced non-person candidates like `Raffles Institution`.
