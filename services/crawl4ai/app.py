@@ -1063,6 +1063,11 @@ def exclusion_payload(result: contact_enrichment.ContactResult) -> tuple[list[st
     return names, emails
 
 
+def exclusion_names_from_result(result: contact_enrichment.ContactResult) -> list[str]:
+    names, _ = exclusion_payload(result)
+    return names
+
+
 def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]:
     row_id = row.get("Id")
     started_at = contact_enrichment.now_iso()
@@ -1102,6 +1107,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         fallback_payload = contact_payload_from_row(row, run_id, site_fast_path_only=False, validate_email=validate_email)
         fallback_payload["excluded_candidate_names"] = excluded_names
         fallback_payload["excluded_email_candidates"] = excluded_emails
+        fallback_payload["preflight_candidate_names_skipped_in_fallback"] = excluded_names
         fallback_payload["fallback_reason"] = (
             "fallback_to_openserp_alternate_contacts"
             if preflight_result.contact_candidates
@@ -1404,6 +1410,8 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
                 if normalized
             }
         ),
+        "preflight_candidate_names_skipped_in_fallback": exclusion_names_from_result(result),
+        "preflight_skip_reason": "already_checked_by_official_site_preflight" if result.contact_candidates else "",
         "excluded_email_candidates": sorted(
             {
                 compact_whitespace(candidate.get("email", "")).lower()

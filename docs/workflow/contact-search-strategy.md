@@ -467,3 +467,20 @@ Verify:
 
 - no row silently disappears.
 - provider errors are separated from true `contact_not_found` results.
+
+## Optional LLM Verifier Policy
+
+Do not use an LLM as the primary candidate gate. The primary gate remains deterministic because it is cheaper, auditable, and easier to debug row-by-row.
+
+An LLM verifier may be added later only as a second-pass check for borderline candidates after deterministic filters run. It should receive only the candidate name, role, company name, canonical domain, source URL, and short evidence snippet, then return strict JSON:
+
+```json
+{"is_human_name": true, "works_for_target_company": true, "confidence": "high", "reason": "..."}
+```
+
+Hard rules for any future LLM verifier:
+
+- never invent names, roles, emails, or company relationships.
+- never override deterministic hard rejects for obvious organization/title fragments.
+- never trigger Anymail Finder lookup unless `is_human_name=true` and `works_for_target_company=true`.
+- store the verifier result in evidence for audit.

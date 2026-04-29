@@ -93,6 +93,8 @@ NOISE_NAME_WORDS = {
     "doctor",
     "doctors",
     "doing",
+    "dental",
+    "diabetic",
     "general",
     "graduate",
     "guide",
@@ -109,6 +111,7 @@ NOISE_NAME_WORDS = {
     "magazine",
     "manager",
     "managing",
+    "materials",
     "medical",
     "more",
     "most",
@@ -143,7 +146,40 @@ NOISE_NAME_WORDS = {
     "group",
     "head",
     "owner",
+    "past",
+    "president",
+    "movies",
+    "speaker",
+    "symposium",
+    "uk",
+    "usa",
+    "europe",
+    "canada",
 }
+CANDIDATE_TITLE_WORDS = {
+    "past",
+    "president",
+    "speaker",
+    "graduate",
+    "lecturer",
+    "manager",
+    "director",
+    "founder",
+    "owner",
+    "head",
+    "chief",
+}
+WEAK_THIRD_PARTY_SOURCE_HINTS = (
+    "conference",
+    "conferences",
+    "congress",
+    "event",
+    "events",
+    "summit",
+    "symposium",
+    "webinar",
+    "speaker",
+)
 CREDENTIAL_WORDS = {
     "bao",
     "bch",
@@ -364,7 +400,8 @@ def role_points_to_other_org(evidence: str, name_start: int, name_end: int, comp
     window = evidence[name_end : min(len(evidence), name_end + 140)]
     match = re.search(
         r"\b(?:as\s+well\s+as\s+)?(?:CEO|Founder|Owner|Managing Director|Executive Director|General Manager|Medical Director)"
-        r"(?:\s+and\s+(?:CEO|Founder|Owner|Managing Director|Executive Director|General Manager|Medical Director))*\s+of\s+([^,|.]{2,90})",
+        r"(?:\s+and\s+(?:CEO|Founder|Owner|Managing Director|Executive Director|General Manager|Medical Director))*"
+        r"(?:\s+of)?\s+([^,|.]{2,90})",
         window,
         re.I,
     )
@@ -417,6 +454,8 @@ def parse_name(name: str) -> tuple[str, str] | None:
         return None
     if any(part in NOISE_NAME_WORDS for part in lowered):
         return None
+    if len(parts) <= 2 and all(part in CANDIDATE_TITLE_WORDS for part in lowered):
+        return None
     if sum(1 for part in lowered if len(part) == 1) > 1:
         return None
     if len(parts) == 2 and all(len(part) <= 2 for part in parts):
@@ -432,11 +471,38 @@ def probable_human_name(name: str) -> bool:
     lowered = [part.lower().strip("-'") for part in parts]
     if any(part in NOISE_NAME_WORDS for part in lowered):
         return False
+    if len(parts) <= 2 and all(part in CANDIDATE_TITLE_WORDS for part in lowered):
+        return False
     if any(re.search(r"(?:pte|ltd|llp|inc|bank|clinic|centre|center|group|services?)$", part, re.I) for part in parts):
         return False
     if len(parts) <= 2 and any(part in {"bank", "clinic", "group", "centre", "center"} for part in lowered):
         return False
     return True
+
+
+def weak_third_party_source(url: str) -> bool:
+    domain = domain_from_url(url)
+    path = urlparse(url if re.match(r"^[a-z][a-z0-9+.-]*://", url, re.I) else "https://" + url).path.lower()
+    haystack = f"{domain} {path}"
+    return any(hint in haystack for hint in WEAK_THIRD_PARTY_SOURCE_HINTS)
+
+
+def non_official_candidate_company_link(
+    evidence: str,
+    name_start: int,
+    name_end: int,
+    role: str,
+    company_name: str,
+    homepage_name: str,
+    canonical_domain: str,
+) -> bool:
+    after_name = evidence[name_end : min(len(evidence), name_end + 220)]
+    if role_points_to_other_org(evidence, name_start, name_end, company_name, homepage_name, canonical_domain):
+        return False
+    if company_match(after_name, company_name, homepage_name, canonical_domain):
+        return True
+    before_name = evidence[max(0, name_start - 120) : name_start]
+    return company_match(before_name, company_name, homepage_name, canonical_domain) and role_near_name(evidence, name_start, name_end, role)
 
 
 def name_parts(name: str) -> list[str]:
@@ -701,6 +767,8 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
             if is_search_asset(url):
                 continue
             stype = source_type(url, canonical_domain)
+            if stype != "official_domain" and weak_third_party_source(url):
+                continue
             evidence = compact(" | ".join(part for part in (title, snippet) if part), 1600)
             matched_role, group = role_match(evidence, query_role=query_role)
             if not group:
@@ -716,7 +784,15 @@ def extract_candidates(payload: dict[str, Any]) -> list[ContactCandidate]:
                     continue
                 if not role_near_name(evidence, name_start, name_end, matched_role):
                     continue
-                if stype != "official_domain" and not company_match(evidence[name_end : min(len(evidence), name_end + 180)], company_name, homepage_name, canonical_domain):
+                if stype != "official_domain" and not non_official_candidate_company_link(
+                    evidence,
+                    name_start,
+                    name_end,
+                    matched_role,
+                    company_name,
+                    homepage_name,
+                    canonical_domain,
+                ):
                     continue
                 if not probable_human_name(name):
                     continue
@@ -1690,6 +1766,8 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
         "candidate_count": len(candidates),
         "candidate_names": [compact(candidate.get("name"), 120) for candidate in candidates[:10]],
         "excluded_candidate_names": sorted(normalized_name_set(payload.get("excluded_candidate_names"))),
+        "preflight_candidate_names_skipped_in_fallback": sorted(normalized_name_set(payload.get("excluded_candidate_names"))),
+        "preflight_skip_reason": "already_checked_by_official_site_preflight" if normalized_name_set(payload.get("excluded_candidate_names")) else "",
         "excluded_email_candidates": sorted(normalized_email_set(payload.get("excluded_email_candidates"))),
         "fallback_reason": compact(payload.get("fallback_reason"), 160),
         "provider_reset_token": compact(payload.get("contact_search_run_id") or payload.get("provider_reset_token"), 160),

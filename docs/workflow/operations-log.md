@@ -339,3 +339,11 @@ Anymail Finder live smoke:
 - deployed worker patch `d96d857` to Railway deployment `83f37241-d7b9-4fc4-ba0d-aaf09840f942` and verified `/health`.
 - live smoke on rows `307`, `315`, and `320`: row `315` found `sharon.tan@ahvc.com.sg` with `1` Anymail credit; row `307` had no validated person; row `320` had candidate `Charis Au` but Anymail returned `not_found` with `0` credits.
 - targeted rerun of row `289` confirmed the new human-name filter removes the prior non-person candidate `RHB Bank`; the row now has no candidates and used `0` Anymail credits.
+
+Contact candidate verifier tightening:
+
+- added deterministic candidate gates for non-human names such as `Asian Diabetic`, title phrases such as `Past President`, and organization fragments such as `Dental Movies UK`.
+- non-official third-party candidates now require the person-role evidence to point to the target company, not merely mention the company elsewhere in the same snippet.
+- conference/event/speaker-list sources are blocked for contact selection unless the evidence is official-domain quality.
+- fallback exclusion evidence now also writes `preflight_candidate_names_skipped_in_fallback` and `preflight_skip_reason` so operators can distinguish stale skipped names from final candidates.
+- future fresh reruns should stop/clear old executions first, then reset stale table output fields, so old No2Bounce/permutation artifacts are not confused with current Anymail Finder results.

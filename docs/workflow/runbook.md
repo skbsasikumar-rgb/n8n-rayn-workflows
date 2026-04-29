@@ -61,7 +61,7 @@ Verify:
 
 1. Disable the live workflow.
 2. Stop or wait for any in-flight executions to finish.
-3. Clear old execution history for the workflow under test.
+3. Clear old execution history for the workflow under test before every fresh batch so stale execution output is not confused with current row data.
 4. Recover stale `processing` rows before selecting new work.
 5. Reset only the target rows for the rerun and set eligible rows to `status = pending`.
 6. For URL discovery reruns, clear stale URL-pick fields such as `last_stage`, `last_error`, `url_picked`, `canonical_domain`, `duplicate_of_id`, and `search_evidence_json`.
