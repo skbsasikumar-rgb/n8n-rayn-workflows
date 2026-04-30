@@ -446,3 +446,9 @@ OpenSERP-only search routing:
 - URL discovery now calls the configured `OPENSERP_BASE_URL` route directly instead of posting to the Serper Google API.
 - Contact-search fallback defaults to `openserp_duckduckgo -> openserp_google`.
 - Serper remains present as `serper_emergency`, but it is disabled unless `SERPER_FALLBACK_ENABLED=true` and it is explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
+
+URL discovery DuckDuckGo switch:
+
+- full-table scratch rerun showed OpenSERP Google URL discovery timing out under parallel webhook pressure; `37` rows failed with `timeout of 60000ms exceeded` before candidate selection.
+- URL discovery now uses `/duck/search` for the first-pass `company_name Singapore` lookup because live probes returned official homepage results reliably and faster than the overloaded Google route.
+- Follow-up reruns should trigger URL discovery conservatively instead of firing the whole table in parallel, because the workflow claims rows before the search node finishes.

@@ -37,7 +37,7 @@ Use `status_reason`, `error_type`, `error_message`, `last_stage`, `last_error`, 
 The first rebuild slice is intentionally smaller than the full worker:
 
 1. Read rows with `company_name`, `status = pending`, and blank `url_picked`.
-2. Query OpenSERP Google with `company_name Singapore`; Serper is not part of the normal URL-discovery path.
+2. Query OpenSERP DuckDuckGo with `company_name Singapore`; Serper is not part of the normal URL-discovery path.
 3. Keep the first 10 search results.
 4. Ask an LLM to choose the best official URL or return blank.
 5. Derive `canonical_domain` from the selected URL.
