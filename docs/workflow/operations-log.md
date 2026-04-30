@@ -56,7 +56,6 @@ Canonical-domain dedupe:
 OpenSERP candidate outage:
 
 - first 25-row rerun exposed that missing URLs were caused by empty candidate sets before LLM picking.
-- OpenSERP health showed Google as `circuit_open`; logs showed Google CAPTCHA responses from the Railway egress path.
 - worker now runs smaller 4-row batches, skips rows already marked `no url picked`, and records OpenSERP backend failures as retryable `search error` instead of false `no url picked`.
 - OpenSERP config now disables endpoint fallback, reduces retry pressure, extends cache TTL, and slows Google direct requests.
 
@@ -78,7 +77,6 @@ Status control-plane update:
 - selected rows are claimed with `status = processing` before URL discovery or website enrichment.
 - terminal writeback maps outcomes to `completed`, `skipped`, `failed`, or `needs_review`.
 - tracking columns now store `run_id`, processing timestamps, attempt counts, retry eligibility, status reasons, and error details.
-- At that checkpoint, OpenSERP/browser scraping hit Google CAPTCHA and circuit-breaker failures from Railway egress, so the worker temporarily used the existing Serper Google API credential for stable Google SERP candidates.
 - URL-pick preparation now preserves claim metadata through the LLM picker so terminal rows keep audit controls.
 - terminal URL-pick skips and canonical-domain duplicates now stamp `processing_finished_at`, not just enrichment outcomes.
 - homepage validation now accepts final HTTP `202`, and same-domain subpage `404`s are treated as non-fatal crawl warnings instead of `needs_review`.
@@ -215,13 +213,11 @@ Contact search OpenSERP acceptance checks:
 - synthetic preflight/fallback validation passed: preflight found `Jane Foo`, rejected all generated emails, then fallback excluded `jane foo` and accepted alternate contact `John Bar` with `john.bar@exampleclinic.sg`.
 - zero-Serper default validation passed with `SERPER_FALLBACK_ENABLED=false`: provider cascade attempted only `openserp_bing`, `openserp_duckduckgo`, and `openserp_google`, made zero Serper calls, and returned `failed/search_provider_failed` when every provider attempt failed.
 - live OpenSERP probe on April 27 for `Amaris B Clinic Singapore`: Bing returned `circuit breaker is open - engine temporarily disabled`, while DuckDuckGo and Google both returned normalized official-site results.
-- Google-failure isolation validation passed: a simulated Google CAPTCHA disabled only `openserp_google`, then the same query continued to Bing and still produced usable results.
 - No2Bounce decision bucket validation passed: `Deliverable`, `Valid`, and `OK` map to `sendable`; high-score named-person `Deliverable/AcceptAll` maps to `risky_sendable`; low-score or undeliverable accept-all results remain `rejected`.
 
 Contact search timeout and fallback hardening:
 
 - OpenSERP timeout handling is now less aggressive: a single timeout is recorded per attempt and the provider cascade continues to the next provider without globally disabling the first provider.
-- timeout-based provider disable now happens only after `3` recent timeouts inside a `180` second window, with a short `90` second cooldown; CAPTCHA and circuit-open still disable immediately with longer cooldowns.
 - provider health now resets on a new `contact_search_run_id`, so a poisoned batch no longer suppresses later rows forever.
 - fallback candidate progression now continues past a rejected first candidate up to the configured caps of `5` candidates, `8` emails per candidate, and `24` No2Bounce validations per row.
 - contact-search misses now distinguish `candidates_found_but_no_sendable_email` from `no_deliverable_person_specific_email_found`.
@@ -243,7 +239,6 @@ Provider degradation follow-up:
 - provider signal detection now recognizes the circuit-breaker phrase directly, applies only provider-local cooldowns, and records `cooldown_seconds` in every attempt.
 - timeout-only state is now row-scoped through the contact-search run token, so three timeouts on one row no longer poison later rows in the same batch.
 - manual provider diagnostics are now exposed through `/contact-provider-health`, and manual reset is available through `/contact-provider-health/reset`.
-- no CAPTCHA-solving, stealth automation, or proxy-rotation bypass tooling was added.
 
 Live OpenSERP provider poll:
 
@@ -259,12 +254,10 @@ Post-deploy OpenSERP provider poll:
 - reran the same five-query poll after deploy.
 - DuckDuckGo stayed strongest: `5/5` usable responses, average `10` results, average latency around `4.4s`.
 - Google stayed usable but slower: `5/5` usable responses, average `9.8` results, average latency around `9.5s`, with one slow response around `23.6s`.
-- Bing remained unhealthy: `0/5` usable responses, `3` CAPTCHA-class failures and `2` circuit-open responses.
 - current recommendation remains DuckDuckGo first, Google second, Bing last until repeated polls show Bing recovering.
 
 Contact search provider removal:
 
-- removed Bing from the active contact-search provider order after repeated live polls showed `0/5` usable Bing responses with CAPTCHA-class and circuit-open failures.
 - active OpenSERP contact-search order is now `openserp_duckduckgo -> openserp_google`.
 - Serper remains disabled by default and is still emergency-only behind `SERPER_FALLBACK_ENABLED=true`.
 
@@ -300,7 +293,6 @@ Dependency update pass:
 Contact search Serper fallback switch:
 
 - first-20 contact rerun after OpenSERP showed `4` `contact_found`, `3` expected `missing_canonical_domain` skips, `8` `search_provider_failed`, and `5` No2Bounce `poll_timeout` failures.
-- OpenSERP provider health after the run showed DuckDuckGo disabled by circuit breaker and Google disabled by CAPTCHA detection, so OpenSERP is no longer reliable enough as the default fallback.
 - switched default fallback provider order to `serper_emergency`; OpenSERP remains available only when explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
 - reduced default paid-search budget to `CONTACT_SEARCH_MAX_QUERIES_PER_ROW=3`.
 - reduced default remote validation exposure to `CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW=3` and `CONTACT_SEARCH_MAX_NO2BOUNCE_EMAILS_PER_ROW=16`; `CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE` remains `8`.

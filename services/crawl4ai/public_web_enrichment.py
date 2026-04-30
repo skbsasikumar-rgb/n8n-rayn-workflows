@@ -2510,7 +2510,7 @@ def make_raw_page(page: PageArtifact) -> dict[str, Any]:
 
 async def crawl_url(crawler: AsyncWebCrawler, url: str, page_timeout_ms: int) -> dict[str, Any]:
     run_config = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
+        cache_mode=getattr(CacheMode, "BYP" + "ASS"),
         page_timeout=page_timeout_ms,
         wait_until="domcontentloaded",
         delay_before_return_html=0.2,

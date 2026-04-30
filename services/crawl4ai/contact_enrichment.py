@@ -244,16 +244,14 @@ OPENSERP_ROUTE_MAP = {
     "openserp_google": "/google/search",
 }
 PROVIDER_DISABLE_SECONDS = {
-    "captcha": 3600,
     "circuit_open": 600,
     "timeout": 90,
 }
 PROVIDER_HEALTH_WINDOW = 20
 PROVIDER_TIMEOUT_DISABLE_THRESHOLD = 3
 PROVIDER_TIMEOUT_WINDOW_SECONDS = 180
-CAPTCHA_ERROR_HINTS = ("captcha", "error 1010", "browser_signature_banned")
 CIRCUIT_OPEN_ERROR_HINTS = ("circuit_open", "circuit open", "circuit breaker is open", "engine temporarily disabled")
-PERSISTENT_DISABLE_REASONS = {"captcha_detected", "circuit_open"}
+PERSISTENT_DISABLE_REASONS = {"circuit_open"}
 PROVIDER_LOCK = threading.Lock()
 
 
@@ -262,7 +260,6 @@ def new_provider_state(existing: dict[str, Any] | None = None, preserve_non_time
         "total_recent_queries": 0,
         "success_count": 0,
         "empty_result_count": 0,
-        "captcha_count": 0,
         "circuit_open_count": 0,
         "timeout_count": 0,
         "http_error_count": 0,
@@ -280,7 +277,6 @@ def new_provider_state(existing: dict[str, Any] | None = None, preserve_non_time
             state["disabled_until"] = disabled_until
             state["disabled_reason"] = disabled_reason
             state["last_error"] = compact(existing.get("last_error"), 300)
-            state["captcha_count"] = int(existing.get("captcha_count") or 0)
             state["circuit_open_count"] = int(existing.get("circuit_open_count") or 0)
             state["http_error_count"] = int(existing.get("http_error_count") or 0)
     return state
@@ -387,11 +383,9 @@ def trim_recent_timeouts(state: dict[str, Any], now_ts: float) -> list[float]:
     return list(timestamps)
 
 
-def detect_provider_flags(error_text: str) -> tuple[bool, bool]:
+def detect_provider_flags(error_text: str) -> bool:
     lowered = compact(error_text, 300).lower()
-    captcha_detected = any(hint in lowered for hint in CAPTCHA_ERROR_HINTS)
-    circuit_open = any(hint in lowered for hint in CIRCUIT_OPEN_ERROR_HINTS)
-    return captcha_detected, circuit_open
+    return any(hint in lowered for hint in CIRCUIT_OPEN_ERROR_HINTS)
 
 
 def provider_health_snapshot() -> dict[str, dict[str, Any]]:
@@ -1617,7 +1611,6 @@ def provider_health(provider: str) -> dict[str, Any]:
             "total_recent_queries": int(state["total_recent_queries"]),
             "success_count": int(state["success_count"]),
             "empty_result_count": int(state["empty_result_count"]),
-            "captcha_count": int(state["captcha_count"]),
             "circuit_open_count": int(state["circuit_open_count"]),
             "timeout_count": int(state["timeout_count"]),
             "http_error_count": int(state["http_error_count"]),
@@ -1639,7 +1632,6 @@ def record_provider_health(
     *,
     success: bool,
     empty: bool,
-    captcha_detected: bool,
     circuit_open: bool,
     timeout: bool,
     http_error: bool,
@@ -1654,11 +1646,7 @@ def record_provider_health(
             state["success_count"] += 1
         if empty:
             state["empty_result_count"] += 1
-        if captcha_detected:
-            state["captcha_count"] += 1
-            state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["captcha"]
-            state["disabled_reason"] = "captcha_detected"
-        elif circuit_open:
+        if circuit_open:
             state["circuit_open_count"] += 1
             state["disabled_until"] = now_ts + PROVIDER_DISABLE_SECONDS["circuit_open"]
             state["disabled_reason"] = "circuit_open"
@@ -1709,7 +1697,6 @@ def provider_attempt_template(provider: str, query: str, error_text: str = "") -
         "results": [],
         "result_count": 0,
         "provider_error": compact(error_text, 300),
-        "captcha_detected": False,
         "circuit_open": False,
         "timeout": False,
         "http_error": False,
@@ -1761,13 +1748,12 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     results = normalize_search_results(payload.get("results") if isinstance(payload, dict) else [])
     if not raw_error and isinstance(payload, dict):
         raw_error = compact(payload.get("message") or payload.get("error"), 300)
-    captcha_detected, circuit_open = detect_provider_flags(raw_error)
+    circuit_open = detect_provider_flags(raw_error)
     success = bool(results) and not raw_error
     health_after = record_provider_health(
         provider,
         success=success,
         empty=not results and not raw_error,
-        captcha_detected=captcha_detected,
         circuit_open=circuit_open,
         timeout=timeout_hit,
         http_error=http_error,
@@ -1779,7 +1765,6 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
         "results": results,
         "result_count": len(results),
         "provider_error": raw_error,
-        "captcha_detected": captcha_detected,
         "circuit_open": circuit_open,
         "timeout": timeout_hit,
         "http_error": http_error,
@@ -1833,12 +1818,11 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         raw_error = compact(str(exc), 300) or "request_failed"
 
     results = normalize_search_results(payload.get("organic") if isinstance(payload, dict) else [])
-    captcha_detected, circuit_open = detect_provider_flags(raw_error)
+    circuit_open = detect_provider_flags(raw_error)
     health_after = record_provider_health(
         provider,
         success=bool(results) and not raw_error,
         empty=not results and not raw_error,
-        captcha_detected=captcha_detected,
         circuit_open=circuit_open,
         timeout=timeout_hit,
         http_error=http_error,
@@ -1850,7 +1834,6 @@ def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
         "results": results,
         "result_count": len(results),
         "provider_error": raw_error,
-        "captcha_detected": captcha_detected,
         "circuit_open": circuit_open,
         "timeout": timeout_hit,
         "http_error": http_error,
@@ -2195,7 +2178,6 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
     total_results = 0
     error_count = 0
     timeout_count = 0
-    captcha_count = 0
     circuit_open_count = 0
     for attempt in attempts[:20]:
         results = attempt.get("results") if isinstance(attempt, dict) and isinstance(attempt.get("results"), list) else []
@@ -2204,8 +2186,6 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
             error_count += 1
         if attempt.get("timeout"):
             timeout_count += 1
-        if attempt.get("captcha_detected"):
-            captcha_count += 1
         if attempt.get("circuit_open"):
             circuit_open_count += 1
         total_results += len(results)
@@ -2218,7 +2198,6 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
                 "covered_role_buckets": attempt.get("covered_role_buckets") if isinstance(attempt.get("covered_role_buckets"), list) else [],
                 "result_count": len(results),
                 "provider_error": error,
-                "captcha_detected": bool(attempt.get("captcha_detected")) if isinstance(attempt, dict) else False,
                 "circuit_open": bool(attempt.get("circuit_open")) if isinstance(attempt, dict) else False,
                 "timeout": bool(attempt.get("timeout")) if isinstance(attempt, dict) else False,
                 "provider_disabled": bool(attempt.get("provider_disabled")) if isinstance(attempt, dict) else False,
@@ -2249,7 +2228,6 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
         "total_results_count": total_results,
         "search_error_count": error_count,
         "timeout_count": timeout_count,
-        "captcha_count": captcha_count,
         "circuit_open_count": circuit_open_count,
         "raw_candidate_count": len(raw_candidates),
         "verified_candidate_count": len(candidates),

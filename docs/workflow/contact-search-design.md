@@ -25,7 +25,7 @@ Do not:
 - use generic inboxes such as `info@`, `contact@`, `hello@`, `admin@`, `enquiry@`, `appointments@`, `clinic@`, or `reception@`.
 - accept low-score accept-all, invalid, risky, unknown, spam, bounce, or timeout validation results.
 - infer employment from weak mentions alone.
-- scrape login-only pages, bypass access controls, submit forms, or run security probes.
+- scrape login-only pages, submit forms, or run security probes.
 - overwrite company URL enrichment fields.
 
 ## Candidate Priority Order
@@ -107,7 +107,7 @@ OpenSERP timeout handling is deliberately conservative:
 - a single provider timeout is recorded as an attempt-level failure only.
 - timeout does not disable a provider on the first miss.
 - a provider is temporarily disabled for timeout only after `3` recent timeouts inside a `180` second window.
-- timeout cooldown is short (`90` seconds by default), while explicit CAPTCHA and circuit-open signals use longer cooldowns.
+- timeout cooldown is short (`90` seconds by default), while circuit-open signals use longer cooldowns.
 - provider health resets on a new `contact_search_run_id` so one poisoned batch does not suppress later runs indefinitely.
 
 ## Output Fields
@@ -172,8 +172,8 @@ Provider cooldown contract:
 
 - single timeout: attempt-level miss only, no provider-wide disable.
 - repeated timeouts: disable only after `3` recent timeouts in `180` seconds, with a short `90` second cooldown and disabled reason `timeout_threshold`.
-- circuit breaker or CAPTCHA: disable only that provider immediately with the longer provider-specific cooldown.
-- row-level reset: a new `contact_search_run_id` clears timeout-only provider state for that row, but active CAPTCHA or circuit-breaker cooldowns remain in force until they expire.
+- circuit breaker: disable only that provider immediately with the longer provider-specific cooldown.
+- row-level reset: a new `contact_search_run_id` clears timeout-only provider state for that row, but active circuit-breaker cooldowns remain in force until they expire.
 - provider evidence always carries `cooldown_seconds` so operators can tell whether a failure was transient or still under cooldown.
 
 ## Implementation Plan

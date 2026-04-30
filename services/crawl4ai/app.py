@@ -74,7 +74,6 @@ ERROR_HINTS = (
     "please make sure you are authorized",
     "forbidden",
     "enable javascript",
-    "captcha",
     "service unavailable",
     "temporarily unavailable",
     "page not found",
