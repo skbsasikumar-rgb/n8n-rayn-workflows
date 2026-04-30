@@ -1787,6 +1787,12 @@ def clean_parent_or_affiliation_candidate(value: str) -> str:
     ).strip(" ,.;:-")
     if len(candidate) < 3 or len(candidate) > 120:
         return ""
+    lowered = candidate.lower()
+    if candidate.islower() and not re.search(
+        r"\b(?:group|health|healthcare|medical|clinic|holdings?|partners?|hospital|centre|center|association|society|college|academy|council)\b",
+        lowered,
+    ):
+        return ""
     if re.search(r"\d+[a-z]", candidate.lower()):
         return ""
     return normalize_known_parent_name(candidate)
@@ -1864,6 +1870,11 @@ def clean_parent_candidate(value: str, company_homepage_name: str) -> str:
         "solution is nutrition",
     }:
         return ""
+    if candidate.islower() and not re.search(
+        r"\b(?:group|health|healthcare|medical|clinic|holdings?|partners?|hospital|centre|center|association|society|college|academy|council)\b",
+        lowered,
+    ):
+        return ""
     if lowered.startswith(("solution ", "programme ", "program ", "service ", "care ", "treatment ")):
         return ""
     if any(
@@ -1884,6 +1895,11 @@ def clean_parent_candidate(value: str, company_homepage_name: str) -> str:
             "dietetics",
             "dental care",
             "children benefit",
+            "scheme",
+            "subsid",
+            "medical examination",
+            "health screening package",
+            "work passes",
             "university",
             "polytechnic",
             "award",
@@ -2041,8 +2057,12 @@ def classify_parent_candidate(candidate: ParentCompanyCandidate, company_homepag
         return "location_or_landlord", "location"
     if any(term in text for term in ("trained at", "residency", "fellowship", "medical school", "university")):
         return "training_institution", "training"
-    if "accredited by" in text:
+    if "accredited by" in text or "accredited" in text or "subsidies" in text:
         return "accreditation", "accreditation"
+    if "scheme" in name_lower or "subsid" in name_lower:
+        return "accreditation", "accreditation"
+    if any(term in name_lower for term in ("medical examination", "health screening package", "work pass", "injury management")):
+        return "unknown", "insufficient_evidence"
     if "licensed by" in text or any(term in name_lower for term in ("ministry", "council", "board")):
         return "licensing_body", "licensing_body"
     if any(term in name_lower for term in ("association", "society", "academy", "college", "federation")):
@@ -2156,7 +2176,7 @@ def deterministic_parent_company_verification(
             if confidence == "Low":
                 confidence = "Medium"
             accepted.append((candidate, relationship_type, confidence))
-        elif relationship_type in AFFILIATION_RELATIONSHIP_TYPES and relationship_type != "rejected":
+        elif relationship_type in AFFILIATION_RELATIONSHIP_TYPES and relationship_type not in {"rejected", "unknown"}:
             affiliations.append(
                 {
                     "name": candidate.name,

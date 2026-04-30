@@ -440,3 +440,11 @@ Parent-company relationship classifier:
 - weak memberships, accreditations, licensing bodies, training institutions, doctor/hospital appointments, vendors, landlords/locations, and partners are preserved as affiliations or rejected candidates instead of being written as parent companies.
 - added an optional OpenRouter-backed LLM verifier for classification only; post-verifier guards reject invented parent names, quotes not present in official crawl text, person names, target-company overlaps, bad relationship types, and weak biography/accreditation/location contexts.
 - deterministic fallback still accepts high-confidence schema.org parentOrganization/branchOf and explicit owned/operated/managed/subsidiary/branch/group evidence when the verifier is disabled or unavailable.
+
+Parent-company rerun smoke test:
+
+- live `/public-enrich` health was OK, but browser-backed public enrichment remains slow for all-row parent-only testing: homepage-only calls took roughly 60-96s per row.
+- local static official-homepage parent classifier smoke-tested all 47 eligible rows in 5.9s with deterministic verifier enabled and no NocoDB writeback.
+- result after tightening guards: 0 accepted parent companies, 4 affiliation rows, 1 rejected-candidate row, 0 errors.
+- fixed two false-positive parent paths found during the smoke test: CHAS/subsidy/accreditation scheme text and generic `part of medical examinations` phrases no longer populate `parent_company`.
+- changed unknown/noisy parent candidates to rejected evidence instead of affiliation evidence; professional memberships, training institutions, and accreditations remain affiliation evidence only.
