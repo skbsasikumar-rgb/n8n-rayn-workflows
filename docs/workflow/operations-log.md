@@ -452,3 +452,9 @@ URL discovery DuckDuckGo switch:
 - full-table scratch rerun showed OpenSERP Google URL discovery timing out under parallel webhook pressure; `37` rows failed with `timeout of 60000ms exceeded` before candidate selection.
 - URL discovery now uses `/duck/search` for the first-pass `company_name Singapore` lookup because live probes returned official homepage results reliably and faster than the overloaded Google route.
 - Follow-up reruns should trigger URL discovery conservatively instead of firing the whole table in parallel, because the workflow claims rows before the search node finishes.
+
+Public enrichment timeout cleanup:
+
+- rerun after the DuckDuckGo switch showed URL discovery was healthy, but public enrichment timed out on `13` rows at the n8n HTTP node's `300000ms` limit.
+- enrichment row selection is now limited to `1` row per workflow trigger, and the `/public-enrich` HTTP timeout is raised to `600000ms` for cleaner low-concurrency runs.
+- fixed the enrichment item filter to accept rows already in `status = processing`, matching the upstream `Get Enrichment Rows` query.

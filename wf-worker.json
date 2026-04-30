@@ -88,7 +88,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,processing)~and(url_picked,notblank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=3",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,processing)~and(url_picked,notblank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=1",
         "sendHeaders": false,
         "options": {
           "timeout": 60000
@@ -142,7 +142,7 @@
       ],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.url_picked || '').trim() && String(row.status || '').trim() === 'pending')\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked).trim(),\n      status: 'pending',\n      attempt_count: String(row.attempt_count || '').trim() || '0',\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim()\n    },\n    pairedItem: { item: index }\n  }));"
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.company_name || '').trim() && String(row.url_picked || '').trim() && String(row.status || '').trim() === 'processing')\n  .map((row, index) => ({\n    json: {\n      Id: row.Id,\n      company_name: String(row.company_name).trim(),\n      url_picked: String(row.url_picked).trim(),\n      status: 'pending',\n      attempt_count: String(row.attempt_count || '').trim() || '0',\n      run_id: String(row.run_id || '').trim(),\n      processing_started_at: String(row.processing_started_at || '').trim(),\n      processing_finished_at: String(row.processing_finished_at || '').trim(),\n      last_attempted_at: String(row.last_attempted_at || '').trim(),\n      status_reason: String(row.status_reason || '').trim(),\n      error_type: String(row.error_type || '').trim(),\n      error_message: String(row.error_message || '').trim(),\n      retry_eligible: String(row.retry_eligible || '').trim(),\n      source_row_created_at: String(row.source_row_created_at || row.CreatedAt || '').trim(),\n      source_row_updated_at: String(row.source_row_updated_at || row.UpdatedAt || '').trim(),\n      CreatedAt: String(row.CreatedAt || '').trim(),\n      UpdatedAt: String(row.UpdatedAt || '').trim()\n    },\n    pairedItem: { item: index }\n  }));"
       }
     },
     {
@@ -339,7 +339,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-          "timeout": 300000
+          "timeout": 600000
         }
       },
       "continueOnFail": true,
