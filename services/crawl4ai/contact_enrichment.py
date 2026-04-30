@@ -2215,6 +2215,7 @@ def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict
                 "query": compact(attempt.get("query") if isinstance(attempt, dict) else "", 300),
                 "role": compact(attempt.get("role") if isinstance(attempt, dict) else "", 100),
                 "role_bucket": compact(attempt.get("role_bucket") if isinstance(attempt, dict) else "", 100),
+                "covered_role_buckets": attempt.get("covered_role_buckets") if isinstance(attempt.get("covered_role_buckets"), list) else [],
                 "result_count": len(results),
                 "provider_error": error,
                 "captcha_detected": bool(attempt.get("captcha_detected")) if isinstance(attempt, dict) else False,
