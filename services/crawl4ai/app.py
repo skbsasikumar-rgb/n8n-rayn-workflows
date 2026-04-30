@@ -1478,17 +1478,52 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
         ignore_https_errors=True,
         verbose=os.getenv("CRAWL4AI_VERBOSE", "false").lower() == "true",
     )
-    try:
-        async with scrape_semaphore:
-            async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:
-                record = await public_enrichment.enrich_row(
+
+    async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
+        timeout_seconds = min(
+            float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", "180")),
+            max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
+        )
+        async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:
+            return await asyncio.wait_for(
+                public_enrichment.enrich_row(
                     row=input_row,
                     crawler=crawler,
                     session=session,
-                    page_limit=request.page_limit,
-                    page_timeout_ms=request.page_timeout_ms,
-                    request_delay_seconds=request.request_delay_seconds,
-                    scrape_char_limit=request.scrape_char_limit,
+                    page_limit=page_limit,
+                    page_timeout_ms=page_timeout_ms,
+                    request_delay_seconds=request_delay_seconds,
+                    scrape_char_limit=scrape_char_limit,
+                ),
+                timeout=timeout_seconds,
+            )
+
+    try:
+        async with scrape_semaphore:
+            try:
+                record = await run_attempt(
+                    request.page_limit,
+                    request.page_timeout_ms,
+                    request.request_delay_seconds,
+                    request.scrape_char_limit,
+                )
+            except asyncio.TimeoutError as exc:
+                if request.page_limit <= 2:
+                    raise exc
+                fallback_limit = min(2, request.page_limit)
+                fallback_timeout_ms = min(request.page_timeout_ms, 12000)
+                record = await run_attempt(
+                    fallback_limit,
+                    fallback_timeout_ms,
+                    min(request.request_delay_seconds, 0.1),
+                    request.scrape_char_limit,
+                )
+                record.crawl_status = "partial"
+                record.error_notes.append(
+                    f"full public enrichment timed out; recovered with fallback page_limit={fallback_limit}"
+                )
+                record.enrichment_notes += (
+                    f" Full scrape timed out; fallback crawl used {fallback_limit} page(s)."
                 )
     except Exception as exc:
         error_text = compact_whitespace(str(exc)) or "public enrichment failed"

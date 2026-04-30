@@ -16,6 +16,10 @@ class ContactCandidateVerifierTests(unittest.TestCase):
             "SINGWEALTH HOLDINGS PTE LTD",
             "Meet Doctor",
             "Owner, Asian Diabetic & Retinal Disease Center",
+            "MBChB Glasgow",
+            "Pain Specialist",
+            "Clinical Director",
+            "Clinic Operations Manager",
         ]:
             self.assertFalse(c.probable_human_name(name), name)
 

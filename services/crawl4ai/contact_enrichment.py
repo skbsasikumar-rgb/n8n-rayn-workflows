@@ -196,11 +196,48 @@ CREDENTIAL_WORDS = {
     "lrcp",
     "mb",
     "mbbs",
+    "mbchb",
     "mmed",
     "mrcp",
+    "mrcs",
     "md",
     "phd",
     "si",
+}
+ROLE_ONLY_NAME_WORDS = CANDIDATE_TITLE_WORDS | {
+    "admin",
+    "administration",
+    "board",
+    "care",
+    "cardiologist",
+    "clinical",
+    "clinic",
+    "consultant",
+    "dermatologist",
+    "doctor",
+    "doctors",
+    "executive",
+    "general",
+    "hr",
+    "human",
+    "it",
+    "lead",
+    "management",
+    "manager",
+    "medical",
+    "nursing",
+    "office",
+    "operations",
+    "pain",
+    "physician",
+    "practice",
+    "programme",
+    "program",
+    "resources",
+    "security",
+    "senior",
+    "specialist",
+    "technology",
 }
 OPENSERP_ROUTE_MAP = {
     "openserp_duckduckgo": "/duck/search",
@@ -470,7 +507,11 @@ def parse_name(name: str) -> tuple[str, str] | None:
         return None
     if any(part in NOISE_NAME_WORDS for part in lowered):
         return None
+    if any(part in CREDENTIAL_WORDS for part in lowered):
+        return None
     if len(parts) <= 2 and all(part in CANDIDATE_TITLE_WORDS for part in lowered):
+        return None
+    if all(part in ROLE_ONLY_NAME_WORDS for part in lowered):
         return None
     if sum(1 for part in lowered if len(part) == 1) > 1:
         return None

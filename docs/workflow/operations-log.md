@@ -404,3 +404,11 @@ Specialist-role false-positive guard:
 - fixed role matching to use token boundaries so short roles like CTO no longer match inside unrelated words such as doctors.
 - limited broad clinical specialist roles to profile-line evidence with explicit doctor/professor honorifics, preventing package names, hospitals, addresses, and headings from becoming official-site people candidates.
 - changed same-name official-site de-duplication to prefer higher-confidence profile-line evidence before role priority, so adjacent name/title blocks keep their nearest title.
+
+Public scrape fallback and candidate quality tightening:
+
+- added an internal timeout guard around `/public-enrich`; full scrapes now retry once with a small fallback crawl instead of letting n8n hit the 300s HTTP timeout.
+- fallback public enrichment marks recovered rows as `partial` and records the fallback page limit in `error_notes` / enrichment notes for auditability.
+- expanded public-web high-value paths for general industries: people, staff, senior management, executive team, board, directors, governance, organisation/organization, committee, council, trustees, specialists, consultants, and profiles.
+- tightened deterministic person-name filtering so qualifications and role-only phrases such as `MBChB Glasgow`, `Pain Specialist`, `Clinical Director`, and `Clinic Operations Manager` cannot become accepted contact candidates.
+- focused candidate-verifier tests and Python compile checks passed locally before deploy.
