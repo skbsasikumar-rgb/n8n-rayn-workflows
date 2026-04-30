@@ -21,6 +21,7 @@ CONTACT_COLUMNS: list[tuple[str, str, str]] = [
     ("email_candidates_json", "LongText", "text"),
     ("validated_email", "SingleLineText", "text"),
     ("email_validation_status", "SingleLineText", "text"),
+    ("email_validation_summary", "LongText", "text"),
     ("email_validation_provider", "SingleLineText", "text"),
     ("email_validation_evidence_json", "LongText", "text"),
     ("contact_search_started_at", "SingleLineText", "text"),

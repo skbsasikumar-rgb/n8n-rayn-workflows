@@ -2563,7 +2563,73 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     )
 
 
+def email_candidate_summary_line(candidate: dict[str, Any]) -> str:
+    result = candidate.get("validation_result") if isinstance(candidate.get("validation_result"), dict) else {}
+    response = candidate.get("validation_response") if isinstance(candidate.get("validation_response"), dict) else result
+    input_payload = response.get("input") if isinstance(response.get("input"), dict) else {}
+    name = compact(candidate.get("name") or input_payload.get("full_name"), 120)
+    role = compact(candidate.get("role"), 120)
+    email = compact(
+        candidate.get("valid_email")
+        or candidate.get("email")
+        or response.get("valid_email")
+        or response.get("email"),
+        320,
+    )
+    status = compact(candidate.get("status") or response.get("email_status") or candidate.get("accepted_decision"), 120)
+    decision = compact(candidate.get("decision") or candidate.get("accepted_decision"), 120)
+    domain = compact(input_payload.get("domain"), 180)
+    label = email or (f"{name} @ {domain}" if name and domain else name or "unknown candidate")
+    verdict = "valid" if candidate.get("accepted") or decision in {"sendable", "risky_sendable"} else "not valid"
+    detail = "; ".join(part for part in (status, decision) if part)
+    role_text = f", {role}" if role else ""
+    detail_text = f" ({detail})" if detail else ""
+    return compact(f"{verdict}: {label}{role_text}{detail_text}", 500)
+
+
+def iter_email_attempts(evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    attempts = evidence.get("candidate_attempts") if isinstance(evidence, dict) else []
+    output = list(attempts) if isinstance(attempts, list) else []
+    preflight = evidence.get("official_site_preflight_email_validation_evidence") if isinstance(evidence, dict) else None
+    if isinstance(preflight, dict):
+        nested_attempts = preflight.get("candidate_attempts")
+        if isinstance(nested_attempts, list):
+            output.extend(nested_attempts)
+    return [attempt for attempt in output if isinstance(attempt, dict)]
+
+
+def build_email_validation_summary(result: ContactResult) -> str:
+    lines: list[str] = []
+    if result.validated_email:
+        lines.append(f"Accepted: {result.validated_email} ({result.email_validation_status or 'sendable'})")
+
+    for candidate in result.email_candidates[:12]:
+        if isinstance(candidate, dict):
+            line = email_candidate_summary_line(candidate)
+            if line and line not in lines:
+                lines.append(line)
+
+    if not lines:
+        for attempt in iter_email_attempts(result.email_validation_evidence)[:12]:
+            line = email_candidate_summary_line(attempt)
+            if line and line not in lines:
+                lines.append(line)
+
+    if not lines:
+        skipped = compact(result.email_validation_evidence.get("skipped") if isinstance(result.email_validation_evidence, dict) else "", 120)
+        error = compact(result.email_validation_evidence.get("error") if isinstance(result.email_validation_evidence, dict) else "", 200)
+        if skipped:
+            lines.append(f"No email validation run: {result.email_validation_status or skipped} ({skipped})")
+        elif error:
+            lines.append(f"Email validation error: {error}")
+        elif result.email_validation_status:
+            lines.append(f"Email validation status: {result.email_validation_status}")
+
+    return "\n".join(lines[:12])
+
+
 def build_patch(result: ContactResult) -> dict[str, Any]:
+    email_validation_summary = build_email_validation_summary(result)
     return {
         "Id": result.row_id,
         "contact_search_status": result.contact_search_status,
@@ -2578,6 +2644,7 @@ def build_patch(result: ContactResult) -> dict[str, Any]:
         "email_candidates_json": json.dumps(result.email_candidates, ensure_ascii=False),
         "validated_email": result.validated_email,
         "email_validation_status": result.email_validation_status,
+        "email_validation_summary": email_validation_summary,
         "email_validation_provider": result.email_validation_provider,
         "email_validation_evidence_json": json.dumps(result.email_validation_evidence, ensure_ascii=False),
         "retry_eligible": "true" if result.contact_search_status == "failed" else "false",

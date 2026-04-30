@@ -1009,6 +1009,7 @@ CONTACT_ROW_FIELDS = ",".join(
         "email_candidates_json",
         "validated_email",
         "email_validation_status",
+        "email_validation_summary",
         "email_validation_provider",
         "email_validation_evidence_json",
         "contact_search_started_at",
@@ -1099,6 +1100,7 @@ def terminal_contact_patch(row_id: Any, status: str, reason: str, run_id: str, s
         "email_candidates_json": "[]",
         "email_validation_provider": "anymail_finder",
         "email_validation_status": "worker_error" if status == "failed" else "",
+        "email_validation_summary": f"Email validation error: {error or reason}" if status == "failed" else "",
         "email_validation_evidence_json": json.dumps({"error": error or reason}, ensure_ascii=False),
         "retry_eligible": "true" if status == "failed" else "false",
     }
@@ -1248,6 +1250,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         "validated_email": "",
         "email_candidates_json": "",
         "email_validation_status": "",
+        "email_validation_summary": "",
         "email_validation_provider": "",
         "email_validation_evidence_json": "",
     }
@@ -1574,6 +1577,7 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
             "email_candidates_json": "[]",
             "email_validation_provider": "anymail_finder",
             "email_validation_status": "worker_error",
+            "email_validation_summary": f"Email validation error: {error_text}",
             "email_validation_evidence_json": json.dumps({"error": error_text}),
             "contact_search_finished_at": contact_enrichment.now_iso(),
         }

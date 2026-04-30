@@ -412,3 +412,9 @@ Public scrape fallback and candidate quality tightening:
 - expanded public-web high-value paths for general industries: people, staff, senior management, executive team, board, directors, governance, organisation/organization, committee, council, trustees, specialists, consultants, and profiles.
 - tightened deterministic person-name filtering so qualifications and role-only phrases such as `MBChB Glasgow`, `Pain Specialist`, `Clinical Director`, and `Clinic Operations Manager` cannot become accepted contact candidates.
 - focused candidate-verifier tests and Python compile checks passed locally before deploy.
+
+Email validation summary column:
+
+- added `email_validation_summary` as a long-text NocoDB column for plain-English email validation results beside the structured `email_validation_status` / evidence fields.
+- worker patches now populate the summary from Anymail candidate attempts, showing accepted emails and rejected/not-found person-domain lookups in readable lines.
+- backfilled existing rows from stored `email_candidates_json` / `email_validation_evidence_json` so the table is immediately readable without opening JSON evidence.

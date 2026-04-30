@@ -199,6 +199,40 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         )
         self.assertEqual(candidates, [])
 
+    def test_email_validation_summary_lists_valid_and_rejected_attempts(self):
+        result = c.ContactResult(
+            row_id=1,
+            contact_search_status="contact_found",
+            contact_search_reason="sendable_person_specific_email_found",
+            email_candidates=[
+                {
+                    "name": "Jane Tan",
+                    "role": "Executive Director",
+                    "email": "jane@example.org.sg",
+                    "valid_email": "jane@example.org.sg",
+                    "status": "valid",
+                    "decision": "sendable",
+                    "accepted": True,
+                },
+                {
+                    "name": "John Lim",
+                    "role": "Operations Manager",
+                    "status": "not_found",
+                    "decision": "rejected",
+                    "validation_result": {
+                        "input": {"domain": "example.org.sg", "full_name": "John Lim"},
+                        "email_status": "not_found",
+                    },
+                },
+            ],
+            validated_email="jane@example.org.sg",
+            email_validation_status="sendable",
+        )
+        summary = c.build_email_validation_summary(result)
+        self.assertIn("Accepted: jane@example.org.sg", summary)
+        self.assertIn("valid: jane@example.org.sg", summary)
+        self.assertIn("not valid: John Lim @ example.org.sg", summary)
+
 
 if __name__ == "__main__":
     unittest.main()
