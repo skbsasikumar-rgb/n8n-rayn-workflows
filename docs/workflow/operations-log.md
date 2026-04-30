@@ -444,5 +444,5 @@ Parent-company rerun smoke test:
 OpenSERP-only search routing:
 
 - URL discovery now calls the configured `OPENSERP_BASE_URL` route directly instead of posting to the Serper Google API.
-- Contact-search fallback defaults to `openserp_duckduckgo -> openserp_google`; non-OpenSERP provider names in `CONTACT_SEARCH_PROVIDER_ORDER` are ignored.
-- Removed the worker-side Serper emergency provider path, provider health slot, and `SERPER_API_KEY` dependency.
+- Contact-search fallback defaults to `openserp_duckduckgo -> openserp_google`.
+- Serper remains present as `serper_emergency`, but it is disabled unless `SERPER_FALLBACK_ENABLED=true` and it is explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.

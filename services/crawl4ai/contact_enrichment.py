@@ -282,7 +282,7 @@ def new_provider_state(existing: dict[str, Any] | None = None, preserve_non_time
     return state
 
 
-PROVIDER_STATE = {provider: new_provider_state() for provider in OPENSERP_ROUTE_MAP.keys()}
+PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
 PROVIDER_RESET_TOKEN = ""
 VALIDATION_CACHE: dict[str, dict[str, Any]] = {}
 MX_CACHE: dict[str, bool | None] = {}
@@ -389,7 +389,7 @@ def detect_provider_flags(error_text: str) -> bool:
 
 
 def provider_health_snapshot() -> dict[str, dict[str, Any]]:
-    return {provider: provider_health(provider) for provider in OPENSERP_ROUTE_MAP.keys()}
+    return {provider: provider_health(provider) for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
 
 
 def domain_from_url(value: str) -> str:
@@ -1589,6 +1589,9 @@ def configured_provider_order() -> list[str]:
         if provider in OPENSERP_ROUTE_MAP and provider not in seen:
             output.append(provider)
             seen.add(provider)
+        if env_flag("SERPER_FALLBACK_ENABLED", default=False) and provider == "serper_emergency" and provider not in seen:
+            output.append(provider)
+            seen.add(provider)
     return output or ["openserp_duckduckgo", "openserp_google"]
 
 
@@ -1771,6 +1774,75 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     }
 
 
+def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
+    provider = "serper_emergency"
+    if not env_flag("SERPER_FALLBACK_ENABLED", default=False):
+        return provider_attempt_template(provider, query, "serper_fallback_disabled")
+    api_key = os.getenv("SERPER_API_KEY", "").strip()
+    if not api_key:
+        return provider_attempt_template(provider, query, "serper_api_key_missing")
+
+    health = provider_health(provider)
+    if not health["enabled"]:
+        attempt = provider_attempt_template(provider, query, f"provider_disabled:{health['disabled_reason']}")
+        attempt["provider_disabled"] = True
+        attempt["provider_disabled_reason"] = str(health["disabled_reason"])
+        attempt["cooldown_seconds"] = int(health["cooldown_seconds"])
+        attempt["provider_health"] = health
+        return attempt
+
+    raw_error = ""
+    payload: Any = {}
+    http_error = False
+    timeout_hit = False
+    try:
+        response = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"q": query, "num": limit},
+            timeout=max(4, int(os.getenv("CONTACT_SEARCH_PROVIDER_TIMEOUT_SECONDS", "12"))),
+        )
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+        if response.status_code >= 400:
+            http_error = True
+            raw_error = compact(payload.get("message") if isinstance(payload, dict) else "", 300) or f"HTTP {response.status_code}"
+    except requests.Timeout:
+        timeout_hit = True
+        raw_error = "timeout"
+    except requests.RequestException as exc:
+        raw_error = compact(str(exc), 300) or "request_failed"
+
+    results = normalize_search_results(payload.get("organic") if isinstance(payload, dict) else [])
+    circuit_open = detect_provider_flags(raw_error)
+    health_after = record_provider_health(
+        provider,
+        success=bool(results) and not raw_error,
+        empty=not results and not raw_error,
+        circuit_open=circuit_open,
+        timeout=timeout_hit,
+        http_error=http_error,
+        error_text=raw_error,
+    )
+    return {
+        "provider": provider,
+        "query": compact(query, 300),
+        "results": results,
+        "result_count": len(results),
+        "provider_error": raw_error,
+        "circuit_open": circuit_open,
+        "timeout": timeout_hit,
+        "http_error": http_error,
+        "provider_disabled": not health_after["enabled"],
+        "provider_disabled_reason": str(health_after["disabled_reason"]) if not health_after["enabled"] else "",
+        "cooldown_seconds": int(health_after["cooldown_seconds"]) if not health_after["enabled"] else 0,
+        "usable_results_count": len(results),
+        "provider_health": health_after,
+    }
+
+
 def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
     query_limit = max(1, int(payload.get("max_queries") or os.getenv("CONTACT_SEARCH_MAX_QUERIES_PER_ROW", "3") or 3))
     raw_queries = payload.get("search_queries") if isinstance(payload.get("search_queries"), list) else []
@@ -1788,7 +1860,10 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not query:
             continue
         for provider in providers:
-            attempt = search_openserp_provider(provider, query)
+            if provider == "serper_emergency":
+                attempt = search_serper_emergency(query)
+            else:
+                attempt = search_openserp_provider(provider, query)
             attempt.update(
                 {
                     "role": compact(query_meta.get("role"), 100),
