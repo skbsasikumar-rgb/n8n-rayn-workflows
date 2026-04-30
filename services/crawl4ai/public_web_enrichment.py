@@ -318,6 +318,16 @@ NOISE_CLASS_HINTS = (
     "sidebar",
 )
 NOISE_ROLE_HINTS = {"navigation", "banner", "dialog", "search", "contentinfo", "complementary"}
+CHALLENGE_HINTS = (
+    "captcha",
+    "cf-challenge",
+    "cloudflare",
+    "complete the security check",
+    "checking the site connection",
+    "robot challenge",
+    "unusual traffic",
+    "verify you are human",
+)
 
 
 @dataclass
@@ -384,6 +394,7 @@ class PageArtifact:
     open_graph: dict[str, str] = field(default_factory=dict)
     status_code: int = 0
     content_hash: str = ""
+    challenge_hints: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1479,6 +1490,7 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
         result_data.get("metadata", {}).get("title")
         or (soup.title.get_text(" ", strip=True) if soup.title else "")
     )[:300]
+    challenge_hints = detect_challenge_hints(f"{title}\n{text}\n{html[:5000]}")
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
     return PageArtifact(
         url=final_url,
@@ -1498,7 +1510,13 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
         open_graph=open_graph,
         status_code=int(result_data.get("status_code") or 0),
         content_hash=content_hash,
+        challenge_hints=challenge_hints,
     )
+
+
+def detect_challenge_hints(value: str) -> list[str]:
+    lowered = compact_whitespace(value).lower()
+    return sorted({hint for hint in CHALLENGE_HINTS if hint in lowered})
 
 
 def clean_name_candidate(value: str) -> str:
@@ -2727,6 +2745,43 @@ async def enrich_row(
             ))
 
     homepage_page = extract_page_artifact(homepage_result)
+    if homepage_page.challenge_hints:
+        challenge_note = "challenge page detected: " + ", ".join(homepage_page.challenge_hints)
+        return stamp(EnrichmentRecord(
+            row_id=row.row_id,
+            company_name=row.company_name,
+            url_picked=row.url_picked,
+            best_url=best_url,
+            crawl_status="skipped_challenge_detected",
+            pages_crawled_count=1,
+            pages_crawled_urls=[homepage_page.url or best_url],
+            title=homepage_page.title,
+            meta_description=homepage_page.meta_description,
+            organization_name_detected="",
+            organization_type_guess="Unknown",
+            solo_or_group_guess="unknown",
+            parent_or_affiliation_signals=[],
+            size_signals={"pages_crawled": 1},
+            industry_guess="Unknown",
+            services_detected=[],
+            locations_detected=[],
+            contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
+            leadership_or_team_signals=[],
+            social_links=[],
+            structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
+            enrichment_notes=challenge_note,
+            confidence_score=0.05,
+            error_notes=[challenge_note],
+            best_url_candidate=validation.best_url_candidate,
+            http_status=validation.http_status,
+            redirect_chain=validation.redirect_chain,
+            url_validation_status=validation.url_validation_status,
+            crawl_context={
+                "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
+                "challenge_hints": homepage_page.challenge_hints,
+                "captcha_solver": {"mode": "diagnostic_only"},
+            },
+        ))
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
     if resolved_homepage.best_url:
         best_url = resolved_homepage.best_url

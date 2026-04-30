@@ -1,4 +1,5 @@
 import asyncio
+import importlib.util
 import json
 import os
 import re
@@ -69,7 +70,13 @@ OVERSEAS_HINTS = (
 
 ERROR_HINTS = (
     "access denied",
+    "captcha",
+    "cf-challenge",
+    "cloudflare",
+    "complete the security check",
     "robot challenge",
+    "unusual traffic",
+    "verify you are human",
     "checking the site connection",
     "please make sure you are authorized",
     "forbidden",
@@ -80,6 +87,17 @@ ERROR_HINTS = (
     "error 404",
     "error 403",
     "error 500",
+)
+
+CHALLENGE_HINTS = (
+    "captcha",
+    "cf-challenge",
+    "cloudflare",
+    "complete the security check",
+    "checking the site connection",
+    "robot challenge",
+    "unusual traffic",
+    "verify you are human",
 )
 
 ICP_HINTS = (
@@ -262,6 +280,8 @@ class QualityPayload(BaseModel):
     word_count: int = 0
     has_icp_terms: bool = False
     looks_like_error_page: bool = False
+    looks_like_challenge_page: bool = False
+    challenge_hints: list[str] = Field(default_factory=list)
 
 
 class ScrapeResponse(BaseModel):
@@ -425,12 +445,34 @@ def build_quality(title: str, website_content: str) -> QualityPayload:
     word_count = len(re.findall(r"\b\w+\b", website_content))
     has_icp_terms = any(term in lowered for term in ICP_HINTS)
     looks_like_error_page = any(term in lowered for term in ERROR_HINTS)
+    challenge_hints = sorted({term for term in CHALLENGE_HINTS if term in lowered})
     return QualityPayload(
         content_chars=content_chars,
         word_count=word_count,
         has_icp_terms=has_icp_terms,
         looks_like_error_page=looks_like_error_page,
+        looks_like_challenge_page=bool(challenge_hints),
+        challenge_hints=challenge_hints,
     )
+
+
+def captcha_solver_diagnostics() -> dict[str, Any]:
+    package_available = importlib.util.find_spec("twocaptcha") is not None
+    configured = bool(os.getenv("TWOCAPTCHA_API_KEY", "").strip() or os.getenv("TWO_CAPTCHA_API_KEY", "").strip())
+    allowed_domains = [
+        item.strip().lower()
+        for item in os.getenv("CAPTCHA_SOLVER_ALLOWED_DOMAINS", "").split(",")
+        if item.strip()
+    ]
+    return {
+        "package": "2captcha-python",
+        "import_name": "twocaptcha",
+        "installed": package_available,
+        "configured": configured,
+        "enabled": bool(configured and allowed_domains),
+        "allowed_domains": allowed_domains,
+        "mode": "diagnostic_only",
+    }
 
 
 def dedupe_lines(lines: list[str], max_items: int) -> list[str]:
@@ -969,12 +1011,21 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/runtime-diagnostics")
+async def runtime_diagnostics() -> dict[str, Any]:
+    return {
+        "status": "ok",
+        "captcha_solver": captcha_solver_diagnostics(),
+    }
+
+
 @app.get("/contact-provider-health")
 async def contact_provider_health() -> dict[str, Any]:
     return {
         "provider_order": contact_enrichment.configured_provider_order(),
         "provider_reset_token": contact_enrichment.PROVIDER_RESET_TOKEN,
         "providers": contact_enrichment.provider_health_snapshot(),
+        "captcha_solver": captcha_solver_diagnostics(),
     }
 
 

@@ -458,3 +458,10 @@ Public enrichment timeout cleanup:
 - rerun after the DuckDuckGo switch showed URL discovery was healthy, but public enrichment timed out on `13` rows at the n8n HTTP node's `300000ms` limit.
 - enrichment row selection is now limited to `1` row per workflow trigger, and the `/public-enrich` HTTP timeout is raised to `600000ms` for cleaner low-concurrency runs.
 - fixed the enrichment item filter to accept rows already in `status = processing`, matching the upstream `Get Enrichment Rows` query.
+
+Runtime challenge diagnostics:
+
+- `2captcha-python==2.0.6` remains installed in the Crawl4AI worker requirements.
+- added `/runtime-diagnostics` and contact provider health metadata to report whether the `twocaptcha` package is importable and whether solver env vars are configured.
+- public enrichment now detects challenge-style pages and records `skipped_challenge_detected` with challenge hints instead of treating the page as normal business content.
+- solver mode is diagnostic-only; no public-web CAPTCHA solving is called by the worker.
