@@ -100,6 +100,29 @@ SOCIAL_HOST_SUFFIXES = (
     "twitter.com",
     "x.com",
 )
+PARENT_RELATIONSHIP_TYPES = {
+    "parent",
+    "owner",
+    "operator",
+    "managed_by",
+    "subsidiary_of",
+    "branch_of",
+    "brand_group",
+    "clinic_network",
+}
+AFFILIATION_RELATIONSHIP_TYPES = {
+    "affiliation",
+    "professional_membership",
+    "accreditation",
+    "licensing_body",
+    "training_institution",
+    "hospital_appointment",
+    "vendor",
+    "location_or_landlord",
+    "partner",
+    "unknown",
+    "rejected",
+}
 NON_ORG_HOST_SUFFIXES = (
     "facebook.com",
     "instagram.com",
@@ -398,10 +421,40 @@ class EnrichmentRecord:
     parent_company: str = ""
     parent_company_evidence: list[str] = field(default_factory=list)
     parent_company_confidence: str = ""
+    parent_company_relationship: str = ""
+    affiliations_detected: list[dict[str, Any]] = field(default_factory=list)
+    rejected_parent_candidates: list[dict[str, Any]] = field(default_factory=list)
+    parent_company_candidates_json: list[dict[str, Any]] = field(default_factory=list)
     website_scrape: str = ""
     raw_pages: list[dict[str, Any]] = field(default_factory=list)
     crawl_context: dict[str, Any] = field(default_factory=dict)
     timing_ms: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class ParentCompanyCandidate:
+    name: str
+    raw_name: str
+    relationship_pattern: str
+    relationship_hint: str
+    source_url: str
+    source_type: str
+    evidence_quote: str
+    evidence_context: str
+    confidence_hint: str = "Low"
+
+
+@dataclass
+class ParentCompanyVerification:
+    parent_company: str = ""
+    relationship_type: str = ""
+    confidence: str = ""
+    evidence: list[str] = field(default_factory=list)
+    affiliations: list[dict[str, Any]] = field(default_factory=list)
+    rejected_candidates: list[dict[str, Any]] = field(default_factory=list)
+    candidates: list[ParentCompanyCandidate] = field(default_factory=list)
+    verifier: str = "deterministic"
+    verifier_error: str = ""
 
 
 def require_python_311() -> None:
@@ -415,6 +468,39 @@ def compact_whitespace(value: Any) -> str:
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
+def parse_llm_json(text: str) -> dict[str, Any]:
+    cleaned = compact_whitespace(text)
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return json.loads(cleaned)
+
+
+def normalize_org_name(value: str) -> str:
+    return " ".join(token for token in re.split(r"[^a-z0-9]+", compact_whitespace(value).lower()) if token)
+
+
+def looks_like_person_name(value: str) -> bool:
+    text = compact_whitespace(value)
+    if not text:
+        return False
+    if re.search(r"\b(?:group|health|healthcare|medical|clinic|centre|center|hospital|company|holdings?|pte|ltd|llp|inc|society|association|academy|college|council|university|school|partners?|network|foundation|vendor|centre)\b", text, re.I):
+        return False
+    tokens = re.findall(r"\b[A-Z][a-zA-Z'’-]+\b", text)
+    return 2 <= len(tokens) <= 4 and len(" ".join(tokens)) == len(text.strip())
+
+
+def source_type_for_page(page: PageArtifact | None) -> str:
+    return "official_domain" if page else "unknown"
 
 
 def limit_text(value: str, max_chars: int) -> str:
@@ -1664,6 +1750,102 @@ def detect_affiliation_signals(pages: list[PageArtifact]) -> list[str]:
     return dedupe_strings(output, limit=20)
 
 
+def load_parent_company_registry() -> dict[str, Any]:
+    path = Path(__file__).with_name("parent_company_registry.json")
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"known_healthcare_groups": []}
+
+
+def normalize_known_parent_name(candidate: str) -> str:
+    normalized = normalize_org_name(candidate)
+    if not normalized:
+        return candidate
+    for group in load_parent_company_registry().get("known_healthcare_groups", []):
+        if not isinstance(group, dict):
+            continue
+        names = [group.get("name", ""), *(group.get("aliases") or [])]
+        for name in names:
+            if normalize_org_name(str(name)) == normalized:
+                return compact_whitespace(group.get("name") or candidate)
+    return candidate
+
+
+def clean_parent_or_affiliation_candidate(value: str) -> str:
+    candidate = clean_name_candidate(value)
+    if not candidate or is_generic_name_candidate(candidate):
+        return ""
+    candidate = re.sub(r"^(?:the|a|an)\s+", "", candidate, flags=re.I)
+    if re.match(r"^(?:our|my|this|that|its|their)\s+", candidate, flags=re.I):
+        return ""
+    candidate = re.sub(
+        r"\s+\b(?:network|group|company|healthcare group|medical group|clinic network)\b$",
+        lambda match: match.group(0),
+        candidate,
+        flags=re.I,
+    ).strip(" ,.;:-")
+    if len(candidate) < 3 or len(candidate) > 120:
+        return ""
+    if re.search(r"\d+[a-z]", candidate.lower()):
+        return ""
+    return normalize_known_parent_name(candidate)
+
+
+def relationship_hint_from_pattern(pattern: str, evidence: str) -> str:
+    lowered = f"{pattern} {evidence}".lower()
+    if "schema.org parentorganization" in lowered or "parent company" in lowered:
+        return "parent"
+    if "owned by" in lowered:
+        return "owner"
+    if "operated by" in lowered:
+        return "operator"
+    if "managed by" in lowered:
+        return "managed_by"
+    if "subsidiary of" in lowered:
+        return "subsidiary_of"
+    if "branch of" in lowered:
+        return "branch_of"
+    if "part of" in lowered and re.search(r"\b(group|network|health|healthcare|medical)\b", lowered):
+        return "clinic_network"
+    if "part of" in lowered or "under" in lowered:
+        return "brand_group"
+    if "member of" in lowered:
+        return "affiliation"
+    if "affiliate" in lowered:
+        return "partner"
+    return "unknown"
+
+
+def candidate_context(line: str, match_start: int, match_end: int) -> str:
+    return compact_whitespace(line[max(0, match_start - 180) : min(len(line), match_end + 180)])
+
+
+def parent_candidate_from_value(
+    raw_name: str,
+    relationship_pattern: str,
+    source_url: str,
+    source_type: str,
+    evidence_quote: str,
+    evidence_context: str,
+    confidence_hint: str,
+) -> ParentCompanyCandidate | None:
+    name = clean_parent_or_affiliation_candidate(raw_name)
+    if not name:
+        return None
+    return ParentCompanyCandidate(
+        name=name,
+        raw_name=compact_whitespace(raw_name),
+        relationship_pattern=relationship_pattern,
+        relationship_hint=relationship_hint_from_pattern(relationship_pattern, evidence_quote),
+        source_url=source_url,
+        source_type=source_type,
+        evidence_quote=compact_whitespace(evidence_quote),
+        evidence_context=compact_whitespace(evidence_context),
+        confidence_hint=confidence_hint,
+    )
+
+
 def clean_parent_candidate(value: str, company_homepage_name: str) -> str:
     candidate = clean_name_candidate(value)
     if not candidate or is_generic_name_candidate(candidate):
@@ -1749,12 +1931,12 @@ def extract_parent_from_line(line: str, company_homepage_name: str) -> tuple[str
     return "", ""
 
 
-def detect_parent_company(
+def extract_parent_company_candidates(
     pages: list[PageArtifact],
     company_homepage_name: str,
-) -> tuple[str, list[str], str]:
-    scores: Counter[str] = Counter()
-    evidence: dict[str, list[str]] = {}
+) -> list[ParentCompanyCandidate]:
+    candidates: list[ParentCompanyCandidate] = []
+    seen: set[tuple[str, str, str]] = set()
 
     for page in pages:
         for item in page.structured_data:
@@ -1765,24 +1947,402 @@ def detect_parent_company(
                     raw_name = compact_whitespace(value.get("name", ""))
                 elif isinstance(value, str):
                     raw_name = value
-                candidate = clean_parent_candidate(raw_name, company_homepage_name)
+                candidate = parent_candidate_from_value(
+                    raw_name,
+                    f"schema.org {key}",
+                    page.url,
+                    source_type_for_page(page),
+                    f"schema.org {key}: {raw_name}",
+                    json.dumps(item, ensure_ascii=True)[:1200],
+                    "High",
+                )
                 if candidate:
-                    scores[candidate] += 10
-                    evidence.setdefault(candidate, []).append(f"schema.org {key}: {candidate}")
+                    dedupe_key = (normalize_org_name(candidate.name), candidate.relationship_pattern, candidate.source_url)
+                    if dedupe_key not in seen:
+                        seen.add(dedupe_key)
+                        candidates.append(candidate)
 
         for line in [*page.headings, *page.blocks]:
-            candidate, evidence_line = extract_parent_from_line(line, company_homepage_name)
-            if candidate:
-                scores[candidate] += 8
-                evidence.setdefault(candidate, []).append(evidence_line)
+            compact_line = compact_whitespace(line)
+            if not compact_line:
+                continue
+            patterns = [
+                ("owned by", r"\bowned by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("operated by", r"\boperated by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("managed by", r"\bmanaged by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("subsidiary of", r"\b(?:a\s+)?subsidiary of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("branch of", r"\bbranch of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("parent company", r"\bparent company(?:\s+is|\s*:)?\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("part of", r"\bpart of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("part of group", r"\bpart of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100}?\b(?:group|network|health|healthcare|medical)\b[A-Za-z0-9&.,'() -]{0,40})"),
+                ("member of", r"\bmembers? of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("affiliate of", r"\baffiliate(?:d)?(?: clinic)? of\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("under group", r"\bunder\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100}?\b(?:group|network|health|healthcare|medical)\b[A-Za-z0-9&.,'() -]{0,40})"),
+                ("group company", r"\ba\s+([A-Z][A-Za-z0-9&.,'() -]{2,100}?\bgroup)\s+company\b"),
+                ("powered by", r"\bpowered by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("located at", r"\blocated at\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("accredited by", r"\baccredited by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("licensed by", r"\blicensed by\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+                ("trained at", r"\b(?:trained|residency|fellowship|completed residency) at\s+(?:the\s+)?([A-Z][A-Za-z0-9&.,'() -]{2,100})"),
+            ]
+            for pattern_name, pattern in patterns:
+                for match in re.finditer(pattern, compact_line, flags=re.I):
+                    raw_name = re.split(r"[.;:\n]|(?:\s+and\s+)|(?:\s+with\s+)|(?:\s+where\s+)", match.group(1), maxsplit=1)[0].strip()
+                    candidate = parent_candidate_from_value(
+                        raw_name,
+                        pattern_name,
+                        page.url,
+                        source_type_for_page(page),
+                        compact_line,
+                        candidate_context(compact_line, match.start(), match.end()),
+                        "High" if pattern_name in {"owned by", "operated by", "managed by", "subsidiary of", "branch of", "parent company"} else "Low",
+                    )
+                    if not candidate:
+                        continue
+                    dedupe_key = (normalize_org_name(candidate.name), candidate.relationship_pattern, candidate.source_url)
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    candidates.append(candidate)
+    return candidates[:40]
 
-    if not scores:
-        return "", [], ""
 
-    parent_company = scores.most_common(1)[0][0]
-    parent_evidence = dedupe_strings(evidence.get(parent_company, []), limit=8)
-    confidence = "High" if scores[parent_company] >= 10 else "Medium"
-    return parent_company, parent_evidence, confidence
+def negative_parent_context(text: str) -> bool:
+    lowered = compact_whitespace(text).lower()
+    return any(
+        phrase in lowered
+        for phrase in (
+            "not affiliated with",
+            "independent",
+            "privately owned",
+            "accredited by",
+            "licensed by",
+            "trained at",
+            "formerly at",
+            "appointed at",
+            "located at",
+            "residency at",
+            "fellowship at",
+            "powered by",
+        )
+    )
+
+
+def classify_parent_candidate(candidate: ParentCompanyCandidate, company_homepage_name: str) -> tuple[str, str]:
+    text = f"{candidate.relationship_pattern} {candidate.evidence_quote}".lower()
+    name_lower = candidate.name.lower()
+    if looks_like_person_name(candidate.name):
+        return "rejected", "person_affiliation"
+    if company_homepage_name and token_overlap_score(candidate.name, company_homepage_name) >= 2:
+        return "rejected", "not_parent"
+    if "powered by" in text or "website by" in text:
+        return "vendor", "vendor"
+    if "located at" in text or any(term in name_lower for term in ("building", "tower", "plaza", "medical centre", "medical center")):
+        return "location_or_landlord", "location"
+    if any(term in text for term in ("trained at", "residency", "fellowship", "medical school", "university")):
+        return "training_institution", "training"
+    if "accredited by" in text:
+        return "accreditation", "accreditation"
+    if "licensed by" in text or any(term in name_lower for term in ("ministry", "council", "board")):
+        return "licensing_body", "licensing_body"
+    if any(term in name_lower for term in ("association", "society", "academy", "college", "federation")):
+        return "professional_membership", "membership"
+    if "member of" in text and not re.search(r"\b(group|network|health|healthcare|medical group|clinic network)\b", text):
+        return "professional_membership", "membership"
+    if "affiliate" in text:
+        return "partner", "not_parent"
+    if "owned by" in text:
+        return "owner", ""
+    if "operated by" in text:
+        return "operator", ""
+    if "managed by" in text:
+        return "managed_by", ""
+    if "subsidiary of" in text:
+        return "subsidiary_of", ""
+    if "branch of" in text or "schema.org branchof" in text:
+        return "branch_of", ""
+    if "parent company" in text or "schema.org parentorganization" in text:
+        return "parent", ""
+    if "part of" in text or "under" in text or "group company" in text:
+        if re.search(r"\b(group|network|health|healthcare|medical|clinic)\b", text):
+            return "clinic_network" if re.search(r"\b(clinic|health|healthcare|medical|network)\b", text) else "brand_group", ""
+        return "unknown", "insufficient_evidence"
+    return "unknown", "insufficient_evidence"
+
+
+def parent_candidate_allowed(
+    candidate: ParentCompanyCandidate,
+    relationship_type: str,
+    all_text: str,
+    company_homepage_name: str,
+    best_url: str,
+) -> tuple[bool, str]:
+    if relationship_type not in PARENT_RELATIONSHIP_TYPES:
+        return False, "not_parent"
+    if not candidate.evidence_quote:
+        return False, "quote_not_found"
+    if not candidate.relationship_pattern.lower().startswith("schema.org") and candidate.evidence_quote not in all_text:
+        return False, "quote_not_found"
+    if candidate.source_url and best_url and not same_registered_domain(candidate.source_url, best_url):
+        return False, "source_domain_invalid"
+    if company_homepage_name and token_overlap_score(candidate.name, company_homepage_name) >= 2:
+        return False, "not_parent"
+    if looks_like_person_name(candidate.name):
+        return False, "person_affiliation"
+    if negative_parent_context(candidate.evidence_quote) and relationship_type not in {"owner", "operator", "managed_by", "subsidiary_of", "branch_of"}:
+        return False, "insufficient_evidence"
+    return True, ""
+
+
+def llm_parent_verifier_prompt(payload: dict[str, Any], candidates: list[ParentCompanyCandidate]) -> list[dict[str, str]]:
+    candidate_payload = [asdict(candidate) for candidate in candidates[:20]]
+    system = (
+        "You are a strict parent-company relationship classifier. "
+        "You may only classify candidates provided in parent_candidates. Do not invent, rename, complete, or add companies. "
+        "Accept a parent only when official-site evidence clearly states organization-level parent, owner, operator, management, subsidiary, branch, group, or clinic-network relationship. "
+        "Reject professional memberships, accreditations, licensing bodies, training institutions, hospital appointments, vendors, locations, partners, doctor biography affiliations, and weak member-of language. "
+        "Return strict JSON only."
+    )
+    user = {
+        "target_company": payload.get("target_company", ""),
+        "homepage_name": payload.get("homepage_name", ""),
+        "canonical_domain": payload.get("canonical_domain", ""),
+        "best_url": payload.get("best_url", ""),
+        "parent_candidates": candidate_payload,
+        "schema": {
+            "accepted_parent": {
+                "name": "string",
+                "relationship_type": "parent|owner|operator|managed_by|subsidiary_of|branch_of|brand_group|clinic_network",
+                "confidence": "High|Medium|Low",
+                "evidence_quote": "string",
+                "reason": "string",
+            },
+            "affiliations": [
+                {
+                    "name": "string",
+                    "relationship_type": "professional_membership|accreditation|licensing_body|training_institution|hospital_appointment|partner|unknown",
+                    "evidence_quote": "string",
+                    "reason": "string",
+                }
+            ],
+            "rejected_candidates": [
+                {
+                    "name": "string",
+                    "reason_code": "not_parent|person_affiliation|doctor_bio|training|membership|accreditation|location|vendor|insufficient_evidence|candidate_not_in_input|quote_not_found",
+                    "reason": "string",
+                }
+            ],
+        },
+    }
+    return [{"role": "system", "content": system}, {"role": "user", "content": json.dumps(user, ensure_ascii=False)}]
+
+
+def deterministic_parent_company_verification(
+    candidates: list[ParentCompanyCandidate],
+    company_homepage_name: str,
+    all_text: str,
+    best_url: str,
+    verifier: str = "deterministic",
+    verifier_error: str = "",
+) -> ParentCompanyVerification:
+    affiliations: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    accepted: list[tuple[ParentCompanyCandidate, str, str]] = []
+    for candidate in candidates:
+        relationship_type, reject_code = classify_parent_candidate(candidate, company_homepage_name)
+        allowed, guard_code = parent_candidate_allowed(candidate, relationship_type, all_text, company_homepage_name, best_url)
+        if allowed:
+            confidence = candidate.confidence_hint if candidate.confidence_hint in {"High", "Medium", "Low"} else "Medium"
+            if confidence == "Low":
+                confidence = "Medium"
+            accepted.append((candidate, relationship_type, confidence))
+        elif relationship_type in AFFILIATION_RELATIONSHIP_TYPES and relationship_type != "rejected":
+            affiliations.append(
+                {
+                    "name": candidate.name,
+                    "relationship_type": relationship_type,
+                    "evidence_quote": candidate.evidence_quote,
+                    "source_url": candidate.source_url,
+                    "reason": reject_code or guard_code or "not a parent/operator relationship",
+                }
+            )
+        else:
+            rejected.append(
+                {
+                    "name": candidate.name,
+                    "raw_name": candidate.raw_name,
+                    "reason_code": guard_code or reject_code or "insufficient_evidence",
+                    "reason": "Candidate did not pass strict parent-company guards.",
+                    "evidence_quote": candidate.evidence_quote,
+                    "source_url": candidate.source_url,
+                }
+            )
+
+    if accepted:
+        priority = {
+            "parent": 1,
+            "owner": 1,
+            "operator": 1,
+            "managed_by": 2,
+            "subsidiary_of": 2,
+            "branch_of": 3,
+            "clinic_network": 4,
+            "brand_group": 5,
+        }
+        accepted.sort(key=lambda item: (priority.get(item[1], 99), 0 if item[2] == "High" else 1))
+        candidate, relationship_type, confidence = accepted[0]
+        return ParentCompanyVerification(
+            parent_company=candidate.name,
+            relationship_type=relationship_type,
+            confidence=confidence,
+            evidence=[candidate.evidence_quote],
+            affiliations=dedupe_dicts(affiliations),
+            rejected_candidates=dedupe_dicts(rejected),
+            candidates=candidates,
+            verifier=verifier,
+            verifier_error=verifier_error,
+        )
+    return ParentCompanyVerification(
+        affiliations=dedupe_dicts(affiliations),
+        rejected_candidates=dedupe_dicts(rejected),
+        candidates=candidates,
+        verifier=verifier,
+        verifier_error=verifier_error,
+    )
+
+
+def dedupe_dicts(values: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for value in values:
+        key = json.dumps(value, sort_keys=True, ensure_ascii=True)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(value)
+    return output
+
+
+def verify_parent_company_candidates_with_llm(
+    payload: dict[str, Any],
+    candidates: list[ParentCompanyCandidate],
+    all_text: str,
+) -> ParentCompanyVerification:
+    if not candidates:
+        return ParentCompanyVerification(verifier="llm", candidates=[])
+    fake_response = os.getenv("PARENT_COMPANY_LLM_VERIFIER_FAKE_RESPONSE", "").strip()
+    try:
+        if fake_response:
+            llm_payload = parse_llm_json(fake_response)
+        else:
+            api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+            if not api_key:
+                return deterministic_parent_company_verification(
+                    candidates,
+                    compact_whitespace(payload.get("homepage_name")),
+                    all_text,
+                    compact_whitespace(payload.get("best_url")),
+                    verifier="deterministic_fallback",
+                    verifier_error="OPENROUTER_API_KEY is not configured",
+                )
+            model = os.getenv("PARENT_COMPANY_LLM_VERIFIER_MODEL", "deepseek/deepseek-v4-flash").strip()
+            timeout_seconds = max(5, int(os.getenv("PARENT_COMPANY_LLM_VERIFIER_TIMEOUT_SECONDS", "20")))
+            response = requests.post(
+                os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "temperature": 0, "messages": llm_parent_verifier_prompt(payload, candidates)},
+                timeout=timeout_seconds,
+            )
+            if response.status_code >= 400:
+                return deterministic_parent_company_verification(
+                    candidates,
+                    compact_whitespace(payload.get("homepage_name")),
+                    all_text,
+                    compact_whitespace(payload.get("best_url")),
+                    verifier="deterministic_fallback",
+                    verifier_error=f"llm_http_{response.status_code}",
+                )
+            data = response.json()
+            content = compact_whitespace(data.get("choices", [{}])[0].get("message", {}).get("content"))
+            llm_payload = parse_llm_json(content)
+    except Exception as exc:
+        return deterministic_parent_company_verification(
+            candidates,
+            compact_whitespace(payload.get("homepage_name")),
+            all_text,
+            compact_whitespace(payload.get("best_url")),
+            verifier="deterministic_fallback",
+            verifier_error=f"llm_failed:{compact_whitespace(exc)}",
+        )
+
+    by_name = {normalize_org_name(candidate.name): candidate for candidate in candidates}
+    rejected = [item for item in llm_payload.get("rejected_candidates", []) if isinstance(item, dict)]
+    affiliations = [item for item in llm_payload.get("affiliations", []) if isinstance(item, dict)]
+    accepted = llm_payload.get("accepted_parent") if isinstance(llm_payload.get("accepted_parent"), dict) else {}
+    if accepted:
+        accepted_name = compact_whitespace(accepted.get("name"))
+        candidate = by_name.get(normalize_org_name(accepted_name))
+        if not candidate:
+            rejected.append({"name": accepted_name, "reason_code": "candidate_not_in_input", "reason": "LLM accepted a parent not present in extracted candidates."})
+        else:
+            relationship_type = compact_whitespace(accepted.get("relationship_type"))
+            evidence_quote = compact_whitespace(accepted.get("evidence_quote"))
+            if evidence_quote and evidence_quote != candidate.evidence_quote:
+                candidate = ParentCompanyCandidate(**{**asdict(candidate), "evidence_quote": evidence_quote})
+            allowed, guard_code = parent_candidate_allowed(
+                candidate,
+                relationship_type,
+                all_text,
+                compact_whitespace(payload.get("homepage_name")),
+                compact_whitespace(payload.get("best_url")),
+            )
+            if allowed:
+                return ParentCompanyVerification(
+                    parent_company=candidate.name,
+                    relationship_type=relationship_type,
+                    confidence=compact_whitespace(accepted.get("confidence")) or candidate.confidence_hint,
+                    evidence=[candidate.evidence_quote],
+                    affiliations=dedupe_dicts(affiliations),
+                    rejected_candidates=dedupe_dicts(rejected),
+                    candidates=candidates,
+                    verifier="llm",
+                )
+            rejected.append({"name": candidate.name, "reason_code": guard_code or "not_parent", "reason": "LLM accepted parent failed post-verifier guards."})
+    fallback = deterministic_parent_company_verification(
+        candidates,
+        compact_whitespace(payload.get("homepage_name")),
+        all_text,
+        compact_whitespace(payload.get("best_url")),
+        verifier="llm_no_accepted_parent",
+    )
+    fallback.affiliations = dedupe_dicts([*affiliations, *fallback.affiliations])
+    fallback.rejected_candidates = dedupe_dicts([*rejected, *fallback.rejected_candidates])
+    return fallback
+
+
+def detect_parent_company(
+    pages: list[PageArtifact],
+    company_homepage_name: str,
+    company_name: str = "",
+    canonical_domain: str = "",
+    best_url: str = "",
+) -> ParentCompanyVerification:
+    candidates = extract_parent_company_candidates(pages, company_homepage_name)
+    all_text = "\n".join(
+        value
+        for page in pages
+        for value in [page.text, *page.headings, *page.blocks]
+        if value
+    )
+    payload = {
+        "target_company": company_name,
+        "homepage_name": company_homepage_name,
+        "canonical_domain": canonical_domain,
+        "best_url": best_url,
+    }
+    if env_flag("PARENT_COMPANY_LLM_VERIFIER_ENABLED", default=True):
+        return verify_parent_company_candidates_with_llm(payload, candidates, all_text)
+    return deterministic_parent_company_verification(candidates, company_homepage_name, all_text, best_url)
 
 
 def detect_solo_or_group(
@@ -2210,9 +2770,12 @@ async def enrich_row(
     contact_info = detect_contact_info(crawled_pages)
     leadership_signals = detect_leadership_signals(crawled_pages)
     affiliation_signals = detect_affiliation_signals(crawled_pages)
-    parent_company, parent_company_evidence, parent_company_confidence = detect_parent_company(
+    parent_verification = detect_parent_company(
         crawled_pages,
         company_homepage_name,
+        company_name=row.company_name,
+        canonical_domain=registered_domain(normalization.hostname),
+        best_url=best_url,
     )
     timings["extraction_ms"] = elapsed_ms(extraction_started)
     solo_or_group = detect_solo_or_group(organization_type, locations, leadership_signals, affiliation_signals, all_text)
@@ -2258,9 +2821,13 @@ async def enrich_row(
         url_validation_status=validation.url_validation_status,
         company_homepage_name=company_homepage_name,
         company_homepage_name_evidence=company_homepage_name_evidence,
-        parent_company=parent_company,
-        parent_company_evidence=parent_company_evidence,
-        parent_company_confidence=parent_company_confidence,
+        parent_company=parent_verification.parent_company,
+        parent_company_evidence=parent_verification.evidence,
+        parent_company_confidence=parent_verification.confidence,
+        parent_company_relationship=parent_verification.relationship_type,
+        affiliations_detected=parent_verification.affiliations,
+        rejected_parent_candidates=parent_verification.rejected_candidates,
+        parent_company_candidates_json=[asdict(candidate) for candidate in parent_verification.candidates],
         website_scrape=build_website_scrape(crawled_pages, max_chars=scrape_char_limit),
         raw_pages=[make_raw_page(page) for page in crawled_pages],
         crawl_context={
@@ -2279,7 +2846,18 @@ async def enrich_row(
                 "crawl_delay_seconds": robots_policy.crawl_delay_seconds,
                 "sitemaps": robots_policy.sitemaps,
                 "note": robots_policy.note,
-            }
+            },
+            "parent_company_verification": {
+                "verifier": parent_verification.verifier,
+                "verifier_error": parent_verification.verifier_error,
+                "parent_company": parent_verification.parent_company,
+                "relationship_type": parent_verification.relationship_type,
+                "confidence": parent_verification.confidence,
+                "evidence": parent_verification.evidence,
+                "affiliations_detected": parent_verification.affiliations,
+                "rejected_parent_candidates": parent_verification.rejected_candidates,
+                "parent_company_candidates": [asdict(candidate) for candidate in parent_verification.candidates],
+            },
         },
     )
     record.confidence_score = confidence_score_for_record(record)
@@ -2310,8 +2888,12 @@ def record_to_csv_row(record: EnrichmentRecord) -> dict[str, str]:
         "company_homepage_name": record.company_homepage_name,
         "company_homepage_name_evidence": json.dumps(record.company_homepage_name_evidence, ensure_ascii=True),
         "parent_company": record.parent_company,
+        "parent_company_relationship": record.parent_company_relationship,
         "parent_company_evidence": json.dumps(record.parent_company_evidence, ensure_ascii=True),
         "parent_company_confidence": record.parent_company_confidence,
+        "affiliations_detected": json.dumps(record.affiliations_detected, ensure_ascii=True),
+        "rejected_parent_candidates": json.dumps(record.rejected_parent_candidates, ensure_ascii=True),
+        "parent_company_candidates_json": json.dumps(record.parent_company_candidates_json, ensure_ascii=True),
         "crawl_status": record.crawl_status,
         "pages_crawled_count": str(record.pages_crawled_count),
         "pages_crawled_urls": json.dumps(record.pages_crawled_urls, ensure_ascii=True),
@@ -2377,6 +2959,15 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
         notes_parts.append("Homepage name evidence: " + " | ".join(record.company_homepage_name_evidence[:3]))
     if record.parent_company_evidence:
         notes_parts.append("Parent evidence: " + " | ".join(record.parent_company_evidence[:3]))
+    if record.affiliations_detected:
+        notes_parts.append(
+            "Affiliations detected: "
+            + " | ".join(
+                compact_whitespace(item.get("name", ""))
+                for item in record.affiliations_detected[:3]
+                if isinstance(item, dict) and compact_whitespace(item.get("name", ""))
+            )
+        )
     if record.error_notes:
         notes_parts.append("Errors: " + " | ".join(record.error_notes[:5]))
     return {

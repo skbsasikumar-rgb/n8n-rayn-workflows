@@ -431,3 +431,12 @@ Budgeted query order correction:
 - first budgeted rerun reduced Serper events from 246 to 120, but found emails dropped from 19 to 15 because the default three-query budget no longer included the high-signal `site:{canonical_domain}` people-page query.
 - corrected query order to keep a precise c-suite query first, then a broad official-domain people-page query, followed by clinic/ops/admin/care and compliance/IT company queries.
 - intent is to keep Serper lower than the previous 246-event run while preserving the 19-email baseline.
+
+Parent-company relationship classifier:
+
+- added structured parent-company candidates with relationship pattern, source URL, evidence quote, context, and confidence hint.
+- split strong parent/operator/group relationships from weak affiliations and rejected parent candidates.
+- added strict relationship classes: only parent, owner, operator, managed_by, subsidiary_of, branch_of, brand_group, and clinic_network may populate `parent_company`.
+- weak memberships, accreditations, licensing bodies, training institutions, doctor/hospital appointments, vendors, landlords/locations, and partners are preserved as affiliations or rejected candidates instead of being written as parent companies.
+- added an optional OpenRouter-backed LLM verifier for classification only; post-verifier guards reject invented parent names, quotes not present in official crawl text, person names, target-company overlaps, bad relationship types, and weak biography/accreditation/location contexts.
+- deterministic fallback still accepts high-confidence schema.org parentOrganization/branchOf and explicit owned/operated/managed/subsidiary/branch/group evidence when the verifier is disabled or unavailable.

@@ -15,7 +15,13 @@ This document defines the rebuild contract for the lead enrichment table.
 - `canonical_domain`: domain used for dedupe.
 - `duplicate_of_id`: existing record ID when this row duplicates another canonical domain.
 - `company_homepage_name`: company name found on the official site.
-- `parent_company`: parent, umbrella, or group company when supported.
+- `parent_company`: parent, owner, operator, manager, subsidiary parent, branch parent, brand group, or clinic network only when strong official-site evidence supports it.
+- `parent_company_relationship`: relationship class when available; only `parent`, `owner`, `operator`, `managed_by`, `subsidiary_of`, `branch_of`, `brand_group`, and `clinic_network` may populate `parent_company`.
+- `parent_company_confidence`: `High`, `Medium`, or `Low` confidence from strict parent-company verification.
+- `parent_company_evidence`: official-site quote or schema evidence supporting the accepted parent.
+- `affiliations_detected`: weak/non-parent affiliations such as memberships, accreditations, licensing bodies, training institutions, hospital appointments, partners, vendors, and locations.
+- `rejected_parent_candidates`: extracted parent-like candidates rejected with reason codes.
+- `parent_company_candidates_json`: extracted candidates considered by the parent-company verifier.
 - `website_scrape`: compact website content for later extraction.
 - `source_urls`: evidence URLs separated by ` | `.
 - `search_evidence_json`: JSON evidence for search query, first 10 Google results, selected URL, and LLM reason.

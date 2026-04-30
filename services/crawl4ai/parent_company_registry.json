@@ -1,0 +1,29 @@
+{
+  "known_healthcare_groups": [
+    {
+      "name": "Qualitas Health",
+      "aliases": ["Qualitas", "Qualitas Medical", "Qualitas Group"],
+      "domains": ["qualitashealth.com.sg"]
+    },
+    {
+      "name": "Healthway Medical",
+      "aliases": ["Healthway", "Healthway Medical Group"],
+      "domains": ["healthwaymedical.com"]
+    },
+    {
+      "name": "Fullerton Health",
+      "aliases": ["Fullerton", "Fullerton Health Group"],
+      "domains": ["fullertonhealth.com"]
+    },
+    {
+      "name": "Raffles Medical Group",
+      "aliases": ["Raffles Medical", "Raffles Medical Group"],
+      "domains": ["rafflesmedicalgroup.com"]
+    },
+    {
+      "name": "OneCare Medical",
+      "aliases": ["OneCare", "OneCare Medical Group"],
+      "domains": ["onecaremedical.com.sg"]
+    }
+  ]
+}
