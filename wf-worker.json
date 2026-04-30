@@ -88,7 +88,7 @@
       ],
       "parameters": {
         "method": "GET",
-        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,pending)~and(url_picked,notblank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=3",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=(company_name,notblank)~and(status,eq,processing)~and(url_picked,notblank)&fields=Id,company_name,url_picked,status,attempt_count,run_id,processing_started_at,processing_finished_at,last_attempted_at,status_reason,error_type,error_message,retry_eligible,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt&limit=3",
         "sendHeaders": false,
         "options": {
           "timeout": 60000
