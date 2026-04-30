@@ -82,17 +82,17 @@ Contact search must not output `needs_review`.
 
 ### Search
 
-Primary implemented interface: worker-side `/contact-enrich-batch` row runner. It performs official-site preflight first, then Serper fallback inside the Python worker when public search is needed.
+Primary implemented interface: worker-side `/contact-enrich-batch` row runner. It performs official-site preflight first, then OpenSERP fallback inside the Python worker when public search is needed.
 
 Provider adapter behavior:
 
 1. n8n calls `/contact-enrich-batch` with a small `limit` and the worker selects eligible `pending` rows.
 2. If preflight returns `preflight_contact_found`, write the contact result directly and spend zero search-provider queries for that row.
-3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run Serper first.
-4. If preflight returns `preflight_candidate_email_rejected`, run the same Serper fallback but exclude the preflight candidate names and rejected email candidates.
-5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call Serper.
-6. Default fallback is `serper_emergency`; OpenSERP remains available only if explicitly listed in `CONTACT_SEARCH_PROVIDER_ORDER`.
-7. Default paid-search budget is `3` role queries per row after preflight. Rows with official-site contacts spend zero Serper queries.
+3. If preflight returns `preflight_no_person_candidate`, build bundled role queries and run OpenSERP.
+4. If preflight returns `preflight_candidate_email_rejected`, run the same OpenSERP fallback but exclude the preflight candidate names and rejected email candidates.
+5. If preflight returns a validation provider failure or worker error, stop the row as `failed` and make it retryable. Do not call public search.
+6. Default fallback order is `openserp_duckduckgo -> openserp_google`.
+7. Default public-search budget is `3` role queries per row after preflight. Rows with official-site contacts spend zero OpenSERP queries.
 8. Do not convert provider failures into `contact_not_found`.
 9. Stop the row as `failed` with `search_provider_failed` if every provider attempt fails.
 10. Treat a single timeout as an attempt-level miss only. Do not disable a provider on the first timeout.
@@ -172,7 +172,7 @@ Process official-site content before spending search queries. If the official si
    - Human Resources Manager
    - People Manager
 
-All seven buckets remain eligible for candidate extraction and ranking. Serper fallback uses budgeted query bundles so the search covers every bucket without issuing one query per bucket. Candidate ranking still treats Admin and HR as the final bucket through `role_priority = 7`.
+All seven buckets remain eligible for candidate extraction and ranking. OpenSERP fallback uses budgeted query bundles so the search covers every bucket without issuing one query per bucket. Candidate ranking still treats Admin and HR as the final bucket through `role_priority = 7`.
 
 Stop once an accepted contact is found. Do not keep spending validation credits after success.
 
@@ -403,7 +403,7 @@ For batch executions, also capture the reconciliation summary emitted by the wor
 - `rows_non_terminal_final`
 - `concurrency`
 
-The Python batch runner processes rows concurrently when `CONTACT_BATCH_CONCURRENCY` or request `concurrency` is greater than `1`. Keep this conservative because each row can call Serper, the LLM verifier, and Anymail Finder.
+The Python batch runner processes rows concurrently when `CONTACT_BATCH_CONCURRENCY` or request `concurrency` is greater than `1`. Keep this conservative because each row can call OpenSERP, the LLM verifier, and Anymail Finder.
 
 ## Build Phases
 

@@ -50,7 +50,7 @@ class ContactCandidateVerifierTests(unittest.TestCase):
             "excluded_candidate_names": ["Jaideep Raj Rao"],
             "search_attempts": [
                 {
-                    "provider": "serper_emergency",
+                    "provider": "openserp_duckduckgo",
                     "query": '"Arden JR Surgery" Singapore ("CEO" OR "Founder" OR "Owner")',
                     "role": "Owner",
                     "results": [

@@ -440,3 +440,9 @@ Parent-company rerun smoke test:
 - result after tightening guards: 0 accepted parent companies, 4 affiliation rows, 1 rejected-candidate row, 0 errors.
 - fixed two false-positive parent paths found during the smoke test: CHAS/subsidy/accreditation scheme text and generic `part of medical examinations` phrases no longer populate `parent_company`.
 - changed unknown/noisy parent candidates to rejected evidence instead of affiliation evidence; professional memberships, training institutions, and accreditations remain affiliation evidence only.
+
+OpenSERP-only search routing:
+
+- URL discovery now calls the configured `OPENSERP_BASE_URL` route directly instead of posting to the Serper Google API.
+- Contact-search fallback defaults to `openserp_duckduckgo -> openserp_google`; non-OpenSERP provider names in `CONTACT_SEARCH_PROVIDER_ORDER` are ignored.
+- Removed the worker-side Serper emergency provider path, provider health slot, and `SERPER_API_KEY` dependency.

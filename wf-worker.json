@@ -169,25 +169,13 @@
         300
       ],
       "parameters": {
-        "method": "POST",
-        "url": "https://google.serper.dev/search",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ q: $json.openserp_query, num: 10 }) }}",
+        "method": "GET",
+        "url": "={{ $json.openserp_url }}",
         "options": {
           "timeout": 60000
         }
       },
-      "continueOnFail": true,
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "rNWf15tU6OmVJqMC",
-          "name": "serper"
-        }
-      }
+      "continueOnFail": true
     },
     {
       "id": "prepare-openserp-pick",
