@@ -261,6 +261,13 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertIn("Data Protection Officer", query_text)
         self.assertIn("hr manager", query_text.lower())
 
+    def test_plural_role_terms_extract_names_from_search_snippets(self):
+        text = "AMP Lab: Our Founders · Etienne Ding · Cherie Tan."
+        role, group = c.role_match(text)
+        self.assertEqual(role, "Founder")
+        self.assertEqual(group["bucket"], "c_suite")
+        self.assertIn(("Etienne Ding", 24, 36), c.name_matches_for_role(text, role))
+
 
 if __name__ == "__main__":
     unittest.main()

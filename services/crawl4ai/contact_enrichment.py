@@ -471,10 +471,10 @@ def role_points_to_other_org(evidence: str, name_start: int, name_end: int, comp
 
 def role_match(text: str, query_role: str = "") -> tuple[str, dict[str, Any] | None]:
     haystack = compact(text).lower()
-    if query_role and re.search(rf"(?<![a-z0-9]){re.escape(query_role.lower())}(?![a-z0-9])", haystack):
+    if query_role and re.search(rf"(?<![a-z0-9]){re.escape(query_role.lower())}s?(?![a-z0-9])", haystack):
         return query_role, ROLE_TERMS.get(query_role.lower())
     for role, group in ROLE_TERMS.items():
-        if re.search(rf"(?<![a-z0-9]){re.escape(role)}(?![a-z0-9])", haystack):
+        if re.search(rf"(?<![a-z0-9]){re.escape(role)}s?(?![a-z0-9])", haystack):
             canonical_role = next((r for r in group["roles"] if r.lower() == role), role.title())
             return canonical_role, group
     return "", None
