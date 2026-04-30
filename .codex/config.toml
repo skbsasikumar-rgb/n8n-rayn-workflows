@@ -1,4 +1,4 @@
-# Minimal repo-local Codex/GSD config.
+# Minimal repo-local Codex config.
 # Keep secrets and MCP credentials in user-level config, not this repo.
 
 [features]
