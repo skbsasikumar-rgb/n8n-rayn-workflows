@@ -2674,69 +2674,66 @@ def build_role_queries(
         names.append(cleaned_homepage)
     names_clause = grouped_terms(list(dict.fromkeys(name for name in names if name)))
 
-    bundles = [
-        {
-            "bucket": "c_suite",
-            "covered_role_buckets": ["c_suite", "operations", "clinic_leadership"],
-            "seniority": "executive",
-            "priority": 1,
-            "role": "CEO",
-            "company_roles": ["CEO", "Founder", "Managing Director", "Executive Director", "General Manager", "Operations Manager", "Practice Manager", "Medical Director", "Clinical Director"],
-            "domain_terms": ["Founder", "CEO", "Managing Director", "Executive Director", "General Manager", "Operations Manager", "Practice Manager", "Medical Director", "Clinical Director"],
-        },
-        {
-            "bucket": "clinic_leadership",
-            "covered_role_buckets": ["clinic_leadership", "care_clinical"],
-            "seniority": "manager",
-            "priority": 2,
-            "role": "Medical Director",
-            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Doctor in charge", "Senior Doctor", "Senior Consultant", "Clinical Lead", "Head of Nursing", "Nursing Manager", "Care Manager"],
-            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "providers", "clinicians", "clinical lead", "nursing manager"],
-        },
-        {
-            "bucket": "compliance_privacy_security",
-            "covered_role_buckets": ["compliance_privacy_security", "it_technology"],
-            "seniority": "senior_manager",
-            "priority": 3,
-            "role": "DPO",
-            "company_roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Head of Security", "Cybersecurity Manager", "IT Manager", "Head of IT", "CTO", "Technology Manager", "Systems Manager"],
-            "domain_terms": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "IT Manager", "Head of IT", "CTO"],
-        },
-        {
-            "bucket": "operations",
-            "covered_role_buckets": ["operations", "admin_hr"],
-            "seniority": "manager",
-            "priority": 4,
-            "role": "Operations Manager",
-            "company_roles": ["Operations Manager", "Clinic Operations Manager", "Programme Manager", "Program Manager", "Centre Manager", "Corporate Services Manager", "Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"],
-            "domain_terms": ["operations manager", "programme manager", "program manager", "centre manager", "corporate services", "admin manager", "office manager", "HR manager", "human resources", "people manager"],
-        },
-    ]
-
     queries: list[dict[str, Any]] = []
     seen: set[str] = set()
     effective_max_queries = min(max_queries, 4) if compact(website_content, 2000) else max_queries
-    query_passes = [
-        ("company_roles", lambda bundle: f"{names_clause} Singapore {grouped_terms(bundle['company_roles'])}".strip() if names_clause else ""),
-        ("domain_terms", lambda bundle: f"site:{cleaned_domain} {grouped_terms(bundle['domain_terms'])}".strip() if cleaned_domain else ""),
+    templates = [
+        {
+            "query": f"{names_clause} Singapore {grouped_terms(['CEO', 'Founder', 'Managing Director', 'Executive Director', 'General Manager'])}".strip() if names_clause else "",
+            "role": "CEO",
+            "role_bucket": "c_suite",
+            "covered_role_buckets": ["c_suite"],
+            "role_priority": 1,
+            "seniority": "executive",
+        },
+        {
+            "query": f"site:{cleaned_domain} {grouped_terms(['about us', 'team', 'leadership', 'management', 'founders', 'doctors', 'providers', 'clinicians', 'board', 'trustees', 'governance', 'contact', 'medical director', 'operations manager', 'DPO', 'IT manager', 'HR manager'])}".strip() if cleaned_domain else "",
+            "role": "Leadership",
+            "role_bucket": "c_suite",
+            "covered_role_buckets": TARGET_ROLE_BUCKETS,
+            "role_priority": 1,
+            "seniority": "executive",
+        },
+        {
+            "query": f"{names_clause} Singapore {grouped_terms(['Medical Director', 'Principal Doctor', 'Head Doctor', 'Doctor in charge', 'Senior Doctor', 'Senior Consultant', 'Clinical Lead', 'Head of Nursing', 'Nursing Manager', 'Care Manager', 'Operations Manager', 'Practice Manager', 'Clinic Operations Manager', 'Admin Manager', 'Office Manager', 'HR Manager'])}".strip() if names_clause else "",
+            "role": "Medical Director",
+            "role_bucket": "clinic_leadership",
+            "covered_role_buckets": ["clinic_leadership", "care_clinical", "operations", "admin_hr"],
+            "role_priority": 2,
+            "seniority": "manager",
+        },
+        {
+            "query": f"{names_clause} Singapore {grouped_terms(['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'Head of Security', 'Cybersecurity Manager', 'IT Manager', 'Head of IT', 'CTO', 'Technology Manager', 'Systems Manager'])}".strip() if names_clause else "",
+            "role": "DPO",
+            "role_bucket": "compliance_privacy_security",
+            "covered_role_buckets": ["compliance_privacy_security", "it_technology"],
+            "role_priority": 3,
+            "seniority": "senior_manager",
+        },
+        {
+            "query": f"site:{cleaned_domain} {grouped_terms(['DPO', 'Data Protection Officer', 'Compliance Manager', 'Risk Manager', 'CISO', 'IT Manager', 'Head of IT', 'CTO'])}".strip() if cleaned_domain else "",
+            "role": "DPO",
+            "role_bucket": "compliance_privacy_security",
+            "covered_role_buckets": ["compliance_privacy_security", "it_technology"],
+            "role_priority": 3,
+            "seniority": "senior_manager",
+        },
+        {
+            "query": f"site:{cleaned_domain} {grouped_terms(['operations manager', 'programme manager', 'program manager', 'centre manager', 'corporate services', 'admin manager', 'office manager', 'HR manager', 'human resources', 'people manager'])}".strip() if cleaned_domain else "",
+            "role": "Operations Manager",
+            "role_bucket": "operations",
+            "covered_role_buckets": ["operations", "admin_hr"],
+            "role_priority": 4,
+            "seniority": "manager",
+        },
     ]
-    for _, query_builder in query_passes:
-        for bundle in bundles:
-            query = query_builder(bundle)
-            key = query.lower()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            queries.append(
-                {
-                    "query": query,
-                    "role": bundle["role"],
-                    "role_bucket": bundle["bucket"],
-                    "covered_role_buckets": bundle["covered_role_buckets"],
-                    "role_priority": bundle["priority"],
-                    "seniority": bundle["seniority"],
-                }
-            )
-            if len(queries) >= effective_max_queries:
-                return queries
+    for item in templates:
+        query = compact(item["query"], 300)
+        key = query.lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        queries.append(item | {"query": query})
+        if len(queries) >= effective_max_queries:
+            return queries
     return queries

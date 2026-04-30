@@ -187,18 +187,18 @@ Candidate progression is bounded and explicit:
 
 Keep queries simple and auditable.
 
-Current live query builder uses four bundled families in priority order:
+Current live query builder uses four default queries in priority order:
 
-1. C-suite, operations, and clinic leadership bundle
-   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("CEO" OR "Founder" OR "Managing Director" OR "Executive Director" OR "General Manager" OR "Operations Manager" OR "Practice Manager" OR "Medical Director" OR "Clinical Director")`
-2. Clinic leadership and care clinical bundle
+1. Precise c-suite company query
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("CEO" OR "Founder" OR "Managing Director" OR "Executive Director" OR "General Manager")`
+2. Official-domain people-page query
+   - site query: `site:{canonical_domain} ("about us" OR "team" OR "leadership" OR "management" OR "founders" OR "doctors" OR "providers" OR "clinicians" OR "board" OR "trustees" OR "governance" OR "contact" OR "medical director" OR "operations manager" OR "DPO" OR "IT manager" OR "HR manager")`
+3. Clinic leadership, operations, care clinical, admin, and HR bundle
    - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Medical Director" OR "Principal Doctor" OR "Head Doctor" OR "Doctor in charge" OR "Senior Doctor" OR "Senior Consultant" OR "Clinical Lead" OR "Head of Nursing" OR "Nursing Manager" OR "Care Manager")`
-3. Compliance, privacy, security, and IT bundle
+4. Compliance, privacy, security, and IT bundle
    - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "Head of Security" OR "Cybersecurity Manager" OR "IT Manager" OR "Head of IT" OR "CTO" OR "Technology Manager" OR "Systems Manager")`
-4. Operations, admin, and HR bundle
-   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Operations Manager" OR "Clinic Operations Manager" OR "Programme Manager" OR "Centre Manager" OR "Corporate Services Manager" OR "Admin Manager" OR "Office Manager" OR "HR Manager" OR "Human Resources Manager" OR "People Manager")`
 
-If `website_content` has no official-site contact, cap the fallback row at four total queries and cover all seven buckets through the bundled company queries above. If `website_content` is missing, allow up to six total queries so the first site-domain queries can be added after all seven buckets have been covered once. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
+If `website_content` has no official-site contact, cap the fallback row at four total queries and cover all seven buckets through the precise c-suite query, one official-domain people-page query, and two bundled role queries. If `website_content` is missing, allow up to six total queries so extra compliance/IT and operations/admin site-domain queries can be added. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
 
 ## Candidate Extraction Strategy
 

@@ -425,3 +425,9 @@ Budgeted role-bucket search coverage:
 - rows with `website_content` use four bundled company-name queries covering: c-suite/operations/clinic leadership, clinic leadership/care clinical, compliance/privacy/security/IT, and operations/admin/HR.
 - rows without `website_content` may still use up to six queries, adding site-domain queries only after the seven buckets have been covered once.
 - added a regression test proving a four-query budget covers all `TARGET_ROLE_BUCKETS` in priority order.
+
+Budgeted query order correction:
+
+- first budgeted rerun reduced Serper events from 246 to 120, but found emails dropped from 19 to 15 because the default three-query budget no longer included the high-signal `site:{canonical_domain}` people-page query.
+- corrected query order to keep a precise c-suite query first, then a broad official-domain people-page query, followed by clinic/ops/admin/care and compliance/IT company queries.
+- intent is to keep Serper lower than the previous 246-event run while preserving the 19-email baseline.
