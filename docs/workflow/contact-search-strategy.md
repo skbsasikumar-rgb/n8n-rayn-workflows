@@ -172,7 +172,7 @@ Process official-site content before spending search queries. If the official si
    - Human Resources Manager
    - People Manager
 
-Admin and HR terms are included in the manager fallback search bundle to avoid increasing default Serper query count. Candidate ranking still treats them as the final bucket through `role_priority = 7`.
+All seven buckets remain eligible for candidate extraction and ranking. Serper fallback uses budgeted query bundles so the search covers every bucket without issuing one query per bucket. Candidate ranking still treats Admin and HR as the final bucket through `role_priority = 7`.
 
 Stop once an accepted contact is found. Do not keep spending validation credits after success.
 
@@ -187,19 +187,18 @@ Candidate progression is bounded and explicit:
 
 Keep queries simple and auditable.
 
-Current live query builder uses three bundled families:
+Current live query builder uses four bundled families in priority order:
 
-1. C-suite bundle
-   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("CEO" OR "Founder" OR "Owner" OR "Managing Director" OR "Executive Director" OR "General Manager")`
-   - site query: `site:{canonical_domain} ("Founder" OR "Owner" OR "CEO" OR "Managing Director" OR "Executive Director" OR "General Manager")`
-2. Clinic leadership bundle
-   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Medical Director" OR "Principal Doctor" OR "Head Doctor" OR "Clinic Manager" OR "Clinical Manager" OR "Practice Manager" OR "Operations Manager" OR "Clinic Operations Manager")`
-   - site query: `site:{canonical_domain} ("about us" OR "team" OR "leadership" OR "management" OR "founders" OR "doctors" OR "contact")`
-3. Compliance or IT bundle
+1. C-suite, operations, and clinic leadership bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("CEO" OR "Founder" OR "Managing Director" OR "Executive Director" OR "General Manager" OR "Operations Manager" OR "Practice Manager" OR "Medical Director" OR "Clinical Director")`
+2. Clinic leadership and care clinical bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Medical Director" OR "Principal Doctor" OR "Head Doctor" OR "Doctor in charge" OR "Senior Doctor" OR "Senior Consultant" OR "Clinical Lead" OR "Head of Nursing" OR "Nursing Manager" OR "Care Manager")`
+3. Compliance, privacy, security, and IT bundle
    - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "Head of Security" OR "Cybersecurity Manager" OR "IT Manager" OR "Head of IT" OR "CTO" OR "Technology Manager" OR "Systems Manager")`
-   - site query: `site:{canonical_domain} ("DPO" OR "Data Protection Officer" OR "Compliance Manager" OR "Risk Manager" OR "CISO" OR "IT Manager" OR "Head of IT" OR "CTO")`
+4. Operations, admin, and HR bundle
+   - company query: `("{company_name}" OR "{company_homepage_name}") Singapore ("Operations Manager" OR "Clinic Operations Manager" OR "Programme Manager" OR "Centre Manager" OR "Corporate Services Manager" OR "Admin Manager" OR "Office Manager" OR "HR Manager" OR "Human Resources Manager" OR "People Manager")`
 
-If `website_content` has no official-site contact, cap the fallback row at four total queries. If `website_content` is missing, allow up to six. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
+If `website_content` has no official-site contact, cap the fallback row at four total queries and cover all seven buckets through the bundled company queries above. If `website_content` is missing, allow up to six total queries so the first site-domain queries can be added after all seven buckets have been covered once. Do not over-normalize company names before querying. Use the table value first, then the homepage-derived name only when it adds a genuinely different brand string.
 
 ## Candidate Extraction Strategy
 

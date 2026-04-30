@@ -1887,6 +1887,7 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 {
                     "role": compact(query_meta.get("role"), 100),
                     "role_bucket": compact(query_meta.get("role_bucket") or query_meta.get("bucket"), 100),
+                    "covered_role_buckets": query_meta.get("covered_role_buckets") if isinstance(query_meta.get("covered_role_buckets"), list) else [],
                     "role_priority": int(query_meta.get("role_priority") or query_meta.get("priority") or 0),
                     "seniority": compact(query_meta.get("seniority"), 100),
                 }
@@ -2676,42 +2677,54 @@ def build_role_queries(
     bundles = [
         {
             "bucket": "c_suite",
+            "covered_role_buckets": ["c_suite", "operations", "clinic_leadership"],
             "seniority": "executive",
             "priority": 1,
             "role": "CEO",
-            "company_roles": ["CEO", "Founder", "Managing Director", "Executive Director", "General Manager"],
-            "domain_terms": ["Founder", "CEO", "Managing Director", "Executive Director", "General Manager"],
+            "company_roles": ["CEO", "Founder", "Managing Director", "Executive Director", "General Manager", "Operations Manager", "Practice Manager", "Medical Director", "Clinical Director"],
+            "domain_terms": ["Founder", "CEO", "Managing Director", "Executive Director", "General Manager", "Operations Manager", "Practice Manager", "Medical Director", "Clinical Director"],
         },
         {
             "bucket": "clinic_leadership",
+            "covered_role_buckets": ["clinic_leadership", "care_clinical"],
             "seniority": "manager",
             "priority": 2,
             "role": "Medical Director",
-            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Clinic Manager", "Clinical Manager", "Practice Manager", "Operations Manager", "Clinic Operations Manager", "Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"],
-            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "contact", "admin manager", "office manager", "HR manager", "human resources"],
+            "company_roles": ["Medical Director", "Principal Doctor", "Head Doctor", "Doctor in charge", "Senior Doctor", "Senior Consultant", "Clinical Lead", "Head of Nursing", "Nursing Manager", "Care Manager"],
+            "domain_terms": ["about us", "team", "leadership", "management", "founders", "doctors", "providers", "clinicians", "clinical lead", "nursing manager"],
         },
         {
             "bucket": "compliance_privacy_security",
+            "covered_role_buckets": ["compliance_privacy_security", "it_technology"],
             "seniority": "senior_manager",
             "priority": 3,
             "role": "DPO",
             "company_roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Head of Security", "Cybersecurity Manager", "IT Manager", "Head of IT", "CTO", "Technology Manager", "Systems Manager"],
             "domain_terms": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "IT Manager", "Head of IT", "CTO"],
         },
+        {
+            "bucket": "operations",
+            "covered_role_buckets": ["operations", "admin_hr"],
+            "seniority": "manager",
+            "priority": 4,
+            "role": "Operations Manager",
+            "company_roles": ["Operations Manager", "Clinic Operations Manager", "Programme Manager", "Program Manager", "Centre Manager", "Corporate Services Manager", "Admin Manager", "Administration Manager", "Office Manager", "HR Manager", "Human Resources Manager", "People Manager"],
+            "domain_terms": ["operations manager", "programme manager", "program manager", "centre manager", "corporate services", "admin manager", "office manager", "HR manager", "human resources", "people manager"],
+        },
     ]
 
     queries: list[dict[str, Any]] = []
     seen: set[str] = set()
     effective_max_queries = min(max_queries, 4) if compact(website_content, 2000) else max_queries
-    for bundle in bundles:
-        raw_queries: list[str] = []
-        if names_clause:
-            raw_queries.append(f"{names_clause} Singapore {grouped_terms(bundle['company_roles'])}".strip())
-        if cleaned_domain:
-            raw_queries.append(f"site:{cleaned_domain} {grouped_terms(bundle['domain_terms'])}".strip())
-        for query in raw_queries:
+    query_passes = [
+        ("company_roles", lambda bundle: f"{names_clause} Singapore {grouped_terms(bundle['company_roles'])}".strip() if names_clause else ""),
+        ("domain_terms", lambda bundle: f"site:{cleaned_domain} {grouped_terms(bundle['domain_terms'])}".strip() if cleaned_domain else ""),
+    ]
+    for _, query_builder in query_passes:
+        for bundle in bundles:
+            query = query_builder(bundle)
             key = query.lower()
-            if key in seen:
+            if not key or key in seen:
                 continue
             seen.add(key)
             queries.append(
@@ -2719,6 +2732,7 @@ def build_role_queries(
                     "query": query,
                     "role": bundle["role"],
                     "role_bucket": bundle["bucket"],
+                    "covered_role_buckets": bundle["covered_role_buckets"],
                     "role_priority": bundle["priority"],
                     "seniority": bundle["seniority"],
                 }

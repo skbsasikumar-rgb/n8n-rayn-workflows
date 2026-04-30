@@ -198,7 +198,9 @@ Manual recovery:
 Serper fallback budget:
 
 - official-site preflight runs first and spends zero search-provider credits when it finds a usable contact.
-- fallback public search defaults to Serper with `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 3`.
+- fallback public search keeps all seven role buckets eligible but uses bundled priority queries instead of one query per bucket.
+- rows with `website_content` are capped at four fallback queries by default; those four queries cover all seven role buckets once.
+- rows without `website_content` can use up to `CONTACT_SEARCH_MAX_QUERIES_PER_ROW = 6`, adding site-domain queries only after all seven buckets have been covered by company-name queries.
 - Anymail Finder defaults to at most `3` person lookups per row through `CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW`.
 - Anymail Finder charges one credit only when a valid email is found; risky, blacklisted, and not-found results are recorded but rejected for sender-safety.
 

@@ -233,6 +233,31 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertIn("valid: jane@example.org.sg", summary)
         self.assertIn("not valid: John Lim @ example.org.sg", summary)
 
+    def test_role_queries_cover_all_buckets_with_small_budget(self):
+        queries = c.build_role_queries(
+            "Example Community Clinic",
+            "Example Community Clinic",
+            "exampleclinic.sg",
+            website_content="Example Community Clinic has a public website.",
+            max_queries=4,
+        )
+        covered = {
+            bucket
+            for query in queries
+            for bucket in query.get("covered_role_buckets", [])
+        }
+        self.assertLessEqual(len(queries), 4)
+        self.assertEqual(covered, set(c.TARGET_ROLE_BUCKETS))
+        self.assertEqual([query["role_bucket"] for query in queries], [
+            "c_suite",
+            "clinic_leadership",
+            "compliance_privacy_security",
+            "operations",
+        ])
+        self.assertIn("Operations Manager", queries[0]["query"])
+        self.assertIn("Data Protection Officer", " ".join(query["query"] for query in queries))
+        self.assertIn("HR Manager", " ".join(query["query"] for query in queries))
+
 
 if __name__ == "__main__":
     unittest.main()

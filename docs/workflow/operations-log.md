@@ -418,3 +418,10 @@ Email validation summary column:
 - added `email_validation_summary` as a long-text NocoDB column for plain-English email validation results beside the structured `email_validation_status` / evidence fields.
 - worker patches now populate the summary from Anymail candidate attempts, showing accepted emails and rejected/not-found person-domain lookups in readable lines.
 - backfilled existing rows from stored `email_candidates_json` / `email_validation_evidence_json` so the table is immediately readable without opening JSON evidence.
+
+Budgeted role-bucket search coverage:
+
+- updated Serper fallback query planning so all seven target role buckets remain covered without issuing one search per bucket.
+- rows with `website_content` use four bundled company-name queries covering: c-suite/operations/clinic leadership, clinic leadership/care clinical, compliance/privacy/security/IT, and operations/admin/HR.
+- rows without `website_content` may still use up to six queries, adding site-domain queries only after the seven buckets have been covered once.
+- added a regression test proving a four-query budget covers all `TARGET_ROLE_BUCKETS` in priority order.
