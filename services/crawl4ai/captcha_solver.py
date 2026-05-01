@@ -132,6 +132,9 @@ def _detect_captcha_type(html: str) -> str | None:
 
 
 async def solve_page_captcha(page: Page, html: str) -> bool:
+    if not is_configured():
+        return False
+
     captcha_type = _detect_captcha_type(html)
     if not captcha_type:
         return False

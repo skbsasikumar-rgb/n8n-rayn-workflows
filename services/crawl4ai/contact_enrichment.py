@@ -266,7 +266,6 @@ CAPTCHA_ERROR_HINTS = (
     "unusual traffic",
 )
 PERSISTENT_DISABLE_REASONS = {"circuit_open"}
-PERSISTENT_DISABLE_REASONS = {"circuit_open"}
 PROVIDER_LOCK = threading.Lock()
 
 
