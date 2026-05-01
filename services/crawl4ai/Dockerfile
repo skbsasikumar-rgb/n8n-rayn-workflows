@@ -11,6 +11,7 @@ COPY services/crawl4ai/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY services/crawl4ai/app.py ./app.py
+COPY services/crawl4ai/captcha_solver.py ./captcha_solver.py
 COPY services/crawl4ai/contact_enrichment.py ./contact_enrichment.py
 COPY services/crawl4ai/public_web_enrichment.py ./public_web_enrichment.py
 COPY services/crawl4ai/parent_company_registry.json ./parent_company_registry.json
