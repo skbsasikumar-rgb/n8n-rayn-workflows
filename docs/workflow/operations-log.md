@@ -465,3 +465,35 @@ Runtime challenge diagnostics:
 - added `/runtime-diagnostics` and contact provider health metadata to report whether the `twocaptcha` package is importable and whether solver env vars are configured.
 - public enrichment now detects challenge-style pages and records `skipped_challenge_detected` with challenge hints instead of treating the page as normal business content.
 - solver mode is diagnostic-only; no public-web CAPTCHA solving is called by the worker.
+
+Active 2captcha integration:
+
+- disabled OpenSERP's built-in broken 2captcha solver (`google.captcha: false`) because the Go binary
+  has an open bug where it receives the solved token from 2captcha but fails to inject it back into the
+  page (`TypeError: Cannot read properties of undefined (reading 'apply')` — karust/openserp#9).
+- created `services/crawl4ai/captcha_solver.py` with Playwright-based captcha detection and solving.
+  supports reCAPTCHA v2, hCaptcha, and generic challenge pages via `2captcha-python`.
+- `captcha_solver.is_configured()` checks for `TWOCAPTCHA_API_KEY` env var.
+- `CAPTCHA_SOLVER_ALLOWED_DOMAINS` restricts solving to trusted domains (empty = allow all).
+- env vars: `TWOCAPTCHA_API_KEY`, `CAPTCHA_SOLVER_ALLOWED_DOMAINS`,
+  `CAPTCHA_SOLVER_TIMEOUT_SECONDS` (default 120), `CAPTCHA_SOLVER_HEADLESS` (default true).
+
+Contact search captcha fallback:
+
+- `contact_enrichment.py` now detects captcha errors from OpenSERP responses via `detect_captcha_flags()`.
+- on captcha detection, falls back to `direct_search_with_captcha_solver()` which uses Playwright +
+  DuckDuckGo HTML search + 2captcha to solve any challenges.
+- the direct search result is returned with `provider = "{original}_captcha_retry"` for traceability.
+- captcha errors no longer trip the OpenSERP circuit breaker since they're handled at the worker level.
+
+Scrape endpoint captcha handling:
+
+- `app.py` `/scrape` now uses `extract_page_with_captcha_retry()` which detects challenge pages after
+  the initial load and attempts to solve them via 2captcha before extracting content.
+- applied to both primary URL and followed links.
+
+Public enrichment captcha handling:
+
+- `public_web_enrichment.py` `enrich_row()` now attempts Playwright-based captcha solving when a
+  challenge page is detected on the homepage, instead of immediately returning `skipped_challenge_detected`.
+- the crawl context in enrichment records now includes `captcha_solver` diagnostics.

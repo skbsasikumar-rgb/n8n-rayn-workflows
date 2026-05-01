@@ -21,6 +21,8 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     dns = None  # type: ignore[assignment]
 
+import captcha_solver
+
 HONORIFICS_RE = re.compile(r"^(?:dr|doctor|mr|mrs|ms|miss|mdm|prof|professor|assoc\.?\s*prof|a/?prof)\.?\s+", re.I)
 NAME_TOKEN_RE = r"[A-Z][a-zA-Z'’-]+"
 NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,4}})"
@@ -251,6 +253,19 @@ PROVIDER_HEALTH_WINDOW = 20
 PROVIDER_TIMEOUT_DISABLE_THRESHOLD = 3
 PROVIDER_TIMEOUT_WINDOW_SECONDS = 180
 CIRCUIT_OPEN_ERROR_HINTS = ("circuit_open", "circuit open", "circuit breaker is open", "engine temporarily disabled")
+CAPTCHA_ERROR_HINTS = (
+    "captcha",
+    "captcha detected",
+    "captcha found",
+    "recaptcha",
+    "hcaptcha",
+    "challenge",
+    "please stop sending requests",
+    "sorry/index",
+    "verify you are human",
+    "unusual traffic",
+)
+PERSISTENT_DISABLE_REASONS = {"circuit_open"}
 PERSISTENT_DISABLE_REASONS = {"circuit_open"}
 PROVIDER_LOCK = threading.Lock()
 
@@ -386,6 +401,98 @@ def trim_recent_timeouts(state: dict[str, Any], now_ts: float) -> list[float]:
 def detect_provider_flags(error_text: str) -> bool:
     lowered = compact(error_text, 300).lower()
     return any(hint in lowered for hint in CIRCUIT_OPEN_ERROR_HINTS)
+
+
+def detect_captcha_flags(error_text: str) -> bool:
+    lowered = compact(error_text, 300).lower()
+    return any(hint in lowered for hint in CAPTCHA_ERROR_HINTS)
+
+
+def direct_search_with_captcha_solver(query: str, limit: int = 10) -> dict[str, Any]:
+    if not captcha_solver.is_configured():
+        return {
+            "provider": "direct_search_captcha_solver",
+            "query": compact(query, 300),
+            "results": [],
+            "result_count": 0,
+            "provider_error": "captcha solver not configured: missing TWOCAPTCHA_API_KEY",
+            "circuit_open": False,
+            "timeout": False,
+            "http_error": False,
+            "provider_disabled": True,
+            "provider_disabled_reason": "captcha_solver_not_configured",
+            "cooldown_seconds": 0,
+            "usable_results_count": 0,
+            "provider_health": {},
+        }
+
+    ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+    try:
+        final_url, html = captcha_solver.navigate_and_solve_sync(
+            ddg_url,
+            wait_timeout_ms=15000,
+            solve_captchas=True,
+        )
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        results = []
+        for result in soup.select(".result")[:limit]:
+            title_el = result.select_one(".result__title a")
+            snippet_el = result.select_one(".result__snippet")
+            if not title_el:
+                continue
+            href = title_el.get("href", "")
+            title = title_el.get_text(" ", strip=True)
+            snippet = snippet_el.get_text(" ", strip=True) if snippet_el else ""
+            if title or href:
+                results.append({"title": title, "url": href, "snippet": snippet})
+        if results:
+            return {
+                "provider": "direct_search_captcha_solver",
+                "query": compact(query, 300),
+                "results": results,
+                "result_count": len(results),
+                "provider_error": "",
+                "circuit_open": False,
+                "timeout": False,
+                "http_error": False,
+                "provider_disabled": False,
+                "provider_disabled_reason": "",
+                "cooldown_seconds": 0,
+                "usable_results_count": len(results),
+                "provider_health": {},
+            }
+        return {
+            "provider": "direct_search_captcha_solver",
+            "query": compact(query, 300),
+            "results": [],
+            "result_count": 0,
+            "provider_error": "no results extracted from direct search",
+            "circuit_open": False,
+            "timeout": False,
+            "http_error": False,
+            "provider_disabled": False,
+            "provider_disabled_reason": "",
+            "cooldown_seconds": 0,
+            "usable_results_count": 0,
+            "provider_health": {},
+        }
+    except Exception as exc:
+        return {
+            "provider": "direct_search_captcha_solver",
+            "query": compact(query, 300),
+            "results": [],
+            "result_count": 0,
+            "provider_error": compact(str(exc), 300) or "direct_search_failed",
+            "circuit_open": False,
+            "timeout": False,
+            "http_error": False,
+            "provider_disabled": False,
+            "provider_disabled_reason": "",
+            "cooldown_seconds": 0,
+            "usable_results_count": 0,
+            "provider_health": {},
+        }
 
 
 def provider_health_snapshot() -> dict[str, dict[str, Any]]:
@@ -1746,7 +1853,28 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     results = normalize_search_results(payload.get("results") if isinstance(payload, dict) else [])
     if not raw_error and isinstance(payload, dict):
         raw_error = compact(payload.get("message") or payload.get("error"), 300)
+
+    if not results and not raw_error and isinstance(payload, dict):
+        raw_text = compact(payload.get("raw") if isinstance(payload.get("raw"), str) else "", 500)
+        if raw_text and detect_captcha_flags(raw_text):
+            raw_error = "captcha detected in response: " + compact(raw_text[:200], 200)
+
     circuit_open = detect_provider_flags(raw_error)
+    captcha_detected = detect_captcha_flags(raw_error) if raw_error else False
+
+    if captcha_detected and raw_error:
+        logger.info("captcha detected from OpenSERP provider %s, error: %s", provider, compact(raw_error, 200))
+        if captcha_solver.is_configured():
+            direct_attempt = direct_search_with_captcha_solver(query, limit)
+            if direct_attempt.get("results"):
+                direct_attempt["provider"] = f"{provider}_captcha_retry"
+                direct_attempt["captcha_fallback"] = True
+                direct_attempt["original_error"] = compact(raw_error, 300)
+                return direct_attempt
+            raw_error = f"{raw_error} | captcha_fallback_failed:{direct_attempt.get('provider_error', '')}"
+        else:
+            raw_error = f"{raw_error} | captcha_solver_not_configured"
+
     success = bool(results) and not raw_error
     health_after = record_provider_health(
         provider,

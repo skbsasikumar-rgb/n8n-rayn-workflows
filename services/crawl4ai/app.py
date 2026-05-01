@@ -13,6 +13,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, Field, HttpUrl
 from playwright.async_api import Browser, Page, Playwright, async_playwright
 import requests
+import captcha_solver
 import contact_enrichment
 import public_web_enrichment as public_enrichment
 
@@ -457,25 +458,36 @@ def build_quality(title: str, website_content: str) -> QualityPayload:
 
 
 def captcha_solver_diagnostics() -> dict[str, Any]:
-    package_available = importlib.util.find_spec("twocaptcha") is not None
-    configured = bool(os.getenv("TWOCAPTCHA_API_KEY", "").strip() or os.getenv("TWO_CAPTCHA_API_KEY", "").strip())
-    allowed_domains = [
-        item.strip().lower()
-        for item in os.getenv("CAPTCHA_SOLVER_ALLOWED_DOMAINS", "").split(",")
-        if item.strip()
-    ]
-    return {
-        "package": "2captcha-python",
-        "import_name": "twocaptcha",
-        "installed": package_available,
-        "configured": configured,
-        "enabled": bool(configured and allowed_domains),
-        "allowed_domains": allowed_domains,
-        "mode": "diagnostic_only",
-    }
+    diagnostics = captcha_solver.solver_diagnostics()
+    diagnostics["mode"] = "active" if diagnostics.get("enabled") else "diagnostic_only"
+    return diagnostics
 
 
-def dedupe_lines(lines: list[str], max_items: int) -> list[str]:
+async def solve_captcha_on_page(page: Page) -> bool:
+    if not captcha_solver.is_configured():
+        return False
+    html = await page.content()
+    if not captcha_solver._detect_captcha_type(html):
+        return False
+    return await captcha_solver.solve_page_captcha(page, html)
+
+
+async def extract_page_with_captcha_retry(page: Page, url: str, timeout_ms: int) -> dict[str, Any]:
+    result = await extract_page(page, url, timeout_ms)
+    if result.get("visible_text") and not result.get("title"):
+        pass
+    html = await page.content()
+    if captcha_solver._detect_captcha_type(html):
+        solved = await solve_captcha_on_page(page)
+        if solved:
+            await page.wait_for_timeout(3000)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=min(timeout_ms, 10000))
+            except Exception:
+                pass
+            result = await extract_page(page, url, timeout_ms)
+            result["captcha_solved"] = True
+    return result
     seen: set[str] = set()
     output: list[str] = []
     for line in lines:
@@ -1405,7 +1417,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
             browser = await ensure_browser(app)
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
-            primary = await extract_page(page, str(request.url), timeout_ms)
+            primary = await extract_page_with_captcha_retry(page, str(request.url), timeout_ms)
             follow_links = pick_follow_links(
                 primary["url"],
                 primary["links"],
@@ -1418,7 +1430,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
                     continue
                 extra_page = await context.new_page()
                 try:
-                    extracted = await extract_page(extra_page, href, min(timeout_ms, 20000))
+                    extracted = await extract_page_with_captcha_retry(extra_page, href, min(timeout_ms, 20000))
                     if isinstance(extracted, dict):
                         extra_pages.append(extracted)
                 except Exception:

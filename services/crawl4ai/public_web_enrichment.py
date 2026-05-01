@@ -28,6 +28,7 @@ import csv
 import gzip
 import hashlib
 import json
+import logging
 import os
 import re
 import sys
@@ -43,6 +44,8 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import requests
 from bs4 import BeautifulSoup
 
+logger = logging.getLogger(__name__)
+
 try:
     from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 except ImportError as exc:  # pragma: no cover - surfaced as runtime guidance
@@ -50,6 +53,8 @@ except ImportError as exc:  # pragma: no cover - surfaced as runtime guidance
         "Missing crawl4ai. Install with "
         "`python3.11 -m pip install -r services/crawl4ai/requirements-public-web-enrichment.txt`."
     ) from exc
+
+import captcha_solver
 
 
 ORIGINAL_HOME = Path(os.environ.get("HOME", str(Path.home()))).expanduser()
@@ -2747,41 +2752,85 @@ async def enrich_row(
     homepage_page = extract_page_artifact(homepage_result)
     if homepage_page.challenge_hints:
         challenge_note = "challenge page detected: " + ", ".join(homepage_page.challenge_hints)
-        return stamp(EnrichmentRecord(
-            row_id=row.row_id,
-            company_name=row.company_name,
-            url_picked=row.url_picked,
-            best_url=best_url,
-            crawl_status="skipped_challenge_detected",
-            pages_crawled_count=1,
-            pages_crawled_urls=[homepage_page.url or best_url],
-            title=homepage_page.title,
-            meta_description=homepage_page.meta_description,
-            organization_name_detected="",
-            organization_type_guess="Unknown",
-            solo_or_group_guess="unknown",
-            parent_or_affiliation_signals=[],
-            size_signals={"pages_crawled": 1},
-            industry_guess="Unknown",
-            services_detected=[],
-            locations_detected=[],
-            contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
-            leadership_or_team_signals=[],
-            social_links=[],
-            structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-            enrichment_notes=challenge_note,
-            confidence_score=0.05,
-            error_notes=[challenge_note],
-            best_url_candidate=validation.best_url_candidate,
-            http_status=validation.http_status,
-            redirect_chain=validation.redirect_chain,
-            url_validation_status=validation.url_validation_status,
-            crawl_context={
-                "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
-                "challenge_hints": homepage_page.challenge_hints,
-                "captcha_solver": {"mode": "diagnostic_only"},
-            },
-        ))
+        captcha_solved = False
+        if captcha_solver.is_configured():
+            try:
+                from playwright.async_api import async_playwright as _ap
+                async with _ap() as playwright:
+                    browser = await playwright.chromium.launch(
+                        headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
+                        args=["--disable-dev-shm-usage", "--no-sandbox"],
+                    )
+                    try:
+                        ctx = await browser.new_context(ignore_https_errors=True)
+                        pg = await ctx.new_page()
+                        await pg.goto(best_url, wait_until="domcontentloaded", timeout=page_timeout_ms)
+                        try:
+                            await pg.wait_for_load_state("networkidle", timeout=min(page_timeout_ms, 10000))
+                        except Exception:
+                            pass
+                        html = await pg.content()
+                        if captcha_solver._detect_captcha_type(html):
+                            solved = await captcha_solver.solve_page_captcha(pg, html)
+                            if solved:
+                                await pg.wait_for_timeout(3000)
+                                try:
+                                    await pg.wait_for_load_state("networkidle", timeout=10000)
+                                except Exception:
+                                    pass
+                                solved_html = await pg.content()
+                                homepage_result = {
+                                    "success": True,
+                                    "url": best_url,
+                                    "redirected_url": pg.url,
+                                    "status_code": 200,
+                                    "html": solved_html,
+                                    "cleaned_html": solved_html,
+                                    "metadata": {},
+                                }
+                                homepage_page = extract_page_artifact(homepage_result)
+                                captcha_solved = not homepage_page.challenge_hints
+                    finally:
+                        await browser.close()
+            except Exception as captcha_exc:
+                logger.warning("captcha solve attempt failed for %s: %s", best_url, captcha_exc)
+
+        if not captcha_solved:
+            return stamp(EnrichmentRecord(
+                row_id=row.row_id,
+                company_name=row.company_name,
+                url_picked=row.url_picked,
+                best_url=best_url,
+                crawl_status="skipped_challenge_detected",
+                pages_crawled_count=1,
+                pages_crawled_urls=[homepage_page.url or best_url],
+                title=homepage_page.title,
+                meta_description=homepage_page.meta_description,
+                organization_name_detected="",
+                organization_type_guess="Unknown",
+                solo_or_group_guess="unknown",
+                parent_or_affiliation_signals=[],
+                size_signals={"pages_crawled": 1},
+                industry_guess="Unknown",
+                services_detected=[],
+                locations_detected=[],
+                contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
+                leadership_or_team_signals=[],
+                social_links=[],
+                structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
+                enrichment_notes=challenge_note,
+                confidence_score=0.05,
+                error_notes=[challenge_note],
+                best_url_candidate=validation.best_url_candidate,
+                http_status=validation.http_status,
+                redirect_chain=validation.redirect_chain,
+                url_validation_status=validation.url_validation_status,
+                crawl_context={
+                    "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
+                    "challenge_hints": homepage_page.challenge_hints,
+                    "captcha_solver": captcha_solver.solver_diagnostics(),
+                },
+            ))
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
     if resolved_homepage.best_url:
         best_url = resolved_homepage.best_url
