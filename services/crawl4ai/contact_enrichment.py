@@ -244,6 +244,9 @@ ROLE_ONLY_NAME_WORDS = CANDIDATE_TITLE_WORDS | {
 OPENSERP_ROUTE_MAP = {
     "openserp_duckduckgo": "/duck/search",
     "openserp_google": "/google/search",
+    "openserp_bing": "/bing/search",
+    "openserp_yandex": "/yandex/search",
+    "openserp_baidu": "/baidu/search",
 }
 PROVIDER_DISABLE_SECONDS = {
     "circuit_open": 600,
@@ -1686,7 +1689,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def configured_provider_order() -> list[str]:
     raw = os.getenv(
         "CONTACT_SEARCH_PROVIDER_ORDER",
-        "openserp_duckduckgo,openserp_google",
+        "openserp_duckduckgo,openserp_bing,openserp_google,openserp_yandex,openserp_baidu",
     ).strip()
     output: list[str] = []
     seen: set[str] = set()
