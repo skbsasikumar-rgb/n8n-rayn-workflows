@@ -1361,7 +1361,14 @@ async def contact_enrich_batch(request: ContactBatchRunRequest) -> dict[str, Any
     if request.reset_provider_health:
         contact_enrichment.reset_provider_state(f"contact-batch:{int(time.time())}", preserve_non_timeout=True)
     started = time.time()
-    rows = noco_fetch_contact_rows(request.limit, request.ids)
+    effective_limit = request.limit
+    capped_by = ""
+    if not request.ids and request.validate_email and contact_enrichment.env_flag("ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED", default=True):
+        max_rows = max(1, int(os.getenv("CONTACT_BATCH_MAX_DECISION_MAKER_ROWS", "3")))
+        if effective_limit > max_rows:
+            effective_limit = max_rows
+            capped_by = "CONTACT_BATCH_MAX_DECISION_MAKER_ROWS"
+    rows = noco_fetch_contact_rows(effective_limit, request.ids)
     if request.dry_run:
         return {
             "ok": True,
@@ -1387,6 +1394,9 @@ async def contact_enrich_batch(request: ContactBatchRunRequest) -> dict[str, Any
         "rows_selected": len(rows),
         "rows_processed": len(results),
         "concurrency": concurrency,
+        "requested_limit": request.limit,
+        "effective_limit": effective_limit,
+        "capped_by": capped_by,
         "status_counts": status_counts,
         "elapsed_seconds": round(time.time() - started, 2),
         "provider_order": contact_enrichment.configured_provider_order(),

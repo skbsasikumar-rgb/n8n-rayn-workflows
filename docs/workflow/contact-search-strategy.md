@@ -306,6 +306,7 @@ Suggested first-test caps:
 - max Anymail Finder lookups per candidate: 1.
 - max Anymail Finder lookups per row: 5.
 - max decision-maker fallback lookups per row: 1.
+- max pending-row batch size when decision-maker fallback is enabled: 3 by default via `CONTACT_BATCH_MAX_DECISION_MAKER_ROWS`.
 
 Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, decision-maker fallback evidence, and charged credits in `email_validation_evidence_json`.
 
