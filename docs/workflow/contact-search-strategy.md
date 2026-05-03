@@ -110,11 +110,9 @@ Anymail Finder flow:
 1. Send one `POST https://api.anymailfinder.com/v5.1/find-email/person` request per validated candidate.
 2. Request body: `{ "domain": canonical_domain, "full_name": candidate_name }`.
 3. Accept only `email_status = valid` with a populated `valid_email` on the exact `canonical_domain`.
-4. If Anymail Finder does not return a valid same-domain email, run a candidate-specific published-email search for exact name plus domain/email terms.
-5. Accept only same-domain published emails that appear in search result evidence and match the candidate by generated person-specific pattern or name evidence.
-6. Reject risky, blacklisted, not-found, wrong-domain, invalid, unknown, and provider-error outcomes.
-7. Continue down the ranked candidate list until a valid/published email is found or the candidate cap is exhausted.
-8. Store provider response, credit count, published-email search attempts, and candidate attempt order in `email_validation_evidence_json`.
+4. Reject risky, blacklisted, not-found, wrong-domain, invalid, unknown, and provider-error outcomes.
+5. Continue down the ranked candidate list until a valid email is found or the candidate cap is exhausted.
+6. Store provider response, credit count, and candidate attempt order in `email_validation_evidence_json`.
 
 ### Email Discovery Libraries
 
@@ -183,7 +181,6 @@ Candidate progression is bounded and explicit:
 - continue from candidate 1 to candidate 2 and onward when Anymail Finder returns no valid same-domain email.
 - cap at `5` validated candidates per row by default.
 - run at most one Anymail Finder person lookup per candidate.
-- run at most `2` published-email search queries per candidate by default after Anymail Finder misses.
 - if validated candidates existed but every Anymail lookup was rejected or not found, end as `contact_not_found / candidates_found_but_no_sendable_email`.
 
 ## Query Strategy
@@ -304,9 +301,8 @@ Suggested first-test caps:
 - max candidates per row: 5.
 - max Anymail Finder lookups per candidate: 1.
 - max Anymail Finder lookups per row: 5.
-- max published-email search queries per candidate after Anymail Finder miss: 2.
 
-Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, charged credits, and published-email search attempts in `email_validation_evidence_json`.
+Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, and charged credits in `email_validation_evidence_json`.
 
 Anymail Finder result handling:
 
