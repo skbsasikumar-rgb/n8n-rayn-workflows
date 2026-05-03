@@ -515,3 +515,12 @@ Serper provider switch live rerun:
 - URL rerun slice after env fix: rows `281`, `285`, `292`, and `314`. Results: `292` completed with `https://appletreemedicalgroup.com/`; `314` completed with `https://aamgdoctors.net/`; `281` and `285` stayed skipped with `no_official_url_found`.
 - contact rerun slice: rows `275` and `278`. Results: both terminal `contact_not_found` with `candidates_found_but_no_sendable_email`; No2Bounce rejected `Wong Siu Kwan @ amberfamilyclinic.com`, `Tan Chin Beng Melvyn @ amkclinic.com.sg`, and `Tan Chin Beng @ amkclinic.com.sg`.
 - cost/usage observed: `4` successful Serper URL-discovery responses, `3` Serper contact-search provider queries, and `4` earlier unauthorized Serper URL attempts before the n8n env fix. At Serper starter pricing of `$1.00/1k` successful queries, the `7` successful Serper queries are approximately `$0.007`; unauthorized failures should not deduct credits per Serper's successful-response credit rule.
+
+Contact search all-row rerun after LLM preflight and No2Bounce removal:
+
+- reset all `48` eligible completed, non-duplicate rows with canonical domains and best URLs to `pending` using reason `full_contact_updated_search_rerun`.
+- drained live `/contact-enrich-batch` on Railway worker `n8n-rayn-workflows` with provider order `serper`; final state: `17` `contact_found`, `31` `contact_not_found`, `0` failed, `0` pending, `0` processing.
+- validated-email rows: `273`, `274`, `276`, `280`, `286`, `288`, `291`, `295`, `296`, `299`, `302`, `312`, `313`, `316`, `317`, `318`, `319`.
+- final reasons: `17` `sendable_person_specific_email_found`, `24` `candidates_found_but_no_sendable_email`, `7` `no_validated_person_found`.
+- usage proxies from contact evidence: `120` Serper provider/query attempts, `1010` total search results stored, `544` raw candidates, `73` verified candidates, `85` candidate objects written, `17` official-site preflight candidates across `10` rows, `0` search errors, `0` provider timeouts.
+- rows `304` and `305` initially hit Anymail validation timeouts during batch processing; targeted retries completed both as `contact_not_found` with `no_deliverable_email`.
