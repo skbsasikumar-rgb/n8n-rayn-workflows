@@ -567,3 +567,11 @@ Contact batch timeout cap and full scratch rerun:
 - final reasons: `12` `sendable_person_specific_email_found`, `10` `sendable_decision_maker_email_found`, `16` `candidates_found_but_no_sendable_email`, and `10` `no_validated_person_found`.
 - usage proxies from row evidence: `90` Serper provider/query attempts, `749` total search results stored, `446` raw candidates, `58` verified candidates, `77` candidate objects written, `13` official-site preflight candidates, `0` search errors, `0` provider timeouts, `38` Anymail person requests, `36` decision-maker fallback rows with `26` cache hits and `10` live decision-maker attempts, `5` total Anymail credits charged, and `4` decision-maker credits charged.
 - retry evidence: person lookup retried once on row `273` and then succeeded; no decision-maker fallback retries were needed in the final scratch run.
+
+Decision-maker LinkedIn profile column:
+
+- committed and pushed `3d17a8c` (`Capture contact LinkedIn profile`) and `27b4b68` (`Guard decision maker LinkedIn matches`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `da8725c4-e455-4052-8b5b-a00f249a5924` reached `SUCCESS` and `/health` returned OK.
+- added NocoDB column `selected_contact_linkedin_url`; NocoDB schema cache required a `nocodb` service restart before the API recognized the new field.
+- the worker now maps Anymail decision-maker `person_linkedin_url` into `selected_contact_linkedin_url` only when the LinkedIn `/in/` slug plausibly matches the returned person name.
+- backfilled `8` existing rows with matching decision-maker LinkedIn URLs: `276`, `279`, `288`, `292`, `305`, `310`, `312`, and `316`.
+- row `280` was not backfilled because Anymail returned a LinkedIn URL whose profile slug did not match the selected contact name.
