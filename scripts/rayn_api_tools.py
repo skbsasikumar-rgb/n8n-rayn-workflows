@@ -32,7 +32,7 @@ from typing import Any
 NOCO_DEFAULT_FIELDS = (
     "Id,company_name,status,status_reason,run_id,contact_search_status,contact_search_reason,"
     "url_picked,best_url,canonical_domain,duplicate_of_id,"
-    "selected_contact_name,selected_contact_role,validated_email,email_validation_status,email_validation_summary,"
+    "selected_contact_name,selected_contact_role,selected_contact_linkedin_url,validated_email,email_validation_status,email_validation_summary,"
     "processing_started_at,processing_finished_at,last_attempted_at,attempt_count,error_type,error_message,"
     "retry_eligible,UpdatedAt"
 )
@@ -45,6 +45,7 @@ NOCO_CONTACT_RESET_FIELDS = (
     "selected_contact_role",
     "selected_contact_seniority",
     "selected_contact_source_url",
+    "selected_contact_linkedin_url",
     "selected_contact_confidence",
     "email_candidates_json",
     "validated_email",

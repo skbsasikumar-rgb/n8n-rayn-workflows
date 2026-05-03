@@ -337,6 +337,7 @@ When found:
 - `selected_contact_role_bucket`
 - `selected_contact_role_priority`
 - `selected_contact_source_url`
+- `selected_contact_linkedin_url`
 - `selected_contact_confidence`
 - `person_company_match_status = validated`
 - `validated_email`

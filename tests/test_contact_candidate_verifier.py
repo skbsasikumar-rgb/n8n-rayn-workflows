@@ -388,6 +388,7 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.contact_search_reason, "sendable_decision_maker_email_found")
         self.assertEqual(result.validated_email, "ops@exampleclinic.sg")
         self.assertEqual(result.selected_contact_name, "Olivia Lim")
+        self.assertEqual(result.selected_contact_linkedin_url, "https://www.linkedin.com/in/olivialim/")
         self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
         self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 

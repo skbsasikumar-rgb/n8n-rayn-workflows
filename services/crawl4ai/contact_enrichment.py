@@ -357,6 +357,7 @@ class ContactResult:
     selected_contact_role: str = ""
     selected_contact_seniority: str = ""
     selected_contact_source_url: str = ""
+    selected_contact_linkedin_url: str = ""
     selected_contact_confidence: str = ""
     validated_email: str = ""
     email_validation_status: str = ""
@@ -2368,13 +2369,15 @@ def decision_maker_candidate_from_result(result: dict[str, Any], domain: str) ->
     role = compact(result.get("person_job_title") or category.upper(), 160)
     parsed = parse_name(name) if name else None
     first_name, last_name = parsed if parsed else ("", "")
+    linkedin_url = compact(result.get("person_linkedin_url"), 1000)
     return {
         "name": name,
         "role": role,
         "seniority": seniority,
         "role_bucket": bucket,
         "role_priority": priority,
-        "source_url": compact(result.get("person_linkedin_url"), 1000) or f"https://{domain}/",
+        "source_url": linkedin_url or f"https://{domain}/",
+        "linkedin_url": linkedin_url,
         "source_type": "anymail_decision_maker",
         "evidence_text": f"Anymail Finder decision-maker category {category} returned {name} / {role}",
         "confidence": "High",
@@ -2482,6 +2485,7 @@ def try_decision_maker_fallback(
                 selected_contact_role=compact(candidate.get("role"), 160),
                 selected_contact_seniority=compact(candidate.get("seniority"), 80),
                 selected_contact_source_url=compact(candidate.get("source_url"), 1000),
+                selected_contact_linkedin_url=compact(candidate.get("linkedin_url"), 1000),
                 selected_contact_confidence=compact(candidate.get("confidence"), 80),
                 validated_email=email,
                 email_validation_status=decision,
@@ -2501,6 +2505,7 @@ def try_decision_maker_fallback(
         selected_contact_role=selected.role if selected else "",
         selected_contact_seniority=selected.seniority if selected else "",
         selected_contact_source_url=selected.source_url if selected else "",
+        selected_contact_linkedin_url=selected.source_url if selected and "linkedin.com" in selected.source_url.lower() else "",
         selected_contact_confidence=selected.confidence if selected else "",
         email_validation_status="decision_maker_not_found",
         email_validation_provider="anymail_finder+decision_maker",
@@ -2892,6 +2897,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                         selected_contact_role=candidate.role,
                         selected_contact_seniority=candidate.seniority,
                         selected_contact_source_url=candidate.source_url,
+                        selected_contact_linkedin_url=candidate.source_url if "linkedin.com" in candidate.source_url.lower() else "",
                         selected_contact_confidence=candidate.confidence,
                         validated_email=email,
                         email_validation_status=decision,
@@ -2970,6 +2976,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         selected_contact_role=first_attempted_candidate.role if first_attempted_candidate else "",
         selected_contact_seniority=first_attempted_candidate.seniority if first_attempted_candidate else "",
         selected_contact_source_url=first_attempted_candidate.source_url if first_attempted_candidate else "",
+        selected_contact_linkedin_url=first_attempted_candidate.source_url if first_attempted_candidate and "linkedin.com" in first_attempted_candidate.source_url.lower() else "",
         selected_contact_confidence=first_attempted_candidate.confidence if first_attempted_candidate else "",
         email_validation_status="no_deliverable_email",
         email_validation_provider="anymail_finder",
@@ -3054,6 +3061,7 @@ def build_patch(result: ContactResult) -> dict[str, Any]:
         "selected_contact_role": result.selected_contact_role,
         "selected_contact_seniority": result.selected_contact_seniority,
         "selected_contact_source_url": result.selected_contact_source_url,
+        "selected_contact_linkedin_url": result.selected_contact_linkedin_url,
         "selected_contact_confidence": result.selected_contact_confidence,
         "email_candidates_json": json.dumps(result.email_candidates, ensure_ascii=False),
         "validated_email": result.validated_email,

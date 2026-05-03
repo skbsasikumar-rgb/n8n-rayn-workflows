@@ -45,6 +45,7 @@ Contact search must use separate fields so company enrichment state is not overw
 - `selected_contact_role`: accepted role/title.
 - `selected_contact_seniority`: accepted seniority bucket.
 - `selected_contact_source_url`: strongest evidence URL.
+- `selected_contact_linkedin_url`: accepted contact LinkedIn profile URL when the provider or public evidence supplies one.
 - `selected_contact_confidence`: confidence for person-company match and role relevance.
 - `email_candidates_json`: generated person-specific permutations and validation outcomes.
 - `validated_email`: accepted deliverable person-specific email.
