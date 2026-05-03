@@ -584,3 +584,13 @@ Deeper public website scrape:
 - preserved homepage anchor text for internal links and boosted actual discovered links and sitemap URLs ahead of guessed common paths.
 - added second-hop high-value link discovery from crawled pages until the page limit is reached; robots rules, crawl delay, duplicate-content skipping, and timeout fallback remain in place.
 - live probe for Amaris B. Clinic using an old-style `page_limit=5` request returned `6` crawled pages, `19` location signals, `20` service signals, and `9` team signals; the prior note showed `2` pages, `5` location signals, `12` service signals, and `0` team signals.
+
+Challenge-page static recovery and first-10 rerun:
+
+- committed and pushed `0d8d3f5` (`Recover challenge pages with static fetch`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `d516fc0c-04b3-4780-a4ed-839134d04893` reached `SUCCESS` and `/health` returned OK.
+- when Crawl4AI returns a homepage challenge page, the worker now tries a plain requests/static fetch before skipping the row; if the static fetch yields normal page text without challenge hints, the scrape continues and records a recovery note.
+- reran the first `10` rows from the earlier completed/eligible slice: `273`, `274`, `275`, `276`, `277`, `278`, `279`, `280`, `282`, `283`.
+- improved rows included `273` (`2` -> `6` pages, `0` -> `9` team signals), `274` (`1` -> `3` pages, `2` -> `6` team signals), `275` (`2` -> `11` pages, `6` -> `24` service signals), `276` (`1` -> `2` pages), and `278` (`1` -> `3` pages, `1` -> `2` service signals).
+- row `277` initially regressed to `skipped_challenge_detected`; after the static-recovery patch it completed again with `1` crawled page and a recovery note indicating static fetch succeeded after the challenge page.
+- rows `279`, `280`, and `283` remained effectively unchanged at `1` crawled page.
+- row `282` (`An Dental`) still ends `skipped_challenge_detected` from the Railway environment despite the static-recovery patch; repeated rerun attempts keep returning the SG challenge flow from the scraper side.
