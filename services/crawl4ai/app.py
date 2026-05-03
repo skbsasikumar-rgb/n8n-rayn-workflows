@@ -1577,23 +1577,31 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
 
     try:
         async with scrape_semaphore:
+            effective_page_limit = min(
+                24,
+                max(request.page_limit, int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "12"))),
+            )
+            effective_scrape_char_limit = min(
+                180000,
+                max(request.scrape_char_limit, int(os.getenv("PUBLIC_ENRICH_MIN_SCRAPE_CHARS", "120000"))),
+            )
             try:
                 record = await run_attempt(
-                    request.page_limit,
+                    effective_page_limit,
                     request.page_timeout_ms,
                     request.request_delay_seconds,
-                    request.scrape_char_limit,
+                    effective_scrape_char_limit,
                 )
             except asyncio.TimeoutError as exc:
-                if request.page_limit <= 2:
+                if effective_page_limit <= 2:
                     raise exc
-                fallback_limit = min(2, request.page_limit)
+                fallback_limit = min(2, effective_page_limit)
                 fallback_timeout_ms = min(request.page_timeout_ms, 12000)
                 record = await run_attempt(
                     fallback_limit,
                     fallback_timeout_ms,
                     min(request.request_delay_seconds, 0.1),
-                    request.scrape_char_limit,
+                    effective_scrape_char_limit,
                 )
                 record.crawl_status = "partial"
                 record.error_notes.append(
