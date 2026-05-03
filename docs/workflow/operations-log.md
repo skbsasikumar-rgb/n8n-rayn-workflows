@@ -533,3 +533,10 @@ Contact search improvement patch and targeted rerun:
 - targeted rerun result: `1` new `contact_found` (`305`, `nabilah@ashforddentalcentre.com.sg`), `23` `contact_not_found`, `0` failed/pending/processing.
 - final full eligible-table state after targeted rerun: `18` `contact_found`, `30` `contact_not_found`.
 - targeted usage proxies: `72` normal Serper provider/query attempts, `64` published-email Serper attempts, `631` total search results stored, `343` raw candidates, `33` verified candidates, `26` Anymail requests, `1` Anymail credit charged.
+
+Decision-maker fallback patch:
+
+- committed and pushed `58633f3` (`Add Anymail decision maker fallback`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `3fc5adae-2a23-4106-ba61-b165273efde1` reached `SUCCESS` and `/health` returned OK.
+- added Anymail Finder `/v5.1/find-email/decision-maker` as the only fallback after no verified candidates or exhausted person lookups; no Serper/OpenSERP email fallback is used.
+- default decision-maker category order is `ceo`, `it`, `operations`, `hr`, `marketing`; override is available with `ANYMAILFINDER_DECISION_MAKER_CATEGORIES`.
+- default decision-maker timeout is `180` seconds via `ANYMAILFINDER_DECISION_MAKER_TIMEOUT_SECONDS`; the fallback can be disabled with `ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED=false`.
