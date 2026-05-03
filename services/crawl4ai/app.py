@@ -1339,7 +1339,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         fallback_payload["excluded_email_candidates"] = excluded_emails
         fallback_payload["preflight_candidate_names_skipped_in_fallback"] = excluded_names
         fallback_payload["fallback_reason"] = (
-            "fallback_to_openserp_alternate_contacts"
+            "fallback_to_serper_alternate_contacts"
             if preflight_result.contact_candidates
             else "preflight_no_person_candidate"
         )
@@ -1695,7 +1695,7 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
                 if isinstance(candidate, dict) and compact_whitespace(candidate.get("email", ""))
             }
         ),
-        "fallback_reason": "fallback_to_openserp_alternate_contacts" if preflight_action == "fallback" else "",
+        "fallback_reason": "fallback_to_serper_alternate_contacts" if preflight_action == "fallback" else "",
         "row_id": request.Id,
         "error": "" if result.contact_search_status in {"contact_found", "contact_not_found"} else preflight_reason or result.contact_search_reason,
         "patch": patch,

@@ -248,6 +248,7 @@ OPENSERP_ROUTE_MAP = {
     "openserp_yandex": "/yandex/search",
     "openserp_baidu": "/baidu/search",
 }
+SERPER_PROVIDER_NAMES = {"serper", "serper_emergency"}
 PROVIDER_DISABLE_SECONDS = {
     "circuit_open": 600,
     "timeout": 90,
@@ -299,7 +300,7 @@ def new_provider_state(existing: dict[str, Any] | None = None, preserve_non_time
     return state
 
 
-PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
+PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUTE_MAP.keys(), *SERPER_PROVIDER_NAMES)}
 PROVIDER_RESET_TOKEN = ""
 VALIDATION_CACHE: dict[str, dict[str, Any]] = {}
 MX_CACHE: dict[str, bool | None] = {}
@@ -498,7 +499,7 @@ def direct_search_with_captcha_solver(query: str, limit: int = 10) -> dict[str, 
 
 
 def provider_health_snapshot() -> dict[str, dict[str, Any]]:
-    return {provider: provider_health(provider) for provider in (*OPENSERP_ROUTE_MAP.keys(), "serper_emergency")}
+    return {provider: provider_health(provider) for provider in (*OPENSERP_ROUTE_MAP.keys(), *SERPER_PROVIDER_NAMES)}
 
 
 def domain_from_url(value: str) -> str:
@@ -1689,7 +1690,7 @@ def env_flag(name: str, default: bool = False) -> bool:
 def configured_provider_order() -> list[str]:
     raw = os.getenv(
         "CONTACT_SEARCH_PROVIDER_ORDER",
-        "openserp_duckduckgo,openserp_bing,openserp_google,openserp_yandex,openserp_baidu",
+        "serper",
     ).strip()
     output: list[str] = []
     seen: set[str] = set()
@@ -1698,10 +1699,13 @@ def configured_provider_order() -> list[str]:
         if provider in OPENSERP_ROUTE_MAP and provider not in seen:
             output.append(provider)
             seen.add(provider)
+        if provider == "serper" and provider not in seen:
+            output.append(provider)
+            seen.add(provider)
         if env_flag("SERPER_FALLBACK_ENABLED", default=False) and provider == "serper_emergency" and provider not in seen:
             output.append(provider)
             seen.add(provider)
-    return output or ["openserp_duckduckgo", "openserp_google"]
+    return output or ["serper"]
 
 
 def provider_health(provider: str) -> dict[str, Any]:
@@ -1904,9 +1908,9 @@ def search_openserp_provider(provider: str, query: str, limit: int = 10) -> dict
     }
 
 
-def search_serper_emergency(query: str, limit: int = 10) -> dict[str, Any]:
-    provider = "serper_emergency"
-    if not env_flag("SERPER_FALLBACK_ENABLED", default=False):
+def search_serper_provider(query: str, limit: int = 10, provider: str = "serper") -> dict[str, Any]:
+    provider = provider if provider in SERPER_PROVIDER_NAMES else "serper"
+    if provider == "serper_emergency" and not env_flag("SERPER_FALLBACK_ENABLED", default=False):
         return provider_attempt_template(provider, query, "serper_fallback_disabled")
     api_key = os.getenv("SERPER_API_KEY", "").strip()
     if not api_key:
@@ -1990,8 +1994,8 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not query:
             continue
         for provider in providers:
-            if provider == "serper_emergency":
-                attempt = search_serper_emergency(query)
+            if provider in SERPER_PROVIDER_NAMES:
+                attempt = search_serper_provider(query, provider=provider)
             else:
                 attempt = search_openserp_provider(provider, query)
             attempt.update(
