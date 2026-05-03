@@ -575,3 +575,12 @@ Decision-maker LinkedIn profile column:
 - the worker now maps Anymail decision-maker `person_linkedin_url` into `selected_contact_linkedin_url` only when the LinkedIn `/in/` slug plausibly matches the returned person name.
 - backfilled `8` existing rows with matching decision-maker LinkedIn URLs: `276`, `279`, `288`, `292`, `305`, `310`, `312`, and `316`.
 - row `280` was not backfilled because Anymail returned a LinkedIn URL whose profile slug did not match the selected contact name.
+
+Deeper public website scrape:
+
+- committed and pushed `bd13e74` (`Deepen public website scrape`) and `eae818a` (`Enforce deep public scrape defaults`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `c5b0c23d-9169-4374-8503-0165f6a66833` reached `SUCCESS` and `/health` returned OK.
+- raised public enrichment defaults from `5` pages / `60000` scrape chars to `12` pages / `120000` scrape chars, with server-side minimums `PUBLIC_ENRICH_MIN_PAGE_LIMIT=12` and `PUBLIC_ENRICH_MIN_SCRAPE_CHARS=120000` so older workflow payloads still get deeper crawling.
+- expanded high-value crawl targets for team, doctors, dentists, consultants, services, treatments, locations, FAQ, news/blog, appointments, pricing, insurance, partners, accreditation, and related healthcare terms.
+- preserved homepage anchor text for internal links and boosted actual discovered links and sitemap URLs ahead of guessed common paths.
+- added second-hop high-value link discovery from crawled pages until the page limit is reached; robots rules, crawl delay, duplicate-content skipping, and timeout fallback remain in place.
+- live probe for Amaris B. Clinic using an old-style `page_limit=5` request returned `6` crawled pages, `19` location signals, `20` service signals, and `9` team signals; the prior note showed `2` pages, `5` location signals, `12` service signals, and `0` team signals.
