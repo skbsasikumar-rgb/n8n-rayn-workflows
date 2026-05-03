@@ -1,3 +1,3 @@
 <INSTRUCTIONS>
-@/Users/sasikumar/.codex/RTK.md
+Use context-mode MCP tools for command output and large-context inspection.
 </INSTRUCTIONS>
