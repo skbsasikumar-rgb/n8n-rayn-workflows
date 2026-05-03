@@ -497,3 +497,13 @@ Public enrichment captcha handling:
 - `public_web_enrichment.py` `enrich_row()` now attempts Playwright-based captcha solving when a
   challenge page is detected on the homepage, instead of immediately returning `skipped_challenge_detected`.
 - the crawl context in enrichment records now includes `captcha_solver` diagnostics.
+
+Serper provider switch live rerun:
+
+- committed and pushed `bbcab26` (`Switch workflow search providers to Serper`) to `codex/n8n-workflow-checkpoint`.
+- deployed Crawl4AI worker to Railway service `n8n-rayn-workflows`; final successful deployment `bf1c1b40-6867-40c9-ad2a-f26dd4bdc0ed`.
+- updated live n8n workflow `BQEa6M2pKYmuEYMV` from `wf-worker.json`; workflow remained active.
+- set `CONTACT_SEARCH_PROVIDER_ORDER=serper` on the Crawl4AI worker and added `SERPER_API_KEY` to n8n `Primary`; initial URL rerun before the n8n env fix failed with Serper `403 Unauthorized`.
+- URL rerun slice after env fix: rows `281`, `285`, `292`, and `314`. Results: `292` completed with `https://appletreemedicalgroup.com/`; `314` completed with `https://aamgdoctors.net/`; `281` and `285` stayed skipped with `no_official_url_found`.
+- contact rerun slice: rows `275` and `278`. Results: both terminal `contact_not_found` with `candidates_found_but_no_sendable_email`; No2Bounce rejected `Wong Siu Kwan @ amberfamilyclinic.com`, `Tan Chin Beng Melvyn @ amkclinic.com.sg`, and `Tan Chin Beng @ amkclinic.com.sg`.
+- cost/usage observed: `4` successful Serper URL-discovery responses, `3` Serper contact-search provider queries, and `4` earlier unauthorized Serper URL attempts before the n8n env fix. At Serper starter pricing of `$1.00/1k` successful queries, the `7` successful Serper queries are approximately `$0.007`; unauthorized failures should not deduct credits per Serper's successful-response credit rule.
