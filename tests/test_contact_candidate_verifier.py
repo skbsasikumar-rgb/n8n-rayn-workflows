@@ -306,6 +306,39 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=False):
             self.assertEqual(c.configured_decision_maker_categories(), ["ceo", "it", "operations", "hr", "marketing"])
 
+    def test_anymail_post_retries_timeout_then_succeeds(self):
+        calls = []
+
+        class FakeResponse:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {"email_status": "valid", "valid_email": "jane@example.org.sg", "credits_charged": 1}
+
+        def fake_post(*args, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise c.requests.Timeout()
+            return FakeResponse()
+
+        with patch.dict(os.environ, {"ANYMAILFINDER_PERSON_RETRIES": "1", "ANYMAILFINDER_PERSON_RETRY_BACKOFF_SECONDS": "0"}, clear=False), patch.object(c.requests, "post", side_effect=fake_post), patch.object(c.time, "sleep"):
+            result = c.post_anymail_with_retries(
+                provider="anymail_finder",
+                base_url="https://api.example.test/person",
+                api_key="token",
+                request_body={"domain": "example.org.sg", "full_name": "Jane Tan"},
+                timeout_seconds=10,
+                retry_prefix="ANYMAILFINDER_PERSON",
+                default_retries=1,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["retried"])
+        self.assertEqual(result["attempt_count"], 2)
+        self.assertEqual(result["attempts"][0]["error"], "timeout")
+        self.assertEqual(result["payload"]["valid_email"], "jane@example.org.sg")
+
     def test_decision_maker_fallback_runs_when_person_lookup_misses(self):
         payload = {
             "Id": 123,

@@ -1358,6 +1358,99 @@ def anymail_decision(result: dict[str, Any], domain: str) -> tuple[str, str]:
     return "rejected", ""
 
 
+def retryable_anymail_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code <= 599
+
+
+def anymail_retry_config(prefix: str, default_retries: int) -> tuple[int, float]:
+    retries = max(0, int(os.getenv(f"{prefix}_RETRIES", str(default_retries)) or default_retries))
+    backoff_seconds = max(0.0, float(os.getenv(f"{prefix}_RETRY_BACKOFF_SECONDS", "2") or 2))
+    return retries, backoff_seconds
+
+
+def post_anymail_with_retries(
+    *,
+    provider: str,
+    base_url: str,
+    api_key: str,
+    request_body: dict[str, Any],
+    timeout_seconds: int,
+    retry_prefix: str,
+    default_retries: int,
+) -> dict[str, Any]:
+    retries, backoff_seconds = anymail_retry_config(retry_prefix, default_retries)
+    max_attempts = retries + 1
+    attempts: list[dict[str, Any]] = []
+    last_payload: Any = {}
+    last_status_code = 0
+    last_error = ""
+    for attempt_index in range(1, max_attempts + 1):
+        started = time.time()
+        payload: Any = {}
+        status_code = 0
+        error = ""
+        retryable = False
+        try:
+            response = requests.post(
+                base_url,
+                headers={"Authorization": api_key, "Content-Type": "application/json"},
+                json=request_body,
+                timeout=timeout_seconds,
+            )
+            status_code = response.status_code
+            try:
+                payload = response.json()
+            except ValueError:
+                payload = {"raw": response.text}
+            if status_code >= 400:
+                if isinstance(payload, dict):
+                    error = compact(payload.get("error") or payload.get("message"), 300)
+                error = error or f"HTTP {status_code}"
+                retryable = retryable_anymail_status(status_code)
+        except requests.Timeout:
+            error = "timeout"
+            retryable = True
+        except requests.RequestException as exc:
+            error = compact(str(exc), 300) or "request_failed"
+            retryable = True
+
+        attempts.append(
+            {
+                "attempt": attempt_index,
+                "status_code": status_code,
+                "error": error,
+                "retryable": retryable,
+                "duration_ms": int((time.time() - started) * 1000),
+            }
+        )
+        last_payload = payload
+        last_status_code = status_code
+        last_error = error
+        if not error:
+            return {
+                "ok": True,
+                "status_code": status_code,
+                "payload": payload,
+                "attempts": attempts,
+                "attempt_count": attempt_index,
+                "retried": attempt_index > 1,
+            }
+        if not retryable or attempt_index >= max_attempts:
+            break
+        time.sleep(backoff_seconds * attempt_index)
+
+    return {
+        "ok": False,
+        "status_code": last_status_code,
+        "payload": last_payload,
+        "error": last_error,
+        "attempts": attempts,
+        "attempt_count": len(attempts),
+        "retried": len(attempts) > 1,
+        "provider": provider,
+    }
+
+
 def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[str, Any]:
     api_key = os.getenv("ANYMAILFINDER_API_KEY", "").strip()
     if not api_key:
@@ -1383,33 +1476,28 @@ def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[st
     base_url = os.getenv("ANYMAILFINDER_BASE_URL", "https://api.anymailfinder.com/v5.1/find-email/person").strip()
     timeout_seconds = max(10, int(os.getenv("ANYMAILFINDER_TIMEOUT_SECONDS", "45")))
     request_body = {"domain": domain, "full_name": candidate.name}
-    try:
-        response = requests.post(
-            base_url,
-            headers={"Authorization": api_key, "Content-Type": "application/json"},
-            json=request_body,
-            timeout=timeout_seconds,
-        )
-        try:
-            payload: Any = response.json()
-        except ValueError:
-            payload = {"raw": response.text}
-    except requests.Timeout:
-        return {"configured": True, "error": "timeout", "provider": "anymail_finder", "results": [], "request": request_body}
-    except requests.RequestException as exc:
-        return {"configured": True, "error": compact(str(exc), 300) or "request_failed", "provider": "anymail_finder", "results": [], "request": request_body}
+    request_result = post_anymail_with_retries(
+        provider="anymail_finder",
+        base_url=base_url,
+        api_key=api_key,
+        request_body=request_body,
+        timeout_seconds=timeout_seconds,
+        retry_prefix="ANYMAILFINDER_PERSON",
+        default_retries=1,
+    )
+    payload = request_result.get("payload") if isinstance(request_result.get("payload"), dict) else {"raw": request_result.get("payload")}
+    status_code = int(request_result.get("status_code") or 0)
 
-    if response.status_code >= 400:
-        error_text = ""
-        if isinstance(payload, dict):
-            error_text = compact(payload.get("error") or payload.get("message"), 300)
+    if not request_result.get("ok"):
         return {
             "configured": True,
-            "error": error_text or f"HTTP {response.status_code}",
+            "error": compact(request_result.get("error"), 300) or f"HTTP {status_code}",
             "provider": "anymail_finder",
-            "status_code": response.status_code,
+            "status_code": status_code,
             "request": request_body,
             "response": sanitize_anymail_payload(payload),
+            "attempts": request_result.get("attempts") if isinstance(request_result.get("attempts"), list) else [],
+            "attempt_count": int(request_result.get("attempt_count") or 0),
             "results": [],
         }
 
@@ -1420,9 +1508,12 @@ def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[st
         "configured": True,
         "error": "",
         "provider": "anymail_finder",
-        "status_code": response.status_code,
+        "status_code": status_code,
         "request": request_body,
         "response": result,
+        "attempts": request_result.get("attempts") if isinstance(request_result.get("attempts"), list) else [],
+        "attempt_count": int(request_result.get("attempt_count") or 0),
+        "retried": bool(request_result.get("retried")),
         "results": [result],
         "credits_charged": int(result.get("credits_charged") or 0) if isinstance(result, dict) else 0,
         "mx_exists": domain_has_mx_record(domain),
@@ -1472,34 +1563,29 @@ def validate_anymail_decision_maker(domain: str, company_name: str = "") -> dict
     request_body: dict[str, Any] = {"domain": normalized_domain, "decision_maker_category": categories}
     if company_name:
         request_body["company_name"] = compact(company_name, 300)
-    try:
-        response = requests.post(
-            base_url,
-            headers={"Authorization": api_key, "Content-Type": "application/json"},
-            json=request_body,
-            timeout=timeout_seconds,
-        )
-        try:
-            payload: Any = response.json()
-        except ValueError:
-            payload = {"raw": response.text}
-    except requests.Timeout:
-        return {"configured": True, "enabled": True, "error": "timeout", "provider": "anymail_finder_decision_maker", "results": [], "request": request_body}
-    except requests.RequestException as exc:
-        return {"configured": True, "enabled": True, "error": compact(str(exc), 300) or "request_failed", "provider": "anymail_finder_decision_maker", "results": [], "request": request_body}
+    request_result = post_anymail_with_retries(
+        provider="anymail_finder_decision_maker",
+        base_url=base_url,
+        api_key=api_key,
+        request_body=request_body,
+        timeout_seconds=timeout_seconds,
+        retry_prefix="ANYMAILFINDER_DECISION_MAKER",
+        default_retries=1,
+    )
+    payload = request_result.get("payload") if isinstance(request_result.get("payload"), dict) else {"raw": request_result.get("payload")}
+    status_code = int(request_result.get("status_code") or 0)
 
-    if response.status_code >= 400:
-        error_text = ""
-        if isinstance(payload, dict):
-            error_text = compact(payload.get("error") or payload.get("message"), 300)
+    if not request_result.get("ok"):
         return {
             "configured": True,
             "enabled": True,
-            "error": error_text or f"HTTP {response.status_code}",
+            "error": compact(request_result.get("error"), 300) or f"HTTP {status_code}",
             "provider": "anymail_finder_decision_maker",
-            "status_code": response.status_code,
+            "status_code": status_code,
             "request": request_body,
             "response": sanitize_anymail_payload(payload),
+            "attempts": request_result.get("attempts") if isinstance(request_result.get("attempts"), list) else [],
+            "attempt_count": int(request_result.get("attempt_count") or 0),
             "results": [],
             "categories": categories,
         }
@@ -1512,9 +1598,12 @@ def validate_anymail_decision_maker(domain: str, company_name: str = "") -> dict
         "enabled": True,
         "error": "",
         "provider": "anymail_finder_decision_maker",
-        "status_code": response.status_code,
+        "status_code": status_code,
         "request": request_body,
         "response": result,
+        "attempts": request_result.get("attempts") if isinstance(request_result.get("attempts"), list) else [],
+        "attempt_count": int(request_result.get("attempt_count") or 0),
+        "retried": bool(request_result.get("retried")),
         "results": [result],
         "credits_charged": int(result.get("credits_charged") or 0) if isinstance(result, dict) else 0,
         "mx_exists": domain_has_mx_record(normalized_domain),
@@ -2324,11 +2413,14 @@ def try_decision_maker_fallback(
             "mx_exists": validation.get("mx_exists"),
             "error": compact(validation.get("error"), 160),
             "credits_charged": int(validation.get("credits_charged") or 0),
+            "attempt_count": int(validation.get("attempt_count") or 0),
+            "retried": bool(validation.get("retried")),
+            "attempts": validation.get("attempts") if isinstance(validation.get("attempts"), list) else [],
             "response": validation.get("response") if validation.get("response") else {},
             "result_count": len(validation.get("results") or []),
         },
     }
-    evidence["total_decision_maker_requests"] = int(evidence.get("total_decision_maker_requests") or 0) + (0 if validation.get("cache_hit") or not validation.get("enabled", True) else 1)
+    evidence["total_decision_maker_requests"] = int(evidence.get("total_decision_maker_requests") or 0) + (0 if validation.get("cache_hit") or not validation.get("enabled", True) else int(validation.get("attempt_count") or 1))
     evidence["total_anymail_credits_charged"] = int(evidence.get("total_anymail_credits_charged") or 0) + int(validation.get("credits_charged") or 0)
 
     if not validation.get("enabled", True):
@@ -2736,6 +2828,11 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         candidate_summary["mx_exists"] = validation.get("mx_exists")
         candidate_summary["validation_error"] = compact(validation.get("error"), 160)
         candidate_summary["credits_charged"] = int(validation.get("credits_charged") or 0)
+        candidate_summary["attempt_count"] = int(validation.get("attempt_count") or 0)
+        if validation.get("retried"):
+            candidate_summary["retried"] = True
+        if isinstance(validation.get("attempts"), list):
+            candidate_summary["attempts"] = validation.get("attempts")
         if validation.get("response"):
             candidate_summary["validation_response"] = validation.get("response")
         candidate_summary["validation_result_count"] = len(validation.get("results") or [])

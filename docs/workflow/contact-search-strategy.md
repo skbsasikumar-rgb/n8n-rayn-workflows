@@ -315,7 +315,9 @@ Anymail Finder result handling:
 - use a bounded request timeout; default worker timeout is `45` seconds and can be changed with `ANYMAILFINDER_TIMEOUT_SECONDS`.
 - accept only `email_status = valid` and same-domain `valid_email`.
 - use `POST /v5.1/find-email/decision-maker` only as the miss fallback; default timeout is `180` seconds and can be changed with `ANYMAILFINDER_DECISION_MAKER_TIMEOUT_SECONDS`.
-- treat provider timeout, 401, 402, or HTTP errors as retryable provider failures instead of false no-contact results.
+- retry Anymail timeouts, HTTP `429`, and HTTP `5xx` once by default before marking a row failed.
+- tune retries with `ANYMAILFINDER_PERSON_RETRIES`, `ANYMAILFINDER_DECISION_MAKER_RETRIES`, and the matching `*_RETRY_BACKOFF_SECONDS` env vars.
+- treat exhausted provider timeout, 401, 402, or HTTP errors as retryable provider failures instead of false no-contact results.
 
 Scale caps only after measuring hit rate and cost.
 
