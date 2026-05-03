@@ -540,3 +540,11 @@ Decision-maker fallback patch:
 - added Anymail Finder `/v5.1/find-email/decision-maker` as the only fallback after no verified candidates or exhausted person lookups; no Serper/OpenSERP email fallback is used.
 - default decision-maker category order is `ceo`, `it`, `operations`, `hr`, `marketing`; override is available with `ANYMAILFINDER_DECISION_MAKER_CATEGORIES`.
 - default decision-maker timeout is `180` seconds via `ANYMAILFINDER_DECISION_MAKER_TIMEOUT_SECONDS`; the fallback can be disabled with `ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED=false`.
+
+Decision-maker fallback rerun:
+
+- reset and reran the `30` eligible rows that were `contact_not_found`.
+- final full eligible-table state: `21` `contact_found`, `27` `contact_not_found`, `0` failed, `0` pending, `0` processing.
+- decision-maker fallback found `3` new contacts: row `279` `jamie@amoystdental.com`, row `292` `drtyson@appletreemedicalgroup.com`, and row `310` `monga.amitabh@asiadigestive.sg`.
+- targeted rerun result: `3` `contact_found`, `27` `contact_not_found`; final miss reasons are `17` `candidates_found_but_no_sendable_email` and `10` `no_validated_person_found`.
+- targeted usage proxies: `22` Anymail person requests, `30` decision-maker fallback rows, `2` non-cached decision-maker requests recorded in row evidence, `12` decision-maker credits recorded, and `0` final decision-maker errors after retrying timeout rows `277`, `293`, and `315`.
