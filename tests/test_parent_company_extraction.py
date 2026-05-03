@@ -160,5 +160,40 @@ class ParentCompanyExtractionTests(unittest.TestCase):
         self.assertIn("quote_not_found", {item.get("reason_code") for item in result.rejected_candidates})
 
 
+class PublicCrawlSelectionTests(unittest.TestCase):
+    def test_homepage_link_anchor_text_increases_follow_priority(self):
+        selected = p.choose_candidate_pages(
+            "https://exampleclinic.sg/",
+            [
+                {"href": "https://exampleclinic.sg/dr-tan", "text": "Meet our doctors"},
+                {"href": "https://exampleclinic.sg/privacy-policy", "text": "Privacy policy"},
+                {"href": "https://exampleclinic.sg/contact", "text": "Contact"},
+            ],
+            [],
+            page_limit=3,
+        )
+
+        self.assertEqual(selected[0], "https://exampleclinic.sg/")
+        self.assertIn("https://exampleclinic.sg/dr-tan", selected)
+        self.assertIn("https://exampleclinic.sg/contact", selected)
+        self.assertNotIn("https://exampleclinic.sg/privacy-policy", selected)
+
+    def test_candidate_selection_uses_sitemap_urls_beyond_keyword_filter(self):
+        selected = p.choose_candidate_pages(
+            "https://exampleclinic.sg/",
+            [],
+            [
+                "https://exampleclinic.sg/dental-implants",
+                "https://exampleclinic.sg/our-dentists",
+                "https://exampleclinic.sg/terms",
+            ],
+            page_limit=3,
+        )
+
+        self.assertIn("https://exampleclinic.sg/our-dentists", selected)
+        self.assertIn("https://exampleclinic.sg/dental-implants", selected)
+        self.assertNotIn("https://exampleclinic.sg/terms", selected)
+
+
 if __name__ == "__main__":
     unittest.main()

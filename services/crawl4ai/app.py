@@ -304,10 +304,10 @@ class PublicEnrichmentRequest(BaseModel):
     Id: int | str
     company_name: str = Field(min_length=1, max_length=300)
     url_picked: str = Field(default="", max_length=2000)
-    page_limit: int = Field(default=5, ge=1, le=12)
+    page_limit: int = Field(default=12, ge=1, le=24)
     page_timeout_ms: int = Field(default=20000, ge=5000, le=60000)
     request_delay_seconds: float = Field(default=0.3, ge=0.0, le=5.0)
-    scrape_char_limit: int = Field(default=60000, ge=2000, le=120000)
+    scrape_char_limit: int = Field(default=120000, ge=2000, le=180000)
 
 
 class ContactSearchRequest(BaseModel):
@@ -1558,7 +1558,7 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
 
     async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
         timeout_seconds = min(
-            float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", "180")),
+            float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", "360")),
             max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
         )
         async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:

@@ -190,12 +190,39 @@ HIGH_VALUE_KEYWORDS = (
     "specialty",
     "specialties",
     "treatment",
+    "treatments",
+    "dental",
+    "dentist",
+    "dentists",
+    "implant",
+    "implants",
+    "medical",
+    "health",
+    "physio",
+    "physiotherapy",
+    "pharmacy",
+    "aesthetic",
+    "screening",
+    "therapy",
     "location",
     "locations",
     "contact",
     "faq",
     "news",
     "careers",
+    "appointment",
+    "appointments",
+    "book",
+    "booking",
+    "pricing",
+    "fees",
+    "insurance",
+    "partners",
+    "accreditation",
+    "awards",
+    "media",
+    "blog",
+    "articles",
 )
 COMMON_FOLLOW_PATHS = (
     "/about",
@@ -226,11 +253,35 @@ COMMON_FOLLOW_PATHS = (
     "/our-doctor",
     "/specialists",
     "/consultants",
+    "/our-consultants",
     "/profiles",
     "/physicians",
     "/providers",
+    "/provider",
+    "/practitioners",
+    "/our-practitioners",
+    "/dentists",
+    "/our-dentists",
+    "/therapists",
+    "/our-therapists",
     "/contact",
     "/contact-us",
+    "/locations",
+    "/location",
+    "/clinics",
+    "/clinic",
+    "/services",
+    "/service",
+    "/treatments",
+    "/treatment",
+    "/specialties",
+    "/specialty",
+    "/procedures",
+    "/conditions",
+    "/faq",
+    "/faqs",
+    "/news",
+    "/blog",
 )
 TEAM_KEYWORDS = (
     "doctor",
@@ -392,6 +443,7 @@ class PageArtifact:
     phones: list[str] = field(default_factory=list)
     addresses: list[str] = field(default_factory=list)
     internal_links: list[str] = field(default_factory=list)
+    internal_link_items: list[dict[str, str]] = field(default_factory=list)
     social_links: list[str] = field(default_factory=list)
     logo_alt_texts: list[str] = field(default_factory=list)
     footer_legal_names: list[str] = field(default_factory=list)
@@ -1133,8 +1185,7 @@ def fetch_sitemap_candidates(
             if not is_html_like_url(candidate):
                 continue
             lowered = candidate.lower()
-            if any(keyword in lowered for keyword in HIGH_VALUE_KEYWORDS):
-                candidate_urls.append(candidate)
+            candidate_urls.append(candidate)
             if len(candidate_urls) >= limit:
                 break
 
@@ -1149,7 +1200,7 @@ def candidate_page_score(homepage_url: str, page_url: str, anchor_text: str = ""
 
     path = urlsplit(page_url).path.lower()
     text = f"{path} {anchor_text.lower()}"
-    if any(term in text for term in ("login", "signin", "sign-in", "cart", "checkout", "wp-admin")):
+    if any(term in text for term in ("login", "signin", "sign-in", "cart", "checkout", "wp-admin", "privacy", "terms", "cookie")):
         return -20
 
     score = 0
@@ -1158,8 +1209,12 @@ def candidate_page_score(homepage_url: str, page_url: str, anchor_text: str = ""
             score += 4
     if "/about" in path:
         score += 3
-    if any(term in text for term in ("doctor", "team", "leadership", "provider")):
-        score += 2
+    if any(term in text for term in ("doctor", "team", "leadership", "provider", "dentist", "consultant", "contact")):
+        score += 3
+    if path in {"", "/"}:
+        score += 1
+    if re.search(r"/(?:page|p)/\\d+", path):
+        score -= 5
     score -= max(path.count("/") - 2, 0)
     return score
 
@@ -1170,7 +1225,7 @@ def choose_candidate_pages(
     sitemap_urls: list[str],
     page_limit: int,
 ) -> list[str]:
-    ranked: list[tuple[int, str]] = []
+    ranked: list[tuple[int, int, str]] = []
     seen_urls: set[str] = {homepage_url}
 
     for link in homepage_links:
@@ -1181,17 +1236,7 @@ def choose_candidate_pages(
         score = candidate_page_score(homepage_url, href, text)
         if score <= 0:
             continue
-        ranked.append((score, href))
-        seen_urls.add(href)
-
-    for path in COMMON_FOLLOW_PATHS:
-        href = urljoin(homepage_url, path)
-        if href in seen_urls:
-            continue
-        score = candidate_page_score(homepage_url, href, path)
-        if score <= 0:
-            continue
-        ranked.append((score - 1, href))
+        ranked.append((score + 8, 0, href))
         seen_urls.add(href)
 
     for sitemap_url in sitemap_urls:
@@ -1200,12 +1245,22 @@ def choose_candidate_pages(
         score = candidate_page_score(homepage_url, sitemap_url, "")
         if score <= 0:
             continue
-        ranked.append((score, sitemap_url))
+        ranked.append((score + 4, 1, sitemap_url))
         seen_urls.add(sitemap_url)
 
-    ranked.sort(key=lambda item: (-item[0], item[1]))
+    for path in COMMON_FOLLOW_PATHS:
+        href = urljoin(homepage_url, path)
+        if href in seen_urls:
+            continue
+        score = candidate_page_score(homepage_url, href, path)
+        if score <= 0:
+            continue
+        ranked.append((score - 12, 2, href))
+        seen_urls.add(href)
+
+    ranked.sort(key=lambda item: (-item[0], item[1], item[2]))
     selected = [homepage_url]
-    selected.extend(href for _, href in ranked[: max(page_limit - 1, 0)])
+    selected.extend(href for _, _, href in ranked[: max(page_limit - 1, 0)])
     return dedupe_strings(selected, limit=page_limit)
 
 
@@ -1491,6 +1546,11 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
         for link in anchor_links
         if link.get("href") and same_registered_domain(final_url, link["href"])
     ]
+    internal_link_items = [
+        {"href": link["href"], "text": link.get("text", "")}
+        for link in anchor_links
+        if link.get("href") and same_registered_domain(final_url, link["href"])
+    ]
     title = compact_whitespace(
         result_data.get("metadata", {}).get("title")
         or (soup.title.get_text(" ", strip=True) if soup.title else "")
@@ -1508,6 +1568,7 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
         phones=phones,
         addresses=addresses,
         internal_links=dedupe_strings(internal_links, limit=60),
+        internal_link_items=internal_link_items[:120],
         social_links=social_links,
         logo_alt_texts=logo_alt_texts,
         footer_legal_names=footer_legal_names,
@@ -2572,6 +2633,8 @@ def fetch_static_url(session: requests.Session, url: str) -> dict[str, Any]:
 
 
 def build_homepage_links(page: PageArtifact) -> list[dict[str, str]]:
+    if page.internal_link_items:
+        return page.internal_link_items
     return [{"href": href, "text": ""} for href in page.internal_links]
 
 
@@ -2847,9 +2910,12 @@ async def enrich_row(
     sitemap_urls = fetch_sitemap_candidates(session, best_url, robots_policy, limit=max(page_limit * 6, 20))
     homepage_links = build_homepage_links(homepage_page)
     candidates = choose_candidate_pages(best_url, homepage_links, sitemap_urls, page_limit=page_limit)
+    queued_urls: set[str] = set(candidates)
     delay_seconds = max(request_delay_seconds, robots_policy.crawl_delay_seconds)
 
     for candidate_url in candidates[1:]:
+        if len(crawled_pages) >= page_limit:
+            break
         if candidate_url in seen_urls:
             continue
         if not robots_policy.allows(candidate_url):
@@ -2879,6 +2945,15 @@ async def enrich_row(
         seen_urls.add(page.url)
         if page.content_hash:
             seen_hashes.add(page.content_hash)
+        if len(crawled_pages) < page_limit:
+            discovered = choose_candidate_pages(best_url, build_homepage_links(page), [], page_limit=page_limit * 2)
+            for discovered_url in discovered[1:]:
+                if discovered_url in queued_urls or discovered_url in seen_urls:
+                    continue
+                if candidate_page_score(best_url, discovered_url, "") <= 0:
+                    continue
+                candidates.append(discovered_url)
+                queued_urls.add(discovered_url)
 
     extraction_started = time.perf_counter()
     all_text = "\n\n".join(page.text for page in crawled_pages if page.text)
