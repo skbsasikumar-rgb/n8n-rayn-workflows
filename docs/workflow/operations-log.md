@@ -524,3 +524,12 @@ Contact search all-row rerun after LLM preflight and No2Bounce removal:
 - final reasons: `17` `sendable_person_specific_email_found`, `24` `candidates_found_but_no_sendable_email`, `7` `no_validated_person_found`.
 - usage proxies from contact evidence: `120` Serper provider/query attempts, `1010` total search results stored, `544` raw candidates, `73` verified candidates, `85` candidate objects written, `17` official-site preflight candidates across `10` rows, `0` search errors, `0` provider timeouts.
 - rows `304` and `305` initially hit Anymail validation timeouts during batch processing; targeted retries completed both as `contact_not_found` with `no_deliverable_email`.
+
+Contact search improvement patch and targeted rerun:
+
+- committed and pushed `a3b5eaf` (`Improve contact search email fallback`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `eb236892-f973-4125-825f-331deeae440c` reached `SUCCESS` and `/health` returned OK.
+- implemented candidate-specific published-email fallback after Anymail Finder misses, raised default `CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW` from `3` to `5`, changed official-site LLM preflight default mode to `sparse`, and preserved the best selected person even when email lookup fails.
+- reset and reran the `24` rows that previously ended `candidates_found_but_no_sendable_email`.
+- targeted rerun result: `1` new `contact_found` (`305`, `nabilah@ashforddentalcentre.com.sg`), `23` `contact_not_found`, `0` failed/pending/processing.
+- final full eligible-table state after targeted rerun: `18` `contact_found`, `30` `contact_not_found`.
+- targeted usage proxies: `72` normal Serper provider/query attempts, `64` published-email Serper attempts, `631` total search results stored, `343` raw candidates, `33` verified candidates, `26` Anymail requests, `1` Anymail credit charged.
