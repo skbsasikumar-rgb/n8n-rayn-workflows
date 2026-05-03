@@ -2816,7 +2816,20 @@ async def enrich_row(
     if homepage_page.challenge_hints:
         challenge_note = "challenge page detected: " + ", ".join(homepage_page.challenge_hints)
         captcha_solved = False
-        if captcha_solver.is_configured():
+        try:
+            static_started = time.perf_counter()
+            static_result = fetch_static_url(session, best_url)
+            timings["homepage_static_challenge_recovery_ms"] = elapsed_ms(static_started)
+            static_page = extract_page_artifact(static_result)
+            if static_page.text and not static_page.challenge_hints:
+                homepage_result = static_result
+                homepage_page = static_page
+                challenge_note = ""
+                captcha_solved = True
+                errors.append(f"{best_url}: static fetch recovered after challenge page")
+        except Exception as static_exc:
+            errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
+        if not captcha_solved and captcha_solver.is_configured():
             try:
                 from playwright.async_api import async_playwright as _ap
                 async with _ap() as playwright:
