@@ -392,6 +392,20 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
         self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 
+    def test_decision_maker_linkedin_requires_matching_profile_slug(self):
+        candidate = c.decision_maker_candidate_from_result(
+            {
+                "decision_maker_category": "operations",
+                "person_full_name": "Etienne Ding",
+                "person_job_title": "Operations Manager",
+                "person_linkedin_url": "https://sg.linkedin.com/in/cherie-tan-1350b9163",
+            },
+            "exampleclinic.sg",
+        )
+
+        self.assertEqual(candidate["linkedin_url"], "")
+        self.assertEqual(candidate["source_url"], "https://exampleclinic.sg/")
+
     def test_role_queries_cover_all_buckets_with_small_budget(self):
         queries = c.build_role_queries(
             "Example Community Clinic",

@@ -374,6 +374,23 @@ def compact(value: Any, limit: int = 2000) -> str:
     return text[:limit]
 
 
+def linkedin_url_matches_name(url: str, name: str) -> bool:
+    parsed = urlparse(compact(url, 1000))
+    host = parsed.netloc.lower()
+    if "linkedin.com" not in host or not parsed.path.lower().startswith("/in/"):
+        return False
+    slug = re.sub(r"[^a-z0-9]", "", parsed.path.lower().split("/in/", 1)[1].strip("/"))
+    if not slug:
+        return False
+    tokens = [re.sub(r"[^a-z0-9]", "", token.lower()) for token in re.split(r"\s+", clean_name(name))]
+    tokens = [token for token in tokens if len(token) >= 2]
+    if not tokens:
+        return False
+    if len(tokens) == 1:
+        return tokens[0] in slug
+    return tokens[0] in slug and tokens[-1] in slug
+
+
 def provider_cooldown_seconds(disabled_until: float, now_ts: float | None = None) -> int:
     current = time.time() if now_ts is None else now_ts
     return max(0, int(math.ceil(max(0.0, float(disabled_until) - current))))
@@ -2369,7 +2386,8 @@ def decision_maker_candidate_from_result(result: dict[str, Any], domain: str) ->
     role = compact(result.get("person_job_title") or category.upper(), 160)
     parsed = parse_name(name) if name else None
     first_name, last_name = parsed if parsed else ("", "")
-    linkedin_url = compact(result.get("person_linkedin_url"), 1000)
+    raw_linkedin_url = compact(result.get("person_linkedin_url"), 1000)
+    linkedin_url = raw_linkedin_url if linkedin_url_matches_name(raw_linkedin_url, name) else ""
     return {
         "name": name,
         "role": role,
