@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
 import math
 import os
@@ -1336,263 +1334,6 @@ def email_decision(result: Any, has_named_person: bool) -> str:
     return "rejected"
 
 
-NO2BOUNCE_DOWNLOAD_URL_KEYS = {
-    "downloadfile",
-    "download_file",
-    "downloadurl",
-    "download_url",
-    "resulturl",
-    "result_url",
-    "reporturl",
-    "report_url",
-    "signedurl",
-    "signed_url",
-}
-
-
-def no2bounce_download_url_candidate(key: Any, value: Any) -> str:
-    normalized_key = re.sub(r"[^a-z0-9]+", "", str(key).lower())
-    if normalized_key not in {re.sub(r"[^a-z0-9]+", "", item) for item in NO2BOUNCE_DOWNLOAD_URL_KEYS}:
-        return ""
-    if isinstance(value, str) and value.startswith(("http://", "https://")):
-        return value
-    return ""
-
-
-def find_no2bounce_download_url(payload: Any) -> str:
-    if isinstance(payload, dict):
-        for key, value in payload.items():
-            download_url = no2bounce_download_url_candidate(key, value)
-            if download_url:
-                return download_url
-            nested = find_no2bounce_download_url(value)
-            if nested:
-                return nested
-    if isinstance(payload, list):
-        for item in payload:
-            nested = find_no2bounce_download_url(item)
-            if nested:
-                return nested
-    return ""
-
-
-def sanitize_no2bounce_payload(payload: Any) -> Any:
-    if isinstance(payload, dict):
-        output: dict[str, Any] = {}
-        for key, value in payload.items():
-            if no2bounce_download_url_candidate(key, value):
-                output[key] = "[redacted_download_url]" if value else ""
-            else:
-                output[key] = sanitize_no2bounce_payload(value)
-        return output
-    if isinstance(payload, list):
-        return [sanitize_no2bounce_payload(item) for item in payload]
-    return payload
-
-
-def download_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
-    download_url = find_no2bounce_download_url(payload)
-    if not download_url:
-        return []
-    response = requests.get(download_url, timeout=30)
-    if response.status_code >= 400:
-        return []
-    raw_text = response.text.lstrip("\ufeff").strip()
-    content_type = response.headers.get("content-type", "").lower()
-    if "json" in content_type or raw_text.startswith(("{", "[")):
-        try:
-            return extract_no2bounce_results(response.json())
-        except ValueError:
-            return []
-    csv_text = raw_text
-    reader = csv.DictReader(io.StringIO(csv_text))
-    return [
-        {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
-        for row in reader
-        if any(str(value or "").strip() for value in row.values())
-    ]
-
-
-def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    if not isinstance(payload, dict):
-        return []
-    for key in ("results", "apiResponse", "api_response", "validationResults", "validation_results", "data", "emails", "emailList", "validations", "records"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        if isinstance(value, dict):
-            nested = extract_no2bounce_results(value)
-            if nested:
-                return nested
-    downloaded = download_no2bounce_results(payload)
-    if downloaded:
-        return downloaded
-    return []
-
-
-def no2bounce_progress(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict):
-        return {}
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    output: dict[str, Any] = {}
-    for key in (
-        "taskId",
-        "trackingId",
-        "totalEmails",
-        "completedEmails",
-        "totalRecord",
-        "overallStatus",
-        "percent",
-        "creditDebited",
-        "totalCredit",
-        "deliverability",
-        "catchAll",
-        "Deliverable",
-        "Undeliverable",
-        "Deliverable/AcceptAll",
-        "UnDeliverable/AcceptAll",
-        "Risky/AcceptAll",
-        "invalid",
-        "bounce",
-        "spam",
-    ):
-        value = dict_get_case_insensitive(data, key)
-        if value is not None:
-            output[key] = value
-    return output
-
-
-def no2bounce_count(progress: dict[str, Any], key: str) -> int:
-    value = dict_get_case_insensitive(progress, key)
-    try:
-        return int(float(str(value).strip()))
-    except (TypeError, ValueError):
-        return 0
-
-
-def no2bounce_has_sendable_aggregate(progress: dict[str, Any]) -> bool:
-    return (
-        no2bounce_count(progress, "Deliverable") > 0
-        or no2bounce_count(progress, "Deliverable/AcceptAll") > 0
-        or no2bounce_count(progress, "Risky/AcceptAll") > 0
-        or no2bounce_count(progress, "deliverability") > 0
-    )
-
-
-def no2bounce_partial_rejected_results(emails: list[str], progress: dict[str, Any]) -> list[dict[str, Any]]:
-    if not progress or no2bounce_has_sendable_aggregate(progress):
-        return []
-    completed = (
-        no2bounce_count(progress, "Undeliverable")
-        + no2bounce_count(progress, "UnDeliverable/AcceptAll")
-        + no2bounce_count(progress, "invalid")
-        + no2bounce_count(progress, "bounce")
-        + no2bounce_count(progress, "spam")
-    )
-    if completed <= 0:
-        return []
-    return [
-        {
-            "email": email,
-            "finalScoreValue": "Incomplete/PendingTimeout",
-            "status": "incomplete_pending_timeout",
-            "no2bounce_partial_timeout": "true",
-            "no2bounce_progress": progress,
-        }
-        for email in emails
-    ]
-
-
-def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) -> dict[str, Any]:
-    token = os.getenv("NO2BOUNCE_API_TOKEN", "").strip()
-    if not token:
-        return {"configured": False, "error": "NO2BOUNCE_API_TOKEN is not configured", "results": []}
-    if not emails:
-        return {"configured": True, "error": "", "results": []}
-
-    base_url = os.getenv("NO2BOUNCE_BASE_URL", "https://connect.no2bounce.com/v2/n2b_validate_bulk").strip()
-    headers = {"apitoken": token, "Content-Type": "application/json"}
-    post = requests.post(base_url, headers=headers, json={"emailList": emails}, timeout=30)
-    post_payload: Any
-    try:
-        post_payload = post.json()
-    except ValueError:
-        post_payload = {"raw": post.text}
-    if post.status_code >= 400:
-        return {"configured": True, "error": f"POST HTTP {post.status_code}", "post_response": post_payload, "results": []}
-
-    tracking_id = ""
-    if isinstance(post_payload, dict):
-        nested = post_payload.get("data") if isinstance(post_payload.get("data"), dict) else {}
-        tracking_id = compact(
-            post_payload.get("trackingId")
-            or post_payload.get("tracking_id")
-            or post_payload.get("id")
-            or nested.get("trackingId")
-            or nested.get("tracking_id")
-            or nested.get("id"),
-            200,
-        )
-    if not tracking_id:
-        return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
-
-    if timeout_seconds is None:
-        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "120")))
-    poll_interval_seconds = max(2, int(os.getenv("NO2BOUNCE_POLL_INTERVAL_SECONDS", "3")))
-    deadline = time.time() + timeout_seconds
-    poll_payload: Any = {}
-    while time.time() < deadline:
-        poll = requests.get(base_url, headers=headers, params={"trackingId": tracking_id}, timeout=30)
-        try:
-            poll_payload = poll.json()
-        except ValueError:
-            poll_payload = {"raw": poll.text}
-        results = extract_no2bounce_results(poll_payload)
-        if results:
-            return {
-                "configured": True,
-                "error": "",
-                "trackingId": tracking_id,
-                "post_response": sanitize_no2bounce_payload(post_payload),
-                "poll_response": sanitize_no2bounce_payload(poll_payload),
-                "progress": no2bounce_progress(poll_payload),
-                "results": results,
-            }
-        time.sleep(poll_interval_seconds)
-    progress = no2bounce_progress(poll_payload)
-    partial_rejected_results = no2bounce_partial_rejected_results(emails, progress)
-    if partial_rejected_results:
-        return {
-            "configured": True,
-            "error": "",
-            "warning": "partial_timeout_rejected",
-            "trackingId": tracking_id,
-            "post_response": sanitize_no2bounce_payload(post_payload),
-            "poll_response": sanitize_no2bounce_payload(poll_payload),
-            "progress": progress,
-            "results": partial_rejected_results,
-        }
-    return {
-        "configured": True,
-        "error": "poll_timeout",
-        "trackingId": tracking_id,
-        "post_response": sanitize_no2bounce_payload(post_payload),
-        "poll_response": sanitize_no2bounce_payload(poll_payload),
-        "progress": progress,
-        "results": [],
-    }
-
-
-def result_email(result: dict[str, Any]) -> str:
-    for key in ("email", "email address", "email_address", "address", "emailAddress", "mail"):
-        matched = dict_get_case_insensitive(result, key)
-        if matched:
-            return compact(matched, 320).lower()
-    return ""
-
-
 def sanitize_anymail_payload(payload: Any) -> Any:
     if isinstance(payload, dict):
         return {str(key): sanitize_anymail_payload(value) for key, value in payload.items()}
@@ -2042,55 +1783,6 @@ def candidate_email_candidates(candidate: ContactCandidate, domain: str, exclude
     return output
 
 
-def validate_email_candidates(email_candidates: list[dict[str, Any]], domain: str, max_remote_emails: int | None = None) -> dict[str, Any]:
-    mx_exists = domain_has_mx_record(domain)
-    cache_hits: list[str] = []
-    cached_results: list[dict[str, Any]] = []
-    missing_emails: list[str] = []
-    for item in email_candidates:
-        email = compact(item.get("email"), 320).lower()
-        cached = VALIDATION_CACHE.get(email)
-        if cached is not None:
-            cached_results.append(cached)
-            cache_hits.append(email)
-        else:
-            missing_emails.append(email)
-
-    validation = {
-        "configured": bool(os.getenv("NO2BOUNCE_API_TOKEN", "").strip()),
-        "error": "",
-        "results": [],
-        "cache_hits": cache_hits,
-        "mx_exists": mx_exists,
-        "requested_remote_email_count": 0,
-        "budget_limited": False,
-        "unvalidated_emails": [],
-    }
-    if mx_exists is False:
-        return validation
-    if max_remote_emails is not None and max_remote_emails >= 0 and len(missing_emails) > max_remote_emails:
-        validation["budget_limited"] = True
-        validation["unvalidated_emails"] = missing_emails[max_remote_emails:]
-        missing_emails = missing_emails[:max_remote_emails]
-    if missing_emails:
-        validation["requested_remote_email_count"] = len(missing_emails)
-        budget_limited = bool(validation["budget_limited"])
-        unvalidated_emails = list(validation["unvalidated_emails"])
-        validation = validate_no2bounce(missing_emails)
-        validation["cache_hits"] = cache_hits
-        validation["mx_exists"] = mx_exists
-        validation["requested_remote_email_count"] = len(missing_emails)
-        validation["budget_limited"] = budget_limited
-        validation["unvalidated_emails"] = unvalidated_emails
-        if not validation.get("error"):
-            for result in validation.get("results", []):
-                email = result_email(result)
-                if email:
-                    VALIDATION_CACHE[email] = result
-    validation["results"] = cached_results + [result for result in validation.get("results", []) if isinstance(result, dict)]
-    return validation
-
-
 def accepted_candidate_from_raw(raw_candidate: dict[str, Any], accepted: dict[str, Any] | None = None) -> ContactCandidate | None:
     accepted = accepted or {}
     name = clean_name(accepted.get("name") or raw_candidate.get("raw_name"))
@@ -2238,6 +1930,181 @@ def parse_llm_json(text: str) -> dict[str, Any]:
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
         cleaned = re.sub(r"\s*```$", "", cleaned)
     return json.loads(cleaned)
+
+
+def role_group_from_llm(role: str, role_bucket: str) -> dict[str, Any] | None:
+    normalized_bucket = compact(role_bucket, 120).lower()
+    if normalized_bucket:
+        group = next((item for item in ROLE_BUCKETS if item["bucket"] == normalized_bucket), None)
+        if group:
+            return group
+    normalized_role = compact(role, 120).lower()
+    for group in ROLE_BUCKETS:
+        if any(compact(item, 120).lower() == normalized_role for item in group["roles"]):
+            return group
+    return next((item for item in ROLE_BUCKETS if item["bucket"] == "clinic_leadership"), None)
+
+
+def preflight_llm_prompt(payload: dict[str, Any], official_text: str) -> list[dict[str, str]]:
+    user_payload = {
+        "company_name": compact(payload.get("company_name"), 180),
+        "company_homepage_name": compact(payload.get("company_homepage_name"), 180),
+        "canonical_domain": compact(payload.get("canonical_domain"), 180),
+        "best_url": compact(payload.get("best_url"), 500),
+        "target_role_buckets": TARGET_ROLE_BUCKETS,
+        "previously_tried_candidates": [
+            {"name": name, "stage": "official_site_preflight", "email_lookup_result": "not_found"}
+            for name in sorted(normalized_name_set(payload.get("excluded_candidate_names")))
+        ],
+        "official_site_text": official_text,
+    }
+    system = (
+        "You extract official-site contact candidates. Return strict JSON only. "
+        "Use only names and roles explicitly supported by official_site_text. Do not infer, complete, rename, or invent people. "
+        "Accept only real human full names whose role belongs to the target company and is managerial/senior/executive/clinical/compliance/IT/operations/admin/HR. "
+        "Reject organizations, clinics, departments, title-only phrases, and people not tied to the target company. "
+        "Every accepted candidate must include an exact evidence_quote copied from official_site_text containing the person's name."
+    )
+    schema = (
+        "Return exactly this JSON shape: "
+        '{"accepted_candidates":[{"name":"string","role":"string","role_bucket":"string","seniority":"executive|senior_manager|manager","evidence_quote":"string","source_url":"string","confidence":0.0,"reason":"string"}],'
+        '"rejected_candidates":[{"raw_name":"string","decision":"reject","reason_code":"not_human|organization_name|role_title_only|role_belongs_to_other_org|weak_source|not_target_company|already_tried|not_managerial_role|insufficient_evidence","reason":"string"}]}'
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": schema + "\nInput:\n" + json.dumps(user_payload, ensure_ascii=False)},
+    ]
+
+
+def verify_preflight_candidates_with_llm(payload: dict[str, Any], official_text: str) -> CandidateVerification:
+    if not env_flag("CONTACT_PREFLIGHT_LLM_ENABLED", default=True):
+        return CandidateVerification(verifier="llm_official_site", error="preflight_llm_disabled")
+    text_limit = max(2000, int(os.getenv("CONTACT_PREFLIGHT_LLM_CONTEXT_CHARS", "12000") or 12000))
+    official_text = compact(official_text, text_limit)
+    if not official_text:
+        return CandidateVerification(verifier="llm_official_site", error="missing_official_site_text")
+    fake_response = os.getenv("CONTACT_PREFLIGHT_LLM_FAKE_RESPONSE", "").strip()
+    if fake_response:
+        llm_payload = parse_llm_json(fake_response)
+    else:
+        api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+        if not api_key:
+            return CandidateVerification(verifier="llm_official_site", error="OPENROUTER_API_KEY is not configured")
+        model = os.getenv("CONTACT_PREFLIGHT_LLM_MODEL", os.getenv("CONTACT_LLM_VERIFIER_MODEL", "deepseek/deepseek-v4-flash")).strip()
+        timeout_seconds = max(5, int(os.getenv("CONTACT_PREFLIGHT_LLM_TIMEOUT_SECONDS", os.getenv("CONTACT_LLM_VERIFIER_TIMEOUT_SECONDS", "20"))))
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"model": model, "temperature": 0, "messages": preflight_llm_prompt(payload, official_text)},
+            timeout=timeout_seconds,
+        )
+        if response.status_code >= 400:
+            return CandidateVerification(verifier="llm_official_site", error=f"llm_http_{response.status_code}")
+        data = response.json()
+        content = compact(data.get("choices", [{}])[0].get("message", {}).get("content"), 20000)
+        try:
+            llm_payload = parse_llm_json(content)
+        except Exception as exc:
+            return CandidateVerification(verifier="llm_official_site", error=f"llm_json_parse_failed:{compact(exc, 120)}")
+
+    company_name = compact(payload.get("company_name"))
+    homepage_name = compact(payload.get("company_homepage_name"))
+    canonical_domain = compact(payload.get("canonical_domain")).lower().removeprefix("www.")
+    best_url = compact(payload.get("best_url"), 500) or f"https://{canonical_domain}/"
+    blocked_names = normalized_name_set(payload.get("excluded_candidate_names"))
+    accepted_candidates: list[ContactCandidate] = []
+    raw_candidates: list[dict[str, Any]] = []
+    rejected = [item for item in llm_payload.get("rejected_candidates", []) if isinstance(item, dict)]
+    lowered_text = official_text.lower()
+    for accepted in llm_payload.get("accepted_candidates", []):
+        if not isinstance(accepted, dict):
+            continue
+        name = clean_name(accepted.get("name"))
+        role = compact(accepted.get("role"), 120)
+        quote = compact(accepted.get("evidence_quote"), 1600)
+        group = role_group_from_llm(role, compact(accepted.get("role_bucket"), 120))
+        normalized_name = normalize_person_name(name)
+        if (
+            not name
+            or not role
+            or not quote
+            or normalized_name in blocked_names
+            or not group
+            or not probable_human_name(name)
+            or reject_candidate_name(name, company_name, homepage_name, canonical_domain)
+            or name.lower() not in quote.lower()
+            or quote.lower() not in lowered_text
+        ):
+            rejected.append(
+                {
+                    "raw_name": compact(name, 160),
+                    "decision": "reject",
+                    "reason_code": "insufficient_evidence",
+                    "reason": "official-site LLM candidate failed deterministic evidence checks",
+                }
+            )
+            continue
+        parsed = parse_name(name)
+        if not parsed:
+            continue
+        confidence_value = accepted.get("confidence", 0.85)
+        try:
+            confidence_score = float(confidence_value)
+        except (TypeError, ValueError):
+            confidence_score = 0.85
+        if confidence_score > 1:
+            confidence_score = confidence_score / 100
+        source_url = compact(accepted.get("source_url") or best_url, 1000)
+        raw_candidates.append(
+            {
+                "raw_name": name,
+                "role_detected": role,
+                "role_bucket": group["bucket"],
+                "role_priority": int(group["priority"]),
+                "seniority": group["seniority"],
+                "source_url": source_url,
+                "source_type": "official_domain",
+                "source_strength": "official_domain",
+                "evidence_text": quote,
+                "query": "official_site_preflight_llm",
+            }
+        )
+        first_name, last_name = parsed
+        accepted_candidates.append(
+            ContactCandidate(
+                name=name,
+                role=role,
+                seniority=group["seniority"],
+                role_bucket=group["bucket"],
+                role_priority=int(group["priority"]),
+                source_url=source_url,
+                source_type="official_domain",
+                evidence_text=quote,
+                confidence="High" if confidence_score >= 0.85 else "Medium",
+                confidence_score=max(0.0, min(confidence_score, 1.0)),
+                company_match=True,
+                first_name=first_name,
+                last_name=last_name,
+            )
+        )
+    return CandidateVerification(
+        accepted=accepted_candidates,
+        rejected_candidates=rejected,
+        raw_candidates=raw_candidates,
+        verifier="llm_official_site",
+    )
+
+
+def merge_candidate_lists(candidates: list[ContactCandidate], extra: list[ContactCandidate]) -> list[ContactCandidate]:
+    by_name: dict[str, ContactCandidate] = {}
+    for candidate in [*candidates, *extra]:
+        normalized_name = normalize_person_name(candidate.name)
+        existing = by_name.get(normalized_name)
+        if not existing or (-candidate.confidence_score, candidate.role_priority) < (-existing.confidence_score, existing.role_priority):
+            by_name[normalized_name] = candidate
+    merged = list(by_name.values())
+    merged.sort(key=lambda item: (item.role_priority, -item.confidence_score, item.name.lower()))
+    return merged
 
 
 def verify_contact_candidates_with_llm(payload: dict[str, Any], raw_candidates: list[dict[str, Any]]) -> CandidateVerification:
@@ -2403,14 +2270,20 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         payload["search_attempts"] = execute_provider_cascade(payload)
 
     if payload.get("site_fast_path_only"):
+        official_text = payload.get("website_content") if isinstance(payload.get("website_content"), str) else ""
         candidates = extract_candidates_from_website_content(
-            payload.get("website_content") if isinstance(payload.get("website_content"), str) else "",
+            official_text,
             compact(payload.get("company_name")),
             compact(payload.get("company_homepage_name")),
             domain,
             compact(payload.get("best_url"), 500),
             excluded_names=excluded_names,
         )
+        preflight_llm_mode = compact(os.getenv("CONTACT_PREFLIGHT_LLM_MODE", "empty"), 20).lower()
+        preflight_llm_verification = CandidateVerification(verifier="llm_official_site", error="preflight_llm_not_run")
+        if preflight_llm_mode == "always" or (preflight_llm_mode == "empty" and not candidates):
+            preflight_llm_verification = verify_preflight_candidates_with_llm(payload, official_text)
+            candidates = merge_candidate_lists(candidates, preflight_llm_verification.accepted)
     else:
         raw_candidates = extract_raw_candidates_from_search(payload)
         deterministic_candidates = extract_candidates(payload)
@@ -2476,6 +2349,14 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         goto_common = True
     if payload.get("site_fast_path_only"):
         verification = verify_candidates(payload, candidates, [])
+        if "preflight_llm_verification" in locals():
+            verification.raw_candidates.extend(preflight_llm_verification.raw_candidates)
+            verification.rejected_candidates.extend(preflight_llm_verification.rejected_candidates)
+            if preflight_llm_verification.accepted:
+                verification.verifier = "deterministic_official_site+llm_official_site"
+            elif preflight_llm_verification.error != "preflight_llm_not_run":
+                verification.verifier = "deterministic_official_site+llm_official_site"
+                verification.error = preflight_llm_verification.error
         candidate_dicts = [candidate.to_dict() for candidate in candidates]
         search_evidence = build_contact_search_evidence(payload, candidate_dicts, verification)
     elif 'goto_common' not in locals():

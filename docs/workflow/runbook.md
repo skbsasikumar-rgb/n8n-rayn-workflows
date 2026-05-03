@@ -38,7 +38,7 @@ Verify:
    Verify: parent is populated only with clear evidence.
 
 8. Add contact search after company enrichment.
-   Verify: role buckets are attempted in priority order, generic inboxes are not generated, No2Bounce accepts only deliverable person-specific emails, and exhausted rows end as `contact_search_status = contact_not_found`.
+   Verify: role buckets are attempted in priority order, generic inboxes are not generated, Anymail Finder accepts only valid same-domain person-specific emails, and exhausted rows end as `contact_search_status = contact_not_found`.
 
 ## Contact Search Build Loop
 
@@ -46,10 +46,10 @@ Verify:
    Verify: eligible completed enrichment rows can be initialized with `contact_search_status = pending`.
 
 2. Run the Python contact worker offline before n8n wiring.
-   Verify: OpenSERP role queries produce candidate lists without spending No2Bounce credits.
+   Verify: Serper role queries produce candidate lists without spending Anymail Finder credits.
 
-3. Add email permutation and No2Bounce validation.
-   Verify: only person-specific emails are generated and only deliverable non-catch-all emails are accepted.
+3. Add Anymail Finder person lookup.
+   Verify: only verified person candidates are looked up and only valid same-domain emails are accepted.
 
 4. Wire n8n contact orchestration.
    Verify: rows are claimed as `processing`, then finish as `contact_found`, `contact_not_found`, `failed`, or `skipped`.
@@ -71,7 +71,7 @@ Verify:
 10. Add a fresh rerun batch marker when possible.
 11. Re-enable the workflow.
 12. Run a small test set first.
-13. Inspect raw search, selected URL, scrape result, contact candidates, No2Bounce result, and final writeback.
+13. Inspect raw search, selected URL, scrape result, contact candidates, Anymail Finder result, and final writeback.
 14. Confirm every claimed company-enrichment row reached `completed`, `skipped`, `failed`, or `needs_review`, and every claimed contact row reached `contact_found`, `contact_not_found`, `failed`, or `skipped`.
 15. Scale only after the small set passes.
 

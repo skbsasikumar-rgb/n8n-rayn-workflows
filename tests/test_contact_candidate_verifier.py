@@ -156,6 +156,46 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(verification.rejected_candidates[0]["raw_name"], "Invented Person")
         self.assertEqual(verification.rejected_candidates[0]["reason_code"], "llm_candidate_not_in_raw_candidates")
 
+    def test_official_site_llm_requires_exact_quote(self):
+        content = "Our clinic is led by Dr Jane Tan, Clinical Director of Example Clinic."
+        payload = {
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": content,
+        }
+        fake = {
+            "accepted_candidates": [
+                {
+                    "name": "Jane Tan",
+                    "role": "Clinical Director",
+                    "role_bucket": "clinic_leadership",
+                    "seniority": "manager",
+                    "evidence_quote": "Dr Jane Tan, Clinical Director of Example Clinic",
+                    "source_url": "https://exampleclinic.sg/",
+                    "confidence": 0.93,
+                    "reason": "Official site links the role and company.",
+                },
+                {
+                    "name": "Invented Person",
+                    "role": "CEO",
+                    "role_bucket": "c_suite",
+                    "seniority": "executive",
+                    "evidence_quote": "Invented Person, CEO of Example Clinic",
+                    "source_url": "https://exampleclinic.sg/",
+                    "confidence": 0.99,
+                    "reason": "This quote is not present.",
+                },
+            ],
+            "rejected_candidates": [],
+        }
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_FAKE_RESPONSE": json.dumps(fake)}, clear=False):
+            verification = c.verify_preflight_candidates_with_llm(payload, content)
+        self.assertEqual([candidate.name for candidate in verification.accepted], ["Jane Tan"])
+        self.assertEqual(verification.rejected_candidates[0]["raw_name"], "Invented Person")
+        self.assertEqual(verification.rejected_candidates[0]["reason_code"], "insufficient_evidence")
+
     def test_official_site_profile_lines_support_general_industries(self):
         content = """
         # Structured Website Evidence
