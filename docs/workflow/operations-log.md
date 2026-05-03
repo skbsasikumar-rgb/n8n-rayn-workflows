@@ -555,3 +555,15 @@ Anymail timeout retry patch:
 - added bounded retry handling around Anymail person lookup and decision-maker lookup; timeouts, HTTP `429`, and HTTP `5xx` retry once by default before the row is marked failed.
 - retry tuning env vars: `ANYMAILFINDER_PERSON_RETRIES`, `ANYMAILFINDER_PERSON_RETRY_BACKOFF_SECONDS`, `ANYMAILFINDER_DECISION_MAKER_RETRIES`, and `ANYMAILFINDER_DECISION_MAKER_RETRY_BACKOFF_SECONDS`.
 - row evidence now records Anymail attempt counts, per-attempt duration/error/status, and whether the lookup retried.
+
+Contact batch timeout cap and full scratch rerun:
+
+- committed and pushed `cad64d9` (`Cap decision maker contact batch size`), then deployed worker service `n8n-rayn-workflows`; Railway deployment `8619da62-dbbc-4a05-bcf4-b7a3100dfa26` reached `SUCCESS` and `/health` returned OK.
+- capped pending-row `/contact-enrich-batch` runs to `3` rows by default when decision-maker fallback is enabled via `CONTACT_BATCH_MAX_DECISION_MAKER_ROWS`; explicit ID batches are not capped.
+- reset all `48` eligible completed, non-duplicate rows with canonical domains and best URLs to `pending` using reason `full_contact_scratch_rerun_after_timeout_fixes`.
+- drained the live worker from scratch in `17` batch calls. Each active batch returned HTTP `200` with `requested=10`, `effective=3`, and `capped_by=CONTACT_BATCH_MAX_DECISION_MAKER_ROWS`; no request-level timeout occurred.
+- final full eligible-table state: `22` `contact_found`, `26` `contact_not_found`, `0` failed, `0` pending, `0` processing.
+- validated-email rows: `273`, `274`, `276`, `279`, `280`, `286`, `288`, `291`, `292`, `293`, `295`, `296`, `299`, `302`, `305`, `310`, `312`, `313`, `316`, `317`, `318`, `319`.
+- final reasons: `12` `sendable_person_specific_email_found`, `10` `sendable_decision_maker_email_found`, `16` `candidates_found_but_no_sendable_email`, and `10` `no_validated_person_found`.
+- usage proxies from row evidence: `90` Serper provider/query attempts, `749` total search results stored, `446` raw candidates, `58` verified candidates, `77` candidate objects written, `13` official-site preflight candidates, `0` search errors, `0` provider timeouts, `38` Anymail person requests, `36` decision-maker fallback rows with `26` cache hits and `10` live decision-maker attempts, `5` total Anymail credits charged, and `4` decision-maker credits charged.
+- retry evidence: person lookup retried once on row `273` and then succeeded; no decision-maker fallback retries were needed in the final scratch run.
