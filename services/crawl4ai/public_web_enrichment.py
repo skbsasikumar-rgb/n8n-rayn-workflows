@@ -39,7 +39,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib import robotparser
-from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
@@ -545,6 +545,73 @@ def env_flag(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def env_csv(name: str) -> list[str]:
+    raw = os.getenv(name, "")
+    if not raw:
+        return []
+    return [part.strip() for part in re.split(r"[\s,]+", raw) if part.strip()]
+
+
+def normalize_proxy_url(raw_proxy: str) -> str:
+    value = compact_whitespace(raw_proxy)
+    if not value:
+        return ""
+    if "://" in value:
+        return value
+    parts = value.split(":")
+    if len(parts) == 4:
+        host, port, username, password = parts
+        return f"http://{quote(username, safe='')}:{quote(password, safe='')}@{host}:{port}"
+    if len(parts) == 2:
+        return f"http://{value}"
+    return value
+
+
+def configured_proxy_url() -> str:
+    return normalize_proxy_url(os.getenv("PUBLIC_WEB_ENRICHMENT_PROXY_URL", ""))
+
+
+def proxy_domains() -> list[str]:
+    return [normalized_hostname(value) for value in env_csv("PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS")]
+
+
+def proxy_applies_to_url(url: str) -> bool:
+    proxy_url = configured_proxy_url()
+    if not proxy_url:
+        return False
+    hostname = normalized_hostname(urlsplit(url).hostname or "")
+    if not hostname:
+        return False
+    domains = proxy_domains()
+    if not domains:
+        return True
+    row_registered_domain = registered_domain(hostname)
+    for domain in domains:
+        if hostname_matches(hostname, domain):
+            return True
+        if row_registered_domain and row_registered_domain == registered_domain(domain):
+            return True
+    return False
+
+
+def proxy_config_for_url(url: str) -> dict[str, str] | None:
+    if not proxy_applies_to_url(url):
+        return None
+    proxy_url = configured_proxy_url()
+    parsed = urlsplit(proxy_url)
+    if not parsed.hostname:
+        return None
+    server = f"{parsed.scheme or 'http'}://{parsed.hostname}"
+    if parsed.port:
+        server += f":{parsed.port}"
+    config = {"server": server}
+    if parsed.username:
+        config["username"] = parsed.username
+    if parsed.password:
+        config["password"] = parsed.password
+    return config
+
+
 def parse_llm_json(text: str) -> dict[str, Any]:
     cleaned = compact_whitespace(text)
     if cleaned.startswith("```"):
@@ -940,7 +1007,7 @@ def make_absolute_url(base_url: str, href: str) -> str:
     )
 
 
-def build_requests_session() -> requests.Session:
+def build_requests_session(target_url: str = "") -> requests.Session:
     session = requests.Session()
     session.headers.update(
         {
@@ -949,6 +1016,10 @@ def build_requests_session() -> requests.Session:
             "Accept-Language": "en-SG,en;q=0.9",
         }
     )
+    proxy_url = configured_proxy_url()
+    if proxy_url and proxy_applies_to_url(target_url):
+        session.proxies.update({"http": proxy_url, "https": proxy_url})
+        session.trust_env = False
     return session
 
 
@@ -2592,7 +2663,12 @@ def make_raw_page(page: PageArtifact) -> dict[str, Any]:
     return data
 
 
-async def crawl_url(crawler: AsyncWebCrawler, url: str, page_timeout_ms: int) -> dict[str, Any]:
+async def crawl_url(
+    crawler: AsyncWebCrawler,
+    url: str,
+    page_timeout_ms: int,
+    proxy_config: dict[str, str] | None = None,
+) -> dict[str, Any]:
     run_config = CrawlerRunConfig(
         cache_mode=getattr(CacheMode, "BYP" + "ASS"),
         page_timeout=page_timeout_ms,
@@ -2606,6 +2682,7 @@ async def crawl_url(crawler: AsyncWebCrawler, url: str, page_timeout_ms: int) ->
         exclude_external_images=True,
         scan_full_page=True,
         max_scroll_steps=3,
+        proxy_config=proxy_config,
         verbose=False,
     )
     result = await crawler.arun(url=url, config=run_config)
@@ -2641,7 +2718,6 @@ def build_homepage_links(page: PageArtifact) -> list[dict[str, str]]:
 async def enrich_row(
     row: InputRow,
     crawler: AsyncWebCrawler,
-    session: requests.Session,
     page_limit: int,
     page_timeout_ms: int,
     request_delay_seconds: float,
@@ -2690,6 +2766,7 @@ async def enrich_row(
             url_validation_status="failed_no_candidate",
         ))
 
+    session = build_requests_session(normalization.best_url)
     validation_started = time.perf_counter()
     validation = validate_best_url_candidate(session, normalization)
     timings["validation_ms"] = elapsed_ms(validation_started)
@@ -2727,6 +2804,9 @@ async def enrich_row(
         ))
 
     best_url = validation.best_url
+    crawl_proxy_config = proxy_config_for_url(best_url)
+    if not same_host(normalization.best_url, best_url):
+        session = build_requests_session(best_url)
     robots_started = time.perf_counter()
     robots_policy = fetch_robots_policy(session, best_url)
     timings["robots_ms"] = elapsed_ms(robots_started)
@@ -2769,7 +2849,7 @@ async def enrich_row(
 
     try:
         homepage_started = time.perf_counter()
-        homepage_result = await crawl_url(crawler, best_url, page_timeout_ms)
+        homepage_result = await crawl_url(crawler, best_url, page_timeout_ms, proxy_config=crawl_proxy_config)
         timings["homepage_crawl_ms"] = elapsed_ms(homepage_started)
     except Exception as exc:
         crawl_error_text = compact_whitespace(exc)
@@ -2836,6 +2916,7 @@ async def enrich_row(
                     browser = await playwright.chromium.launch(
                         headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
                         args=["--disable-dev-shm-usage", "--no-sandbox"],
+                        **({"proxy": crawl_proxy_config} if crawl_proxy_config else {}),
                     )
                     try:
                         ctx = await browser.new_context(ignore_https_errors=True)
@@ -2909,8 +2990,11 @@ async def enrich_row(
             ))
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
     if resolved_homepage.best_url:
+        previous_best_url = best_url
         best_url = resolved_homepage.best_url
-        if not same_host(normalization.best_url, best_url):
+        crawl_proxy_config = proxy_config_for_url(best_url)
+        if not same_host(previous_best_url, best_url):
+            session = build_requests_session(best_url)
             robots_started = time.perf_counter()
             robots_policy = fetch_robots_policy(session, best_url)
             timings["robots_ms"] = timings.get("robots_ms", 0.0) + elapsed_ms(robots_started)
@@ -2937,7 +3021,7 @@ async def enrich_row(
         await asyncio.sleep(delay_seconds)
         try:
             candidate_started = time.perf_counter()
-            candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms)
+            candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms, proxy_config=crawl_proxy_config)
             timings["candidate_crawls_ms"] = timings.get("candidate_crawls_ms", 0.0) + elapsed_ms(candidate_started)
         except Exception as exc:
             crawl_error_text = compact_whitespace(exc)
@@ -3202,7 +3286,6 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
 
 async def run_enrichment(args: argparse.Namespace) -> tuple[list[EnrichmentRecord], Path]:
     rows = fetch_input_rows(args)
-    session = build_requests_session()
     browser_config = BrowserConfig(
         browser_type="chromium",
         headless=not args.show_browser,
@@ -3218,7 +3301,6 @@ async def run_enrichment(args: argparse.Namespace) -> tuple[list[EnrichmentRecor
             record = await enrich_row(
                 row=row,
                 crawler=crawler,
-                session=session,
                 page_limit=args.page_limit,
                 page_timeout_ms=args.page_timeout_ms,
                 request_delay_seconds=args.request_delay_seconds,

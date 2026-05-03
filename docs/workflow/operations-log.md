@@ -594,3 +594,13 @@ Challenge-page static recovery and first-10 rerun:
 - row `277` initially regressed to `skipped_challenge_detected`; after the static-recovery patch it completed again with `1` crawled page and a recovery note indicating static fetch succeeded after the challenge page.
 - rows `279`, `280`, and `283` remained effectively unchanged at `1` crawled page.
 - row `282` (`An Dental`) still ends `skipped_challenge_detected` from the Railway environment despite the static-recovery patch; repeated rerun attempts keep returning the SG challenge flow from the scraper side.
+
+Scoped proxy support for public-web challenge domains:
+
+- added env-driven proxy support to the public enrichment worker for both the Crawl4AI browser path and the static `requests` fallback.
+- new worker env vars: `PUBLIC_WEB_ENRICHMENT_PROXY_URL` and optional `PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS`; if the domain list is omitted, the proxy applies to all public enrichment crawls.
+- proxy selection matches both exact domains and registered domains, so `andental.sg` also covers `www.andental.sg`.
+- accepted proxy URL formats now include standard proxy URLs like `http://user:pass@host:port`, `host:port`, and `host:port:user:pass`.
+- the Playwright captcha-solver recovery path now reuses the same proxy configuration when one is active.
+- focused validation passed locally with `28` tests (`test_public_web_proxy.py`, `test_parent_company_extraction.py`, `test_contact_candidate_verifier.py`) plus Python compile checks.
+- Railway production currently has no `PUBLIC_WEB_ENRICHMENT_PROXY_URL` variable on service `n8n-rayn-workflows`, so row `282` cannot be retested through a proxy until real proxy credentials are added.

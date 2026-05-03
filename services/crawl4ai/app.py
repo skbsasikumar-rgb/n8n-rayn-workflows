@@ -1546,7 +1546,6 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
         company_name=request.company_name,
         url_picked=request.url_picked,
     )
-    session = public_enrichment.build_requests_session()
     browser_config = public_enrichment.BrowserConfig(
         browser_type="chromium",
         headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
@@ -1566,7 +1565,6 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                 public_enrichment.enrich_row(
                     row=input_row,
                     crawler=crawler,
-                    session=session,
                     page_limit=page_limit,
                     page_timeout_ms=page_timeout_ms,
                     request_delay_seconds=request_delay_seconds,
