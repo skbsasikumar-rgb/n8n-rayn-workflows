@@ -332,6 +332,14 @@ Anymail Finder live smoke:
 - live smoke on rows `307`, `315`, and `320`: row `315` found `sharon.tan@ahvc.com.sg` with `1` Anymail credit; row `307` had no validated person; row `320` had candidate `Charis Au` but Anymail returned `not_found` with `0` credits.
 - targeted rerun of row `289` confirmed the new human-name filter removes the prior non-person candidate `RHB Bank`; the row now has no candidates and used `0` Anymail credits.
 
+Official-site LLM preflight and No2Bounce removal:
+
+- added an official-site LLM preflight fallback in `contact_enrichment.py`; default mode is `CONTACT_PREFLIGHT_LLM_MODE=empty`, so it runs only when deterministic official-site extraction finds no candidates.
+- the preflight LLM is constrained to official `website_content`, requires an exact `evidence_quote` containing the candidate name, and rejects candidates whose quote is not present in the scraped text.
+- removed the unused No2Bounce validation path from active worker code; contact email validation is now Anymail Finder only.
+- deployed commit `895aa7f` to Railway service `n8n-rayn-workflows`; deployment `30bdc075-c437-4f54-ae0f-1e8ed936f8b7` reached `SUCCESS`.
+- removed obsolete `NO2BOUNCE_API_TOKEN` from the live `n8n-rayn-workflows` Railway service variables.
+
 Contact candidate verifier tightening:
 
 - added deterministic candidate gates for non-human names such as `Asian Diabetic`, title phrases such as `Past President`, and organization fragments such as `Dental Movies UK`.
