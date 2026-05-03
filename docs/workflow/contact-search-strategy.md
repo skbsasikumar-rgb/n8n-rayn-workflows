@@ -103,7 +103,7 @@ Provider adapter behavior:
 
 ### Email Validation
 
-Validation authority: Anymail Finder person lookup.
+Validation authority: Anymail Finder person lookup, with Anymail Finder decision-maker lookup as the only email fallback.
 
 Anymail Finder flow:
 
@@ -112,14 +112,17 @@ Anymail Finder flow:
 3. Accept only `email_status = valid` with a populated `valid_email` on the exact `canonical_domain`.
 4. Reject risky, blacklisted, not-found, wrong-domain, invalid, unknown, and provider-error outcomes.
 5. Continue down the ranked candidate list until a valid email is found or the candidate cap is exhausted.
-6. Store provider response, credit count, and candidate attempt order in `email_validation_evidence_json`.
+6. If no candidate exists or all candidate lookups miss, call `POST /v5.1/find-email/decision-maker`.
+7. Decision-maker category order is `ceo`, `it`, `operations`, `hr`, `marketing`.
+8. Accept only `email_status = valid` with same-domain `valid_email`.
+9. Store provider response, credit count, decision-maker category order, and candidate attempt order in `email_validation_evidence_json`.
 
 ### Email Discovery Libraries
 
 Do not use third-party SMTP probing libraries for this stage. Use deterministic name filtering and Anymail Finder person lookup; do not generate generic inboxes.
 
 Do not perform direct SMTP probing. No direct mailbox verification over ports `25`, `465`, or `587` is part of this workflow.
-Keep provider routing simple and auditable.
+Keep provider routing simple and auditable. Do not use Serper/OpenSERP as an email-finding fallback after Anymail misses.
 
 ## Role Queue Strategy
 
@@ -181,7 +184,8 @@ Candidate progression is bounded and explicit:
 - continue from candidate 1 to candidate 2 and onward when Anymail Finder returns no valid same-domain email.
 - cap at `5` validated candidates per row by default.
 - run at most one Anymail Finder person lookup per candidate.
-- if validated candidates existed but every Anymail lookup was rejected or not found, end as `contact_not_found / candidates_found_but_no_sendable_email`.
+- after no verified candidates or exhausted person lookups, run one decision-maker fallback request.
+- if validated candidates existed but every Anymail lookup and the decision-maker fallback were rejected or not found, end as `contact_not_found / candidates_found_but_no_sendable_email`.
 
 ## Query Strategy
 
@@ -301,14 +305,16 @@ Suggested first-test caps:
 - max candidates per row: 5.
 - max Anymail Finder lookups per candidate: 1.
 - max Anymail Finder lookups per row: 5.
+- max decision-maker fallback lookups per row: 1.
 
-Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, and charged credits in `email_validation_evidence_json`.
+Current worker behavior records candidate attempts, cache hits, Anymail Finder responses, decision-maker fallback evidence, and charged credits in `email_validation_evidence_json`.
 
 Anymail Finder result handling:
 
 - use `POST /v5.1/find-email/person` only after local person/domain filters pass.
 - use a bounded request timeout; default worker timeout is `45` seconds and can be changed with `ANYMAILFINDER_TIMEOUT_SECONDS`.
 - accept only `email_status = valid` and same-domain `valid_email`.
+- use `POST /v5.1/find-email/decision-maker` only as the miss fallback; default timeout is `180` seconds and can be changed with `ANYMAILFINDER_DECISION_MAKER_TIMEOUT_SECONDS`.
 - treat provider timeout, 401, 402, or HTTP errors as retryable provider failures instead of false no-contact results.
 
 Scale caps only after measuring hit rate and cost.

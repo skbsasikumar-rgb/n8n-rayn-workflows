@@ -293,7 +293,7 @@ class ContactCandidateVerifierTests(unittest.TestCase):
                 "mx_exists": True,
             }
 
-        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail):
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "contact_not_found")
@@ -301,6 +301,62 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.validated_email, "")
         self.assertEqual(result.selected_contact_name, "Jane Tan")
         self.assertEqual(result.email_validation_provider, "anymail_finder")
+
+    def test_decision_maker_category_order_matches_anymail_values(self):
+        with patch.dict(os.environ, {}, clear=False):
+            self.assertEqual(c.configured_decision_maker_categories(), ["ceo", "it", "operations", "hr", "marketing"])
+
+    def test_decision_maker_fallback_runs_when_person_lookup_misses(self):
+        payload = {
+            "Id": 123,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "Jane Tan, Medical Director, Example Clinic",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["ceo", "it", "operations", "hr", "marketing"],
+                "credits_charged": 2,
+                "results": [
+                    {
+                        "credits_charged": 2,
+                        "decision_maker_category": "operations",
+                        "email": "ops@exampleclinic.sg",
+                        "email_status": "valid",
+                        "person_full_name": "Olivia Lim",
+                        "person_job_title": "Operations Manager",
+                        "person_linkedin_url": "https://www.linkedin.com/in/olivialim/",
+                        "valid_email": "ops@exampleclinic.sg",
+                    }
+                ],
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_decision_maker_email_found")
+        self.assertEqual(result.validated_email, "ops@exampleclinic.sg")
+        self.assertEqual(result.selected_contact_name, "Olivia Lim")
+        self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
+        self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 
     def test_role_queries_cover_all_buckets_with_small_budget(self):
         queries = c.build_role_queries(

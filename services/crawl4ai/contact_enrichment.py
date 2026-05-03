@@ -302,6 +302,14 @@ PROVIDER_STATE = {provider: new_provider_state() for provider in (*OPENSERP_ROUT
 PROVIDER_RESET_TOKEN = ""
 VALIDATION_CACHE: dict[str, dict[str, Any]] = {}
 MX_CACHE: dict[str, bool | None] = {}
+DECISION_MAKER_CATEGORY_ORDER = ["ceo", "it", "operations", "hr", "marketing"]
+DECISION_MAKER_ROLE_BUCKETS = {
+    "ceo": ("c_suite", "executive", 1),
+    "it": ("it_technology", "manager", 3),
+    "operations": ("operations", "manager", 4),
+    "hr": ("admin_hr", "manager", 7),
+    "marketing": ("operations", "manager", 8),
+}
 
 
 @dataclass
@@ -1421,6 +1429,99 @@ def validate_anymail_person(candidate: ContactCandidate, domain: str) -> dict[st
     }
 
 
+def configured_decision_maker_categories() -> list[str]:
+    raw = os.getenv("ANYMAILFINDER_DECISION_MAKER_CATEGORIES", ",".join(DECISION_MAKER_CATEGORY_ORDER))
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in raw.split(","):
+        category = compact(value, 80).lower()
+        if category in DECISION_MAKER_CATEGORY_ORDER and category not in seen:
+            output.append(category)
+            seen.add(category)
+    return output or list(DECISION_MAKER_CATEGORY_ORDER)
+
+
+def validate_anymail_decision_maker(domain: str, company_name: str = "") -> dict[str, Any]:
+    if not env_flag("ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED", default=True):
+        return {"configured": True, "enabled": False, "error": "", "results": [], "skipped": "decision_maker_fallback_disabled"}
+    api_key = os.getenv("ANYMAILFINDER_API_KEY", "").strip()
+    if not api_key:
+        return {"configured": False, "enabled": True, "error": "ANYMAILFINDER_API_KEY is not configured", "results": []}
+    normalized_domain = compact(domain, 320).lower().removeprefix("www.")
+    if domain_has_mx_record(normalized_domain) is False:
+        return {"configured": True, "enabled": True, "error": "", "results": [], "mx_exists": False, "skipped": "mx_missing"}
+
+    categories = configured_decision_maker_categories()
+    cache_key = f"anymail_decision_maker:{normalized_domain}:{','.join(categories)}"
+    cached = VALIDATION_CACHE.get(cache_key)
+    if cached is not None:
+        return {
+            "configured": True,
+            "enabled": True,
+            "error": "",
+            "provider": "anymail_finder_decision_maker",
+            "results": [cached],
+            "cache_hit": True,
+            "credits_charged": int(cached.get("credits_charged") or 0),
+            "mx_exists": domain_has_mx_record(normalized_domain),
+            "categories": categories,
+        }
+
+    base_url = os.getenv("ANYMAILFINDER_DECISION_MAKER_BASE_URL", "https://api.anymailfinder.com/v5.1/find-email/decision-maker").strip()
+    timeout_seconds = max(30, int(os.getenv("ANYMAILFINDER_DECISION_MAKER_TIMEOUT_SECONDS", "180")))
+    request_body: dict[str, Any] = {"domain": normalized_domain, "decision_maker_category": categories}
+    if company_name:
+        request_body["company_name"] = compact(company_name, 300)
+    try:
+        response = requests.post(
+            base_url,
+            headers={"Authorization": api_key, "Content-Type": "application/json"},
+            json=request_body,
+            timeout=timeout_seconds,
+        )
+        try:
+            payload: Any = response.json()
+        except ValueError:
+            payload = {"raw": response.text}
+    except requests.Timeout:
+        return {"configured": True, "enabled": True, "error": "timeout", "provider": "anymail_finder_decision_maker", "results": [], "request": request_body}
+    except requests.RequestException as exc:
+        return {"configured": True, "enabled": True, "error": compact(str(exc), 300) or "request_failed", "provider": "anymail_finder_decision_maker", "results": [], "request": request_body}
+
+    if response.status_code >= 400:
+        error_text = ""
+        if isinstance(payload, dict):
+            error_text = compact(payload.get("error") or payload.get("message"), 300)
+        return {
+            "configured": True,
+            "enabled": True,
+            "error": error_text or f"HTTP {response.status_code}",
+            "provider": "anymail_finder_decision_maker",
+            "status_code": response.status_code,
+            "request": request_body,
+            "response": sanitize_anymail_payload(payload),
+            "results": [],
+            "categories": categories,
+        }
+
+    result = payload if isinstance(payload, dict) else {"raw": payload}
+    result = sanitize_anymail_payload(result)
+    VALIDATION_CACHE[cache_key] = result
+    return {
+        "configured": True,
+        "enabled": True,
+        "error": "",
+        "provider": "anymail_finder_decision_maker",
+        "status_code": response.status_code,
+        "request": request_body,
+        "response": result,
+        "results": [result],
+        "credits_charged": int(result.get("credits_charged") or 0) if isinstance(result, dict) else 0,
+        "mx_exists": domain_has_mx_record(normalized_domain),
+        "categories": categories,
+    }
+
+
 def env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name, "").strip().lower()
     if not raw:
@@ -2171,6 +2272,160 @@ def verify_candidates(payload: dict[str, Any], candidates: list[ContactCandidate
     return deterministic_verify_contact_candidates(payload, raw_candidates)
 
 
+def decision_maker_candidate_from_result(result: dict[str, Any], domain: str) -> dict[str, Any]:
+    category = compact(result.get("decision_maker_category"), 80).lower()
+    bucket, seniority, priority = DECISION_MAKER_ROLE_BUCKETS.get(category, ("operations", "manager", 8))
+    name = clean_name(result.get("person_full_name"))
+    role = compact(result.get("person_job_title") or category.upper(), 160)
+    parsed = parse_name(name) if name else None
+    first_name, last_name = parsed if parsed else ("", "")
+    return {
+        "name": name,
+        "role": role,
+        "seniority": seniority,
+        "role_bucket": bucket,
+        "role_priority": priority,
+        "source_url": compact(result.get("person_linkedin_url"), 1000) or f"https://{domain}/",
+        "source_type": "anymail_decision_maker",
+        "evidence_text": f"Anymail Finder decision-maker category {category} returned {name} / {role}",
+        "confidence": "High",
+        "confidence_score": 0.9,
+        "company_match": True,
+        "first_name": first_name,
+        "last_name": last_name,
+        "decision_maker_category": category,
+    }
+
+
+def try_decision_maker_fallback(
+    *,
+    row_id: Any,
+    payload: dict[str, Any],
+    domain: str,
+    contact_candidates: list[dict[str, Any]],
+    contact_search_evidence: dict[str, Any],
+    email_candidates: list[dict[str, Any]],
+    email_validation_evidence: dict[str, Any],
+    fallback_reason: str,
+    first_attempted_candidate: ContactCandidate | None = None,
+) -> ContactResult | None:
+    if not payload.get("validate_email", True):
+        return None
+
+    validation = validate_anymail_decision_maker(domain, compact(payload.get("company_name")))
+    evidence = {
+        **email_validation_evidence,
+        "decision_maker_fallback": {
+            "enabled": bool(validation.get("enabled", True)),
+            "provider": "anymail_finder_decision_maker",
+            "fallback_reason": fallback_reason,
+            "categories": validation.get("categories") or configured_decision_maker_categories(),
+            "cache_hit": bool(validation.get("cache_hit")),
+            "mx_exists": validation.get("mx_exists"),
+            "error": compact(validation.get("error"), 160),
+            "credits_charged": int(validation.get("credits_charged") or 0),
+            "response": validation.get("response") if validation.get("response") else {},
+            "result_count": len(validation.get("results") or []),
+        },
+    }
+    evidence["total_decision_maker_requests"] = int(evidence.get("total_decision_maker_requests") or 0) + (0 if validation.get("cache_hit") or not validation.get("enabled", True) else 1)
+    evidence["total_anymail_credits_charged"] = int(evidence.get("total_anymail_credits_charged") or 0) + int(validation.get("credits_charged") or 0)
+
+    if not validation.get("enabled", True):
+        return None
+    if not validation.get("configured"):
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="failed",
+            contact_search_reason="email_validation_not_configured",
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=email_candidates,
+            email_validation_status="not_configured",
+            email_validation_provider="anymail_finder+decision_maker",
+            email_validation_evidence=evidence,
+        )
+    if validation.get("error"):
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="failed",
+            contact_search_reason="email_validation_provider_failed",
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=email_candidates,
+            email_validation_status=str(validation.get("error")),
+            email_validation_provider="anymail_finder+decision_maker",
+            email_validation_evidence=evidence,
+        )
+
+    for result in validation.get("results", []):
+        if not isinstance(result, dict):
+            continue
+        decision, email = anymail_decision(result, domain)
+        candidate = decision_maker_candidate_from_result(result, domain)
+        email_candidate = {
+            "name": candidate.get("name", ""),
+            "role": candidate.get("role", ""),
+            "source_url": candidate.get("source_url", ""),
+            "provider": "anymail_finder_decision_maker",
+            "email": compact(result.get("email") or result.get("valid_email"), 320).lower(),
+            "valid_email": email,
+            "status": compact(result.get("email_status"), 80).lower() or "validated",
+            "decision": decision,
+            "validation_result": result,
+            "decision_maker_category": compact(result.get("decision_maker_category"), 80).lower(),
+        }
+        email_candidates.append(email_candidate)
+        if email and decision in {"sendable", "risky_sendable"}:
+            email_candidate["accepted"] = True
+            merged_candidates = merge_candidate_dicts(contact_candidates, candidate)
+            return ContactResult(
+                row_id=row_id,
+                contact_search_status="contact_found",
+                contact_search_reason=f"{decision}_decision_maker_email_found",
+                contact_candidates=merged_candidates,
+                contact_search_evidence=contact_search_evidence,
+                email_candidates=email_candidates,
+                selected_contact_name=compact(candidate.get("name"), 160),
+                selected_contact_role=compact(candidate.get("role"), 160),
+                selected_contact_seniority=compact(candidate.get("seniority"), 80),
+                selected_contact_source_url=compact(candidate.get("source_url"), 1000),
+                selected_contact_confidence=compact(candidate.get("confidence"), 80),
+                validated_email=email,
+                email_validation_status=decision,
+                email_validation_provider="anymail_finder+decision_maker",
+                email_validation_evidence=evidence,
+            )
+
+    selected = first_attempted_candidate
+    return ContactResult(
+        row_id=row_id,
+        contact_search_status="contact_not_found",
+        contact_search_reason=fallback_reason,
+        contact_candidates=contact_candidates,
+        contact_search_evidence=contact_search_evidence,
+        email_candidates=email_candidates,
+        selected_contact_name=selected.name if selected else "",
+        selected_contact_role=selected.role if selected else "",
+        selected_contact_seniority=selected.seniority if selected else "",
+        selected_contact_source_url=selected.source_url if selected else "",
+        selected_contact_confidence=selected.confidence if selected else "",
+        email_validation_status="decision_maker_not_found",
+        email_validation_provider="anymail_finder+decision_maker",
+        email_validation_evidence=evidence,
+    )
+
+
+def merge_candidate_dicts(candidates: list[dict[str, Any]], extra: dict[str, Any]) -> list[dict[str, Any]]:
+    normalized_extra = normalize_person_name(extra.get("name", ""))
+    if not normalized_extra:
+        return candidates
+    for candidate in candidates:
+        if normalize_person_name(candidate.get("name", "")) == normalized_extra:
+            return candidates
+    return [*candidates, extra]
+
+
 def build_contact_search_evidence(payload: dict[str, Any], candidates: list[dict[str, Any]], verification: CandidateVerification | None = None) -> dict[str, Any]:
     attempts = payload.get("search_attempts") if isinstance(payload.get("search_attempts"), list) else []
     output_attempts: list[dict[str, Any]] = []
@@ -2261,6 +2516,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         return ContactResult(row_id=row_id, contact_search_status="skipped", contact_search_reason="missing_canonical_domain")
 
     payload = dict(payload)
+    payload["validate_email"] = validate_email
     ensure_provider_state(compact(payload.get("provider_reset_token") or payload.get("contact_search_run_id"), 160))
     excluded_names = normalized_name_set(payload.get("excluded_candidate_names"))
     excluded_emails = normalized_email_set(payload.get("excluded_email_candidates"))
@@ -2333,6 +2589,25 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                         "skipped": "search_provider_failed",
                     },
                 )
+            fallback_evidence = {
+                "provider": "anymail_finder",
+                "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+                "status": "skipped_no_verified_candidate",
+                "skipped": "no_verified_candidates",
+                "reason": "candidate verifier accepted no fallback candidates",
+            }
+            decision_maker_result = try_decision_maker_fallback(
+                row_id=row_id,
+                payload=payload,
+                domain=domain,
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_candidates=[],
+                email_validation_evidence=fallback_evidence,
+                fallback_reason="no_validated_person_found",
+            )
+            if decision_maker_result:
+                return decision_maker_result
             return ContactResult(
                 row_id=row_id,
                 contact_search_status="contact_not_found",
@@ -2341,13 +2616,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 contact_search_evidence=search_evidence,
                 email_validation_status="skipped_no_verified_candidate",
                 email_validation_provider="anymail_finder",
-                email_validation_evidence={
-                    "provider": "anymail_finder",
-                    "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
-                    "status": "skipped_no_verified_candidate",
-                    "skipped": "no_verified_candidates",
-                    "reason": "candidate verifier accepted no fallback candidates",
-                },
+                email_validation_evidence=fallback_evidence,
             )
         # Candidate list has been verified. Skip rebuilding evidence below.
         candidate_dicts = [candidate.to_dict() for candidate in candidates]
@@ -2386,6 +2655,25 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                     "skipped": "search_provider_failed",
                 },
             )
+        fallback_evidence = {
+            "provider": "anymail_finder",
+            "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+            "status": "skipped_no_verified_candidate",
+            "skipped": "no_verified_candidates",
+            "reason": "no candidates passed verifier/human filters",
+        }
+        decision_maker_result = try_decision_maker_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
+            email_candidates=[],
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="no_validated_person_found",
+        )
+        if decision_maker_result:
+            return decision_maker_result
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
@@ -2394,13 +2682,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             contact_search_evidence=search_evidence,
             email_validation_status="skipped_no_verified_candidate",
             email_validation_provider="anymail_finder",
-            email_validation_evidence={
-                "provider": "anymail_finder",
-                "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
-                "status": "skipped_no_verified_candidate",
-                "skipped": "no_verified_candidates",
-                "reason": "no candidates passed verifier/human filters",
-            },
+            email_validation_evidence=fallback_evidence,
         )
 
     aggregated_email_candidates: list[dict[str, Any]] = []
@@ -2524,6 +2806,23 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             excluded_emails.add(found_email)
 
     if not generated_any:
+        fallback_evidence = {
+            **validation_evidence,
+            "status": "skipped_no_email_candidate",
+            "skipped": "no_probable_human_candidate_for_email_lookup",
+        }
+        decision_maker_result = try_decision_maker_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
+            email_candidates=aggregated_email_candidates,
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="no_probable_human_candidate_for_email_lookup",
+        )
+        if decision_maker_result:
+            return decision_maker_result
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
@@ -2533,11 +2832,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             email_candidates=aggregated_email_candidates,
             email_validation_status="skipped_no_email_candidate",
             email_validation_provider="anymail_finder",
-            email_validation_evidence={
-                **validation_evidence,
-                "status": "skipped_no_email_candidate",
-                "skipped": "no_probable_human_candidate_for_email_lookup",
-            },
+            email_validation_evidence=fallback_evidence,
         )
     if not validate_email:
         return ContactResult(
@@ -2552,10 +2847,25 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             email_validation_evidence={**validation_evidence, "status": "skipped_dry_run", "skipped": "dry_run"},
         )
 
+    fallback_reason = "candidates_found_but_no_sendable_email" if validated_candidate_attempted else "no_deliverable_person_specific_email_found"
+    decision_maker_result = try_decision_maker_fallback(
+        row_id=row_id,
+        payload=payload,
+        domain=domain,
+        contact_candidates=candidate_dicts,
+        contact_search_evidence=search_evidence,
+        email_candidates=aggregated_email_candidates,
+        email_validation_evidence=validation_evidence,
+        fallback_reason=fallback_reason,
+        first_attempted_candidate=first_attempted_candidate,
+    )
+    if decision_maker_result:
+        return decision_maker_result
+
     return ContactResult(
         row_id=row_id,
         contact_search_status="contact_not_found",
-        contact_search_reason="candidates_found_but_no_sendable_email" if validated_candidate_attempted else "no_deliverable_person_specific_email_found",
+        contact_search_reason=fallback_reason,
         contact_candidates=candidate_dicts,
         contact_search_evidence=search_evidence,
         email_candidates=aggregated_email_candidates,
