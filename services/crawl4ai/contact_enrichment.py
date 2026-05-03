@@ -27,6 +27,7 @@ NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,4}})"
 NAME_RE = re.compile(rf"\b(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?{NAME_CAPTURE_RE}\b")
 EMAIL_SAFE_RE = re.compile(r"[^a-z0-9]")
 EMAIL_SYNTAX_RE = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
+EMAIL_IN_TEXT_RE = re.compile(r"\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b", re.I)
 GENERIC_LOCAL_PARTS = {
     "info",
     "contact",
@@ -692,6 +693,22 @@ def normalized_email_set(values: Any) -> set[str]:
 
 def email_syntax_valid(value: str) -> bool:
     return bool(EMAIL_SYNTAX_RE.fullmatch(compact(value, 320).lower()))
+
+
+def extract_same_domain_emails(text: str, domain: str) -> list[str]:
+    normalized_domain = compact(domain, 320).lower().removeprefix("www.")
+    seen: set[str] = set()
+    output: list[str] = []
+    for match in EMAIL_IN_TEXT_RE.finditer(text or ""):
+        email = compact(match.group(0), 320).lower().strip(".,;:)]}>")
+        local_part, _, email_domain = email.partition("@")
+        if not email_syntax_valid(email) or email_domain != normalized_domain:
+            continue
+        if local_part in GENERIC_LOCAL_PARTS or email in seen:
+            continue
+        seen.add(email)
+        output.append(email)
+    return output
 
 
 def domain_has_mx_record(domain: str) -> bool | None:
@@ -1754,6 +1771,121 @@ def execute_provider_cascade(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return attempts
 
 
+def candidate_name_evidence_match(candidate: ContactCandidate, evidence: str) -> bool:
+    normalized = normalize_person_name(evidence)
+    parts = [safe_local_part(part) for part in name_parts(candidate.name)]
+    parts = [part for part in parts if len(part) >= 2]
+    if len(parts) < 2:
+        return False
+    return all(part in normalized.replace(" ", "") or part in normalized.split() for part in parts)
+
+
+def published_email_matches_candidate(
+    email: str,
+    candidate: ContactCandidate,
+    domain: str,
+    evidence: str,
+    generated_emails: set[str],
+) -> bool:
+    normalized_email = compact(email, 320).lower()
+    local_part, _, email_domain = normalized_email.partition("@")
+    if email_domain != compact(domain, 320).lower().removeprefix("www."):
+        return False
+    if local_part in GENERIC_LOCAL_PARTS:
+        return False
+    if normalized_email in generated_emails:
+        return True
+    if not candidate_name_evidence_match(candidate, evidence):
+        return False
+    parts = [safe_local_part(part) for part in name_parts(candidate.name)]
+    meaningful_parts = [part for part in parts if len(part) >= 3]
+    return bool(meaningful_parts) and any(part in local_part for part in meaningful_parts)
+
+
+def build_candidate_email_search_queries(candidate: ContactCandidate, domain: str) -> list[str]:
+    name = compact(candidate.name, 120).replace('"', "")
+    clean_domain = compact(domain, 160).lower().removeprefix("www.")
+    queries = [
+        f'"{name}" "@{clean_domain}"',
+        f'site:{clean_domain} "{name}" email',
+        f'"{name}" "{clean_domain}" email',
+    ]
+    max_queries = max(1, int(os.getenv("CONTACT_EMAIL_SEARCH_MAX_QUERIES_PER_CANDIDATE", "2")))
+    output: list[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        key = compact(query, 300).lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(compact(query, 300))
+        if len(output) >= max_queries:
+            break
+    return output
+
+
+def search_published_email_for_candidate(
+    candidate: ContactCandidate,
+    domain: str,
+    excluded_emails: set[str],
+) -> dict[str, Any]:
+    if not env_flag("CONTACT_PUBLISHED_EMAIL_SEARCH_ENABLED", default=True):
+        return {"enabled": False, "email": "", "attempts": []}
+    generated = {
+        compact(item.get("email"), 320).lower()
+        for item in candidate_email_candidates(candidate, domain, excluded_emails)
+        if compact(item.get("email"), 320)
+    }
+    attempts: list[dict[str, Any]] = []
+    providers = configured_provider_order()
+    result_limit = max(3, int(os.getenv("CONTACT_EMAIL_SEARCH_RESULT_LIMIT", "10")))
+    for query in build_candidate_email_search_queries(candidate, domain):
+        for provider in providers:
+            if provider in SERPER_PROVIDER_NAMES:
+                attempt = search_serper_provider(query, limit=result_limit, provider=provider)
+            else:
+                attempt = search_openserp_provider(provider, query, limit=result_limit)
+            compact_attempt = {
+                "provider": attempt.get("provider", provider),
+                "query": compact(query, 300),
+                "result_count": int(attempt.get("result_count") or 0),
+                "usable_results_count": int(attempt.get("usable_results_count") or 0),
+                "provider_error": compact(attempt.get("provider_error"), 300),
+                "timeout": bool(attempt.get("timeout")),
+                "http_error": bool(attempt.get("http_error")),
+                "accepted_email": "",
+                "accepted_source_url": "",
+            }
+            for result in attempt.get("results", []) if isinstance(attempt.get("results"), list) else []:
+                if not isinstance(result, dict):
+                    continue
+                evidence = " ".join(
+                    compact(result.get(key), 1200)
+                    for key in ("title", "snippet", "url")
+                    if compact(result.get(key), 1200)
+                )
+                for email in extract_same_domain_emails(evidence, domain):
+                    if email in excluded_emails:
+                        continue
+                    if published_email_matches_candidate(email, candidate, domain, evidence, generated):
+                        compact_attempt["accepted_email"] = email
+                        compact_attempt["accepted_source_url"] = compact(result.get("url"), 1000)
+                        attempts.append(compact_attempt)
+                        return {
+                            "enabled": True,
+                            "email": email,
+                            "provider": compact_attempt["provider"],
+                            "source_url": compact_attempt["accepted_source_url"],
+                            "query": compact(query, 300),
+                            "evidence_text": compact(evidence, 1600),
+                            "attempts": attempts,
+                        }
+            attempts.append(compact_attempt)
+            if int(attempt.get("usable_results_count") or 0) >= 5:
+                break
+    return {"enabled": True, "email": "", "attempts": attempts}
+
+
 def candidate_email_candidates(candidate: ContactCandidate, domain: str, excluded_emails: set[str]) -> list[dict[str, Any]]:
     max_emails = max(1, int(os.getenv("CONTACT_SEARCH_MAX_EMAILS_PER_CANDIDATE", "4")))
     generated = email_permutations(candidate, domain)[: max(max_emails, 1)]
@@ -2279,9 +2411,15 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             compact(payload.get("best_url"), 500),
             excluded_names=excluded_names,
         )
-        preflight_llm_mode = compact(os.getenv("CONTACT_PREFLIGHT_LLM_MODE", "empty"), 20).lower()
+        preflight_llm_mode = compact(os.getenv("CONTACT_PREFLIGHT_LLM_MODE", "sparse"), 20).lower()
+        preflight_llm_min_candidates = max(1, int(os.getenv("CONTACT_PREFLIGHT_LLM_MIN_CANDIDATES", "2")))
         preflight_llm_verification = CandidateVerification(verifier="llm_official_site", error="preflight_llm_not_run")
-        if preflight_llm_mode == "always" or (preflight_llm_mode == "empty" and not candidates):
+        should_run_preflight_llm = (
+            preflight_llm_mode == "always"
+            or (preflight_llm_mode == "empty" and not candidates)
+            or (preflight_llm_mode == "sparse" and len(candidates) < preflight_llm_min_candidates)
+        )
+        if should_run_preflight_llm:
             preflight_llm_verification = verify_preflight_candidates_with_llm(payload, official_text)
             candidates = merge_candidate_lists(candidates, preflight_llm_verification.accepted)
     else:
@@ -2400,7 +2538,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     aggregated_email_candidates: list[dict[str, Any]] = []
     generated_any = False
     validated_candidate_attempted = False
-    max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "3")))
+    max_candidates = max(1, int(os.getenv("CONTACT_SEARCH_MAX_CANDIDATES_PER_ROW", "5")))
+    first_attempted_candidate: ContactCandidate | None = None
     validation_evidence: dict[str, Any] = {
         "provider": "anymail_finder",
         "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
@@ -2408,6 +2547,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         "max_candidates_per_row": max_candidates,
         "total_anymail_requests": 0,
         "total_anymail_credits_charged": 0,
+        "published_email_search_enabled": env_flag("CONTACT_PUBLISHED_EMAIL_SEARCH_ENABLED", default=True),
+        "total_published_email_search_attempts": 0,
         "candidate_attempts": [],
     }
     for candidate in candidates[:max_candidates]:
@@ -2415,6 +2556,8 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             continue
         if not probable_human_name(candidate.name):
             continue
+        if first_attempted_candidate is None:
+            first_attempted_candidate = candidate
         email_candidates = [
             {
                 "name": candidate.name,
@@ -2514,6 +2657,51 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         if found_email:
             excluded_emails.add(found_email)
 
+        published_email = search_published_email_for_candidate(candidate, domain, excluded_emails)
+        published_attempts = published_email.get("attempts") if isinstance(published_email.get("attempts"), list) else []
+        validation_evidence["total_published_email_search_attempts"] = int(validation_evidence.get("total_published_email_search_attempts") or 0) + len(published_attempts)
+        candidate_summary["published_email_search"] = {
+            "enabled": bool(published_email.get("enabled")),
+            "attempt_count": len(published_attempts),
+            "accepted_email": compact(published_email.get("email"), 320).lower(),
+            "accepted_source_url": compact(published_email.get("source_url"), 1000),
+        }
+        if published_attempts:
+            candidate_summary["published_email_search_attempts"] = published_attempts
+        published_address = compact(published_email.get("email"), 320).lower()
+        if published_address:
+            email_candidate.update(
+                {
+                    "provider": "published_email_search",
+                    "email": published_address,
+                    "valid_email": published_address,
+                    "status": "published",
+                    "decision": "sendable",
+                    "accepted": True,
+                    "source_url": compact(published_email.get("source_url"), 1000) or candidate.source_url,
+                    "evidence_text": compact(published_email.get("evidence_text"), 1600),
+                }
+            )
+            candidate_summary["accepted_email"] = published_address
+            candidate_summary["accepted_decision"] = "published"
+            return ContactResult(
+                row_id=row_id,
+                contact_search_status="contact_found",
+                contact_search_reason="published_person_specific_email_found",
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_candidates=aggregated_email_candidates,
+                selected_contact_name=candidate.name,
+                selected_contact_role=candidate.role,
+                selected_contact_seniority=candidate.seniority,
+                selected_contact_source_url=compact(published_email.get("source_url"), 1000) or candidate.source_url,
+                selected_contact_confidence=candidate.confidence,
+                validated_email=published_address,
+                email_validation_status="published",
+                email_validation_provider="anymail_finder+published_email_search",
+                email_validation_evidence=validation_evidence,
+            )
+
     if not generated_any:
         return ContactResult(
             row_id=row_id,
@@ -2550,8 +2738,13 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         contact_candidates=candidate_dicts,
         contact_search_evidence=search_evidence,
         email_candidates=aggregated_email_candidates,
+        selected_contact_name=first_attempted_candidate.name if first_attempted_candidate else "",
+        selected_contact_role=first_attempted_candidate.role if first_attempted_candidate else "",
+        selected_contact_seniority=first_attempted_candidate.seniority if first_attempted_candidate else "",
+        selected_contact_source_url=first_attempted_candidate.source_url if first_attempted_candidate else "",
+        selected_contact_confidence=first_attempted_candidate.confidence if first_attempted_candidate else "",
         email_validation_status="no_deliverable_email",
-        email_validation_provider="anymail_finder",
+        email_validation_provider="anymail_finder+published_email_search" if validation_evidence.get("total_published_email_search_attempts") else "anymail_finder",
         email_validation_evidence=validation_evidence,
     )
 

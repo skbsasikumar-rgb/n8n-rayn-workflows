@@ -273,6 +273,93 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertIn("valid: jane@example.org.sg", summary)
         self.assertIn("not valid: John Lim @ example.org.sg", summary)
 
+    def test_published_email_search_accepts_candidate_specific_same_domain_email(self):
+        candidate = c.ContactCandidate(
+            name="Jane Tan",
+            role="Executive Director",
+            seniority="executive",
+            role_bucket="c_suite",
+            role_priority=1,
+            source_url="https://example.org.sg/team",
+            source_type="official_domain",
+            evidence_text="Jane Tan Executive Director",
+            confidence="High",
+            confidence_score=0.95,
+            company_match=True,
+            first_name="Jane",
+            last_name="Tan",
+        )
+
+        def fake_serper(query, limit=10, provider="serper"):
+            return {
+                "provider": provider,
+                "query": query,
+                "results": [
+                    {
+                        "rank": 1,
+                        "title": "Jane Tan - Executive Director",
+                        "url": "https://example.org.sg/team",
+                        "snippet": "Contact Jane Tan at jane.tan@example.org.sg for leadership matters.",
+                    }
+                ],
+                "result_count": 1,
+                "usable_results_count": 1,
+                "provider_error": "",
+            }
+
+        with patch.object(c, "configured_provider_order", return_value=["serper"]), patch.object(c, "search_serper_provider", side_effect=fake_serper):
+            result = c.search_published_email_for_candidate(candidate, "example.org.sg", set())
+
+        self.assertEqual(result["email"], "jane.tan@example.org.sg")
+        self.assertEqual(result["provider"], "serper")
+        self.assertEqual(len(result["attempts"]), 1)
+
+    def test_enrich_contact_uses_published_email_after_anymail_miss(self):
+        payload = {
+            "Id": 123,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "Jane Tan, Medical Director, Example Clinic",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_serper(query, limit=10, provider="serper"):
+            return {
+                "provider": provider,
+                "query": query,
+                "results": [
+                    {
+                        "rank": 1,
+                        "title": "Dr Jane Tan - Medical Director",
+                        "url": "https://exampleclinic.sg/team",
+                        "snippet": "For clinical matters email jane.tan@exampleclinic.sg.",
+                    }
+                ],
+                "result_count": 1,
+                "usable_results_count": 1,
+                "provider_error": "",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "configured_provider_order", return_value=["serper"]), patch.object(c, "search_serper_provider", side_effect=fake_serper):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "published_person_specific_email_found")
+        self.assertEqual(result.validated_email, "jane.tan@exampleclinic.sg")
+        self.assertEqual(result.selected_contact_name, "Jane Tan")
+        self.assertEqual(result.email_validation_provider, "anymail_finder+published_email_search")
+
     def test_role_queries_cover_all_buckets_with_small_budget(self):
         queries = c.build_role_queries(
             "Example Community Clinic",
