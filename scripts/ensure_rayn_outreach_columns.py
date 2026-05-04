@@ -104,6 +104,33 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("human_review_status", "SingleSelect", "text"),
 ]
 
+SELECT_OPTIONS: dict[str, list[str]] = {
+    "entity_type_guess": ["sme", "npo", "charity", "social_service", "healthcare_provider", "clinic", "private_company", "sole_proprietor", "partnership", "foreign_entity_sg_ops", "unknown"],
+    "entity_type_confidence": ["low", "medium", "high"],
+    "sme_likelihood": ["likely", "possible", "unlikely", "unknown"],
+    "npo_likelihood": ["likely", "possible", "unlikely", "unknown"],
+    "charity_or_social_service_likelihood": ["likely", "possible", "unlikely", "unknown"],
+    "pressure_type": ["hia_regulatory", "pdpa_safeguards", "customer_trust", "funding", "not_ready"],
+    "outreach_trigger_confidence": ["low", "medium", "high"],
+    "data_type_signal": ["patient_data", "health_information", "resident_data", "beneficiary_data", "customer_data", "employee_data", "student_data", "financial_data", "business_partner_data", "unknown"],
+    "problem_area": ["access_control", "data_mapping", "offboarding", "backup", "patching", "malware_protection", "incident_response", "vendor_management", "staff_awareness", "evidence_collection", "hia_readiness", "pdpa_safeguards", "unknown"],
+    "value_asset_offer": ["hia_readiness_map", "clinic_access_checklist", "solo_gp_checklist", "pdpa_safeguards_checklist", "data_access_map", "offboarding_checklist", "cyber_essentials_readiness_checklist", "funding_route_summary", "security_evidence_checklist"],
+    "hia_confidence": ["low", "medium", "high"],
+    "hia_service_type_guess": ["GP_OMS", "specialist_OMS", "dental", "retail_pharmacy", "diagnostic", "hospital", "allied_health", "hearing_care", "long_term_care", "HIMS_provider", "NEHR_user", "unknown"],
+    "hia_timeline_batch_guess": ["Batch 1 - Sep 2027", "Batch 2 - Sep 2028", "Batch 3 - Mar 2030", "Other CS/DS by Sep 2028", "unknown"],
+    "personal_data_intensity": ["low", "medium", "high", "unknown"],
+    "sensitive_data_likelihood": ["low", "medium", "high", "unknown"],
+    "pdpa_safeguard_angle": ["access_control", "data_inventory", "vendor_management", "breach_response", "staff_training", "cyber_essentials_baseline", "unknown"],
+    "recommended_first_cert": ["Cyber Essentials", "DPE", "DPTM", "Cyber Trust", "HIA readiness", "unknown"],
+    "funding_status": ["verified_match", "possible_match", "not_applicable", "needs_review", "not_checked"],
+    "funding_cta_asset": ["funding_route_summary", "funding_checklist", "hia_support_route_summary", "cyber_essentials_support_summary"],
+    "funding_confidence": ["low", "medium", "high"],
+    "decision_maker_role_guess": ["founder", "owner", "doctor", "clinic_manager", "operations", "dpo", "compliance", "it", "hr", "director", "executive_director", "unknown"],
+    "unsubscribe_status": ["active", "unsubscribed", "bounced", "complained"],
+    "outreach_variant": ["hia_healthcare", "hia_clinic", "solo_gp", "team_clinic", "dental_clinic", "allied_health", "npo_social_service", "pdpa_general", "dpo_evidence", "customer_trust", "funding_first", "not_ready"],
+    "human_review_status": ["not_ready", "ready_for_review", "approved", "rejected", "sent"],
+}
+
 
 def make_id(prefix: str, existing: set[str], length: int = 14) -> str:
     alphabet = string.ascii_lowercase + string.digits
@@ -141,6 +168,9 @@ def main() -> None:
         "planned_physical_columns": [],
         "planned_metadata_columns": [],
         "planned_grid_columns": [],
+        "created_select_options": 0,
+        "existing_select_options": 0,
+        "planned_select_options": [],
     }
 
     with psycopg.connect(args.database_url) as conn:
@@ -180,6 +210,8 @@ def main() -> None:
             existing_column_ids = {row[0] for row in cur.fetchall()}
             cur.execute("select id from public.nc_grid_view_columns_v2")
             existing_grid_ids = {row[0] for row in cur.fetchall()}
+            cur.execute("select id from public.nc_col_select_options_v2")
+            existing_select_option_ids = {row[0] for row in cur.fetchall()}
 
             cur.execute(
                 'select coalesce(max("order"), 0) from public.nc_columns_v2 where fk_model_id = %s',
@@ -272,6 +304,39 @@ def main() -> None:
                             workspace_id,
                         ),
                     )
+
+                for option_index, option_title in enumerate(SELECT_OPTIONS.get(column.name, []), start=1):
+                    if not column_id:
+                        summary["created_select_options"] = int(summary["created_select_options"]) + 1
+                        summary["planned_select_options"].append(f"{column.name}:{option_title}")  # type: ignore[union-attr]
+                        continue
+                    cur.execute(
+                        "select id from public.nc_col_select_options_v2 where fk_column_id = %s and title = %s",
+                        (column_id, option_title),
+                    )
+                    if cur.fetchone():
+                        summary["existing_select_options"] = int(summary["existing_select_options"]) + 1
+                        continue
+                    summary["created_select_options"] = int(summary["created_select_options"]) + 1
+                    summary["planned_select_options"].append(f"{column.name}:{option_title}")  # type: ignore[union-attr]
+                    if not args.dry_run:
+                        option_id = make_id("sl", existing_select_option_ids)
+                        cur.execute(
+                            """
+                            insert into public.nc_col_select_options_v2 (
+                                id, fk_column_id, title, color, "order", base_id, fk_workspace_id
+                            ) values (%s, %s, %s, %s, %s, %s, %s)
+                            """,
+                            (
+                                option_id,
+                                column_id,
+                                option_title,
+                                "#cfd3d8",
+                                option_index,
+                                base_id,
+                                workspace_id,
+                            ),
+                        )
 
             if not args.dry_run:
                 cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))

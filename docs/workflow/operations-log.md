@@ -653,3 +653,17 @@ Cold email buying-pressure tracks:
 - low-signal rows now become `not_ready` instead of receiving a usable outreach sequence.
 - local validation passed: Python compile checks for `outreach_planner.py`, `funding_programs.py`, and `ensure_rayn_outreach_columns.py`; workflow JSON parse; and `56` pytest tests.
 - no deployment was performed, no emails were sent, and Instantly was not used.
+
+Cold email planner live setup and smoke:
+
+- `2026-05-04 18:28:33 +08`: committed and pushed the cold-email planner setup patches through `d9b5fbb` on `codex/n8n-workflow-checkpoint`.
+- installed the outreach columns against Railway Postgres using `DATABASE_PUBLIC_URL` from the `Postgres` service because `DATABASE_URL` is private-network only from local execution.
+- installer result: `75` total outreach columns, `71` newly created physical columns, `71` NocoDB metadata rows, `71` grid entries, and later `152` select-option rows; reruns reported all `75` physical/metadata/grid columns existing.
+- verified physical Postgres columns through `information_schema.columns`: `required_count=75`, `existing_required_count=75`, `missing_count=0`.
+- restarted NocoDB schema cache so the API recognized newly created fields and select options.
+- created and activated live n8n workflow `RAYN Cold Email Planner v1` with ID `HbTPGELQQr9DRdAb`; workflow is webhook/manual only, draft-only, and has no Instantly or email-sending nodes.
+- fixed live workflow import issues found during smoke: explicit POST webhook, NocoDB credential references, raw JSON request bodies, and null-to-string/boolean payload normalization before `/outreach-plan`.
+- deployed worker service `n8n-rayn-workflows`; Railway deployment `50dcb0d1-3fd0-45c9-acff-d709ee855cf9` reached `SUCCESS`; `/health` and `/outreach-plan` returned HTTP `200`.
+- smoke ran `POST /webhook/rayn-cold-email-planner` with `limit=3` and patched rows `273`, `274`, and `275` only for draft/review fields.
+- smoke verification: all three rows have email subjects present, `email_send_ready=false`, `human_review_status=ready_for_review`, and `funding_status=possible_match`.
+- no emails were sent, Instantly was not used, and no row was marked as sent.
