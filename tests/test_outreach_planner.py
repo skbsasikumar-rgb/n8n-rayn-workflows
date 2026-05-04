@@ -152,6 +152,8 @@ class OutreachPlannerTests(unittest.TestCase):
             emails,
         )
         self.assertFalse(partial_funding_patch["email_send_ready"])
+        self.assertIn("The relevant support route appears worth checking", partial_funding_patch["email_3_body"])
+        self.assertNotIn("email_3_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_llm_email_forbidden_phrase_stays_not_send_ready(self):
         row = {

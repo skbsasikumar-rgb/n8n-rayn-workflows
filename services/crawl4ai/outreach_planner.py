@@ -661,6 +661,33 @@ def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
     return emails
 
 
+def enforce_funding_claim_email(row: dict[str, Any], funding: FundingMatch, emails: dict[str, Any]) -> dict[str, Any]:
+    claim = trim_text(funding.funding_claim_line)
+    if not claim:
+        return emails
+    email3 = emails.get("email_3") or {}
+    if claim.lower() in trim_text(email3.get("body")).lower():
+        return emails
+    first_name = first_name_from_contact(row)
+    greeting = f"Hi {first_name}," if first_name else "Hi,"
+    subject = compact(email3.get("chosen_subject")) or "funding route"
+    body = (
+        f"{greeting}\n\n"
+        f"{claim}\n\n"
+        "This is subject to programme confirmation.\n\n"
+        "Should I send the route summary?\n\n"
+        "Best,\nSK\nRAYN Secure"
+    )
+    emails = {**emails}
+    emails["email_3"] = {
+        "subject_options": list(email3.get("subject_options") or [subject]),
+        "chosen_subject": subject,
+        "body": body,
+        "word_count": word_count(body),
+    }
+    return emails
+
+
 def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: dict[str, Any]) -> tuple[int, list[str], bool]:
     flags: list[str] = []
     blob = "\n".join(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")).lower()
@@ -866,6 +893,7 @@ def patch_with_email_sequence(
             funding_human_review_required=bool(funding.get("funding_human_review_required", True)),
             reason=str(funding.get("reason") or ""),
         )
+    emails = enforce_funding_claim_email(row, funding, emails)
     score, flags, send_ready = quality_gate(classification, funding, emails)
     plan = OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
