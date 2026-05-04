@@ -2,6 +2,17 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-04
+
+OpenRouter cold-email drafting:
+
+- added the OpenRouter HTTP node to `wf-cold-email-planner.json` using model `anthropic/claude-sonnet-4.6`; workflow still patches draft fields only and does not call Instantly or send email.
+- added `/outreach-validate-email` worker validation so OpenRouter JSON is normalized, quality-gated, and safely falls back to deterministic drafts when invalid.
+- set the cold-email webhook response mode to `onReceived` so draft patch completion is verified through NocoDB rather than blocking the webhook response.
+- deployed worker service `n8n-rayn-workflows`; final successful deployment was `c7e954e0-5d17-4e5a-9955-6136b309b394`.
+- live one-row smoke with `draft_only=true` patched row `273` (`Amaris B. Clinic`): `email_send_ready=false`, `human_review_status=ready_for_review`, `funding_status=possible_match`, `email_3_body` contained the deterministic `funding_claim_line`, and quality flags were `["funding_not_verified"]`.
+- no deployment was made for an email sender, no Instantly node was used, and no emails were sent.
+
 ## 2026-04-28
 
 API token-saving setup:
