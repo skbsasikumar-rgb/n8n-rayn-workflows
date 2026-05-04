@@ -62,6 +62,51 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertTrue(plan.classification["pdpa_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials supports the security-safeguards side of PDPA readiness", plan.emails["email_1"]["body"])
+
+    def test_dpo_contact_uses_data_protection_evidence_track(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 31,
+                "company_name": "Acme Services Pte Ltd",
+                "best_url": "https://acme.com.sg/",
+                "selected_contact_title": "Operations and Compliance Manager",
+                "website_content": "Singapore private company collecting customer enquiries and employee data.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
+        self.assertIn("DPOs and ops teams", plan.emails["email_1"]["body"])
+
+    def test_b2b_company_uses_customer_trust_track(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 32,
+                "company_name": "Vendor Platform Pte Ltd",
+                "best_url": "https://vendor.example/",
+                "website_content": "Singapore SaaS platform for enterprise clients and procurement teams.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "security evidence")
+        self.assertIn("security questions usually come down to proof", plan.emails["email_1"]["body"])
+
+    def test_low_signal_row_is_not_ready(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 33,
+                "company_name": "Quiet Holdings",
+                "best_url": "https://quiet.example/",
+                "website_content": "Singapore corporate website with a short homepage.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "not_ready")
+        self.assertEqual(o.choose_variant(plan.classification), "not_ready")
+        self.assertEqual(plan.human_review_status, "not_ready")
+        for index in range(1, 5):
+            self.assertFalse(plan.emails[f"email_{index}"]["body"])
 
     def test_email_3_uses_funding_claim_line_only(self):
         plan = o.plan_outreach(

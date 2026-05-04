@@ -61,6 +61,72 @@ Create the cold-email planning columns with `scripts/ensure_rayn_outreach_column
 
 The outreach planner only creates drafts and review patches. It must not send email.
 
+Safe operator runbook:
+
+1. Run this only in the environment where `DATABASE_URL` is already available. Do not paste or print the database URL in logs.
+
+2. From the repo root, preview the changes with `--dry-run`:
+
+```bash
+python3 scripts/ensure_rayn_outreach_columns.py --database-url "$DATABASE_URL" --dry-run
+```
+
+3. If the dry-run summary is expected, run the migration:
+
+```bash
+python3 scripts/ensure_rayn_outreach_columns.py --database-url "$DATABASE_URL"
+```
+
+4. Verify the physical Postgres columns through `information_schema.columns`. This command imports the required outreach column list from the installer and prints only a safe summary:
+
+```bash
+python3 - <<'PY'
+import json
+import os
+
+import psycopg
+
+from scripts.ensure_rayn_outreach_columns import OUTREACH_COLUMNS
+
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    raise SystemExit("DATABASE_URL is required")
+
+schema_name = os.environ.get("RAYN_NOCO_SCHEMA", "pb7f1zou786xyqc")
+table_name = os.environ.get("RAYN_NOCO_TABLE", "leads")
+required = sorted(column.name for column in OUTREACH_COLUMNS)
+
+with psycopg.connect(database_url) as conn:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            select column_name
+            from information_schema.columns
+            where table_schema = %s
+              and table_name = %s
+              and column_name = any(%s)
+            """,
+            (schema_name, table_name, required),
+        )
+        existing = sorted(row[0] for row in cur.fetchall())
+
+missing = sorted(set(required) - set(existing))
+print(json.dumps({
+    "schema": schema_name,
+    "table": table_name,
+    "required_count": len(required),
+    "existing_required_count": len(existing),
+    "missing_count": len(missing),
+    "missing_columns": missing,
+}, sort_keys=True))
+
+if missing:
+    raise SystemExit(1)
+PY
+```
+
+Do not claim the outreach columns exist until this verification returns `missing_count: 0`. If `DATABASE_URL` is unavailable, stop and add it through the operator environment rather than faking the migration.
+
 Core field groups:
 
 - entity enrichment: `entity_type_guess`, `entity_type_confidence`, `singapore_registered_guess`, `uen_guess`, `employee_count_guess`, `sme_likelihood`, `npo_likelihood`, `charity_or_social_service_likelihood`, `entity_evidence_json`.

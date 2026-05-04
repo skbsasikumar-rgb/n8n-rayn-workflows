@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import string
@@ -123,9 +124,24 @@ def main() -> None:
     parser.add_argument("--base-id", default="pb7f1zou786xyqc")
     parser.add_argument("--table-name", default="leads")
     parser.add_argument("--schema-name", default="pb7f1zou786xyqc")
+    parser.add_argument("--dry-run", action="store_true", help="Inspect and report planned changes without mutating Postgres or NocoDB metadata.")
     args = parser.parse_args()
     if not args.database_url:
         raise SystemExit("DATABASE_URL is required")
+
+    summary: dict[str, object] = {
+        "dry_run": args.dry_run,
+        "total_columns": len(OUTREACH_COLUMNS),
+        "created_physical": 0,
+        "existing_physical": 0,
+        "created_metadata": 0,
+        "existing_metadata": 0,
+        "created_grid": 0,
+        "existing_grid": 0,
+        "planned_physical_columns": [],
+        "planned_metadata_columns": [],
+        "planned_grid_columns": [],
+    }
 
     with psycopg.connect(args.database_url) as conn:
         with conn.cursor() as cur:
@@ -181,8 +197,13 @@ def main() -> None:
 
             for index, column in enumerate(OUTREACH_COLUMNS, start=1):
                 if column.name not in existing_physical:
-                    column_name = quote_identifier(column.name)
-                    cur.execute(f"alter table {schema_name}.{table_name} add column {column_name} {column.db_type}")
+                    summary["created_physical"] = int(summary["created_physical"]) + 1
+                    summary["planned_physical_columns"].append(column.name)  # type: ignore[union-attr]
+                    if not args.dry_run:
+                        column_name = quote_identifier(column.name)
+                        cur.execute(f"alter table {schema_name}.{table_name} add column {column_name} {column.db_type}")
+                else:
+                    summary["existing_physical"] = int(summary["existing_physical"]) + 1
 
                 cur.execute(
                     "select id from public.nc_columns_v2 where fk_model_id = %s and column_name = %s",
@@ -191,34 +212,48 @@ def main() -> None:
                 row = cur.fetchone()
                 if row:
                     column_id = row[0]
+                    summary["existing_metadata"] = int(summary["existing_metadata"]) + 1
                 else:
-                    column_id = make_id("c", existing_column_ids)
-                    cur.execute(
-                        """
-                        insert into public.nc_columns_v2 (
-                            id, source_id, base_id, fk_model_id, title, column_name, uidt, dt,
-                            pk, rqd, system, "order", fk_workspace_id
-                        ) values (%s, %s, %s, %s, %s, %s, %s, %s, false, false, false, %s, %s)
-                        """,
-                        (
-                            column_id,
-                            source_id,
-                            base_id,
-                            model_id,
-                            column.name,
-                            column.name,
-                            column.uidt,
-                            column.db_type,
-                            next_column_order + index,
-                            workspace_id,
-                        ),
-                    )
+                    summary["created_metadata"] = int(summary["created_metadata"]) + 1
+                    summary["planned_metadata_columns"].append(column.name)  # type: ignore[union-attr]
+                    if args.dry_run:
+                        column_id = ""
+                    else:
+                        column_id = make_id("c", existing_column_ids)
+                        cur.execute(
+                            """
+                            insert into public.nc_columns_v2 (
+                                id, source_id, base_id, fk_model_id, title, column_name, uidt, dt,
+                                pk, rqd, system, "order", fk_workspace_id
+                            ) values (%s, %s, %s, %s, %s, %s, %s, %s, false, false, false, %s, %s)
+                            """,
+                            (
+                                column_id,
+                                source_id,
+                                base_id,
+                                model_id,
+                                column.name,
+                                column.name,
+                                column.uidt,
+                                column.db_type,
+                                next_column_order + index,
+                                workspace_id,
+                            ),
+                        )
 
-                cur.execute(
-                    "select id from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s",
-                    (view_id, column_id),
-                )
-                if not cur.fetchone():
+                grid_exists = False
+                if column_id:
+                    cur.execute(
+                        "select id from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s",
+                        (view_id, column_id),
+                    )
+                    grid_exists = bool(cur.fetchone())
+                if grid_exists:
+                    summary["existing_grid"] = int(summary["existing_grid"]) + 1
+                else:
+                    summary["created_grid"] = int(summary["created_grid"]) + 1
+                    summary["planned_grid_columns"].append(column.name)  # type: ignore[union-attr]
+                if not grid_exists and not args.dry_run:
                     grid_id = make_id("nc", existing_grid_ids)
                     cur.execute(
                         """
@@ -238,9 +273,15 @@ def main() -> None:
                         ),
                     )
 
-            cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))
-            cur.execute("update public.nc_views_v2 set updated_at = now() where id = %s", (view_id,))
-        conn.commit()
+            if not args.dry_run:
+                cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))
+                cur.execute("update public.nc_views_v2 set updated_at = now() where id = %s", (view_id,))
+        if args.dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
+
+    print(json.dumps(summary, sort_keys=True))
 
 
 if __name__ == "__main__":

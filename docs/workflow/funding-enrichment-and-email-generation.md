@@ -16,6 +16,45 @@ This stage creates reviewable outreach drafts only. It must never send email. Th
 
 Cyber Essentials is the default first formal route unless evidence supports HIA readiness first, Cyber Trust, DPE or DPTM. Cyber Essentials supports the cybersecurity safeguards and evidence side; it is not full PDPA or HIA compliance.
 
+## Master Outreach Tracks
+
+The planner now wires outreach around four buying pressures:
+
+| Track | Use when | Core problem | Email 1 lead |
+| --- | --- | --- | --- |
+| Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA timelines starting from 2027..." |
+| Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | The organisation handles personal data and needs reasonable security safeguards that can be shown clearly. | "PDPA security safeguards..." |
+| Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin or HR ownership. | The person owns personal-data responsibility, but evidence sits across IT, HR, vendors and operations. | "Data protection evidence..." |
+| Track D - Customer trust / procurement proof | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence. | Customers and partners may ask for reusable security proof before sharing data. | "Security evidence..." |
+
+Decision tree:
+
+```text
+IF hia_relevant = true and hia_confidence is medium/high
+  -> Track A: HIA regulatory readiness
+ELSE IF selected_contact_title contains DPO/compliance/privacy/operations/admin/HR
+  -> Track C: PDPA evidence owner
+ELSE IF business model indicates B2B/professional services/SaaS/outsourcing/education/finance/vendor
+  -> Track D: customer trust / security evidence
+ELSE IF personal_data_intensity is medium/high
+  -> Track B: PDPA + Cyber Essentials safeguards
+ELSE
+  -> not_ready; do not generate a usable sequence
+```
+
+Messaging hierarchy:
+
+- HIA rows: HIA timeline / regulatory readiness, then health-information access and security, then Cyber Essentials as a first baseline, then funding support.
+- Non-HIA PDPA rows: personal-data responsibility, then practical safeguards, then Cyber Essentials as recognised baseline, then funding support.
+- DPO / ops rows: data-protection evidence ownership, then scattered evidence across IT/HR/vendors/operations, then Cyber Essentials as a structure for the security baseline.
+- B2B / trust rows: customer security proof, then scattered evidence, then Cyber Essentials as reusable baseline, then funding support.
+
+Recommended value framing:
+
+- RAYN helps Singapore organisations prepare for Cyber Essentials and related cyber/data readiness requirements by identifying gaps, implementing controls, organising evidence, and keeping certification readiness current through consulting plus SaaS.
+- For healthcare providers, RAYN helps map Cyber Essentials into the wider HIA readiness journey.
+- For non-healthcare organisations, RAYN helps turn PDPA security-safeguard expectations into practical Cyber Essentials controls and evidence.
+
 ## Funding Enrichment Model
 
 Funding is matched by `services/crawl4ai/funding_programs.py`:
@@ -44,6 +83,7 @@ HIA:
 - For HIA rows, use regulatory readiness, not fear.
 - Say Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness.
 - Do not say Cyber Essentials equals HIA compliance.
+- Email 2 should diagnose access, data mapping, vendors, backups and incident reporting.
 
 PDPA:
 
@@ -51,11 +91,20 @@ PDPA:
 - Cyber Essentials supports the security-safeguard evidence side of PDPA readiness.
 - Do not say Cyber Essentials makes an organisation PDPA compliant.
 - DPE/DPTM are mentioned only when the row recommends that path.
+- Better wording: "Cyber Essentials supports the security-safeguards side of PDPA readiness."
+- For broader PDPA governance, DPE/DPTM may be more directly data-protection focused, but only mention them when the enrichment supports that path.
+
+DPO / data-protection owner:
+
+- Use when the contact appears to own DPO, privacy, compliance, operations, admin or HR responsibilities.
+- Lead with evidence ownership, not cybersecurity.
+- The diagnostic should ask whether personal-data systems can be mapped to an owner, access list, vendor, backup process and incident contact.
 
 Customer trust:
 
 - Use when buyers, partners or enterprise customers likely ask security questions.
 - Position Cyber Essentials as reusable proof around assets, access control, malware protection, patching, backup and incident readiness.
+- Lead with customer security evidence and trust, not PDPA compliance.
 
 ## Email Sequence
 

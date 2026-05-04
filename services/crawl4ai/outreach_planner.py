@@ -30,6 +30,14 @@ User input:
 - selected_contact_title
 - existing enrichment fields
 
+First decide the pressure type:
+- HIA regulatory pressure
+- PDPA personal-data safeguard pressure
+- Customer/procurement trust pressure
+- Funding/budget pressure
+
+Use HIA regulatory pressure when HIA evidence is medium/high. Use PDPA personal-data safeguard pressure when the organisation handles personal data and HIA is not the primary trigger. Use customer/procurement trust pressure when B2B, SaaS, outsourcing, education, finance, HR/recruitment, professional-services, vendor or enterprise-facing evidence is present. Use not_ready when the evidence does not support any outreach track.
+
 Return strict JSON:
 {
   "entity_type_guess": "sme|npo|charity|social_service|healthcare_provider|clinic|private_company|sole_proprietor|partnership|foreign_entity_sg_ops|unknown",
@@ -96,10 +104,15 @@ User input:
 - funding_confidence
 
 Rules:
-- Email 1 leads with pressure_type.
+- First decide the pressure type: HIA regulatory pressure, PDPA personal-data safeguard pressure, customer/procurement trust pressure, or funding/budget pressure.
+- Email 1 leads with pressure_type, not with RAYN's services.
 - Email 2 gives a diagnostic tied to the same problem.
 - Email 3 is funding-only and must use funding_claim_line.
 - Email 4 closes the loop.
+- For HIA rows, lead with HIA timeline / regulatory readiness. Mention Cyber Essentials only as a practical first baseline. Do not say Cyber Essentials completes HIA compliance.
+- For non-HIA rows, lead with PDPA / personal-data safeguards. Say Cyber Essentials supports the security-safeguards side of PDPA readiness. Do not say Cyber Essentials alone equals PDPA compliance.
+- For DPO, compliance, privacy, operations, admin, or HR contacts, lead with data-protection evidence ownership across IT, HR, vendors and operations.
+- For B2B rows, lead with customer security evidence and trust. Position Cyber Essentials as reusable proof.
 - Do not invent eligibility.
 - Do not use generic wording.
 - Do not mention "if you are an SME/NPO".
@@ -157,7 +170,39 @@ HEALTHCARE_TERMS = (
 )
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
-B2B_TERMS = ("enterprise", "vendor", "outsourcing", "saas", "platform", "managed service", "consulting", "professional services")
+B2B_TERMS = (
+    "enterprise",
+    "vendor",
+    "outsourcing",
+    "saas",
+    "software",
+    "platform",
+    "managed service",
+    "consulting",
+    "professional services",
+    "recruitment",
+    "hr",
+    "finance",
+    "financial",
+    "education",
+    "clients",
+    "partners",
+    "procurement",
+)
+DPO_TITLE_TERMS = ("dpo", "data protection", "privacy", "compliance", "operations", "admin", "administrator", "hr", "human resource")
+PERSONAL_DATA_TERMS = (
+    "personal data",
+    "customer data",
+    "customer enquiries",
+    "employee data",
+    "staff data",
+    "partner data",
+    "client data",
+    "contact form",
+    "newsletter",
+    "registration",
+    "payment",
+)
 SENSITIVE_TERMS = ("patient", "health", "medical", "resident", "beneficiary", "student", "financial")
 
 
@@ -193,6 +238,13 @@ def lower_blob(row: dict[str, Any]) -> str:
         row.get("selected_contact_role", ""),
     ]
     return " ".join(compact(part) for part in parts).lower()
+
+
+def contact_title_blob(row: dict[str, Any]) -> str:
+    return " ".join(
+        compact(row.get(key))
+        for key in ("selected_contact_title", "selected_contact_role", "decision_maker_role_guess")
+    ).lower()
 
 
 def contains_any(text: str, terms: tuple[str, ...]) -> bool:
@@ -306,9 +358,34 @@ def infer_data_signal(text: str, hia: dict[str, Any], entity: dict[str, Any]) ->
         return "financial_data", "high", "medium"
     if contains_any(text, B2B_TERMS):
         return "business_partner_data", "medium", "low"
+    if "employee" in text or "staff" in text:
+        return "employee_data", "medium", "medium"
+    if contains_any(text, PERSONAL_DATA_TERMS):
+        return "customer_data", "medium", "unknown"
     if contains_any(text, SENSITIVE_TERMS):
         return "customer_data", "medium", "medium"
-    return "customer_data", "medium", "unknown"
+    return "unknown", "low", "unknown"
+
+
+def is_data_protection_owner(row: dict[str, Any]) -> bool:
+    return contains_any(contact_title_blob(row), DPO_TITLE_TERMS)
+
+
+def business_model_trust_signal(text: str) -> str:
+    for term in B2B_TERMS:
+        if term in text:
+            return term
+    return "clients or business partners"
+
+
+def healthcare_segment(classification: dict[str, Any]) -> str:
+    service = compact(classification.get("hia_service_type_guess")).replace("_", " ")
+    entity = compact(classification.get("entity_type_guess")).replace("_", " ")
+    if service and service != "unknown":
+        return service
+    if entity and entity != "unknown":
+        return entity
+    return "healthcare provider"
 
 
 def classify_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -316,6 +393,8 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     entity = infer_entity(row, text)
     hia = infer_hia(row, text)
     data_type, personal_intensity, sensitive_likelihood = infer_data_signal(text, hia, entity)
+    dpo_owner = is_data_protection_owner(row)
+    trust_signal = business_model_trust_signal(text)
 
     if hia["hia_relevant"] and hia["hia_confidence"] in {"medium", "high"}:
         pressure_type = "hia_regulatory"
@@ -324,20 +403,34 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         trigger = "HIA timelines start from 2027, and the website indicates healthcare or patient-data activity."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Start with HIA readiness mapping, then use Cyber Essentials as a practical cybersecurity/data-security baseline."
+    elif dpo_owner and personal_intensity in {"medium", "high"}:
+        pressure_type = "pdpa_safeguards"
+        problem_area = "evidence_collection"
+        value_asset = "security_evidence_checklist"
+        trigger = "The selected contact appears to own data-protection, compliance, operations, admin or HR evidence across teams."
+        recommended_first_cert = "Cyber Essentials"
+        recommended_path = "Use Cyber Essentials to structure security evidence across IT, HR, vendors and operations; consider DPE/DPTM only when broader data-protection governance evidence supports it."
     elif contains_any(text, B2B_TERMS):
         pressure_type = "customer_trust"
         problem_area = "evidence_collection"
         value_asset = "security_evidence_checklist"
-        trigger = "Customers and partners may ask for reusable security evidence before sharing business data."
+        trigger = f"Customers and partners may ask for reusable security evidence because the website indicates {trust_signal} activity."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials as the first reusable security-evidence baseline."
-    else:
+    elif personal_intensity in {"medium", "high"}:
         pressure_type = "pdpa_safeguards"
         problem_area = "pdpa_safeguards" if personal_intensity in {"medium", "high"} else "unknown"
         value_asset = "pdpa_safeguards_checklist"
         trigger = f"The organisation appears to handle {data_type.replace('_', ' ')}."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials to support the cybersecurity safeguards and evidence side of PDPA readiness."
+    else:
+        pressure_type = "not_ready"
+        problem_area = "unknown"
+        value_asset = "cyber_essentials_readiness_checklist"
+        trigger = ""
+        recommended_first_cert = "unknown"
+        recommended_path = "Do not generate outreach until stronger HIA, personal-data, DPO/ops, or customer-trust evidence is available."
 
     trigger_confidence = "medium" if entity["entity_type_confidence"] in {"medium", "high"} else "low"
     if hia["hia_confidence"] == "high":
@@ -353,6 +446,7 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "entity_evidence_json": {
             "terms": sorted({term for term in (*HEALTHCARE_TERMS, *NPO_TERMS, *SOCIAL_TERMS, *B2B_TERMS) if term in text})[:20],
         },
+        "campaign_track": "dpo_evidence" if dpo_owner and pressure_type == "pdpa_safeguards" else pressure_type,
         "pressure_type": pressure_type,
         "pressure_reason": trigger,
         "outreach_trigger_signal": trigger,
@@ -363,8 +457,14 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "problem_hypothesis": build_problem_hypothesis(pressure_type, data_type, problem_area),
         "value_asset_offer": value_asset,
         **hia,
-        "pdpa_relevant": pressure_type != "not_ready",
-        "pdpa_reason": "Private-sector or non-HIA organisation likely handles personal data; Cyber Essentials supports safeguard evidence." if not hia["hia_relevant"] else "PDPA may still be relevant, but HIA readiness is the primary pressure.",
+        "pdpa_relevant": pressure_type in {"pdpa_safeguards", "customer_trust"},
+        "pdpa_reason": (
+            "No strong personal-data pressure evidence found."
+            if pressure_type == "not_ready"
+            else "Private-sector or non-HIA organisation likely handles personal data; Cyber Essentials supports safeguard evidence."
+            if not hia["hia_relevant"]
+            else "PDPA may still be relevant, but HIA readiness is the primary pressure."
+        ),
         "personal_data_intensity": personal_intensity,
         "sensitive_data_likelihood": sensitive_likelihood,
         "pdpa_safeguard_angle": "cyber_essentials_baseline" if pressure_type != "hia_regulatory" else "access_control",
@@ -390,6 +490,10 @@ def build_problem_hypothesis(pressure_type: str, data_type: str, problem_area: s
         return "The practical gap is likely mapping HIA cybersecurity/data-security duties into access, backup, patching, incident and evidence checks."
     if pressure_type == "customer_trust":
         return "The practical gap is likely reusable security evidence for customer or partner reviews."
+    if pressure_type == "not_ready":
+        return ""
+    if problem_area == "evidence_collection":
+        return "The practical gap is likely proving safeguards across IT, HR, vendors and operations."
     return f"The practical gap is likely showing clear safeguards for {data_type.replace('_', ' ')}."
 
 
@@ -398,6 +502,8 @@ def certification_reason(pressure_type: str) -> str:
         return "Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness; it is not HIA compliance."
     if pressure_type == "customer_trust":
         return "Cyber Essentials gives a reusable baseline for access, assets, malware protection, patching, backup and incident readiness evidence."
+    if pressure_type == "not_ready":
+        return "No certification path should be pitched until stronger evidence is available."
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
 
 
@@ -418,8 +524,12 @@ def choose_variant(classification: dict[str, Any]) -> str:
         return "hia_healthcare"
     if classification["entity_type_guess"] in {"npo", "charity", "social_service"}:
         return "npo_social_service"
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "dpo_evidence"
     if classification["pressure_type"] == "customer_trust":
         return "customer_trust"
+    if classification["pressure_type"] == "not_ready":
+        return "not_ready"
     return "pdpa_general"
 
 
@@ -438,50 +548,73 @@ def tiny_cta(asset: str) -> str:
 def generate_email_sequence(row: dict[str, Any], classification: dict[str, Any], funding: FundingMatch) -> dict[str, Any]:
     company = compact(row.get("company_name") or "your organisation")
     first_name = first_name_from_contact(row)
-    greeting = f"Hi {first_name}," if first_name else "Hi,"
+    greeting = f"Hi {first_name} -" if first_name else "Hi -"
     trigger = classification["outreach_trigger_signal"]
     asset = classification["value_asset_offer"]
-    cert = classification["recommended_first_cert"]
     cta = tiny_cta(asset)
 
-    if classification["pressure_type"] == "hia_regulatory":
+    if classification["pressure_type"] == "not_ready":
+        email1_subject = "not ready"
+        email2_subject = "not ready"
+        email1_body = ""
+        email2_body = ""
+        email3_body = ""
+        email4_body = ""
+    elif classification["pressure_type"] == "hia_regulatory":
         lead = "With HIA timelines starting from 2027"
         if classification.get("hia_deadline_claim_safe") and classification.get("hia_timeline_batch_guess") != "unknown":
             lead = f"With the {classification['hia_timeline_batch_guess']} HIA window"
-        mechanism = "Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness."
-        email1_body = f"{greeting}\n\n{lead}, {company} may need a clear way to map patient-data safeguards into access, patching, backups, incident response and evidence. {mechanism}\n\nI can send a short HIA readiness map for clinics. {cta}"
-        email2_body = f"{greeting}\n\nA useful first diagnostic is whether each role that touches patient or health information has a named access owner, backup path and offboarding check. That usually shows where HIA readiness work should start.\n\n{cta}"
+        segment = healthcare_segment(classification)
+        email1_subject = "HIA readiness"
+        email2_subject = "Re: HIA readiness"
+        email1_body = f"{greeting} noticed {company} appears to be a {segment}.\n\n{lead}, healthcare providers may need to show stronger readiness around health information access, cybersecurity, data security and incident response.\n\nCyber Essentials is a practical first baseline before deeper HIA work.\n\nWorth sending a simple HIA readiness checklist?\n\nBest,\nSK\nRAYN Secure"
+        email2_body = f"One useful check: can {company} clearly show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?\n\nThose are the areas that usually become messy before HIA deadlines.\n\nWant the quick readiness map?"
     elif classification["pressure_type"] == "customer_trust":
-        email1_body = f"{greeting}\n\nWhen customers share data or ask security questions, the slow part is usually evidence. {trigger} {cert} can turn access, assets, patching, backups and incident readiness into a reusable baseline.\n\n{cta}"
-        email2_body = f"{greeting}\n\nA practical diagnostic is to list the security questions customers already ask, then map each one to current evidence. Missing items usually point to access control, patching, backup or incident-response gaps.\n\n{cta}"
+        signal = business_model_trust_signal(lower_blob(row))
+        email1_subject = "security evidence"
+        email2_subject = "Re: security evidence"
+        email1_body = f"{greeting} noticed {company} works with {signal}.\n\nWhen clients share personal or business data, security questions usually come down to proof: access control, backups, patching, malware protection and incident response.\n\nCyber Essentials gives a recognised baseline for that evidence.\n\nWorth sending a sample evidence checklist?\n\nBest,\nSK\nRAYN Secure"
+        email2_body = f"A practical diagnostic is to list the security questions clients already ask, then map each one to current evidence. Missing items usually point to access control, patching, backup or incident-response gaps.\n\nWant the simple evidence checklist?"
+    elif classification.get("campaign_track") == "dpo_evidence":
+        data = classification["data_type_signal"].replace("_", " ")
+        email1_subject = "data protection evidence"
+        email2_subject = "Re: data protection evidence"
+        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor DPOs and ops teams, the hard part is often not the policy. It is proving the safeguards: who has access, where data sits, how vendors are managed, and what happens during an incident.\n\nCyber Essentials helps structure the security baseline.\n\nWorth sending the evidence checklist?\n\nBest,\nSK\nRAYN Secure"
+        email2_body = f"A quick self-check: can each system holding personal data be mapped to an owner, access list, vendor, backup process and incident contact?\n\nIf not, that is usually where the evidence work starts.\n\nWant the simple data-safeguards template?"
     else:
         data = classification["data_type_signal"].replace("_", " ")
-        email1_body = f"{greeting}\n\nBecause {company} handles {data}, the practical question is whether safeguards can be shown clearly. Cyber Essentials supports the security-safeguards side of PDPA readiness through access, assets, patching, backups and incident readiness evidence.\n\n{cta}"
-        email2_body = f"{greeting}\n\nA useful diagnostic is to trace where {data} is collected, who can access it, and how access is removed when roles change. That usually finds the first PDPA safeguard evidence gaps.\n\n{cta}"
+        email1_subject = "PDPA security safeguards"
+        email2_subject = "Re: PDPA security safeguards"
+        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor organisations collecting, using or disclosing personal data, the practical question is whether security safeguards can be shown clearly: access, updates, backups, malware protection and incident response.\n\nCyber Essentials supports the security-safeguards side of PDPA readiness.\n\nWorth sending the 5-point readiness checklist?\n\nBest,\nSK\nRAYN Secure"
+        email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
-    funding_line = funding.funding_claim_line or "Funding route needs human review before use."
-    email3_body = f"{greeting}\n\n{funding_line} This is subject to programme confirmation. I can send a short route summary showing what to verify before using the claim internally.\n\nShould I send the route summary?"
-    email4_body = f"{greeting}\n\nShould I close this off, or send the one-page checklist for review?"
+    if classification["pressure_type"] != "not_ready":
+        funding_line = funding.funding_claim_line or "Funding route needs human review before use."
+        email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
+        email3_body = f"Hi {first_name + ',' if first_name else ','}\n\nOne practical reason to check this early: support may be available.\n\n{funding_line} This is subject to programme confirmation.\n\nWorth sending the funding route summary?\n\nBest,\nSK\nRAYN Secure"
+        email4_body = f"Hi {first_name + ',' if first_name else ','}\n\nShould I close the loop, or would the checklist still be useful?\n\nBest,\nSK\nRAYN Secure"
+    else:
+        email3_subject = "not ready"
 
     emails = {
         "email_1": {
-            "subject_options": ["Readiness checklist", f"{company} safeguard map"],
-            "chosen_subject": "Readiness checklist",
+            "subject_options": [email1_subject, "readiness checklist"],
+            "chosen_subject": email1_subject,
             "body": email1_body,
         },
         "email_2": {
-            "subject_options": ["Quick diagnostic", "Access evidence check"],
-            "chosen_subject": "Quick diagnostic",
+            "subject_options": [email2_subject, "quick diagnostic"],
+            "chosen_subject": email2_subject,
             "body": email2_body,
         },
         "email_3": {
-            "subject_options": ["Funding route check", "Support route summary"],
-            "chosen_subject": "Funding route check",
+            "subject_options": [email3_subject, "funding route"],
+            "chosen_subject": email3_subject,
             "body": email3_body,
         },
         "email_4": {
-            "subject_options": ["Close loop", "Checklist?"],
-            "chosen_subject": "Close loop",
+            "subject_options": ["close the loop?", "checklist?"],
+            "chosen_subject": "close the loop?",
             "body": email4_body,
         },
         "evidence_used": [trigger],

@@ -621,3 +621,35 @@ Cold email planning NocoDB column installer:
 - the script follows the existing `ensure_rayn_contact_columns.py` pattern and is idempotent.
 - updated `wf-cold-email-planner.json` so the row fetch requests only established enrichment/contact fields plus fields created by the outreach column installer.
 - no deployment was performed.
+
+Cold email planning setup validation:
+
+- `2026-05-04 15:32:21 +08`: validated the cold-email planner setup after adding the NocoDB outreach column installer.
+- updated `scripts/ensure_rayn_outreach_columns.py` with a `--dry-run` option and a safe JSON completion summary covering `created_physical`, `existing_physical`, `created_metadata`, `existing_metadata`, `created_grid`, and `existing_grid`.
+- added contract tests confirming `OUTREACH_COLUMNS` has unique names, includes every field patched by `outreach_planner.build_noco_patch()`, uses the expected field types for checkbox/number/long-text fields, includes all four email subject/body pairs, and rejects the configured forbidden phrases.
+- validated `wf-cold-email-planner.json` requests only established enrichment fields or fields created by the outreach installer; the workflow uses `draft_only = true`, calls `/outreach-plan`, patches draft/review fields only, and has no Instantly or email-sending integration.
+- smoke-tested synthetic Sree Narayana Mission, Amaris B. Clinic, and Amazing Hearing Group style rows through `outreach_planner.plan_and_patch()`; all returned draft patches and `email_send_ready = false` while funding remained unverified.
+- local validation passed: Python compile checks for `funding_programs.py`, `outreach_planner.py`, and `ensure_rayn_outreach_columns.py`; workflow JSON parse; and `53` pytest tests.
+- `DATABASE_URL` was not available in the local environment, so the NocoDB outreach columns were not installed or verified in Postgres during this pass. Operator command remains `python3 scripts/ensure_rayn_outreach_columns.py --database-url "$DATABASE_URL"` after supplying a real database URL.
+- no deployment was performed, no emails were sent, no Instantly integration was used, and no row was marked as sent.
+
+Cold email outreach column operator runbook update:
+
+- `2026-05-04 15:34:22 +08`: added a safe operator runbook for running `scripts/ensure_rayn_outreach_columns.py` only in an environment where `DATABASE_URL` is available.
+- local validation was completed in the previous pass, but `DATABASE_URL` remains unavailable locally.
+- migration was not run locally.
+- outreach columns were not verified in Postgres locally.
+- no deployment was performed.
+- no emails were sent.
+- Instantly was not used.
+
+Cold email buying-pressure tracks:
+
+- `2026-05-04 15:41:11 +08`: updated the outreach planner to route drafts through four buying-pressure tracks: HIA regulatory readiness, PDPA/Cyber Essentials safeguards, DPO/data-protection evidence owner, and customer-trust/procurement proof.
+- HIA rows now lead with HIA timeline/readiness and position Cyber Essentials only as a practical first baseline for HIA cybersecurity/data-security readiness.
+- Non-HIA rows now lead with PDPA personal-data safeguards or security evidence, and say Cyber Essentials supports the security-safeguards side of PDPA readiness rather than implying PDPA compliance.
+- DPO, compliance, privacy, operations, admin and HR contacts now use a data-protection evidence angle.
+- B2B, SaaS, outsourcing, education, finance, HR/recruitment, professional-services, vendor and enterprise-facing rows now use a customer security evidence angle.
+- low-signal rows now become `not_ready` instead of receiving a usable outreach sequence.
+- local validation passed: Python compile checks for `outreach_planner.py`, `funding_programs.py`, and `ensure_rayn_outreach_columns.py`; workflow JSON parse; and `56` pytest tests.
+- no deployment was performed, no emails were sent, and Instantly was not used.
