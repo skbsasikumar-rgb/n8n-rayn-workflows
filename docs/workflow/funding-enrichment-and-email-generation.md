@@ -87,6 +87,14 @@ Forbidden:
 
 ## NocoDB Columns
 
+Create or refresh these columns with:
+
+```bash
+python3 scripts/ensure_rayn_outreach_columns.py --database-url "$DATABASE_URL"
+```
+
+The script updates the physical Postgres table, NocoDB column metadata, and the first grid view. It is idempotent.
+
 Company identity / entity enrichment:
 
 - `entity_type_guess`

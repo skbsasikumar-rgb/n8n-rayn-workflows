@@ -614,3 +614,10 @@ Cold email planning and funding enrichment workflow:
 - updated the Crawl4AI Dockerfile so future worker deployments include the new funding and outreach planner modules.
 - created separate workflow file `wf-cold-email-planner.json` rather than extending `wf-worker.json`; it reads completed public-enrichment rows, calls `/outreach-plan`, and patches draft fields only.
 - no deployment was performed for this stage.
+
+Cold email planning NocoDB column installer:
+
+- added `scripts/ensure_rayn_outreach_columns.py` to create the cold-email planning fields in the physical Postgres table, NocoDB metadata, and the first grid view.
+- the script follows the existing `ensure_rayn_contact_columns.py` pattern and is idempotent.
+- updated `wf-cold-email-planner.json` so the row fetch requests only established enrichment/contact fields plus fields created by the outreach column installer.
+- no deployment was performed.

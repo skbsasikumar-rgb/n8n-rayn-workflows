@@ -55,6 +55,23 @@ Contact search must use separate fields so company enrichment state is not overw
 
 Do not create or accept generic inboxes for this stage. Do not output `needs_review`; use `contact_not_found` when no deliverable person-specific contact is found.
 
+## Outreach Planning Fields
+
+Create the cold-email planning columns with `scripts/ensure_rayn_outreach_columns.py`. The script updates the physical Postgres table, NocoDB column metadata, and the first grid view.
+
+The outreach planner only creates drafts and review patches. It must not send email.
+
+Core field groups:
+
+- entity enrichment: `entity_type_guess`, `entity_type_confidence`, `singapore_registered_guess`, `uen_guess`, `employee_count_guess`, `sme_likelihood`, `npo_likelihood`, `charity_or_social_service_likelihood`, `entity_evidence_json`.
+- pressure classification: `pressure_type`, `pressure_reason`, `outreach_trigger_signal`, `outreach_trigger_source_url`, `outreach_trigger_confidence`, `data_type_signal`, `problem_area`, `problem_hypothesis`, `value_asset_offer`.
+- HIA enrichment: `hia_relevant`, `hia_relevance_score`, `hia_confidence`, `hia_scope_reason`, `hia_service_type_guess`, `hia_timeline_batch_guess`, `hia_deadline_claim_safe`, `hia_disclaimer_needed`, `hia_evidence_json`.
+- PDPA / certification enrichment: `pdpa_relevant`, `pdpa_reason`, `personal_data_intensity`, `sensitive_data_likelihood`, `pdpa_safeguard_angle`, `recommended_first_cert`, `recommended_cert_path`, `certification_reason`, `certification_fit_score`, `certification_evidence_json`.
+- funding enrichment: `funding_status`, `funding_relevant`, `primary_funding_program`, `funding_programs_matched_json`, `funding_programs_possible_json`, `funding_programs_not_applicable_json`, `funding_eligibility_basis`, `funding_claim_line`, `funding_cta_asset`, `funding_confidence`, `funding_last_checked_at`, `funding_source_urls_json`, `funding_human_review_required`.
+- draft fields: `outreach_variant`, `email_1_subject`, `email_1_body`, `email_2_subject`, `email_2_body`, `email_3_subject`, `email_3_body`, `email_4_subject`, `email_4_body`, `email_sequence_json`, `email_quality_score`, `email_quality_flags`, `email_send_ready`, `human_review_status`.
+
+Funding claims must come from `funding_claim_line`. `funding_status` must not become `verified_match` unless the programme catalogue source status is `verified_current`.
+
 ## Workflow Control Fields
 
 Current supported fields:
