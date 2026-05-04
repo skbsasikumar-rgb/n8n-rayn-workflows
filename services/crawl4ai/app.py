@@ -357,8 +357,8 @@ class OutreachPlanRequest(BaseModel):
     selected_contact_email: Any = ""
     selected_contact_linkedin_url: Any = ""
     validated_email: Any = ""
-    do_not_contact: bool = False
-    unsubscribe_status: str = Field(default="active", max_length=80)
+    do_not_contact: Any = False
+    unsubscribe_status: Any = "active"
     draft_only: bool = False
 
 
