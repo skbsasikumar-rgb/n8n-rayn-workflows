@@ -1827,7 +1827,8 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
         emails = outreach_planner.normalize_llm_email_sequence(candidate)
         funding = request.record.get("funding", {})
         classification = request.record.get("classification", {})
-        patch = outreach_planner.patch_with_email_sequence(request.row, classification, funding, emails)
+        copy_brief = request.record.get("copy_brief", {})
+        patch = outreach_planner.patch_with_email_sequence(request.row, classification, funding, emails, copy_brief)
         return {
             "ok": True,
             "row_id": request.row.get("Id") or request.row.get("id"),

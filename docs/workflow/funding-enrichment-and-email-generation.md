@@ -106,16 +106,35 @@ Customer trust:
 - Position Cyber Essentials as reusable proof around assets, access control, malware protection, patching, backup and incident readiness.
 - Lead with customer security evidence and trust, not PDPA compliance.
 
+## Copy Brief Layer
+
+The planner now builds a deterministic copy brief before OpenRouter writes emails. The LLM should write from the brief, not from generic labels such as `pressure_type` or `problem_area`.
+
+The copy brief converts public enrichment into company-level messaging ingredients:
+
+- `company_profile_summary`: what the organisation appears to do.
+- `primary_services_summary`, `locations_summary`, `team_structure_summary`: concrete public signals for specificity.
+- `personal_data_handled_guess`, `sensitive_data_examples`, `data_systems_likely`: likely data surfaces to anchor the diagnostic.
+- `regulatory_pressure_summary`, `hia_obligation_angle`, `pdpa_obligation_angle`, `customer_trust_angle`, `deadline_or_timeline_angle`: the buying pressure in plain language.
+- `funding_entity_basis`, `funding_route_summary`, `funding_specificity_level`, `funding_claim_safe`, `funding_next_check_needed`: funding language safety controls.
+- `email_personalisation_signal`, `email_problem_statement`, `email_mechanism_statement`, `email_asset_offer`, `email_cta`, `email_angle_reason`: the exact email ingredients.
+
+Hard not-ready rules:
+
+- If `email_personalisation_signal`, `email_problem_statement`, `email_mechanism_statement`, or `email_cta` is blank, the row is `not_ready`.
+- If `pressure_type = not_ready`, all email bodies stay empty.
+- If `funding_claim_safe = false`, funding can be drafted for review but `email_send_ready` must remain false and the row gets `funding_needs_review`.
+
 ## Email Sequence
 
 Generate exactly four emails:
 
 | Email | Purpose | Rules |
 | --- | --- | --- |
-| 1 | Lead with pressure type and one enriched trigger. | 45-85 words. Mention Cyber Essentials only as route/baseline. Tiny CTA. |
-| 2 | Diagnostic tied to the same pressure. | 40-80 words. Not a generic certification explainer. Tiny CTA. |
+| 1 | Researched note from copy brief. | Start with `email_personalisation_signal`, then `email_problem_statement`, then `email_mechanism_statement`, then `email_cta`. |
+| 2 | Diagnostic tied to the same problem. | Use `email_problem_statement` and `data_systems_likely`. Not a generic certification explainer. Tiny CTA. |
 | 3 | Funding only. | 45-95 words. Must use `funding_claim_line`. Must include "subject to programme confirmation" or equivalent. |
-| 4 | Respectful close loop. | 20-55 words. One easy reply. |
+| 4 | Respectful close loop. | 20-55 words. Reference `email_asset_offer`. One easy reply. |
 
 Forbidden:
 
@@ -210,6 +229,37 @@ Funding enrichment:
 - `funding_source_urls_json`
 - `funding_human_review_required`
 
+Copy brief:
+
+- `company_profile_summary`
+- `business_model_guess`
+- `primary_services_summary`
+- `locations_summary`
+- `team_structure_summary`
+- `personal_data_handled_guess`
+- `sensitive_data_examples`
+- `data_systems_likely`
+- `data_flow_complexity`
+- `data_risk_reason`
+- `regulatory_pressure_summary`
+- `hia_obligation_angle`
+- `pdpa_obligation_angle`
+- `customer_trust_angle`
+- `deadline_or_timeline_angle`
+- `funding_entity_basis`
+- `funding_route_summary`
+- `funding_specificity_level`
+- `funding_claim_safe`
+- `funding_next_check_needed`
+- `email_personalisation_signal`
+- `email_personalisation_quote`
+- `email_personalisation_source_url`
+- `email_problem_statement`
+- `email_mechanism_statement`
+- `email_asset_offer`
+- `email_cta`
+- `email_angle_reason`
+
 Contact / compliance:
 
 - `selected_contact_name`
@@ -271,6 +321,7 @@ Sree Narayana Mission:
 - expected entity: `npo`, `charity` or `social_service`, depending on evidence.
 - pressure: `pdpa_safeguards` or `customer_trust`, not HIA unless HIA evidence exists.
 - data signal: `resident_data` or `beneficiary_data`.
+- copy brief should mention resident, beneficiary, volunteer and staff data; PDPA safeguards; likely case/resident records, volunteer lists, backups and incident contacts; and a care-organisation checklist.
 - funding: Cyber Essentials support route only when verified_current.
 - safe funding line: "Based on the organisation profile, the Cyber Essentials support route appears worth checking, subject to programme confirmation."
 
@@ -280,6 +331,7 @@ Amaris B. Clinic:
 - pressure: `hia_regulatory`.
 - data signal: `patient_data` or `health_information`.
 - problem: `hia_readiness` or `access_control`.
+- copy brief should mention HIA timelines from 2027, patient/health information, appointment or patient systems, access, backups, vendors, incident steps, and an HIA readiness map.
 - recommended first route: `Cyber Essentials` as baseline or `HIA readiness` as map.
 - if batch/deadline is not high-confidence, say "may be in the HIA readiness window" and keep review required.
 
@@ -290,3 +342,10 @@ Amazing Hearing Group:
 - pressure: `hia_regulatory` if HIA confidence is medium/high, otherwise `pdpa_safeguards`.
 - email angle: hearing-care data/access map.
 - do not overclaim HIA scope.
+- copy brief should mention health information only when hearing-care evidence is strong. If evidence is weak, the HIA angle should explicitly say not to lead with HIA or the row should be `not_ready`.
+
+Generic B2B company:
+
+- expected pressure: `customer_trust`.
+- copy brief should mention customer security questions, reusable proof, customer/partner/business-contact data, CRM/email/file-share/vendor systems, and a security evidence checklist.
+- email angle: customers ask for evidence; Cyber Essentials creates reusable proof around access, updates, backups, malware protection and incident response.

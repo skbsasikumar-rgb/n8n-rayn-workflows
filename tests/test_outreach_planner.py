@@ -248,6 +248,15 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.classification["pressure_type"], {"pdpa_safeguards", "customer_trust"})
         self.assertIn(plan.classification["data_type_signal"], {"resident_data", "beneficiary_data"})
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
+        brief = plan.copy_brief
+        self.assertIn("resident", brief["personal_data_handled_guess"])
+        self.assertIn("beneficiary", brief["personal_data_handled_guess"])
+        self.assertIn("volunteer", brief["personal_data_handled_guess"])
+        self.assertIn("staff", brief["personal_data_handled_guess"])
+        self.assertIn("PDPA", brief["pdpa_obligation_angle"])
+        self.assertIn("backups", brief["data_systems_likely"])
+        self.assertIn("incident", brief["data_systems_likely"])
+        self.assertEqual(brief["email_asset_offer"], "care-organisation checklist")
 
     def test_amaris_clinic_hia_fixture(self):
         plan = o.plan_outreach(
@@ -263,6 +272,16 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information"})
         self.assertIn(plan.classification["recommended_first_cert"], {"Cyber Essentials", "HIA readiness"})
+        brief = plan.copy_brief
+        self.assertIn("HIA", brief["regulatory_pressure_summary"])
+        self.assertIn("2027", brief["regulatory_pressure_summary"])
+        self.assertIn("patient", brief["personal_data_handled_guess"])
+        self.assertIn("health information", brief["personal_data_handled_guess"])
+        self.assertIn("appointment", brief["data_systems_likely"])
+        self.assertIn("backups", brief["data_systems_likely"])
+        self.assertIn("vendor", brief["data_systems_likely"])
+        self.assertIn("incident", brief["data_systems_likely"])
+        self.assertEqual(brief["email_asset_offer"], "HIA readiness map")
 
     def test_amazing_hearing_group_fixture(self):
         plan = o.plan_outreach(
@@ -278,6 +297,47 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.classification["hia_relevant"])
         self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information", "customer_data"})
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
+        self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
+        weak_plan = o.plan_outreach(
+            {
+                "Id": 8,
+                "company_name": "Amazing Hearing Group",
+                "website_content": "Singapore retailer offering hearing aid accessories and customer service.",
+            }
+        )
+        if weak_plan.classification["hia_confidence"] == "low":
+            self.assertNotEqual(weak_plan.classification["pressure_type"], "hia_regulatory")
+            if weak_plan.classification["pressure_type"] != "not_ready":
+                self.assertIn("Do not lead with HIA", weak_plan.copy_brief["hia_obligation_angle"])
+
+    def test_generic_b2b_copy_brief_uses_customer_trust(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 9,
+                "company_name": "Vendor Platform Pte Ltd",
+                "website_content": "B2B SaaS outsourcing platform serving enterprise clients with customer data integrations and vendor dashboards.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        brief = plan.copy_brief
+        self.assertIn("security evidence", brief["customer_trust_angle"])
+        self.assertIn("Customers may ask", brief["customer_trust_angle"])
+        self.assertEqual(brief["email_asset_offer"], "security evidence checklist")
+        self.assertIn("security questions usually come down to proof", brief["email_problem_statement"])
+
+    def test_copy_brief_not_ready_row_keeps_empty_emails(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 10,
+                "company_name": "Quiet Holdings",
+                "website_content": "Singapore corporate website with a short homepage.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "not_ready")
+        self.assertFalse(plan.copy_brief["email_personalisation_signal"])
+        self.assertEqual(plan.human_review_status, "not_ready")
+        for index in range(1, 5):
+            self.assertFalse(plan.emails[f"email_{index}"]["body"])
 
 
 if __name__ == "__main__":

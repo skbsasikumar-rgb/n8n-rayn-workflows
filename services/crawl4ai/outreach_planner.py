@@ -211,6 +211,7 @@ class OutreachPlan:
     row_id: Any
     classification: dict[str, Any]
     funding: FundingMatch
+    copy_brief: dict[str, Any]
     emails: dict[str, Any]
     quality_score: int
     quality_flags: list[str] = field(default_factory=list)
@@ -237,6 +238,11 @@ def lower_blob(row: dict[str, Any]) -> str:
         row.get("company_homepage_name", ""),
         row.get("industry_guess", ""),
         row.get("website_content", ""),
+        row.get("services_detected", ""),
+        row.get("locations_detected", ""),
+        row.get("leadership_or_team_signals", ""),
+        row.get("contact_info_detected", ""),
+        row.get("structured_data_detected", ""),
         row.get("notes", ""),
         row.get("selected_contact_title", ""),
         row.get("selected_contact_role", ""),
@@ -549,13 +555,240 @@ def tiny_cta(asset: str) -> str:
     return "Worth sending the checklist?"
 
 
-def generate_email_sequence(row: dict[str, Any], classification: dict[str, Any], funding: FundingMatch) -> dict[str, Any]:
+def listish_items(value: Any, limit: int = 6) -> list[str]:
+    if value is None:
+        return []
+    parsed = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = re.split(r"[\n;,]+", text)
+    if isinstance(parsed, dict):
+        raw_items = list(parsed.values())
+    elif isinstance(parsed, (list, tuple, set)):
+        raw_items = list(parsed)
+    else:
+        raw_items = [parsed]
+    items: list[str] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            text = compact(item.get("name") or item.get("text") or item.get("value") or " ".join(str(v) for v in item.values()))
+        else:
+            text = compact(item)
+        if text and text.lower() not in {existing.lower() for existing in items}:
+            items.append(text[:180])
+        if len(items) >= limit:
+            break
+    return items
+
+
+def sentence_join(items: list[str], fallback: str = "") -> str:
+    if not items:
+        return fallback
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
+def first_source_url(row: dict[str, Any]) -> str:
+    for url in listish_items(row.get("source_urls"), limit=4):
+        if url.startswith("http"):
+            return url
+    return compact(row.get("best_url") or row.get("url_picked"))
+
+
+def copy_brief_ready(classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") == "not_ready":
+        return False
+    required = ("email_personalisation_signal", "email_problem_statement", "email_mechanism_statement", "email_cta")
+    return all(compact(copy_brief.get(field)) for field in required)
+
+
+def empty_email_sequence() -> dict[str, Any]:
+    emails = {
+        "email_1": {"subject_options": ["not ready"], "chosen_subject": "not ready", "body": ""},
+        "email_2": {"subject_options": ["not ready"], "chosen_subject": "not ready", "body": ""},
+        "email_3": {"subject_options": ["not ready"], "chosen_subject": "not ready", "body": ""},
+        "email_4": {"subject_options": ["close the loop?"], "chosen_subject": "close the loop?", "body": ""},
+        "evidence_used": [],
+        "claims_avoided": [],
+        "quality_notes": ["not_ready"],
+    }
+    for key in ("email_1", "email_2", "email_3", "email_4"):
+        emails[key]["word_count"] = 0
+    return emails
+
+
+def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], funding: FundingMatch) -> dict[str, Any]:
+    company = compact(row.get("company_name") or "the organisation")
+    text = lower_blob(row)
+    services = listish_items(row.get("services_detected")) or listish_items(row.get("primary_services_summary"))
+    locations = listish_items(row.get("locations_detected"))
+    team = listish_items(row.get("leadership_or_team_signals")) or listish_items(row.get("contact_info_detected"))
+    source_url = first_source_url(row)
+    pressure = classification.get("pressure_type", "not_ready")
+    entity = classification.get("entity_type_guess", "unknown")
+    data_type = str(classification.get("data_type_signal") or "unknown").replace("_", " ")
+
+    if entity == "clinic":
+        business_model = "clinic"
+    elif entity == "healthcare_provider":
+        business_model = "healthcare_provider"
+    elif entity in {"npo", "charity", "social_service"}:
+        business_model = "social_service"
+    elif pressure == "customer_trust":
+        business_model = "b2b_services"
+    elif any(term in text for term in ("saas", "software", "platform")):
+        business_model = "saas"
+    elif any(term in text for term in ("consulting", "professional", "outsourcing", "recruitment")):
+        business_model = "professional_services"
+    else:
+        business_model = "unknown"
+
+    primary_services = sentence_join(services, compact(row.get("industry_guess")) or "public website services")
+    location_summary = sentence_join(locations, "Singapore-facing operations")
+    team_summary = sentence_join(team, "Public site does not give a clear team structure.")
+    profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
+
+    if pressure == "hia_regulatory":
+        personal_data = "patient and health information handled through enquiries, appointments, care records and clinic operations."
+        sensitive_examples = "patient identity details, appointment information, health information, treatment notes and staff access records."
+        systems = "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps."
+        complexity = "medium" if entity == "clinic" else "high"
+        regulatory = "HIA creates an external healthcare regulatory-readiness pressure, with phased timelines starting from 2027."
+        hia_angle = "Map health information access, cybersecurity, data-security, vendor, backup and incident-response duties before the HIA window."
+        pdpa_angle = "PDPA safeguards still matter, but the primary outreach angle is HIA readiness for health information."
+        trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
+        timeline = "HIA timelines start from 2027; use specific batch dates only when the row has safe deadline evidence."
+        asset = "HIA readiness map"
+        cta = "Want the readiness map?"
+        problem = f"{company} likely needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
+        mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security evidence side before deeper HIA work."
+        signal = f"{company} appears to operate in healthcare, so HIA readiness is the clearest buying pressure."
+    elif pressure == "customer_trust":
+        personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
+        sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
+        systems = "CRM, email, file shares, access lists, vendor tools, backups and incident contacts."
+        complexity = "medium"
+        regulatory = "PDPA safeguards matter, but customer/procurement proof is the stronger buying pressure."
+        hia_angle = "No HIA angle should be used unless healthcare evidence appears."
+        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness without claiming full PDPA compliance."
+        trust_angle = "Customers may ask for reusable security evidence around access control, patching, backups, malware protection and incident response."
+        timeline = "No external HIA deadline was identified; urgency comes from customer evidence and procurement reviews."
+        asset = "security evidence checklist"
+        cta = "Worth sending the evidence checklist?"
+        problem = f"{company} likely needs reusable answers when customers ask how their data and systems are protected; security questions usually come down to proof."
+        mechanism = "Cyber Essentials creates a recognised baseline for access, updates, backups, malware protection and incident-response evidence."
+        signal = f"{company} shows B2B or client-service signals where security evidence can reduce sales and procurement friction."
+    elif pressure == "pdpa_safeguards":
+        if classification.get("campaign_track") == "dpo_evidence":
+            personal_data = f"{data_type} handled across IT, HR, vendors and operations."
+            sensitive_examples = f"{data_type}, employee data, access records, vendor records and incident evidence."
+            systems = "HR/admin systems, email, file shares, vendor tools, access lists, backups and incident contacts."
+            asset = "evidence checklist"
+            cta = "Worth sending the evidence checklist?"
+            signal = f"{company} has a data-protection or operations contact, so the useful angle is evidence ownership rather than a generic cyber pitch."
+            problem = f"For DPOs and ops teams at {company}, the hard part is often proving who has access, where data sits, how vendors are managed, and what happens during an incident."
+        elif entity in {"npo", "charity", "social_service"}:
+            personal_data = "resident, beneficiary, volunteer, donor and staff data handled through care and community operations."
+            sensitive_examples = "resident details, beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
+            systems = "case or resident records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts."
+            asset = "care-organisation checklist"
+            cta = "Worth sending the care-organisation checklist?"
+            signal = f"{company} appears to be a care or social-service organisation handling resident, beneficiary, volunteer and staff data."
+            problem = f"{company} likely needs to show who owns resident, beneficiary, volunteer and staff data systems, who can access them, how backups work, and what happens during an incident."
+        else:
+            personal_data = f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools."
+            sensitive_examples = f"{data_type}, employee data, contact records and service history."
+            systems = "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts."
+            asset = "PDPA safeguards checklist"
+            cta = "Worth sending the safeguards checklist?"
+            signal = f"{company} appears to handle {data_type}, making PDPA security safeguards the clearest angle."
+            problem = f"{company} likely needs to show who owns personal-data systems, who can access them, how backups and updates work, and what happens during an incident."
+        complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
+        regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
+        hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
+        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by organising evidence around assets, access, malware protection, patching, backups and incident response."
+        trust_angle = "Clear safeguard evidence also helps customers, donors, partners or staff trust how data is handled."
+        timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards."
+        mechanism = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning those questions into a practical baseline and evidence set."
+    else:
+        profile = ""
+        business_model = "unknown"
+        primary_services = ""
+        location_summary = ""
+        team_summary = ""
+        personal_data = ""
+        sensitive_examples = ""
+        systems = ""
+        complexity = "unknown"
+        regulatory = ""
+        hia_angle = ""
+        pdpa_angle = ""
+        trust_angle = ""
+        timeline = ""
+        asset = ""
+        cta = ""
+        problem = ""
+        mechanism = ""
+        signal = ""
+
+    funding_safe = funding.funding_status == "verified_match" and funding.funding_confidence == "high"
+    funding_level = "high" if funding_safe else "medium" if funding.funding_status == "possible_match" else "low"
+    return {
+        "company_profile_summary": profile,
+        "business_model_guess": business_model,
+        "primary_services_summary": primary_services,
+        "locations_summary": location_summary,
+        "team_structure_summary": team_summary,
+        "personal_data_handled_guess": personal_data,
+        "sensitive_data_examples": sensitive_examples,
+        "data_systems_likely": systems,
+        "data_flow_complexity": complexity,
+        "data_risk_reason": problem,
+        "regulatory_pressure_summary": regulatory,
+        "hia_obligation_angle": hia_angle,
+        "pdpa_obligation_angle": pdpa_angle,
+        "customer_trust_angle": trust_angle,
+        "deadline_or_timeline_angle": timeline,
+        "funding_entity_basis": funding.funding_eligibility_basis,
+        "funding_route_summary": funding.funding_claim_line or "Funding route needs human review before use.",
+        "funding_specificity_level": funding_level if pressure != "not_ready" else "unknown",
+        "funding_claim_safe": funding_safe,
+        "funding_next_check_needed": "" if funding_safe else "Verify programme status, entity type, scope and timing before using funding as a send-ready claim.",
+        "email_personalisation_signal": signal,
+        "email_personalisation_quote": compact(row.get("company_homepage_name") or row.get("website_content"))[:220],
+        "email_personalisation_source_url": source_url,
+        "email_problem_statement": problem,
+        "email_mechanism_statement": mechanism,
+        "email_asset_offer": asset,
+        "email_cta": cta,
+        "email_angle_reason": classification.get("pressure_reason") or classification.get("problem_hypothesis") or "",
+    }
+
+
+def generate_email_sequence(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    copy_brief: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    copy_brief = copy_brief or build_copy_brief(row, classification, funding)
     company = compact(row.get("company_name") or "your organisation")
     first_name = first_name_from_contact(row)
     greeting = f"Hi {first_name} -" if first_name else "Hi -"
-    trigger = classification["outreach_trigger_signal"]
-    asset = classification["value_asset_offer"]
-    cta = tiny_cta(asset)
+    if not copy_brief_ready(classification, copy_brief):
+        return empty_email_sequence()
+    trigger = compact(copy_brief["email_personalisation_signal"])
+    asset = compact(copy_brief["email_asset_offer"]) or "checklist"
+    cta = compact(copy_brief["email_cta"])
+    problem = compact(copy_brief["email_problem_statement"])
+    mechanism = compact(copy_brief["email_mechanism_statement"])
+    systems = compact(copy_brief.get("data_systems_likely"))
 
     if classification["pressure_type"] == "not_ready":
         email1_subject = "not ready"
@@ -593,10 +826,13 @@ def generate_email_sequence(row: dict[str, Any], classification: dict[str, Any],
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
+        email1_body = f"{greeting} {trigger}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
+        diagnostic_systems = systems or "the systems holding personal data"
+        email2_body = f"A practical diagnostic: can {company} map {diagnostic_systems} to an owner, access list, backup, update process, vendor touchpoint and incident contact?\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
         funding_line = funding.funding_claim_line or "Funding route needs human review before use."
         email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
-        email3_body = f"Hi {first_name + ',' if first_name else ','}\n\nOne practical reason to check this early: support may be available.\n\n{funding_line} This is subject to programme confirmation.\n\nWorth sending the funding route summary?\n\nBest,\nSK\nRAYN Secure"
-        email4_body = f"Hi {first_name + ',' if first_name else ','}\n\nShould I close the loop, or would the checklist still be useful?\n\nBest,\nSK\nRAYN Secure"
+        email3_body = f"Hi {first_name + ',' if first_name else ','}\n\n{funding_line}\n\nThis is subject to programme confirmation.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+        email4_body = f"Hi {first_name + ',' if first_name else ','}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
     else:
         email3_subject = "not ready"
 
@@ -688,9 +924,27 @@ def enforce_funding_claim_email(row: dict[str, Any], funding: FundingMatch, emai
     return emails
 
 
-def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: dict[str, Any]) -> tuple[int, list[str], bool]:
+def reflects(text: str, phrase: str) -> bool:
+    text_l = text.lower()
+    phrase_l = phrase.lower()
+    if not phrase_l:
+        return False
+    if phrase_l in text_l:
+        return True
+    words = [word for word in re.findall(r"[a-z0-9]+", phrase_l) if len(word) > 3]
+    return bool(words) and sum(1 for word in words[:8] if word in text_l) >= min(3, len(words))
+
+
+def quality_gate(
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    emails: dict[str, Any],
+    copy_brief: dict[str, Any] | None = None,
+) -> tuple[int, list[str], bool]:
     flags: list[str] = []
     blob = "\n".join(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")).lower()
+    has_copy_brief = copy_brief is not None
+    copy_brief = copy_brief or {}
     for phrase in FORBIDDEN_PHRASES:
         if phrase in blob:
             flags.append(f"forbidden_phrase:{phrase}")
@@ -702,6 +956,8 @@ def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: 
 
     if classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_3"]["body"]:
         flags.append("email_3_missing_funding_claim_line")
+    if has_copy_brief and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
+        flags.append("funding_needs_review")
     if re.search(r"\b\d{1,3}%\b", emails["email_3"]["body"]) and not any(
         item.get("exact_claim_allowed_in_email") for item in funding.matched
     ):
@@ -718,13 +974,30 @@ def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: 
         flags.append("low_trigger_confidence")
     if classification.get("pressure_type") != "not_ready" and funding.funding_status != "verified_match":
         flags.append("funding_not_verified")
+    if classification.get("pressure_type") == "not_ready" and any(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")):
+        flags.append("not_ready_has_email_body")
+    if has_copy_brief and classification.get("pressure_type") != "not_ready":
+        for field in ("email_personalisation_signal", "email_problem_statement", "email_mechanism_statement", "email_cta"):
+            if not compact(copy_brief.get(field)):
+                flags.append(f"missing_copy_brief:{field}")
+        email1_body = emails["email_1"]["body"]
+        if compact(copy_brief.get("email_personalisation_signal")) and not reflects(email1_body, copy_brief["email_personalisation_signal"]):
+            flags.append("email_1_missing_personalisation_signal")
+        if compact(copy_brief.get("email_problem_statement")) and not reflects(email1_body, copy_brief["email_problem_statement"]):
+            flags.append("email_1_missing_problem_statement")
+        email1_start = email1_body.strip().lower()
+        if email1_start.startswith(("i came across your company", "noticed your company", "i noticed your company")):
+            flags.append("generic_email_1_opening")
+        email2_body = emails["email_2"]["body"].lower()
+        if "cyber essentials is" in email2_body and "?" not in email2_body:
+            flags.append("email_2_not_diagnostic")
 
     score = 0
     if classification.get("entity_type_guess") != "unknown":
         score += 2
     if classification.get("outreach_trigger_confidence") in {"medium", "high"}:
         score += 2
-    if classification.get("problem_hypothesis"):
+    if classification.get("problem_hypothesis") or copy_brief.get("email_problem_statement"):
         score += 2
     if classification.get("recommended_first_cert") != "unknown":
         score += 1
@@ -769,15 +1042,17 @@ def infer_decision_maker_role(row: dict[str, Any]) -> str:
 def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> OutreachPlan:
     classification = classify_row(row)
     funding = match_programmes({**row, **classification}, programmes=programmes)
-    emails = generate_email_sequence(row, classification, funding)
-    score, flags, send_ready = quality_gate(classification, funding, emails)
+    copy_brief = build_copy_brief(row, classification, funding)
+    emails = generate_email_sequence(row, classification, funding, copy_brief)
+    score, flags, send_ready = quality_gate(classification, funding, emails, copy_brief)
     human_review_status = "ready_for_review" if not send_ready else "ready_for_review"
-    if classification["pressure_type"] == "not_ready":
+    if classification["pressure_type"] == "not_ready" or not copy_brief_ready(classification, copy_brief):
         human_review_status = "not_ready"
     return OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
         classification=classification,
         funding=funding,
+        copy_brief=copy_brief,
         emails=emails,
         quality_score=score,
         quality_flags=flags,
@@ -793,6 +1068,7 @@ def json_dumps(value: Any) -> str:
 def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     c = plan.classification
     f = plan.funding
+    b = plan.copy_brief
     e = plan.emails
     patch = {
         "Id": row.get("Id") or row.get("id"),
@@ -839,6 +1115,34 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "funding_programs_possible_json": json_dumps(f.possible),
         "funding_programs_not_applicable_json": json_dumps(f.not_applicable),
         "funding_source_urls_json": json_dumps(f.funding_source_urls),
+        "company_profile_summary": b["company_profile_summary"],
+        "business_model_guess": b["business_model_guess"],
+        "primary_services_summary": b["primary_services_summary"],
+        "locations_summary": b["locations_summary"],
+        "team_structure_summary": b["team_structure_summary"],
+        "personal_data_handled_guess": b["personal_data_handled_guess"],
+        "sensitive_data_examples": b["sensitive_data_examples"],
+        "data_systems_likely": b["data_systems_likely"],
+        "data_flow_complexity": b["data_flow_complexity"],
+        "data_risk_reason": b["data_risk_reason"],
+        "regulatory_pressure_summary": b["regulatory_pressure_summary"],
+        "hia_obligation_angle": b["hia_obligation_angle"],
+        "pdpa_obligation_angle": b["pdpa_obligation_angle"],
+        "customer_trust_angle": b["customer_trust_angle"],
+        "deadline_or_timeline_angle": b["deadline_or_timeline_angle"],
+        "funding_entity_basis": b["funding_entity_basis"],
+        "funding_route_summary": b["funding_route_summary"],
+        "funding_specificity_level": b["funding_specificity_level"],
+        "funding_claim_safe": b["funding_claim_safe"],
+        "funding_next_check_needed": b["funding_next_check_needed"],
+        "email_personalisation_signal": b["email_personalisation_signal"],
+        "email_personalisation_quote": b["email_personalisation_quote"],
+        "email_personalisation_source_url": b["email_personalisation_source_url"],
+        "email_problem_statement": b["email_problem_statement"],
+        "email_mechanism_statement": b["email_mechanism_statement"],
+        "email_asset_offer": b["email_asset_offer"],
+        "email_cta": b["email_cta"],
+        "email_angle_reason": b["email_angle_reason"],
         "decision_maker_role_guess": infer_decision_maker_role(row),
         "outreach_variant": choose_variant(c),
         "email_1_subject": e["email_1"]["chosen_subject"],
@@ -875,6 +1179,7 @@ def patch_with_email_sequence(
     classification: dict[str, Any],
     funding: FundingMatch | dict[str, Any],
     emails: dict[str, Any],
+    copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if isinstance(funding, dict):
         funding = FundingMatch(
@@ -893,15 +1198,17 @@ def patch_with_email_sequence(
             funding_human_review_required=bool(funding.get("funding_human_review_required", True)),
             reason=str(funding.get("reason") or ""),
         )
-    if classification.get("pressure_type") == "not_ready":
-        emails = generate_email_sequence(row, classification, funding)
+    copy_brief = copy_brief or build_copy_brief(row, classification, funding)
+    if classification.get("pressure_type") == "not_ready" or not copy_brief_ready(classification, copy_brief):
+        emails = generate_email_sequence(row, classification, funding, copy_brief)
     if classification.get("pressure_type") != "not_ready":
         emails = enforce_funding_claim_email(row, funding, emails)
-    score, flags, send_ready = quality_gate(classification, funding, emails)
+    score, flags, send_ready = quality_gate(classification, funding, emails, copy_brief)
     plan = OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
         classification=classification,
         funding=funding,
+        copy_brief=copy_brief,
         emails=emails,
         quality_score=score,
         quality_flags=flags,

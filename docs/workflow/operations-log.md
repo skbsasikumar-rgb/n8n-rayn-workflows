@@ -4,6 +4,15 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-04
 
+Copy-brief email planning:
+
+- added deterministic copy-brief enrichment fields to the outreach installer, including company profile, services, locations, team signals, data handled, data systems, pressure angles, funding safety, and email-specific messaging ingredients.
+- updated the cold-email planner to build `copy_brief` before email generation; deterministic drafts and OpenRouter prompts now use `email_personalisation_signal`, `email_problem_statement`, `email_mechanism_statement`, `email_asset_offer`, and `email_cta` instead of only generic classification fields.
+- updated `wf-cold-email-planner.json` to fetch richer public-enrichment fields and send copy-brief fields to OpenRouter model `anthropic/claude-sonnet-4.6`; workflow remains `draft_only=true`.
+- added hard not-ready handling for missing copy-brief essentials, plus quality-gate checks for researched Email 1, diagnostic Email 2, funding-only Email 3, and `funding_claim_safe=false`.
+- local validation passed: compile checks succeeded, `jq -e wf-cold-email-planner.json` succeeded, and `pytest` passed with `61 passed`.
+- no deployment was performed for this copy-brief patch, no Instantly node was used, and no emails were sent.
+
 First-5 OpenRouter email rerun:
 
 - reran cold-email planner with `limit=5` and `draft_only=true`; no Instantly node was used and no emails were sent.
