@@ -1,0 +1,163 @@
+import unittest
+
+from services.crawl4ai.funding_programs import FundingProgram
+from services.crawl4ai import outreach_planner as o
+
+
+def verified_program() -> FundingProgram:
+    return FundingProgram(
+        programme_id="verified_ce",
+        programme_name="Cyber Essentials first successful certification support",
+        framework_or_regime="Cyber Essentials",
+        relevant_entity_types=["sme", "npo", "charity", "social_service", "clinic", "healthcare_provider"],
+        relevant_industries=["all"],
+        benefit_summary="Verified test route.",
+        email_safe_claim_template="Based on the company profile, the Cyber Essentials support route appears worth checking for {{company_name}}.",
+        do_not_claim=["guaranteed funding"],
+        official_source_urls=["https://example.gov.sg/ce"],
+        last_checked="2026-05-04",
+        verification_status="verified_current",
+        use_in_email_when="verified fixture",
+        do_not_claim_when="not verified",
+    )
+
+
+class OutreachPlannerTests(unittest.TestCase):
+    def test_hia_high_confidence_uses_regulatory_pressure(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 1,
+                "company_name": "Amaris B. Clinic",
+                "best_url": "https://amaris-b.com/",
+                "website_content": "Singapore medical clinic providing doctor consultations and patient treatment services.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(plan.classification["hia_relevant"])
+        self.assertIn("HIA", plan.emails["email_1"]["body"])
+
+    def test_hia_low_confidence_marks_review_before_deadline_claim(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 2,
+                "company_name": "Wellness Content Pte Ltd",
+                "best_url": "https://wellness.example/",
+                "website_content": "Singapore wellness articles and customer newsletter signups.",
+            }
+        )
+        self.assertFalse(plan.classification["hia_deadline_claim_safe"])
+        self.assertFalse(plan.email_send_ready)
+        self.assertNotRegex(plan.emails["email_1"]["body"], r"Sep 2027|Sep 2028|Mar 2030")
+
+    def test_non_hia_private_company_uses_pdpa_safeguards(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 3,
+                "company_name": "Acme Services Pte Ltd",
+                "best_url": "https://acme.com.sg/",
+                "website_content": "Singapore private company collecting customer enquiries and employee data.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertTrue(plan.classification["pdpa_relevant"])
+        self.assertIn("PDPA", plan.emails["email_1"]["body"])
+
+    def test_email_3_uses_funding_claim_line_only(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 4,
+                "company_name": "Example Charity",
+                "best_url": "https://charity.example/",
+                "website_content": "Singapore charity supporting beneficiaries and volunteers.",
+            },
+            programmes=[verified_program()],
+        )
+        claim = plan.funding.funding_claim_line
+        self.assertIn(claim, plan.emails["email_3"]["body"])
+        self.assertNotIn("HIA timelines", plan.emails["email_3"]["body"])
+        self.assertNotIn("PDPA", plan.emails["email_3"]["body"])
+
+    def test_forbidden_phrases_rejected(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Pte Ltd",
+                "website_content": "Singapore company collecting customer data.",
+            }
+        )
+        funding = o.plan_outreach({"company_name": "Example Pte Ltd", "website_content": "customer data"}).funding
+        emails = o.generate_email_sequence({"company_name": "Example Pte Ltd"}, classification, funding)
+        emails["email_1"]["body"] += " Hope you are well."
+        emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
+        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        self.assertIn("forbidden_phrase:hope you are well", flags)
+        self.assertFalse(send_ready)
+
+    def test_cyber_essentials_not_equal_pdpa_compliance(self):
+        classification = o.classify_row({"company_name": "Example Pte Ltd", "website_content": "customer data"})
+        funding = o.plan_outreach({"company_name": "Example Pte Ltd", "website_content": "customer data"}).funding
+        emails = o.generate_email_sequence({"company_name": "Example Pte Ltd"}, classification, funding)
+        emails["email_1"]["body"] += " Cyber Essentials makes you PDPA compliant."
+        emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
+        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        self.assertIn("forbidden_phrase:cyber essentials makes you pdpa compliant", flags)
+        self.assertFalse(send_ready)
+
+    def test_cyber_essentials_not_equal_hia_compliance(self):
+        classification = o.classify_row({"company_name": "Example Clinic", "website_content": "medical clinic patient treatment"})
+        funding = o.plan_outreach({"company_name": "Example Clinic", "website_content": "medical clinic patient treatment"}).funding
+        emails = o.generate_email_sequence({"company_name": "Example Clinic"}, classification, funding)
+        emails["email_1"]["body"] += " Fully HIA compliant with Cyber Essentials."
+        emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
+        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        self.assertIn("forbidden_phrase:fully hia compliant with cyber essentials", flags)
+        self.assertFalse(send_ready)
+
+    def test_sree_narayana_social_service_fixture(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 5,
+                "company_name": "Sree Narayana Mission (Singapore)",
+                "best_url": "https://sreenarayanamission.org.sg/",
+                "website_content": "Charity and social service organisation supporting residents, beneficiaries, volunteers and staff in Singapore.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service", "npo"})
+        self.assertIn(plan.classification["pressure_type"], {"pdpa_safeguards", "customer_trust"})
+        self.assertIn(plan.classification["data_type_signal"], {"resident_data", "beneficiary_data"})
+        self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
+
+    def test_amaris_clinic_hia_fixture(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 6,
+                "company_name": "Amaris B. Clinic",
+                "best_url": "https://amaris-b.com/",
+                "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertIn(plan.classification["entity_type_guess"], {"clinic", "healthcare_provider"})
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information"})
+        self.assertIn(plan.classification["recommended_first_cert"], {"Cyber Essentials", "HIA readiness"})
+
+    def test_amazing_hearing_group_fixture(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 7,
+                "company_name": "Amazing Hearing Group",
+                "best_url": "https://amazinghearing.com.sg/",
+                "website_content": "Singapore hearing care provider offering audiology, hearing assessments and patient appointments.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertIn(plan.classification["entity_type_guess"], {"healthcare_provider", "private_company"})
+        self.assertTrue(plan.classification["hia_relevant"])
+        self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information", "customer_data"})
+        self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
+
+
+if __name__ == "__main__":
+    unittest.main()

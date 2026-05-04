@@ -15,6 +15,7 @@ from playwright.async_api import Browser, Page, Playwright, async_playwright
 import requests
 import captcha_solver
 import contact_enrichment
+import outreach_planner
 import public_web_enrichment as public_enrichment
 
 
@@ -334,6 +335,31 @@ class ContactBatchRunRequest(BaseModel):
     reset_provider_health: bool = False
     validate_email: bool = True
     dry_run: bool = False
+
+class OutreachPlanRequest(BaseModel):
+    Id: int | str
+    company_name: str = Field(min_length=1, max_length=300)
+    company_homepage_name: str = Field(default="", max_length=300)
+    parent_company: str = Field(default="", max_length=300)
+    best_url: str = Field(default="", max_length=2000)
+    canonical_domain: str = Field(default="", max_length=300)
+    website_content: str = Field(default="", max_length=120000)
+    source_urls: str = Field(default="", max_length=4000)
+    services_detected: list[Any] = Field(default_factory=list)
+    locations_detected: list[Any] = Field(default_factory=list)
+    leadership_or_team_signals: list[Any] = Field(default_factory=list)
+    contact_info_detected: dict[str, Any] = Field(default_factory=dict)
+    structured_data_detected: dict[str, Any] = Field(default_factory=dict)
+    industry_guess: str = Field(default="", max_length=300)
+    selected_contact_name: str = Field(default="", max_length=300)
+    selected_contact_title: str = Field(default="", max_length=300)
+    selected_contact_role: str = Field(default="", max_length=300)
+    selected_contact_email: str = Field(default="", max_length=500)
+    selected_contact_linkedin_url: str = Field(default="", max_length=1000)
+    validated_email: str = Field(default="", max_length=500)
+    do_not_contact: bool = False
+    unsubscribe_status: str = Field(default="active", max_length=80)
+    draft_only: bool = False
 
 
 def compact_whitespace(value: Any) -> str:
@@ -1625,8 +1651,6 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
             "patch": patch,
             "record": {},
         }
-    finally:
-        session.close()
 
     patch = public_enrichment.build_noco_patch(record)
     return {
@@ -1723,3 +1747,62 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
             "email_validation_evidence": result.email_validation_evidence,
         },
     }
+
+@app.post("/outreach-plan")
+async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
+    payload = request.model_dump()
+    if payload.get("do_not_contact"):
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": "do_not_contact",
+            "patch": {
+                "Id": request.Id,
+                "email_send_ready": False,
+                "human_review_status": "not_ready",
+                "email_quality_flags": json.dumps(["do_not_contact"], ensure_ascii=False),
+            },
+            "record": {},
+        }
+    if str(payload.get("unsubscribe_status", "")).strip().lower() in {"unsubscribed", "bounced", "complained"}:
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": "unsubscribe_status_blocked",
+            "patch": {
+                "Id": request.Id,
+                "email_send_ready": False,
+                "human_review_status": "not_ready",
+                "email_quality_flags": json.dumps(["unsubscribe_status_blocked"], ensure_ascii=False),
+            },
+            "record": {},
+        }
+    if not payload.get("selected_contact_email") and not payload.get("validated_email") and not payload.get("draft_only"):
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": "missing_selected_contact_email",
+            "patch": {
+                "Id": request.Id,
+                "email_send_ready": False,
+                "human_review_status": "not_ready",
+                "email_quality_flags": json.dumps(["missing_selected_contact_email"], ensure_ascii=False),
+            },
+            "record": {},
+        }
+    try:
+        return outreach_planner.plan_and_patch(payload)
+    except Exception as exc:
+        error_text = compact_whitespace(str(exc)) or "outreach planning failed"
+        return {
+            "ok": False,
+            "row_id": request.Id,
+            "error": error_text,
+            "patch": {
+                "Id": request.Id,
+                "email_send_ready": False,
+                "human_review_status": "not_ready",
+                "email_quality_flags": json.dumps(["outreach_planner_error"], ensure_ascii=False),
+            },
+            "record": {},
+        }

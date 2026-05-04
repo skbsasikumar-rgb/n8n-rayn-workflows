@@ -1,0 +1,216 @@
+{
+  "name": "RAYN Cold Email Planner v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "path": "rayn-cold-email-planner",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent('(status,eq,completed)~and(best_url,notblank)~and(duplicate_of_id,blank)') + '&fields=Id,company_name,company_homepage_name,parent_company,best_url,canonical_domain,website_content,source_urls,industry_guess,services_detected,locations_detected,leadership_or_team_signals,contact_info_detected,structured_data_detected,selected_contact_name,selected_contact_title,selected_contact_role,selected_contact_email,validated_email,selected_contact_linkedin_url,do_not_contact,unsubscribe_status,email_source,draft_only&limit=' + String(($json.body && $json.body.limit) || $json.limit || 5) + '&sort=Id' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "xc-token",
+              "value": "={{ $env.NOCO_API_TOKEN }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-outreach-rows",
+      "name": "Get Outreach Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst draftOnly = true;\nconst blockedStatuses = new Set(['unsubscribed', 'bounced', 'complained']);\nconst output = [];\nfor (const row of rows) {\n  const unsub = String(row.unsubscribe_status || 'active').trim().toLowerCase();\n  const hasEmail = Boolean(String(row.selected_contact_email || row.validated_email || '').trim());\n  if (row.do_not_contact === true || String(row.do_not_contact).toLowerCase() === 'true') continue;\n  if (blockedStatuses.has(unsub)) continue;\n  if (!hasEmail && !draftOnly) continue;\n  output.push({ json: { ...row, draft_only: draftOnly } });\n}\nreturn output;"
+      },
+      "id": "rows-to-items",
+      "name": "Rows To Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/outreach-plan') }}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "outreach-plan",
+      "name": "Generate Outreach Plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const patches = [];\nconst errors = [];\nfor (const item of items) {\n  const body = item.json || {};\n  if (body.patch && body.patch.Id) {\n    patches.push(body.patch);\n  } else {\n    errors.push({ row_id: body.row_id || '', error: body.error || 'missing_patch' });\n  }\n}\nreturn [{ json: { patches, errors, count: patches.length } }];"
+      },
+      "id": "collect-patches",
+      "name": "Collect NocoDB Patches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            },
+            {
+              "name": "xc-token",
+              "value": "={{ $env.NOCO_API_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ $json.patches }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "patch-drafts",
+      "name": "Patch Draft Fields",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        100
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Outreach Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Outreach Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Outreach Rows": {
+      "main": [
+        [
+          {
+            "node": "Rows To Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rows To Items": {
+      "main": [
+        [
+          {
+            "node": "Generate Outreach Plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Outreach Plan": {
+      "main": [
+        [
+          {
+            "node": "Collect NocoDB Patches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect NocoDB Patches": {
+      "main": [
+        [
+          {
+            "node": "Patch Draft Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

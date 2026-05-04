@@ -604,3 +604,13 @@ Scoped proxy support for public-web challenge domains:
 - the Playwright captcha-solver recovery path now reuses the same proxy configuration when one is active.
 - focused validation passed locally with `28` tests (`test_public_web_proxy.py`, `test_parent_company_extraction.py`, `test_contact_candidate_verifier.py`) plus Python compile checks.
 - Railway production currently has no `PUBLIC_WEB_ENRICHMENT_PROXY_URL` variable on service `n8n-rayn-workflows`, so row `282` cannot be retested through a proxy until real proxy credentials are added.
+
+Cold email planning and funding enrichment workflow:
+
+- added a non-sending cold email planning layer for funding-aware enrichment, HIA/PDPA/trust pressure classification, draft generation, quality flags, and NocoDB patch output for human review.
+- created deterministic funding programme matching with source verification gates; funding claims can become `verified_match` only when the programme entry is `verified_current`.
+- added deterministic outreach planning with four-email draft generation, forbidden-phrase checks, word-count limits, HIA/PDPA overclaim guards, and funding-only Email 3 from `funding_claim_line`.
+- added worker endpoint `/outreach-plan` for draft planning only; it blocks `do_not_contact`, unsubscribed/bounced/complained rows, and rows without email unless `draft_only = true`.
+- updated the Crawl4AI Dockerfile so future worker deployments include the new funding and outreach planner modules.
+- created separate workflow file `wf-cold-email-planner.json` rather than extending `wf-worker.json`; it reads completed public-enrichment rows, calls `/outreach-plan`, and patches draft fields only.
+- no deployment was performed for this stage.
