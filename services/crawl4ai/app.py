@@ -362,6 +362,12 @@ class OutreachPlanRequest(BaseModel):
     draft_only: bool = False
 
 
+class OutreachValidateEmailRequest(BaseModel):
+    row: dict[str, Any]
+    record: dict[str, Any]
+    openrouter_response: dict[str, Any] = Field(default_factory=dict)
+
+
 def compact_whitespace(value: Any) -> str:
     text = str(value or "")
     text = text.replace("\r", "\n")
@@ -1805,4 +1811,54 @@ async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
                 "email_quality_flags": json.dumps(["outreach_planner_error"], ensure_ascii=False),
             },
             "record": {},
+        }
+
+
+@app.post("/outreach-validate-email")
+async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict[str, Any]:
+    try:
+        choices = request.openrouter_response.get("choices") or []
+        message = choices[0].get("message", {}) if choices else {}
+        content = compact_whitespace(message.get("content", ""))
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.IGNORECASE).strip()
+        candidate = json.loads(content)
+        emails = outreach_planner.normalize_llm_email_sequence(candidate)
+        funding = request.record.get("funding", {})
+        classification = request.record.get("classification", {})
+        patch = outreach_planner.patch_with_email_sequence(request.row, classification, funding, emails)
+        return {
+            "ok": True,
+            "row_id": request.row.get("Id") or request.row.get("id"),
+            "patch": patch,
+            "record": {
+                **request.record,
+                "emails": emails,
+                "quality_score": patch.get("email_quality_score"),
+                "quality_flags": json.loads(patch.get("email_quality_flags") or "[]"),
+                "email_send_ready": patch.get("email_send_ready"),
+            },
+        }
+    except Exception as exc:
+        fallback_patch = request.record.get("patch")
+        error_text = compact_whitespace(str(exc)) or "llm_email_validation_failed"
+        if isinstance(fallback_patch, dict) and fallback_patch.get("Id"):
+            flags = json.loads(fallback_patch.get("email_quality_flags") or "[]")
+            flags.append(f"llm_email_validation_failed:{error_text}")
+            fallback_patch = {
+                **fallback_patch,
+                "email_send_ready": False,
+                "email_quality_flags": json.dumps(flags, ensure_ascii=False),
+            }
+        return {
+            "ok": False,
+            "row_id": request.row.get("Id") or request.row.get("id"),
+            "error": error_text,
+            "patch": fallback_patch or {
+                "Id": request.row.get("Id") or request.row.get("id"),
+                "email_send_ready": False,
+                "human_review_status": "not_ready",
+                "email_quality_flags": json.dumps(["llm_email_validation_failed"], ensure_ascii=False),
+            },
+            "record": request.record,
         }

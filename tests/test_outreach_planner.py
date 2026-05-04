@@ -123,6 +123,46 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("HIA timelines", plan.emails["email_3"]["body"])
         self.assertNotIn("PDPA", plan.emails["email_3"]["body"])
 
+    def test_normalize_llm_email_sequence_and_patch_quality(self):
+        row = {
+            "Id": 41,
+            "company_name": "Acme Services Pte Ltd",
+            "website_content": "Singapore private company collecting customer enquiries and employee data.",
+        }
+        plan = o.plan_outreach(row)
+        candidate = {
+            f"email_{index}": {
+                "chosen_subject": plan.emails[f"email_{index}"]["chosen_subject"],
+                "body": plan.emails[f"email_{index}"]["body"],
+            }
+            for index in range(1, 5)
+        }
+        emails = o.normalize_llm_email_sequence(candidate)
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding.to_dict(), emails)
+        self.assertEqual(patch["email_1_body"], plan.emails["email_1"]["body"])
+        self.assertFalse(patch["email_send_ready"])
+        self.assertIn("funding_not_verified", patch["email_quality_flags"])
+
+    def test_llm_email_forbidden_phrase_stays_not_send_ready(self):
+        row = {
+            "Id": 42,
+            "company_name": "Acme Services Pte Ltd",
+            "website_content": "Singapore private company collecting customer enquiries and employee data.",
+        }
+        plan = o.plan_outreach(row)
+        candidate = {
+            f"email_{index}": {
+                "chosen_subject": plan.emails[f"email_{index}"]["chosen_subject"],
+                "body": plan.emails[f"email_{index}"]["body"],
+            }
+            for index in range(1, 5)
+        }
+        candidate["email_1"]["body"] += " Cyber Essentials makes you PDPA compliant."
+        emails = o.normalize_llm_email_sequence(candidate)
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, emails)
+        self.assertFalse(patch["email_send_ready"])
+        self.assertIn("forbidden_phrase:cyber essentials makes you pdpa compliant", patch["email_quality_flags"])
+
     def test_forbidden_phrases_rejected(self):
         classification = o.classify_row(
             {

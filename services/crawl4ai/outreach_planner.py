@@ -227,6 +227,10 @@ def compact(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def trim_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
 def lower_blob(row: dict[str, Any]) -> str:
     parts = [
         row.get("company_name", ""),
@@ -630,6 +634,33 @@ def generate_email_sequence(row: dict[str, Any], classification: dict[str, Any],
     return emails
 
 
+def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
+    if not isinstance(candidate, dict):
+        raise ValueError("llm_email_json_not_object")
+    emails: dict[str, Any] = {
+        "evidence_used": candidate.get("evidence_used", []),
+        "claims_avoided": candidate.get("claims_avoided", []),
+        "quality_notes": candidate.get("quality_notes", []),
+    }
+    for index in range(1, 5):
+        key = f"email_{index}"
+        item = candidate.get(key)
+        if not isinstance(item, dict):
+            raise ValueError(f"missing_{key}")
+        subject = compact(item.get("chosen_subject") or item.get("subject") or "")
+        body = trim_text(item.get("body") or "")
+        subject_options = item.get("subject_options")
+        if not isinstance(subject_options, list):
+            subject_options = [subject] if subject else []
+        emails[key] = {
+            "subject_options": [compact(option) for option in subject_options if compact(option)],
+            "chosen_subject": subject,
+            "body": body,
+            "word_count": word_count(body),
+        }
+    return emails
+
+
 def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: dict[str, Any]) -> tuple[int, list[str], bool]:
     flags: list[str] = []
     blob = "\n".join(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")).lower()
@@ -810,3 +841,25 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None) -> 
         "patch": build_noco_patch(row, plan),
         "record": plan.to_dict(),
     }
+
+
+def patch_with_email_sequence(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch | dict[str, Any],
+    emails: dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(funding, dict):
+        funding = FundingMatch(**funding)
+    score, flags, send_ready = quality_gate(classification, funding, emails)
+    plan = OutreachPlan(
+        row_id=row.get("Id") or row.get("id") or "",
+        classification=classification,
+        funding=funding,
+        emails=emails,
+        quality_score=score,
+        quality_flags=flags,
+        email_send_ready=send_ready,
+        human_review_status="ready_for_review" if classification.get("pressure_type") != "not_ready" else "not_ready",
+    )
+    return build_noco_patch(row, plan)
