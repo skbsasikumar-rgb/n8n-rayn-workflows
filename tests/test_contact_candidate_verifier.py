@@ -392,6 +392,91 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
         self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 
+    def test_generic_email_fallback_runs_after_person_lookup_miss(self):
+        payload = {
+            "Id": 123,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "Jane Tan, Medical Director, Example Clinic. Contact us at info@exampleclinic.sg",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_no2bounce(emails, timeout_seconds=None):
+            self.assertEqual(emails, ["info@exampleclinic.sg"])
+            return {
+                "configured": True,
+                "error": "",
+                "results": [{"email": "info@exampleclinic.sg", "status": "Deliverable", "finalScoreValue": "Deliverable"}],
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_generic_email_found")
+        self.assertEqual(result.validated_email, "info@exampleclinic.sg")
+        self.assertEqual(result.email_validation_provider, "no2bounce")
+        self.assertEqual(result.selected_contact_name, "")
+
+    def test_generic_email_fallback_runs_when_no_named_candidate_exists(self):
+        payload = {
+            "Id": 456,
+            "company_name": "Example Community Care",
+            "company_homepage_name": "Example Community Care",
+            "canonical_domain": "examplecare.sg",
+            "best_url": "https://examplecare.sg/",
+            "website_content": "For enquiries email hello@examplecare.sg or support@examplecare.sg",
+            "site_fast_path_only": True,
+        }
+
+        def fake_no2bounce(emails, timeout_seconds=None):
+            self.assertEqual(emails, ["hello@examplecare.sg", "support@examplecare.sg"])
+            return {
+                "configured": True,
+                "error": "",
+                "results": [{"email": "hello@examplecare.sg", "status": "Deliverable", "finalScoreValue": "Deliverable"}],
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_generic_email_found")
+        self.assertEqual(result.validated_email, "hello@examplecare.sg")
+        self.assertEqual(result.email_validation_provider, "no2bounce")
+
+    def test_generic_email_fallback_requires_no2bounce_when_generic_email_exists(self):
+        payload = {
+            "Id": 789,
+            "company_name": "Example Care",
+            "company_homepage_name": "Example Care",
+            "canonical_domain": "examplecare.sg",
+            "best_url": "https://examplecare.sg/",
+            "website_content": "For enquiries email info@examplecare.sg",
+            "site_fast_path_only": True,
+        }
+
+        def fake_no2bounce(emails, timeout_seconds=None):
+            return {"configured": False, "error": "NO2BOUNCE_API_TOKEN is not configured", "results": []}
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "failed")
+        self.assertEqual(result.contact_search_reason, "generic_email_validation_not_configured")
+        self.assertEqual(result.email_validation_provider, "no2bounce")
+
     def test_decision_maker_linkedin_requires_matching_profile_slug(self):
         candidate = c.decision_maker_candidate_from_result(
             {

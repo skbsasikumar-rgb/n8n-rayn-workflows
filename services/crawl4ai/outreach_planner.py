@@ -228,6 +228,10 @@ def compact(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def sendable_email(row: dict[str, Any]) -> str:
+    return compact(row.get("validated_email"))
+
+
 def trim_text(value: Any) -> str:
     return str(value or "").strip()
 

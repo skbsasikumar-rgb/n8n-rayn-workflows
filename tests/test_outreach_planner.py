@@ -369,6 +369,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("generic_personalisation_signal", flags)
         self.assertFalse(send_ready)
 
+    def test_sendable_email_uses_validated_email_only(self):
+        self.assertEqual(o.sendable_email({"validated_email": "info@exampleclinic.sg"}), "info@exampleclinic.sg")
+        self.assertEqual(o.sendable_email({"selected_contact_email": "ops@exampleclinic.sg"}), "")
+        self.assertEqual(o.sendable_email({}), "")
+
 
 if __name__ == "__main__":
     unittest.main()

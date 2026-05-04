@@ -4,6 +4,15 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-04
 
+Contact fallback and outreach gating:
+
+- added a last-resort generic inbox fallback in `services/crawl4ai/contact_enrichment.py`; it only runs after person-specific and decision-maker paths fail, extracts same-domain generic inboxes from `website_content`, and validates them through No2Bounce before accepting a sendable email.
+- generic inbox fallback now returns `contact_found` only on validated generic inboxes and marks rows `failed` when generic fallback is available but `NO2BOUNCE_API_TOKEN` is not configured or No2Bounce errors.
+- tightened `/outreach-plan` so rows without `validated_email` are rejected as `missing_sendable_email` even when `draft_only` is set.
+- updated `wf-cold-email-planner.json` to fetch only rows with `validated_email` and skip email drafting entirely when no sendable email exists.
+- added regression tests for generic-email fallback success, generic-email fallback without named candidates, missing No2Bounce configuration, and the outreach-plan sendable-email gate.
+- local validation completed after the patch; no deployment was performed, no Instantly node was used, and no emails were sent.
+
 Copy-brief quality refinement:
 
 - refined `build_copy_brief()` so `email_personalisation_signal` uses concrete service, team/practitioner, location, care/community, hearing-care, customer-security, vendor-dashboard or integration signals rather than generic segment wording.

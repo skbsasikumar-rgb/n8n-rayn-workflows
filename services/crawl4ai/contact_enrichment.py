@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import math
 import os
@@ -27,6 +29,7 @@ NAME_CAPTURE_RE = rf"({NAME_TOKEN_RE}(?:[ \t]+{NAME_TOKEN_RE}){{1,4}})"
 NAME_RE = re.compile(rf"\b(?:Dr\.?\s+|Mr\.?\s+|Mrs\.?\s+|Ms\.?\s+|Prof\.?\s+)?{NAME_CAPTURE_RE}\b")
 EMAIL_SAFE_RE = re.compile(r"[^a-z0-9]")
 EMAIL_SYNTAX_RE = re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
+EMAIL_EXTRACT_RE = re.compile(r"(?<![a-z0-9._%+-])([a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,})(?![a-z0-9._%+-])", re.I)
 GENERIC_LOCAL_PARTS = {
     "info",
     "contact",
@@ -42,6 +45,21 @@ GENERIC_LOCAL_PARTS = {
     "marketing",
     "team",
 }
+GENERIC_EMAIL_PRIORITY = [
+    "appointments",
+    "reception",
+    "clinic",
+    "info",
+    "contact",
+    "hello",
+    "support",
+    "admin",
+    "team",
+    "sales",
+    "marketing",
+    "enquiry",
+    "enquiries",
+]
 ROLE_BUCKETS: list[dict[str, Any]] = [
     {"bucket": "c_suite", "seniority": "executive", "priority": 1, "roles": ["CEO", "Chief Executive Officer", "Chief Executive", "Founder", "Co-founder", "Owner", "Managing Director", "Executive Director", "General Manager", "Chairman", "Chairperson", "President", "Vice President", "Board Chair", "Board Member", "Board Director", "Board of Directors", "Trustee", "Honorary Secretary", "Secretary", "Treasurer"]},
     {"bucket": "compliance_privacy_security", "seniority": "senior_manager", "priority": 2, "roles": ["DPO", "Data Protection Officer", "Compliance Manager", "Risk Manager", "CISO", "Chief Information Security Officer", "Head of Security", "Cybersecurity Manager"]},
@@ -1368,6 +1386,261 @@ def sanitize_anymail_payload(payload: Any) -> Any:
     return payload
 
 
+NO2BOUNCE_DOWNLOAD_URL_KEYS = {
+    "downloadfile",
+    "download_file",
+    "downloadurl",
+    "download_url",
+    "resulturl",
+    "result_url",
+    "reporturl",
+    "report_url",
+    "signedurl",
+    "signed_url",
+}
+
+
+def no2bounce_download_url_candidate(key: Any, value: Any) -> str:
+    normalized_key = re.sub(r"[^a-z0-9]+", "", str(key).lower())
+    if normalized_key not in {re.sub(r"[^a-z0-9]+", "", item) for item in NO2BOUNCE_DOWNLOAD_URL_KEYS}:
+        return ""
+    if isinstance(value, str) and value.startswith(("http://", "https://")):
+        return value
+    return ""
+
+
+def find_no2bounce_download_url(payload: Any) -> str:
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            download_url = no2bounce_download_url_candidate(key, value)
+            if download_url:
+                return download_url
+            nested = find_no2bounce_download_url(value)
+            if nested:
+                return nested
+    if isinstance(payload, list):
+        for item in payload:
+            nested = find_no2bounce_download_url(item)
+            if nested:
+                return nested
+    return ""
+
+
+def sanitize_no2bounce_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        output: dict[str, Any] = {}
+        for key, value in payload.items():
+            if no2bounce_download_url_candidate(key, value):
+                output[key] = "[redacted_download_url]" if value else ""
+            else:
+                output[key] = sanitize_no2bounce_payload(value)
+        return output
+    if isinstance(payload, list):
+        return [sanitize_no2bounce_payload(item) for item in payload]
+    return payload
+
+
+def download_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
+    download_url = find_no2bounce_download_url(payload)
+    if not download_url:
+        return []
+    response = requests.get(download_url, timeout=30)
+    if response.status_code >= 400:
+        return []
+    raw_text = response.text.lstrip("\ufeff").strip()
+    content_type = response.headers.get("content-type", "").lower()
+    if "json" in content_type or raw_text.startswith(("{", "[")):
+        try:
+            return extract_no2bounce_results(response.json())
+        except ValueError:
+            return []
+    reader = csv.DictReader(io.StringIO(raw_text))
+    return [
+        {str(key or "").strip(): str(value or "").strip() for key, value in row.items()}
+        for row in reader
+        if any(str(value or "").strip() for value in row.values())
+    ]
+
+
+def extract_no2bounce_results(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if not isinstance(payload, dict):
+        return []
+    for key in ("results", "apiResponse", "api_response", "validationResults", "validation_results", "data", "emails", "emailList", "validations", "records"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if isinstance(value, dict):
+            nested = extract_no2bounce_results(value)
+            if nested:
+                return nested
+    downloaded = download_no2bounce_results(payload)
+    if downloaded:
+        return downloaded
+    return []
+
+
+def no2bounce_progress(payload: Any) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    output: dict[str, Any] = {}
+    for key in (
+        "taskId",
+        "trackingId",
+        "totalEmails",
+        "completedEmails",
+        "totalRecord",
+        "overallStatus",
+        "percent",
+        "creditDebited",
+        "totalCredit",
+        "deliverability",
+        "catchAll",
+        "Deliverable",
+        "Undeliverable",
+        "Deliverable/AcceptAll",
+        "UnDeliverable/AcceptAll",
+        "Risky/AcceptAll",
+        "invalid",
+        "bounce",
+        "spam",
+    ):
+        value = dict_get_case_insensitive(data, key)
+        if value is not None:
+            output[key] = value
+    return output
+
+
+def no2bounce_count(progress: dict[str, Any], key: str) -> int:
+    value = dict_get_case_insensitive(progress, key)
+    try:
+        return int(float(str(value).strip()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def no2bounce_has_sendable_aggregate(progress: dict[str, Any]) -> bool:
+    return (
+        no2bounce_count(progress, "Deliverable") > 0
+        or no2bounce_count(progress, "Deliverable/AcceptAll") > 0
+        or no2bounce_count(progress, "Risky/AcceptAll") > 0
+        or no2bounce_count(progress, "deliverability") > 0
+    )
+
+
+def no2bounce_partial_rejected_results(emails: list[str], progress: dict[str, Any]) -> list[dict[str, Any]]:
+    if not progress or no2bounce_has_sendable_aggregate(progress):
+        return []
+    completed = (
+        no2bounce_count(progress, "Undeliverable")
+        + no2bounce_count(progress, "UnDeliverable/AcceptAll")
+        + no2bounce_count(progress, "invalid")
+        + no2bounce_count(progress, "bounce")
+        + no2bounce_count(progress, "spam")
+    )
+    if completed <= 0:
+        return []
+    return [
+        {
+            "email": email,
+            "finalScoreValue": "Incomplete/PendingTimeout",
+            "status": "incomplete_pending_timeout",
+            "no2bounce_partial_timeout": "true",
+            "no2bounce_progress": progress,
+        }
+        for email in emails
+    ]
+
+
+def validate_no2bounce(emails: list[str], timeout_seconds: int | None = None) -> dict[str, Any]:
+    token = os.getenv("NO2BOUNCE_API_TOKEN", "").strip()
+    if not token:
+        return {"configured": False, "error": "NO2BOUNCE_API_TOKEN is not configured", "results": []}
+    if not emails:
+        return {"configured": True, "error": "", "results": []}
+
+    base_url = os.getenv("NO2BOUNCE_BASE_URL", "https://connect.no2bounce.com/v2/n2b_validate_bulk").strip()
+    headers = {"apitoken": token, "Content-Type": "application/json"}
+    post = requests.post(base_url, headers=headers, json={"emailList": emails}, timeout=30)
+    try:
+        post_payload: Any = post.json()
+    except ValueError:
+        post_payload = {"raw": post.text}
+    if post.status_code >= 400:
+        return {"configured": True, "error": f"POST HTTP {post.status_code}", "post_response": post_payload, "results": []}
+
+    tracking_id = ""
+    if isinstance(post_payload, dict):
+        nested = post_payload.get("data") if isinstance(post_payload.get("data"), dict) else {}
+        tracking_id = compact(
+            post_payload.get("trackingId")
+            or post_payload.get("tracking_id")
+            or post_payload.get("id")
+            or nested.get("trackingId")
+            or nested.get("tracking_id")
+            or nested.get("id"),
+            200,
+        )
+    if not tracking_id:
+        return {"configured": True, "error": "missing_tracking_id", "post_response": post_payload, "results": extract_no2bounce_results(post_payload)}
+
+    if timeout_seconds is None:
+        timeout_seconds = max(10, int(os.getenv("NO2BOUNCE_POLL_TIMEOUT_SECONDS", "120")))
+    poll_interval_seconds = max(2, int(os.getenv("NO2BOUNCE_POLL_INTERVAL_SECONDS", "3")))
+    deadline = time.time() + timeout_seconds
+    poll_payload: Any = {}
+    while time.time() < deadline:
+        poll = requests.get(base_url, headers=headers, params={"trackingId": tracking_id}, timeout=30)
+        try:
+            poll_payload = poll.json()
+        except ValueError:
+            poll_payload = {"raw": poll.text}
+        results = extract_no2bounce_results(poll_payload)
+        if results:
+            return {
+                "configured": True,
+                "error": "",
+                "trackingId": tracking_id,
+                "post_response": sanitize_no2bounce_payload(post_payload),
+                "poll_response": sanitize_no2bounce_payload(poll_payload),
+                "progress": no2bounce_progress(poll_payload),
+                "results": results,
+            }
+        time.sleep(poll_interval_seconds)
+    progress = no2bounce_progress(poll_payload)
+    partial_rejected_results = no2bounce_partial_rejected_results(emails, progress)
+    if partial_rejected_results:
+        return {
+            "configured": True,
+            "error": "",
+            "warning": "partial_timeout_rejected",
+            "trackingId": tracking_id,
+            "post_response": sanitize_no2bounce_payload(post_payload),
+            "poll_response": sanitize_no2bounce_payload(poll_payload),
+            "progress": progress,
+            "results": partial_rejected_results,
+        }
+    return {
+        "configured": True,
+        "error": "poll_timeout",
+        "trackingId": tracking_id,
+        "post_response": sanitize_no2bounce_payload(post_payload),
+        "poll_response": sanitize_no2bounce_payload(poll_payload),
+        "progress": progress,
+        "results": [],
+    }
+
+
+def result_email(result: dict[str, Any]) -> str:
+    for key in ("email", "email address", "email_address", "address", "emailAddress", "mail"):
+        matched = dict_get_case_insensitive(result, key)
+        if matched:
+            return compact(matched, 320).lower()
+    return ""
+
+
 def anymail_decision(result: dict[str, Any], domain: str) -> tuple[str, str]:
     status = compact(result.get("email_status"), 80).lower()
     email = compact(result.get("valid_email") or result.get("email"), 320).lower()
@@ -1991,6 +2264,49 @@ def candidate_email_candidates(candidate: ContactCandidate, domain: str, exclude
     return output
 
 
+def generic_email_priority(email: str) -> tuple[int, str]:
+    local_part = compact(email.partition("@")[0], 80).lower()
+    try:
+        return (GENERIC_EMAIL_PRIORITY.index(local_part), local_part)
+    except ValueError:
+        return (len(GENERIC_EMAIL_PRIORITY), local_part)
+
+
+def generic_email_quote(text: str, start: int, end: int) -> str:
+    return compact(text[max(0, start - 40) : min(len(text), end + 40)], 240)
+
+
+def generic_site_email_candidates(payload: dict[str, Any], domain: str, excluded_emails: set[str]) -> list[dict[str, Any]]:
+    text = payload.get("website_content") if isinstance(payload.get("website_content"), str) else ""
+    source_url = compact(payload.get("best_url"), 1000) or f"https://{domain}/"
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for match in EMAIL_EXTRACT_RE.finditer(text):
+        email = compact(match.group(1), 320).lower().strip(".,;:!?)]}\"'")
+        if not email or email in seen or email in excluded_emails or not email_syntax_valid(email):
+            continue
+        local_part, _, email_domain = email.partition("@")
+        if email_domain.removeprefix("www.") != domain:
+            continue
+        if local_part not in GENERIC_LOCAL_PARTS:
+            continue
+        seen.add(email)
+        output.append(
+            {
+                "email": email,
+                "name": "",
+                "role": "Generic Inbox",
+                "source_url": source_url,
+                "source_type": "website_content_generic_email",
+                "status": "found_on_website",
+                "decision": "pending_validation",
+                "evidence_quote": generic_email_quote(text, match.start(1), match.end(1)),
+            }
+        )
+    output.sort(key=lambda item: generic_email_priority(compact(item.get("email"), 320).lower()))
+    return output
+
+
 def accepted_candidate_from_raw(raw_candidate: dict[str, Any], accepted: dict[str, Any] | None = None) -> ContactCandidate | None:
     accepted = accepted or {}
     name = clean_name(accepted.get("name") or raw_candidate.get("raw_name"))
@@ -2531,6 +2847,147 @@ def try_decision_maker_fallback(
     )
 
 
+def try_generic_email_fallback(
+    *,
+    row_id: Any,
+    payload: dict[str, Any],
+    domain: str,
+    contact_candidates: list[dict[str, Any]],
+    contact_search_evidence: dict[str, Any],
+    email_candidates: list[dict[str, Any]],
+    email_validation_evidence: dict[str, Any],
+    fallback_reason: str,
+) -> ContactResult | None:
+    if not env_flag("CONTACT_GENERIC_EMAIL_FALLBACK_ENABLED", default=True):
+        return None
+
+    existing_excluded = set(normalized_email_set(payload.get("excluded_email_candidates")))
+    existing_excluded.update(
+        compact(candidate.get("email"), 320).lower()
+        for candidate in email_candidates
+        if isinstance(candidate, dict) and compact(candidate.get("email"), 320)
+    )
+    generic_candidates = generic_site_email_candidates(payload, domain, existing_excluded)
+    if not generic_candidates:
+        return None
+
+    evidence = {
+        **email_validation_evidence,
+        "generic_email_fallback": {
+            "enabled": True,
+            "provider": "no2bounce",
+            "fallback_reason": fallback_reason,
+            "candidate_count": len(generic_candidates),
+            "emails": [compact(item.get("email"), 320).lower() for item in generic_candidates],
+        },
+    }
+    merged_candidates = [*email_candidates, *generic_candidates]
+
+    if not payload.get("validate_email", True):
+        evidence["generic_email_fallback"]["skipped"] = "dry_run"
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="contact_not_found",
+            contact_search_reason=fallback_reason,
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=merged_candidates,
+            email_validation_status="skipped_dry_run",
+            email_validation_provider="no2bounce",
+            email_validation_evidence=evidence,
+        )
+
+    validation = validate_no2bounce([compact(item.get("email"), 320).lower() for item in generic_candidates])
+    evidence["generic_email_fallback"].update(
+        {
+            "configured": bool(validation.get("configured")),
+            "error": compact(validation.get("error"), 200),
+            "warning": compact(validation.get("warning"), 160),
+            "trackingId": compact(validation.get("trackingId"), 200),
+            "post_response": validation.get("post_response") if validation.get("post_response") else {},
+            "poll_response": validation.get("poll_response") if validation.get("poll_response") else {},
+            "progress": validation.get("progress") if validation.get("progress") else {},
+            "result_count": len(validation.get("results") or []),
+        }
+    )
+    if not validation.get("configured"):
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="failed",
+            contact_search_reason="generic_email_validation_not_configured",
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=merged_candidates,
+            email_validation_status="not_configured",
+            email_validation_provider="no2bounce",
+            email_validation_evidence=evidence,
+        )
+    if validation.get("error"):
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="failed",
+            contact_search_reason="generic_email_validation_provider_failed",
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=merged_candidates,
+            email_validation_status=compact(validation.get("error"), 200) or "provider_error",
+            email_validation_provider="no2bounce",
+            email_validation_evidence=evidence,
+        )
+
+    by_email = {compact(item.get("email"), 320).lower(): item for item in generic_candidates}
+    accepted_email = ""
+    accepted_decision = ""
+    for result in validation.get("results", []):
+        if not isinstance(result, dict):
+            continue
+        email = result_email(result)
+        if not email:
+            continue
+        candidate = by_email.get(email)
+        if not candidate:
+            continue
+        decision = email_decision(result, has_named_person=False)
+        candidate["validation_result"] = result
+        candidate["status"] = status_text(result) or compact(result.get("finalScoreValue"), 120).lower() or "validated"
+        candidate["decision"] = decision
+        candidate["valid_email"] = email if decision in {"sendable", "risky_sendable"} else ""
+        if decision in {"sendable", "risky_sendable"}:
+            candidate["accepted"] = True
+            accepted_email = email
+            accepted_decision = decision
+            break
+
+    if accepted_email:
+        evidence["generic_email_fallback"]["accepted_email"] = accepted_email
+        evidence["generic_email_fallback"]["accepted_decision"] = accepted_decision
+        return ContactResult(
+            row_id=row_id,
+            contact_search_status="contact_found",
+            contact_search_reason=f"{accepted_decision}_generic_email_found",
+            contact_candidates=contact_candidates,
+            contact_search_evidence=contact_search_evidence,
+            email_candidates=merged_candidates,
+            selected_contact_source_url=compact(payload.get("best_url"), 1000) or f"https://{domain}/",
+            validated_email=accepted_email,
+            email_validation_status=accepted_decision,
+            email_validation_provider="no2bounce",
+            email_validation_evidence=evidence,
+        )
+
+    return ContactResult(
+        row_id=row_id,
+        contact_search_status="contact_not_found",
+        contact_search_reason="no_deliverable_generic_email_found",
+        contact_candidates=contact_candidates,
+        contact_search_evidence=contact_search_evidence,
+        email_candidates=merged_candidates,
+        email_validation_status="no_deliverable_email",
+        email_validation_provider="no2bounce",
+        email_validation_evidence=evidence,
+    )
+
+
 def merge_candidate_dicts(candidates: list[dict[str, Any]], extra: dict[str, Any]) -> list[dict[str, Any]]:
     normalized_extra = normalize_person_name(extra.get("name", ""))
     if not normalized_extra:
@@ -2723,6 +3180,18 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             )
             if decision_maker_result:
                 return decision_maker_result
+            generic_result = try_generic_email_fallback(
+                row_id=row_id,
+                payload=payload,
+                domain=domain,
+                contact_candidates=candidate_dicts,
+                contact_search_evidence=search_evidence,
+                email_candidates=[],
+                email_validation_evidence=fallback_evidence,
+                fallback_reason="no_validated_person_found",
+            )
+            if generic_result:
+                return generic_result
             return ContactResult(
                 row_id=row_id,
                 contact_search_status="contact_not_found",
@@ -2789,6 +3258,18 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         )
         if decision_maker_result:
             return decision_maker_result
+        generic_result = try_generic_email_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
+            email_candidates=[],
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="no_validated_person_found",
+        )
+        if generic_result:
+            return generic_result
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
@@ -2944,6 +3425,18 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         )
         if decision_maker_result:
             return decision_maker_result
+        generic_result = try_generic_email_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=candidate_dicts,
+            contact_search_evidence=search_evidence,
+            email_candidates=aggregated_email_candidates,
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="no_probable_human_candidate_for_email_lookup",
+        )
+        if generic_result:
+            return generic_result
         return ContactResult(
             row_id=row_id,
             contact_search_status="contact_not_found",
@@ -2982,6 +3475,18 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     )
     if decision_maker_result:
         return decision_maker_result
+    generic_result = try_generic_email_fallback(
+        row_id=row_id,
+        payload=payload,
+        domain=domain,
+        contact_candidates=candidate_dicts,
+        contact_search_evidence=search_evidence,
+        email_candidates=aggregated_email_candidates,
+        email_validation_evidence=validation_evidence,
+        fallback_reason=fallback_reason,
+    )
+    if generic_result:
+        return generic_result
 
     return ContactResult(
         row_id=row_id,

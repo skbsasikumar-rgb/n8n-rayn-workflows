@@ -1784,16 +1784,16 @@ async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
             },
             "record": {},
         }
-    if not payload.get("selected_contact_email") and not payload.get("validated_email") and not payload.get("draft_only"):
+    if not outreach_planner.sendable_email(payload):
         return {
             "ok": False,
             "row_id": request.Id,
-            "error": "missing_selected_contact_email",
+            "error": "missing_sendable_email",
             "patch": {
                 "Id": request.Id,
                 "email_send_ready": False,
                 "human_review_status": "not_ready",
-                "email_quality_flags": json.dumps(["missing_selected_contact_email"], ensure_ascii=False),
+                "email_quality_flags": json.dumps(["missing_sendable_email"], ensure_ascii=False),
             },
             "record": {},
         }
