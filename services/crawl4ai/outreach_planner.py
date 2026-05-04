@@ -700,7 +700,7 @@ def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: 
         if emails[key]["word_count"] > limit:
             flags.append(f"{key}_too_long")
 
-    if funding.funding_claim_line not in emails["email_3"]["body"]:
+    if classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_3"]["body"]:
         flags.append("email_3_missing_funding_claim_line")
     if re.search(r"\b\d{1,3}%\b", emails["email_3"]["body"]) and not any(
         item.get("exact_claim_allowed_in_email") for item in funding.matched
@@ -716,7 +716,7 @@ def quality_gate(classification: dict[str, Any], funding: FundingMatch, emails: 
         flags.append("missing_outreach_trigger")
     if classification.get("outreach_trigger_confidence") == "low":
         flags.append("low_trigger_confidence")
-    if funding.funding_status != "verified_match":
+    if classification.get("pressure_type") != "not_ready" and funding.funding_status != "verified_match":
         flags.append("funding_not_verified")
 
     score = 0

@@ -196,6 +196,8 @@ class OutreachPlannerTests(unittest.TestCase):
             self.assertFalse(patch[f"email_{index}_body"])
         self.assertFalse(patch["email_send_ready"])
         self.assertEqual(patch["human_review_status"], "not_ready")
+        self.assertNotIn("email_3_missing_funding_claim_line", patch["email_quality_flags"])
+        self.assertNotIn("funding_not_verified", patch["email_quality_flags"])
 
     def test_forbidden_phrases_rejected(self):
         classification = o.classify_row(
