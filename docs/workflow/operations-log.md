@@ -4,6 +4,13 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-04
 
+First-5 OpenRouter email rerun:
+
+- reran cold-email planner with `limit=5` and `draft_only=true`; no Instantly node was used and no emails were sent.
+- after the first rerun exposed unsafe OpenRouter drift in Email 3 and not-ready row output, added safeguards so Email 3 is clamped to `funding_claim_line` and `not_ready` rows keep empty email bodies.
+- deployed worker service `n8n-rayn-workflows`; final successful deployment was `6be3c823-ee3b-4c8e-a065-d42f57db36f5`.
+- final first-5 verification: rows `273`, `274`, `275`, and `277` had draft sequences with `email_send_ready=false`; row `276` was `not_ready` with zero email bodies; no row was marked sent.
+
 OpenRouter cold-email drafting:
 
 - added the OpenRouter HTTP node to `wf-cold-email-planner.json` using model `anthropic/claude-sonnet-4.6`; workflow still patches draft fields only and does not call Instantly or send email.
