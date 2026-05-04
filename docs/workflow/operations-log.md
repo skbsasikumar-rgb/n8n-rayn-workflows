@@ -13,6 +13,15 @@ Copy-brief email planning:
 - local validation passed: compile checks succeeded, `jq -e wf-cold-email-planner.json` succeeded, and `pytest` passed with `61 passed`.
 - no deployment was performed for this copy-brief patch, no Instantly node was used, and no emails were sent.
 
+Copy-brief live deployment and first-5 rerun:
+
+- installed copy-brief outreach columns in production via `scripts/ensure_rayn_outreach_columns.py`; summary reported `created_physical=34`, `created_metadata=34`, `created_grid=34`, and `created_select_options=19`.
+- restarted `nocodb` to refresh field metadata; verified copy-brief columns were visible through the NocoDB API and physical table `pb7f1zou786xyqc.leads`.
+- updated live workflow `RAYN Cold Email Planner v1` to fetch richer enrichment fields and send copy-brief fields to OpenRouter; workflow remained `draft_only=true` and had no Instantly node.
+- deployed worker service `n8n-rayn-workflows`; final successful deployment was `193de6bd-110e-4bee-af76-9e2611f3c89a`.
+- reran first 5 eligible rows. Rows `273`, `274`, `275`, and `277` received copy-brief email drafts with `email_send_ready=false`; row `276` remained `not_ready` with zero email bodies.
+- no emails were sent and no row was marked sent.
+
 First-5 OpenRouter email rerun:
 
 - reran cold-email planner with `limit=5` and `draft_only=true`; no Instantly node was used and no emails were sent.
