@@ -142,6 +142,16 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(patch["email_1_body"], plan.emails["email_1"]["body"])
         self.assertFalse(patch["email_send_ready"])
         self.assertIn("funding_not_verified", patch["email_quality_flags"])
+        partial_funding_patch = o.patch_with_email_sequence(
+            row,
+            plan.classification,
+            {
+                "funding_status": "possible_match",
+                "funding_claim_line": "The relevant support route appears worth checking, subject to programme confirmation.",
+            },
+            emails,
+        )
+        self.assertFalse(partial_funding_patch["email_send_ready"])
 
     def test_llm_email_forbidden_phrase_stays_not_send_ready(self):
         row = {

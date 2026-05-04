@@ -850,7 +850,22 @@ def patch_with_email_sequence(
     emails: dict[str, Any],
 ) -> dict[str, Any]:
     if isinstance(funding, dict):
-        funding = FundingMatch(**funding)
+        funding = FundingMatch(
+            funding_status=str(funding.get("funding_status") or "not_checked"),
+            funding_relevant=bool(funding.get("funding_relevant", False)),
+            primary_funding_program=str(funding.get("primary_funding_program") or ""),
+            matched=list(funding.get("matched") or []),
+            possible=list(funding.get("possible") or []),
+            not_applicable=list(funding.get("not_applicable") or []),
+            funding_eligibility_basis=str(funding.get("funding_eligibility_basis") or ""),
+            funding_claim_line=str(funding.get("funding_claim_line") or ""),
+            funding_cta_asset=str(funding.get("funding_cta_asset") or "funding_route_summary"),
+            funding_confidence=str(funding.get("funding_confidence") or "low"),
+            funding_last_checked_at=str(funding.get("funding_last_checked_at") or ""),
+            funding_source_urls=list(funding.get("funding_source_urls") or []),
+            funding_human_review_required=bool(funding.get("funding_human_review_required", True)),
+            reason=str(funding.get("reason") or ""),
+        )
     score, flags, send_ready = quality_gate(classification, funding, emails)
     plan = OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
