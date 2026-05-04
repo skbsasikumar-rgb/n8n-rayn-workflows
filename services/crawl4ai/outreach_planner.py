@@ -601,6 +601,38 @@ def first_source_url(row: dict[str, Any]) -> str:
     return compact(row.get("best_url") or row.get("url_picked"))
 
 
+def public_signal_summary(
+    row: dict[str, Any], text: str, services: list[str], locations: list[str], team: list[str]
+) -> dict[str, str]:
+    service_detail = sentence_join(services[:3])
+    if not service_detail:
+        if any(term in text for term in ("hearing", "audiology", "hearing aid", "hearing assessment")):
+            service_detail = "hearing-care services such as appointments, tests and device support"
+        elif any(term in text for term in ("clinic", "doctor", "consultation", "treatment", "patient")):
+            service_detail = "clinic service signals such as consultation, treatment and patient services"
+        elif any(term in text for term in ("resident", "beneficiary", "volunteer", "social service", "charity")):
+            service_detail = "care/community-service signals around residents, beneficiaries, volunteers and staff"
+        elif any(term in text for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas")):
+            service_detail = "enterprise client, vendor-dashboard or integration signals"
+        else:
+            service_detail = "public service signals"
+
+    team_detail = sentence_join(team[:2])
+    if not team_detail:
+        if any(term in text for term in ("doctor", "practitioner", "clinician", "audiologist", "therapist")):
+            team_detail = "team/practitioner signals"
+        elif any(term in text for term in ("volunteer", "staff", "care team")):
+            team_detail = "staff and volunteer signals"
+        else:
+            team_detail = ""
+
+    location_detail = sentence_join(locations[:2])
+    if not location_detail and "singapore" in text:
+        location_detail = "Singapore-facing operations"
+
+    return {"service": service_detail, "team": team_detail, "location": location_detail}
+
+
 def copy_brief_ready(classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") == "not_ready":
         return False
@@ -629,6 +661,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     services = listish_items(row.get("services_detected")) or listish_items(row.get("primary_services_summary"))
     locations = listish_items(row.get("locations_detected"))
     team = listish_items(row.get("leadership_or_team_signals")) or listish_items(row.get("contact_info_detected"))
+    public_signals = public_signal_summary(row, text, services, locations, team)
     source_url = first_source_url(row)
     pressure = classification.get("pressure_type", "not_ready")
     entity = classification.get("entity_type_guess", "unknown")
@@ -649,7 +682,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     else:
         business_model = "unknown"
 
-    primary_services = sentence_join(services, compact(row.get("industry_guess")) or "public website services")
+    primary_services = sentence_join(services, public_signals["service"])
     location_summary = sentence_join(locations, "Singapore-facing operations")
     team_summary = sentence_join(team, "Public site does not give a clear team structure.")
     profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
@@ -657,7 +690,10 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     if pressure == "hia_regulatory":
         personal_data = "patient and health information handled through enquiries, appointments, care records and clinic operations."
         sensitive_examples = "patient identity details, appointment information, health information, treatment notes and staff access records."
-        systems = "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps."
+        if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
+            systems = "appointments, hearing tests, device-related records, staff access, vendor systems, backups and incident-reporting steps."
+        else:
+            systems = "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps."
         complexity = "medium" if entity == "clinic" else "high"
         regulatory = "HIA creates an external healthcare regulatory-readiness pressure, with phased timelines starting from 2027."
         hia_angle = "Map health information access, cybersecurity, data-security, vendor, backup and incident-response duties before the HIA window."
@@ -668,7 +704,12 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         cta = "Want the readiness map?"
         problem = f"{company} likely needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
         mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security evidence side before deeper HIA work."
-        signal = f"{company} appears to operate in healthcare, so HIA readiness is the clearest buying pressure."
+        signal_parts = [public_signals["service"]]
+        if public_signals["team"]:
+            signal_parts.append(public_signals["team"])
+        if public_signals["location"]:
+            signal_parts.append(public_signals["location"])
+        signal = f"{company} shows {sentence_join(signal_parts)}; with HIA timelines starting from 2027, that makes health-information readiness the clearest buying pressure."
     elif pressure == "customer_trust":
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
@@ -683,7 +724,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         cta = "Worth sending the evidence checklist?"
         problem = f"{company} likely needs reusable answers when customers ask how their data and systems are protected; security questions usually come down to proof."
         mechanism = "Cyber Essentials creates a recognised baseline for access, updates, backups, malware protection and incident-response evidence."
-        signal = f"{company} shows B2B or client-service signals where security evidence can reduce sales and procurement friction."
+        signal = f"{company} shows {public_signals['service']} where customer security questions and reusable security evidence can reduce sales or procurement friction."
     elif pressure == "pdpa_safeguards":
         if classification.get("campaign_track") == "dpo_evidence":
             personal_data = f"{data_type} handled across IT, HR, vendors and operations."
@@ -691,7 +732,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             systems = "HR/admin systems, email, file shares, vendor tools, access lists, backups and incident contacts."
             asset = "evidence checklist"
             cta = "Worth sending the evidence checklist?"
-            signal = f"{company} has a data-protection or operations contact, so the useful angle is evidence ownership rather than a generic cyber pitch."
+            signal = f"{company} has a data-protection or operations contact and likely data spread across HR/admin systems, vendors and staff workflows."
             problem = f"For DPOs and ops teams at {company}, the hard part is often proving who has access, where data sits, how vendors are managed, and what happens during an incident."
         elif entity in {"npo", "charity", "social_service"}:
             personal_data = "resident, beneficiary, volunteer, donor and staff data handled through care and community operations."
@@ -699,7 +740,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             systems = "case or resident records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts."
             asset = "care-organisation checklist"
             cta = "Worth sending the care-organisation checklist?"
-            signal = f"{company} appears to be a care or social-service organisation handling resident, beneficiary, volunteer and staff data."
+            signal = f"{company} appears to operate in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
             problem = f"{company} likely needs to show who owns resident, beneficiary, volunteer and staff data systems, who can access them, how backups work, and what happens during an incident."
         else:
             personal_data = f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools."
@@ -707,7 +748,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             systems = "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts."
             asset = "PDPA safeguards checklist"
             cta = "Worth sending the safeguards checklist?"
-            signal = f"{company} appears to handle {data_type}, making PDPA security safeguards the clearest angle."
+            signal = f"{company} shows {public_signals['service']} where {data_type} may sit across staff, vendors and operational systems."
             problem = f"{company} likely needs to show who owns personal-data systems, who can access them, how backups and updates work, and what happens during an incident."
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
@@ -827,8 +868,15 @@ def generate_email_sequence(
 
     if classification["pressure_type"] != "not_ready":
         email1_body = f"{greeting} {trigger}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
-        diagnostic_systems = systems or "the systems holding personal data"
-        email2_body = f"A practical diagnostic: can {company} map {diagnostic_systems} to an owner, access list, backup, update process, vendor touchpoint and incident contact?\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+        if classification["pressure_type"] == "hia_regulatory":
+            diagnostic = f"Can {company} show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?"
+        elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
+            diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
+        elif classification["pressure_type"] == "customer_trust":
+            diagnostic = "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?"
+        else:
+            diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
+        email2_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
         funding_line = funding.funding_claim_line or "Funding route needs human review before use."
         email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
         email3_body = f"Hi {first_name + ',' if first_name else ','}\n\n{funding_line}\n\nThis is subject to programme confirmation.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
@@ -935,6 +983,46 @@ def reflects(text: str, phrase: str) -> bool:
     return bool(words) and sum(1 for word in words[:8] if word in text_l) >= min(3, len(words))
 
 
+def generic_personalisation_signal(signal: str) -> bool:
+    signal_l = compact(signal).lower()
+    if not signal_l:
+        return True
+    generic_phrases = (
+        "appears to operate in healthcare",
+        "appears to handle customer data",
+        "website indicates healthcare activity",
+        "organisation appears to",
+        "healthcare provider",
+        "private company",
+        "handles customer data",
+    )
+    concrete_terms = (
+        "clinic service",
+        "team",
+        "practitioner",
+        "doctor",
+        "hearing-care",
+        "appointment",
+        "test",
+        "device",
+        "resident",
+        "beneficiary",
+        "volunteer",
+        "staff",
+        "community-service",
+        "care/community",
+        "customer security questions",
+        "reusable security evidence",
+        "vendor",
+        "dashboard",
+        "integration",
+        "singapore-facing",
+    )
+    has_generic = any(phrase in signal_l for phrase in generic_phrases)
+    has_concrete = any(term in signal_l for term in concrete_terms)
+    return has_generic and not has_concrete
+
+
 def quality_gate(
     classification: dict[str, Any],
     funding: FundingMatch,
@@ -983,6 +1071,8 @@ def quality_gate(
         email1_body = emails["email_1"]["body"]
         if compact(copy_brief.get("email_personalisation_signal")) and not reflects(email1_body, copy_brief["email_personalisation_signal"]):
             flags.append("email_1_missing_personalisation_signal")
+        if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")):
+            flags.append("generic_personalisation_signal")
         if compact(copy_brief.get("email_problem_statement")) and not reflects(email1_body, copy_brief["email_problem_statement"]):
             flags.append("email_1_missing_problem_statement")
         email1_start = email1_body.strip().lower()

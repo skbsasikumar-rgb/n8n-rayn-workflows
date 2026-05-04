@@ -92,6 +92,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "security evidence")
         self.assertIn("security questions usually come down to proof", plan.emails["email_1"]["body"])
+        self.assertIn("customer security question", plan.emails["email_2"]["body"])
+        self.assertNotIn("Cyber Essentials is", plan.emails["email_2"]["body"])
 
     def test_low_signal_row_is_not_ready(self):
         plan = o.plan_outreach(
@@ -249,6 +251,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.classification["data_type_signal"], {"resident_data", "beneficiary_data"})
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
         brief = plan.copy_brief
+        self.assertIn("care/community-service", plan.emails["email_1"]["body"])
+        self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_1"]["body"])
+        self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_2"]["body"])
         self.assertIn("resident", brief["personal_data_handled_guess"])
         self.assertIn("beneficiary", brief["personal_data_handled_guess"])
         self.assertIn("volunteer", brief["personal_data_handled_guess"])
@@ -277,6 +282,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("2027", brief["regulatory_pressure_summary"])
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
+        self.assertIn("clinic service", plan.emails["email_1"]["body"])
+        self.assertIn("team/practitioner", plan.emails["email_1"]["body"])
+        self.assertIn("HIA timelines starting from 2027", plan.emails["email_1"]["body"])
+        self.assertIn("where health information sits", plan.emails["email_2"]["body"])
         self.assertIn("appointment", brief["data_systems_likely"])
         self.assertIn("backups", brief["data_systems_likely"])
         self.assertIn("vendor", brief["data_systems_likely"])
@@ -298,6 +307,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information", "customer_data"})
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
+        self.assertIn("hearing-care", plan.emails["email_1"]["body"])
+        self.assertIn("appointments, tests and device support", plan.emails["email_1"]["body"])
+        self.assertIn("hearing tests", plan.copy_brief["data_systems_likely"])
+        self.assertIn("device-related records", plan.copy_brief["data_systems_likely"])
         weak_plan = o.plan_outreach(
             {
                 "Id": 8,
@@ -324,6 +337,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "security evidence checklist")
         self.assertIn("security questions usually come down to proof", brief["email_problem_statement"])
+        self.assertIn("customer security questions", plan.emails["email_1"]["body"])
+        self.assertIn("reusable security evidence", plan.emails["email_1"]["body"])
+        self.assertIn("common customer security question", plan.emails["email_2"]["body"])
 
     def test_copy_brief_not_ready_row_keeps_empty_emails(self):
         plan = o.plan_outreach(
@@ -338,6 +354,20 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.human_review_status, "not_ready")
         for index in range(1, 5):
             self.assertFalse(plan.emails[f"email_{index}"]["body"])
+
+    def test_generic_personalisation_signal_is_flagged(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 11,
+                "company_name": "Example Clinic",
+                "website_content": "Singapore medical clinic with patient appointments.",
+            }
+        )
+        emails = plan.emails
+        copy_brief = {**plan.copy_brief, "email_personalisation_signal": "Example Clinic appears to operate in healthcare."}
+        _, flags, send_ready = o.quality_gate(plan.classification, plan.funding, emails, copy_brief)
+        self.assertIn("generic_personalisation_signal", flags)
+        self.assertFalse(send_ready)
 
 
 if __name__ == "__main__":

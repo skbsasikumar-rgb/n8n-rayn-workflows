@@ -4,6 +4,14 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-04
 
+Copy-brief quality refinement:
+
+- refined `build_copy_brief()` so `email_personalisation_signal` uses concrete service, team/practitioner, location, care/community, hearing-care, customer-security, vendor-dashboard or integration signals rather than generic segment wording.
+- made Email 2 diagnostics segment-specific for HIA/clinic, social service, B2B/customer-trust, and general PDPA rows.
+- added quality-gate flag `generic_personalisation_signal` for copy briefs that rely on generic phrases without concrete public evidence.
+- added tests for Amaris B. Clinic, Sree Narayana Mission, Amazing Hearing Group, B2B customer-trust rows, and diagnostic-specific Email 2 behavior.
+- local validation passed with `62 passed`; no deployment was performed and no emails were sent.
+
 Copy-brief email planning:
 
 - added deterministic copy-brief enrichment fields to the outreach installer, including company profile, services, locations, team signals, data handled, data systems, pressure angles, funding safety, and email-specific messaging ingredients.
