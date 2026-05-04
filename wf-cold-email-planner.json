@@ -69,8 +69,8 @@
         "method": "POST",
         "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/outreach-plan') }}",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
           "timeout": 120000
         }
@@ -105,8 +105,8 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "nocoDbApiToken",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json.patches }}",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.patches) }}",
         "options": {
           "timeout": 120000
         }
