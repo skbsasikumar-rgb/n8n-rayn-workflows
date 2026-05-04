@@ -31,19 +31,8 @@
     {
       "parameters": {
         "url": "={{ 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent('(status,eq,completed)~and(best_url,notblank)~and(duplicate_of_id,blank)') + '&fields=Id,company_name,company_homepage_name,parent_company,best_url,canonical_domain,website_content,source_urls,selected_contact_name,selected_contact_title,selected_contact_role,selected_contact_email,validated_email,selected_contact_linkedin_url,do_not_contact,unsubscribe_status,email_source&limit=' + String(($json.body && $json.body.limit) || $json.limit || 5) + '&sort=Id' }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "accept",
-              "value": "application/json"
-            },
-            {
-              "name": "xc-token",
-              "value": "={{ $env.NOCO_API_TOKEN }}"
-            }
-          ]
-        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
         "options": {}
       },
       "id": "get-outreach-rows",
@@ -53,7 +42,13 @@
       "position": [
         280,
         100
-      ]
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
     },
     {
       "parameters": {
@@ -107,23 +102,8 @@
       "parameters": {
         "method": "PATCH",
         "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "accept",
-              "value": "application/json"
-            },
-            {
-              "name": "content-type",
-              "value": "application/json"
-            },
-            {
-              "name": "xc-token",
-              "value": "={{ $env.NOCO_API_TOKEN }}"
-            }
-          ]
-        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
         "sendBody": true,
         "contentType": "json",
         "jsonBody": "={{ $json.patches }}",
@@ -138,7 +118,13 @@
       "position": [
         1400,
         100
-      ]
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
     }
   ],
   "connections": {
