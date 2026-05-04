@@ -365,6 +365,7 @@ class OutreachPlanRequest(BaseModel):
 class OutreachValidateEmailRequest(BaseModel):
     row: dict[str, Any]
     record: dict[str, Any]
+    fallback_patch: dict[str, Any] = Field(default_factory=dict)
     openrouter_response: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -1840,7 +1841,7 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
             },
         }
     except Exception as exc:
-        fallback_patch = request.record.get("patch")
+        fallback_patch = request.fallback_patch or request.record.get("patch")
         error_text = compact_whitespace(str(exc)) or "llm_email_validation_failed"
         if isinstance(fallback_patch, dict) and fallback_patch.get("Id"):
             flags = json.loads(fallback_patch.get("email_quality_flags") or "[]")
