@@ -893,7 +893,10 @@ def patch_with_email_sequence(
             funding_human_review_required=bool(funding.get("funding_human_review_required", True)),
             reason=str(funding.get("reason") or ""),
         )
-    emails = enforce_funding_claim_email(row, funding, emails)
+    if classification.get("pressure_type") == "not_ready":
+        emails = generate_email_sequence(row, classification, funding)
+    if classification.get("pressure_type") != "not_ready":
+        emails = enforce_funding_claim_email(row, funding, emails)
     score, flags, send_ready = quality_gate(classification, funding, emails)
     plan = OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",

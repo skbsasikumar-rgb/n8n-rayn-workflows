@@ -175,6 +175,28 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(patch["email_send_ready"])
         self.assertIn("forbidden_phrase:cyber essentials makes you pdpa compliant", patch["email_quality_flags"])
 
+    def test_llm_email_not_ready_keeps_empty_sequence(self):
+        row = {
+            "Id": 43,
+            "company_name": "Quiet Holdings",
+            "website_content": "Singapore corporate website with a short homepage.",
+        }
+        plan = o.plan_outreach(row)
+        candidate = {
+            f"email_{index}": {
+                "chosen_subject": "security check",
+                "body": "This should not be used for a not-ready row.",
+            }
+            for index in range(1, 5)
+        }
+        emails = o.normalize_llm_email_sequence(candidate)
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, emails)
+        self.assertEqual(plan.classification["pressure_type"], "not_ready")
+        for index in range(1, 5):
+            self.assertFalse(patch[f"email_{index}_body"])
+        self.assertFalse(patch["email_send_ready"])
+        self.assertEqual(patch["human_review_status"], "not_ready")
+
     def test_forbidden_phrases_rejected(self):
         classification = o.classify_row(
             {
