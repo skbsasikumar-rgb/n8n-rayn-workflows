@@ -339,24 +339,24 @@ class ContactBatchRunRequest(BaseModel):
 class OutreachPlanRequest(BaseModel):
     Id: int | str
     company_name: str = Field(min_length=1, max_length=300)
-    company_homepage_name: str = Field(default="", max_length=300)
-    parent_company: str = Field(default="", max_length=300)
-    best_url: str = Field(default="", max_length=2000)
-    canonical_domain: str = Field(default="", max_length=300)
-    website_content: str = Field(default="", max_length=120000)
-    source_urls: str = Field(default="", max_length=4000)
-    services_detected: list[Any] = Field(default_factory=list)
-    locations_detected: list[Any] = Field(default_factory=list)
-    leadership_or_team_signals: list[Any] = Field(default_factory=list)
-    contact_info_detected: dict[str, Any] = Field(default_factory=dict)
-    structured_data_detected: dict[str, Any] = Field(default_factory=dict)
-    industry_guess: str = Field(default="", max_length=300)
-    selected_contact_name: str = Field(default="", max_length=300)
-    selected_contact_title: str = Field(default="", max_length=300)
-    selected_contact_role: str = Field(default="", max_length=300)
-    selected_contact_email: str = Field(default="", max_length=500)
-    selected_contact_linkedin_url: str = Field(default="", max_length=1000)
-    validated_email: str = Field(default="", max_length=500)
+    company_homepage_name: Any = ""
+    parent_company: Any = ""
+    best_url: Any = ""
+    canonical_domain: Any = ""
+    website_content: Any = ""
+    source_urls: Any = ""
+    services_detected: Any = Field(default_factory=list)
+    locations_detected: Any = Field(default_factory=list)
+    leadership_or_team_signals: Any = Field(default_factory=list)
+    contact_info_detected: Any = Field(default_factory=dict)
+    structured_data_detected: Any = Field(default_factory=dict)
+    industry_guess: Any = ""
+    selected_contact_name: Any = ""
+    selected_contact_title: Any = ""
+    selected_contact_role: Any = ""
+    selected_contact_email: Any = ""
+    selected_contact_linkedin_url: Any = ""
+    validated_email: Any = ""
     do_not_contact: bool = False
     unsubscribe_status: str = Field(default="active", max_length=80)
     draft_only: bool = False
