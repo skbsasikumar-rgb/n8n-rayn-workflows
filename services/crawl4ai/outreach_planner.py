@@ -1793,6 +1793,33 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
     return not all(term in body_l for term in required)
 
 
+def email_2_not_hia_segment_diagnostic_shape(
+    body: str,
+    row: dict[str, Any],
+    classification: dict[str, Any],
+) -> bool:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return False
+    body_l = compact(body).lower()
+    if not body_l.startswith("a practical diagnostic: can "):
+        return True
+    expected_asset = segment_asset(row, classification).lower()
+    if expected_asset and expected_asset not in body_l:
+        return True
+    service_type = classification.get("hia_service_type_guess")
+    if service_type == "long_term_care":
+        return " map " not in body_l or "incident contact" not in body_l
+    if " sit today" not in body_l:
+        return True
+    wrong_segment_terms = {
+        "retail_pharmacy": ("clinic email", "appointment forms", "dental software", "consultation notes"),
+        "dental": ("clinic email", "prescription", "dispensing", "compounding"),
+        "hearing_care": ("clinic email", "prescription", "dental software", "consultation notes"),
+        "diagnostic": ("clinic email", "dental software", "prescription", "dispensing"),
+    }
+    return any(term in body_l for term in wrong_segment_terms.get(str(service_type), ()))
+
+
 def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
@@ -1891,6 +1918,8 @@ def evaluate_email_strategy(
         flags.append("email_2_generic_hia_diagnostic")
     if email_2_missing_hia_segment_terms(email2, row, classification):
         flags.append("email_2_missing_hia_segment_terms")
+    if email_2_not_hia_segment_diagnostic_shape(email2, row, classification):
+        flags.append("email_2_not_hia_segment_diagnostic_shape")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
         flags.append("asset_offer_too_generic_for_segment")
     if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -2004,6 +2033,8 @@ def quality_gate(
             flags.append("email_2_generic_hia_diagnostic")
         if email_2_missing_hia_segment_terms(emails["email_2"]["body"], row, classification):
             flags.append("email_2_missing_hia_segment_terms")
+        if email_2_not_hia_segment_diagnostic_shape(emails["email_2"]["body"], row, classification):
+            flags.append("email_2_not_hia_segment_diagnostic_shape")
         if asset_offer_too_generic_for_segment(row, classification, copy_brief):
             flags.append("asset_offer_too_generic_for_segment")
         if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -2304,6 +2335,7 @@ def patch_with_email_sequence(
         "email_2_not_diagnostic",
         "email_2_generic_hia_diagnostic",
         "email_2_missing_hia_segment_terms",
+        "email_2_not_hia_segment_diagnostic_shape",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",
         "lab_classification_ambiguous",

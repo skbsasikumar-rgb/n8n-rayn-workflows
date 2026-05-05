@@ -256,6 +256,32 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("llm_email_strategy_rejected:email_1_too_generic", patch["email_quality_flags"])
         self.assertNotIn("email_3_not_funding_only", patch["email_quality_flags"])
 
+    def test_hia_email_2_wrong_segment_shape_falls_back_to_deterministic_strategy(self):
+        row = {
+            "Id": 48,
+            "company_name": "Amber Compounding Pharmacy",
+            "website_content": "Retail pharmacy and compounding pharmacy with prescriptions, dispensing, compounding and customer services.",
+            "validated_email": "contact@example.com",
+            "draft_only": True,
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        bad_emails = {
+            key: dict(value)
+            for key, value in plan.emails.items()
+            if key.startswith("email_")
+        }
+        bad_emails["email_2"]["body"] = (
+            "Hi Amber Compounding Pharmacy team,\n\n"
+            "Appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps "
+            "should be checked for access mapping and controls. This directly addresses whether your prescription, "
+            "dispensing and compounding records are clearly handled. Open to a practical diagnostic review?"
+        )
+        bad_emails["email_2"]["word_count"] = o.word_count(bad_emails["email_2"]["body"])
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
+        self.assertIn("A practical diagnostic: can Amber Compounding Pharmacy show where prescription, dispensing, compounding, customer and supplier records sit today?", patch["email_2_body"])
+        self.assertNotIn("clinic email", patch["email_2_body"])
+        self.assertIn("llm_email_strategy_rejected:email_2_not_hia_segment_diagnostic_shape", patch["email_quality_flags"])
+
     def test_funding_email_rebuilt_when_llm_adds_non_funding_claims(self):
         row = {
             "Id": 45,
