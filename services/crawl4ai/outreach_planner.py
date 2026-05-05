@@ -371,6 +371,27 @@ def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str
     return "Hi team,"
 
 
+def company_team_greeting(company: str | None = None) -> str:
+    company_name = compact(company)
+    if company_name and company_name != "your organisation":
+        return f"Hi {company_name} team,"
+    return "Hi team,"
+
+
+def hia_window_label(classification: dict[str, Any]) -> str:
+    batch = compact(classification.get("hia_timeline_batch_guess"))
+    if classification.get("hia_deadline_claim_safe") and batch and batch != "unknown":
+        return batch.replace(" - ", " ")
+    return "HIA timelines starting from 2027"
+
+
+def hia_problem_prefix(classification: dict[str, Any]) -> str:
+    window = hia_window_label(classification)
+    if window.startswith("HIA timelines"):
+        return f"With {window},"
+    return f"With the {window} HIA window,"
+
+
 def trim_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -1079,35 +1100,50 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         hia_angle = "Map health information access, cybersecurity, data-security, vendor, backup and incident-response duties before the HIA window."
         pdpa_angle = "PDPA safeguards still matter, but the primary outreach angle is HIA readiness for health information."
         trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
-        timeline = "HIA timelines start from 2027; use specific batch dates only when the row has safe deadline evidence."
+        window = hia_window_label(classification)
+        hia_prefix = hia_problem_prefix(classification)
+        timeline = f"{window}; use specific batch dates only when the row has safe deadline evidence."
         asset = "HIA readiness map"
         cta = "Want the HIA readiness map?"
         if service_type == "hearing_care" or "hearing" in text:
-            problem = f"{company} needs to show where appointment, test and device-related records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether appointment, test and device-related records, access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
-            problem = f"{company} needs to show where patient, resident, family, volunteer and staff data sits, who can access it, which vendors touch it, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether patient, resident, family, volunteer and staff data access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
-            problem = f"{company} needs to show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether appointment, treatment and exercise-plan records, access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-            problem = f"{company} needs to show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether appointment, assessment and case-note records, access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "diagnostic":
-            problem = f"{company} needs to show where screening, diagnostic and patient-report records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether screening, diagnostic and patient-report records, access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-            problem = f"{company} needs to show where oncology/radiation treatment records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether oncology/radiation treatment records, access, vendors, backups, patching and incident steps are mapped clearly."
         elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-            problem = f"{company} needs to show where digestive/gastroenterology patient records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+            problem = f"{hia_prefix} the practical question is whether digestive/gastroenterology patient records, access, vendors, backups, patching and incident steps are mapped clearly."
         else:
-            problem = f"{company} needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
-        mechanism = "Cyber Essentials is a practical first baseline before deeper HIA work."
-        signal_parts = [public_signals["service"]]
-        if public_signals["team"]:
-            signal_parts.append(public_signals["team"])
-        if not any(compact(part) for part in signal_parts):
-            if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
-                signal_parts.append("hearing-care and appointment/test/device record signals")
-            else:
-                signal_parts.append("clinic service and patient-care signals")
-        signal = f"{company} shows {sentence_join(signal_parts)}; HIA timelines starting from 2027 make health-information readiness the clearest pressure."
+            problem = f"{hia_prefix} the practical question is whether patient-data access, vendors, backups, patching and incident steps are mapped clearly."
+        mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security side."
+        if service_type == "hearing_care" or "hearing" in text:
+            signal = f"{company} appears to provide hearing-care services where appointment, test and device-related records may sit across staff and systems."
+        elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
+            signal = f"{company} shows hospice/long-term care service signals."
+        elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
+            signal = f"{company} shows physiotherapy/allied-health service signals."
+        elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+            signal = f"{company} shows psychology/mental-health service signals."
+        elif service_type == "diagnostic":
+            signal = f"{company} shows screening/diagnostic service signals."
+        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+            signal = f"{company} shows oncology/radiation specialist-care signals."
+        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+            signal = f"{company} shows digestive/gastroenterology specialist-care signals."
+        elif service_type == "GP_OMS" or "outpatient" in text:
+            signal = f"{company} shows medical clinic, doctor and outpatient appointment signals."
+        elif public_signals["team"]:
+            signal = f"{company} shows multiple clinic service and team/practitioner signals."
+        elif public_signals["service"]:
+            signal = f"{company} shows {public_signals['service']}."
+        else:
+            signal = f"{company} shows medical clinic, doctor and outpatient appointment signals."
     elif pressure == "customer_trust":
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
@@ -1120,9 +1156,9 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         timeline = "No external HIA deadline was identified; urgency comes from customer evidence and procurement reviews."
         asset = "security evidence checklist"
         cta = "Worth sending the evidence checklist?"
-        problem = f"{company} likely needs reusable answers when customers ask how their data and systems are protected; security questions usually come down to proof."
-        mechanism = "Cyber Essentials creates a recognised baseline for access, updates, backups, malware protection and incident-response evidence."
-        signal = f"{company} shows {public_signals['service']} where customer security questions and reusable security evidence can reduce sales or procurement friction."
+        problem = "The practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review."
+        mechanism = "Cyber Essentials gives a recognised baseline for that evidence."
+        signal = f"{company} shows B2B/client-service signals where customers may ask for reusable security evidence."
     elif pressure == "pdpa_safeguards":
         if classification.get("campaign_track") == "dpo_evidence":
             personal_data = f"{data_type} handled across IT, HR, vendors and operations."
@@ -1131,7 +1167,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "evidence checklist"
             cta = "Worth sending the evidence checklist?"
             signal = f"{company} has a data-protection or operations contact and likely data spread across HR/admin systems, vendors and staff workflows."
-            problem = f"For DPOs and ops teams at {company}, the hard part is often proving who has access, where data sits, how vendors are managed, and what happens during an incident."
+            problem = "The practical PDPA question is whether safeguards can be shown clearly across IT, HR, vendors and operations: who has access, where data sits, how vendors are managed and who responds to incidents."
         elif entity in {"npo", "charity", "social_service"}:
             personal_data = "resident, beneficiary, volunteer, donor and staff data handled through care and community operations."
             sensitive_examples = "resident details, beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
@@ -1139,22 +1175,25 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "care-organisation checklist"
             cta = "Worth sending the care-organisation checklist?"
             signal = f"{company} appears to operate in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
-            problem = f"{company} likely needs to show who owns resident, beneficiary, volunteer and staff data systems, who can access them, how backups work, and what happens during an incident."
+            problem = "The practical PDPA question is whether resident, beneficiary, volunteer and staff data safeguards can be shown clearly: who owns each system, who can access it, how backups work and who responds to incidents."
         else:
             personal_data = f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools."
             sensitive_examples = f"{data_type}, employee data, contact records and service history."
             systems = "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts."
             asset = "PDPA safeguards checklist"
             cta = "Worth sending the safeguards checklist?"
-            signal = f"{company} shows {public_signals['service']} where {data_type} may sit across staff, vendors and operational systems."
-            problem = f"{company} likely needs to show who owns personal-data systems, who can access them, how backups and updates work, and what happens during an incident."
+            if public_signals["service"]:
+                signal = f"{company} appears to handle customer and employee data through {public_signals['service']}."
+            else:
+                signal = f"{company} appears to handle customer and employee data through its services."
+            problem = "The practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
         hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
         pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by organising evidence around assets, access, malware protection, patching, backups and incident response."
         trust_angle = "Clear safeguard evidence also helps customers, donors, partners or staff trust how data is handled."
         timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards."
-        mechanism = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning those questions into a practical baseline and evidence set."
+        mechanism = "Cyber Essentials supports that security-safeguards baseline."
     else:
         profile = ""
         business_model = "unknown"
@@ -1219,6 +1258,7 @@ def generate_email_sequence(
     copy_brief = copy_brief or build_copy_brief(row, classification, funding)
     company = compact(row.get("company_name") or "your organisation")
     greeting = email_greeting(row, company)
+    email1_greeting = company_team_greeting(company)
     comma_greeting = email_comma_greeting(row, company)
     if not copy_brief_ready(classification, copy_brief):
         return empty_email_sequence()
@@ -1265,7 +1305,10 @@ def generate_email_sequence(
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
-        email1_body = f"{greeting} {trigger}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
+        noticed = trigger
+        if noticed.lower().startswith("noticed "):
+            noticed = noticed[8:].strip()
+        email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
         if classification["pressure_type"] == "hia_regulatory":
             service_type = classification.get("hia_service_type_guess")
             if service_type == "hearing_care":

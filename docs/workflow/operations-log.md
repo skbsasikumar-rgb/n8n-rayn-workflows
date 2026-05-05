@@ -841,3 +841,9 @@ Cold email copy QA hardening:
 - added regression tests for Asia Physio, Asia Psychology Centre, Assisi Hospice, and Asia Digestive Associates style rows so these no longer collapse to generic clinic wording or `not_ready` when the evidence is present.
 - local validation passed: Python compile check for `outreach_planner.py`; focused outreach/audit/funding pytest suite `44 passed`.
 - no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 21:22 +08`: tightened Email 1 target style after copy QA showed the copy brief was still merging signal and pressure text.
+- Email 1 is now template-controlled as company-team greeting, `Noticed...` concrete signal, practical pressure/problem, Cyber Essentials baseline, and one tiny CTA.
+- HIA clinic copy now supports the American International Clinic target shape: medical clinic/doctor/outpatient signal, Batch 1 Sep 2027 HIA window when safe, patient-data access/vendors/backups/patching/incident steps, and HIA readiness map CTA.
+- non-HIA PDPA and B2B trust copy now use the requested practical safeguard/proof framing without saying Cyber Essentials equals PDPA or HIA compliance.
+- local validation passed: workflow JSON parse, Python compile check for `outreach_planner.py`, and focused outreach/contact/proxy tests `86 passed`.
+- no deployment was performed by this patch step, no emails were sent, and Instantly was not used.

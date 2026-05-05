@@ -62,7 +62,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertTrue(plan.classification["pdpa_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("Cyber Essentials supports the security-safeguards side of PDPA readiness", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials supports that security-safeguards baseline", plan.emails["email_1"]["body"])
 
     def test_dpo_contact_uses_data_protection_evidence_track(self):
         plan = o.plan_outreach(
@@ -77,7 +77,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
-        self.assertIn("DPOs and ops teams", plan.emails["email_1"]["body"])
+        self.assertIn("data-protection or operations contact", plan.emails["email_1"]["body"])
+        self.assertIn("The practical PDPA question", plan.emails["email_1"]["body"])
 
     def test_b2b_company_uses_customer_trust_track(self):
         plan = o.plan_outreach(
@@ -91,7 +92,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "customer_trust")
         self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "security evidence")
-        self.assertIn("security questions usually come down to proof", plan.emails["email_1"]["body"])
+        self.assertIn("without rebuilding answers for every customer review", plan.emails["email_1"]["body"])
         self.assertIn("customer security question", plan.emails["email_2"]["body"])
         self.assertNotIn("Cyber Essentials is", plan.emails["email_2"]["body"])
 
@@ -235,9 +236,9 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("clinic service", patch["email_1_body"])
+        self.assertIn("Noticed Amaris B. Clinic shows", patch["email_1_body"])
         self.assertIn("team/practitioner", patch["email_1_body"])
-        self.assertIn("HIA timelines starting from 2027", patch["email_1_body"])
+        self.assertIn("HIA window", patch["email_1_body"])
         self.assertIn("llm_email_strategy_rejected:email_1_too_generic", patch["email_quality_flags"])
         self.assertNotIn("email_3_not_funding_only", patch["email_quality_flags"])
 
@@ -360,8 +361,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.classification["data_type_signal"], {"resident_data", "beneficiary_data"})
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
         brief = plan.copy_brief
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Sree Narayana Mission (Singapore) team,"))
         self.assertIn("care/community-service", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_1"]["body"])
+        self.assertIn("The practical PDPA question", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_2"]["body"])
         self.assertIn("resident", brief["personal_data_handled_guess"])
         self.assertIn("beneficiary", brief["personal_data_handled_guess"])
@@ -395,15 +398,14 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("2027", brief["regulatory_pressure_summary"])
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Amaris B. Clinic team,"))
+        self.assertIn("Noticed Amaris B. Clinic shows", plan.emails["email_1"]["body"])
         self.assertIn("clinic service", plan.emails["email_1"]["body"])
         self.assertIn("team/practitioner", plan.emails["email_1"]["body"])
-        self.assertIn("HIA timelines starting from 2027", plan.emails["email_1"]["body"])
-        self.assertIn("where health information sits", plan.emails["email_1"]["body"])
-        self.assertIn("who can access it", plan.emails["email_1"]["body"])
-        self.assertIn("which vendors touch it", plan.emails["email_1"]["body"])
-        self.assertIn("how backups work", plan.emails["email_1"]["body"])
-        self.assertIn("who reports an incident", plan.emails["email_1"]["body"])
-        self.assertIn("Cyber Essentials is a practical first baseline", plan.emails["email_1"]["body"])
+        self.assertIn("HIA window", plan.emails["email_1"]["body"])
+        self.assertIn("patient-data access", plan.emails["email_1"]["body"])
+        self.assertIn("vendors, backups, patching and incident steps", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials is a practical first baseline for the cybersecurity/data-security side", plan.emails["email_1"]["body"])
         self.assertIn("Want the HIA readiness map?", plan.emails["email_1"]["body"])
         self.assertIn("where health information sits", plan.emails["email_2"]["body"])
         self.assertIn("appointment", brief["data_systems_likely"])
@@ -411,6 +413,29 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("vendor", brief["data_systems_likely"])
         self.assertIn("incident", brief["data_systems_likely"])
         self.assertEqual(brief["email_asset_offer"], "HIA readiness map")
+
+    def test_american_international_clinic_matches_target_email_1_shape(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 61,
+                "company_name": "American International Clinic Singapore",
+                "best_url": "https://aiclinic.com.sg/",
+                "services_detected": ["medical clinic", "doctor consultations", "outpatient appointments"],
+                "leadership_or_team_signals": ["doctor team"],
+                "website_content": "Singapore GP medical clinic with doctors, outpatient appointments, consultation and patient services.",
+            },
+            programmes=[verified_program()],
+        )
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
+        self.assertIn("Batch 1 - Sep 2027", plan.classification["hia_timeline_batch_guess"])
+        self.assertTrue(body.startswith("Hi American International Clinic Singapore team,"))
+        self.assertIn("Noticed American International Clinic Singapore shows medical clinic, doctor and outpatient appointment signals.", body)
+        self.assertIn("With the Batch 1 Sep 2027 HIA window", body)
+        self.assertIn("patient-data access, vendors, backups, patching and incident steps", body)
+        self.assertIn("Cyber Essentials is a practical first baseline for the cybersecurity/data-security side.", body)
+        self.assertIn("Want the HIA readiness map?", body)
 
     def test_amazing_hearing_group_fixture(self):
         plan = o.plan_outreach(
@@ -428,8 +453,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
         self.assertIn("hearing-care", plan.emails["email_1"]["body"])
-        self.assertIn("health-information readiness", plan.emails["email_1"]["body"])
-        self.assertIn("appointment, test and device-related record signals", plan.emails["email_1"]["body"])
+        self.assertIn("appointment, test and device-related records may sit across staff and systems", plan.emails["email_1"]["body"])
+        self.assertIn("appointment, test and device-related records", plan.emails["email_1"]["body"])
+        self.assertIn("patching and incident steps", plan.emails["email_1"]["body"])
         self.assertIn("appointment", plan.emails["email_2"]["body"])
         self.assertIn("test", plan.emails["email_2"]["body"])
         self.assertIn("device", plan.emails["email_2"]["body"])
@@ -461,9 +487,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("security evidence", brief["customer_trust_angle"])
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "security evidence checklist")
-        self.assertIn("security questions usually come down to proof", brief["email_problem_statement"])
-        self.assertIn("customer security questions", plan.emails["email_1"]["body"])
+        self.assertIn("without rebuilding answers for every customer review", brief["email_problem_statement"])
+        self.assertIn("customers may ask for reusable security evidence", plan.emails["email_1"]["body"])
         self.assertIn("reusable security evidence", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_2"]["body"])
 
     def test_copy_qa_mode_bypasses_sendable_email_but_never_send_ready(self):
