@@ -361,6 +361,7 @@ class OutreachPlanRequest(BaseModel):
     unsubscribe_status: Any = "active"
     draft_only: bool = False
     copy_qa_mode: bool = False
+    hia_llm_review: Any = Field(default_factory=dict)
 
 
 class OutreachValidateEmailRequest(BaseModel):

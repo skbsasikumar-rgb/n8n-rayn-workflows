@@ -571,14 +571,18 @@ def configured_proxy_url() -> str:
     return normalize_proxy_url(os.getenv("PUBLIC_WEB_ENRICHMENT_PROXY_URL", ""))
 
 
+def proxy_mode() -> str:
+    raw = compact_whitespace(os.getenv("PUBLIC_WEB_ENRICHMENT_PROXY_MODE", "")).lower()
+    if raw in {"always", "scoped", "fallback"}:
+        return raw
+    return "fallback"
+
+
 def proxy_domains() -> list[str]:
     return [normalized_hostname(value) for value in env_csv("PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS")]
 
 
-def proxy_applies_to_url(url: str) -> bool:
-    proxy_url = configured_proxy_url()
-    if not proxy_url:
-        return False
+def proxy_scope_matches_url(url: str) -> bool:
     hostname = normalized_hostname(urlsplit(url).hostname or "")
     if not hostname:
         return False
@@ -594,8 +598,37 @@ def proxy_applies_to_url(url: str) -> bool:
     return False
 
 
-def proxy_config_for_url(url: str) -> dict[str, str] | None:
-    if not proxy_applies_to_url(url):
+def proxy_applies_to_url(url: str) -> bool:
+    proxy_url = configured_proxy_url()
+    if not proxy_url:
+        return False
+    mode = proxy_mode()
+    if mode == "always":
+        return True
+    if mode == "scoped":
+        return proxy_scope_matches_url(url)
+    return False
+
+
+def proxy_retry_available_for_url(url: str) -> bool:
+    proxy_url = configured_proxy_url()
+    if not proxy_url:
+        return False
+    mode = proxy_mode()
+    if mode == "always":
+        return False
+    if mode == "scoped":
+        return proxy_scope_matches_url(url)
+    domains = proxy_domains()
+    if not domains:
+        return True
+    return proxy_scope_matches_url(url)
+
+
+def proxy_config_for_url(url: str, force: bool = False) -> dict[str, str] | None:
+    if not force and not proxy_applies_to_url(url):
+        return None
+    if force and not proxy_retry_available_for_url(url) and not proxy_applies_to_url(url):
         return None
     proxy_url = configured_proxy_url()
     parsed = urlsplit(proxy_url)
@@ -1007,7 +1040,7 @@ def make_absolute_url(base_url: str, href: str) -> str:
     )
 
 
-def build_requests_session(target_url: str = "") -> requests.Session:
+def build_requests_session(target_url: str = "", use_proxy: bool | None = None) -> requests.Session:
     session = requests.Session()
     session.headers.update(
         {
@@ -1017,7 +1050,9 @@ def build_requests_session(target_url: str = "") -> requests.Session:
         }
     )
     proxy_url = configured_proxy_url()
-    if proxy_url and proxy_applies_to_url(target_url):
+    if use_proxy is None:
+        use_proxy = proxy_applies_to_url(target_url)
+    if proxy_url and use_proxy:
         session.proxies.update({"http": proxy_url, "https": proxy_url})
         session.trust_env = False
     return session
@@ -2694,6 +2729,23 @@ async def crawl_url(
     return data
 
 
+def proxy_retryable_error(error_text: str) -> bool:
+    lowered = compact_whitespace(error_text).lower()
+    return any(
+        marker in lowered
+        for marker in (
+            "http 403",
+            "http 429",
+            "http 503",
+            "forbidden",
+            "too many requests",
+            "cf-challenge",
+            "captcha",
+            "challenge",
+        )
+    )
+
+
 def fetch_static_url(session: requests.Session, url: str) -> dict[str, Any]:
     response = session.get(url, timeout=(10, 30), allow_redirects=True)
     if response.status_code >= 400:
@@ -2707,6 +2759,112 @@ def fetch_static_url(session: requests.Session, url: str) -> dict[str, Any]:
         "cleaned_html": response.text,
         "metadata": {},
     }
+
+
+async def retry_crawl_with_proxy(
+    crawler: AsyncWebCrawler,
+    url: str,
+    page_timeout_ms: int,
+    errors: list[str],
+    proxy_retry_log: list[dict[str, Any]],
+    reason: str,
+) -> dict[str, Any] | None:
+    proxy_config = proxy_config_for_url(url, force=True)
+    if not proxy_config:
+        return None
+    started = time.perf_counter()
+    try:
+        result = await crawl_url(crawler, url, page_timeout_ms, proxy_config=proxy_config)
+        page = extract_page_artifact(result)
+        if page.challenge_hints:
+            proxy_retry_log.append(
+                {
+                    "url": url,
+                    "reason": reason,
+                    "transport": "crawl4ai_proxy",
+                    "success": False,
+                    "challenge_hints": page.challenge_hints,
+                    "duration_ms": elapsed_ms(started),
+                }
+            )
+            errors.append(f"{url}: proxy retry still returned challenge page")
+            return None
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "crawl4ai_proxy",
+                "success": True,
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: proxy retry recovered crawl after {reason}")
+        return result
+    except Exception as exc:
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "crawl4ai_proxy",
+                "success": False,
+                "error": compact_whitespace(exc),
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: proxy retry failed: {compact_whitespace(exc)}")
+        return None
+
+
+def retry_static_with_proxy(
+    url: str,
+    errors: list[str],
+    proxy_retry_log: list[dict[str, Any]],
+    reason: str,
+) -> dict[str, Any] | None:
+    if not proxy_retry_available_for_url(url):
+        return None
+    session = build_requests_session(url, use_proxy=True)
+    started = time.perf_counter()
+    try:
+        result = fetch_static_url(session, url)
+        page = extract_page_artifact(result)
+        if page.challenge_hints:
+            proxy_retry_log.append(
+                {
+                    "url": url,
+                    "reason": reason,
+                    "transport": "static_proxy",
+                    "success": False,
+                    "challenge_hints": page.challenge_hints,
+                    "duration_ms": elapsed_ms(started),
+                }
+            )
+            errors.append(f"{url}: proxy static retry still returned challenge page")
+            return None
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "static_proxy",
+                "success": True,
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: proxy static retry recovered after {reason}")
+        return result
+    except Exception as exc:
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "static_proxy",
+                "success": False,
+                "error": compact_whitespace(exc),
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: proxy static retry failed: {compact_whitespace(exc)}")
+        return None
 
 
 def build_homepage_links(page: PageArtifact) -> list[dict[str, str]]:
@@ -2731,6 +2889,7 @@ async def enrich_row(
         return record
 
     errors: list[str] = []
+    proxy_retry_log: list[dict[str, Any]] = []
     normalize_started = time.perf_counter()
     normalization = canonical_root_url(row.url_picked)
     timings["normalize_ms"] = elapsed_ms(normalize_started)
@@ -2860,37 +3019,67 @@ async def enrich_row(
             errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
         except Exception as fallback_exc:
             error_text = compact_whitespace(fallback_exc) or crawl_error_text
-            return stamp(EnrichmentRecord(
-                row_id=row.row_id,
-                company_name=row.company_name,
-                url_picked=row.url_picked,
-                best_url=best_url,
-                crawl_status="crawl_failed",
-                pages_crawled_count=0,
-                pages_crawled_urls=[],
-                title="",
-                meta_description="",
-                organization_name_detected="",
-                organization_type_guess="Unknown",
-                solo_or_group_guess="unknown",
-                parent_or_affiliation_signals=[],
-                size_signals={"pages_crawled": 0},
-                industry_guess="Unknown",
-                services_detected=[],
-                locations_detected=[],
-                contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
-                leadership_or_team_signals=[],
-                social_links=[],
-                structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-                enrichment_notes=f"Homepage crawl failed: {error_text}",
-                confidence_score=0.05,
-                error_notes=[error_text],
-                best_url_candidate=validation.best_url_candidate,
-                http_status=validation.http_status,
-                redirect_chain=validation.redirect_chain,
-                url_validation_status=validation.url_validation_status,
-                crawl_context={"robots": {"url": robots_policy.robots_url, "note": robots_policy.note}},
-            ))
+            if proxy_retryable_error(crawl_error_text) or proxy_retryable_error(error_text):
+                homepage_result = await retry_crawl_with_proxy(
+                    crawler,
+                    best_url,
+                    page_timeout_ms,
+                    errors,
+                    proxy_retry_log,
+                    reason=f"homepage_error:{crawl_error_text or error_text}",
+                )
+                if homepage_result is None:
+                    homepage_result = retry_static_with_proxy(
+                        best_url,
+                        errors,
+                        proxy_retry_log,
+                        reason=f"homepage_error:{crawl_error_text or error_text}",
+                    )
+                if homepage_result is not None:
+                    timings["homepage_proxy_recovery_ms"] = timings.get("homepage_proxy_recovery_ms", 0.0) + elapsed_ms(homepage_started)
+                    error_text = ""
+            if not error_text:
+                pass
+            else:
+                return stamp(EnrichmentRecord(
+                    row_id=row.row_id,
+                    company_name=row.company_name,
+                    url_picked=row.url_picked,
+                    best_url=best_url,
+                    crawl_status="crawl_failed",
+                    pages_crawled_count=0,
+                    pages_crawled_urls=[],
+                    title="",
+                    meta_description="",
+                    organization_name_detected="",
+                    organization_type_guess="Unknown",
+                    solo_or_group_guess="unknown",
+                    parent_or_affiliation_signals=[],
+                    size_signals={"pages_crawled": 0},
+                    industry_guess="Unknown",
+                    services_detected=[],
+                    locations_detected=[],
+                    contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
+                    leadership_or_team_signals=[],
+                    social_links=[],
+                    structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
+                    enrichment_notes=f"Homepage crawl failed: {error_text}",
+                    confidence_score=0.05,
+                    error_notes=[error_text],
+                    best_url_candidate=validation.best_url_candidate,
+                    http_status=validation.http_status,
+                    redirect_chain=validation.redirect_chain,
+                    url_validation_status=validation.url_validation_status,
+                    crawl_context={
+                        "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
+                        "proxy": {
+                            "mode": proxy_mode(),
+                            "configured": bool(configured_proxy_url()),
+                            "initial_proxy_used": bool(crawl_proxy_config),
+                            "retries": proxy_retry_log,
+                        },
+                    },
+                ))
 
     homepage_page = extract_page_artifact(homepage_result)
     if homepage_page.challenge_hints:
@@ -2909,6 +3098,27 @@ async def enrich_row(
                 errors.append(f"{best_url}: static fetch recovered after challenge page")
         except Exception as static_exc:
             errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
+        if not captcha_solved and proxy_retry_available_for_url(best_url):
+            proxy_result = await retry_crawl_with_proxy(
+                crawler,
+                best_url,
+                page_timeout_ms,
+                errors,
+                proxy_retry_log,
+                reason="homepage_challenge_detected",
+            )
+            if proxy_result is None:
+                proxy_result = retry_static_with_proxy(
+                    best_url,
+                    errors,
+                    proxy_retry_log,
+                    reason="homepage_challenge_detected",
+                )
+            if proxy_result is not None:
+                homepage_result = proxy_result
+                homepage_page = extract_page_artifact(proxy_result)
+                challenge_note = ""
+                captcha_solved = not homepage_page.challenge_hints
         if not captcha_solved and captcha_solver.is_configured():
             try:
                 from playwright.async_api import async_playwright as _ap
@@ -2986,6 +3196,12 @@ async def enrich_row(
                     "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
                     "challenge_hints": homepage_page.challenge_hints,
                     "captcha_solver": captcha_solver.solver_diagnostics(),
+                    "proxy": {
+                        "mode": proxy_mode(),
+                        "configured": bool(configured_proxy_url()),
+                        "initial_proxy_used": bool(crawl_proxy_config),
+                        "retries": proxy_retry_log,
+                    },
                 },
             ))
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
@@ -3031,9 +3247,46 @@ async def enrich_row(
                 timings["candidate_static_fallback_ms"] = timings.get("candidate_static_fallback_ms", 0.0) + elapsed_ms(static_started)
                 errors.append(f"{candidate_url}: Crawl4AI fallback used after page error: {crawl_error_text}")
             except Exception as fallback_exc:
-                errors.append(f"{candidate_url}: {compact_whitespace(fallback_exc) or crawl_error_text}")
-                continue
+                candidate_result = None
+                fallback_error = compact_whitespace(fallback_exc) or crawl_error_text
+                if proxy_retryable_error(crawl_error_text) or proxy_retryable_error(fallback_error):
+                    candidate_result = await retry_crawl_with_proxy(
+                        crawler,
+                        candidate_url,
+                        page_timeout_ms,
+                        errors,
+                        proxy_retry_log,
+                        reason=f"candidate_error:{crawl_error_text or fallback_error}",
+                    )
+                    if candidate_result is None:
+                        candidate_result = retry_static_with_proxy(
+                            candidate_url,
+                            errors,
+                            proxy_retry_log,
+                            reason=f"candidate_error:{crawl_error_text or fallback_error}",
+                        )
+                if candidate_result is None:
+                    errors.append(f"{candidate_url}: {fallback_error}")
+                    continue
         page = extract_page_artifact(candidate_result)
+        if page.challenge_hints and proxy_retry_available_for_url(candidate_url):
+            proxy_candidate_result = await retry_crawl_with_proxy(
+                crawler,
+                candidate_url,
+                page_timeout_ms,
+                errors,
+                proxy_retry_log,
+                reason="candidate_challenge_detected",
+            )
+            if proxy_candidate_result is None:
+                proxy_candidate_result = retry_static_with_proxy(
+                    candidate_url,
+                    errors,
+                    proxy_retry_log,
+                    reason="candidate_challenge_detected",
+                )
+            if proxy_candidate_result is not None:
+                page = extract_page_artifact(proxy_candidate_result)
         if page.content_hash and page.content_hash in seen_hashes:
             continue
         if not page.text:
@@ -3083,6 +3336,9 @@ async def enrich_row(
         f"Crawled {len(crawled_pages)} public pages from {registered_domain(normalization.hostname)}; "
         f"found {len(locations)} location signals, {len(services)} service signals, and {len(leadership_signals)} team signals."
     )
+    proxy_recoveries = [entry for entry in proxy_retry_log if entry.get("success")]
+    if proxy_recoveries:
+        notes += f" Proxy fallback recovered {len(proxy_recoveries)} blocked fetches."
     if ignored_errors:
         notes += f" Ignored {len(ignored_errors)} same-domain subpage 404 warnings."
     crawl_status = "crawled" if crawled_pages else ("partial" if fatal_errors else "crawled")
@@ -3153,6 +3409,12 @@ async def enrich_row(
                 "affiliations_detected": parent_verification.affiliations,
                 "rejected_parent_candidates": parent_verification.rejected_candidates,
                 "parent_company_candidates": [asdict(candidate) for candidate in parent_verification.candidates],
+            },
+            "proxy": {
+                "mode": proxy_mode(),
+                "configured": bool(configured_proxy_url()),
+                "initial_proxy_used": bool(crawl_proxy_config),
+                "retries": proxy_retry_log,
             },
         },
     )

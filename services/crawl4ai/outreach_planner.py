@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
+
+import requests
 
 try:
     from .funding_programs import FundingMatch, match_programmes
@@ -155,12 +158,24 @@ HEALTHCARE_TERMS = (
     "clinic",
     "doctor",
     "medical",
+    "outpatient",
+    "general practitioner",
+    "gp",
+    "specialist",
     "dental",
     "dentist",
     "pharmacy",
     "diagnostic",
     "hospital",
+    "clinical laboratory",
+    "laboratory",
+    "radiology",
+    "nuclear medicine",
+    "renal dialysis",
+    "ambulatory surgical",
+    "assisted reproduction",
     "physio",
+    "physiotherapy",
     "allied health",
     "hearing",
     "audiology",
@@ -168,6 +183,35 @@ HEALTHCARE_TERMS = (
     "health screening",
     "treatment",
 )
+AMBIGUOUS_HIA_TERMS = (
+    "aesthetic",
+    "aesthetics",
+    "wellness",
+    "therapy",
+    "therapist",
+    "care",
+    "healthcare",
+    "health care",
+    "hearing",
+    "audiology",
+    "medical device",
+    "medical devices",
+    "rehabilitation",
+    "screening",
+    "test",
+    "tests",
+)
+HIA_BATCH_BY_SERVICE = {
+    "GP_OMS": "Batch 1 - Sep 2027",
+    "hospital": "Batch 1 - Sep 2027",
+    "diagnostic": "Batch 1 - Sep 2027",
+    "specialist_OMS": "Batch 2 - Sep 2028",
+    "long_term_care": "Batch 2 - Sep 2028",
+    "dental": "Batch 3 - Mar 2030",
+    "retail_pharmacy": "Batch 3 - Mar 2030",
+    "HIMS_provider": "Other CS/DS by Sep 2028",
+    "NEHR_user": "Other CS/DS by Sep 2028",
+}
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
 B2B_TERMS = (
@@ -326,7 +370,15 @@ def confidence_from_score(score: int) -> str:
 
 def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
     company = compact(row.get("company_name"))
-    if ("clinic" in text or "dental" in text or company.lower().endswith("clinic")) and not contains_any(text, NPO_TERMS):
+    if "clinic" in company.lower() or company.lower().endswith("clinic"):
+        return {
+            "entity_type_guess": "clinic",
+            "entity_type_confidence": "high",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
+        }
+    if ("clinic" in text or "dental" in text) and not contains_any(text, NPO_TERMS):
         return {
             "entity_type_guess": "clinic",
             "entity_type_confidence": "high",
@@ -375,36 +427,193 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
 
 def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     score = 0
+    batch_override = ""
     for term in HEALTHCARE_TERMS:
         if term in text:
             score += 12
     if "patient" in text or "health information" in text:
         score += 18
+    company = compact(row.get("company_name")).lower()
+    if "clinic" in company:
+        score += 24
     if "dental" in text or "dentist" in text:
         service = "dental"
+    elif "ambulatory surgical" in text or "day surgery" in text:
+        service = "unknown"
+        batch_override = "Batch 3 - Mar 2030"
+    elif "assisted reproduction" in text or "ivf" in text or "fertility" in text:
+        service = "unknown"
+        batch_override = "Batch 3 - Mar 2030"
     elif "pharmacy" in text:
         service = "retail_pharmacy"
     elif "hearing" in text or "audiology" in text:
         service = "hearing_care"
-    elif "diagnostic" in text or "radiology" in text:
+    elif "renal dialysis" in text or "dialysis" in text:
+        service = "unknown"
+        batch_override = "Batch 2 - Sep 2028"
+    elif "nursing home" in text or "long term care" in text or "long-term care" in text:
+        service = "long_term_care"
+    elif "diagnostic" in text or "radiology" in text or "clinical laboratory" in text or "laboratory" in text or "nuclear medicine" in text:
         service = "diagnostic"
+    elif "specialist" in text:
+        service = "specialist_OMS"
+    elif "hims" in text or "health information management system" in text:
+        service = "HIMS_provider"
+    elif "nehr" in text:
+        service = "NEHR_user"
     elif "physio" in text or "therapy" in text:
         service = "allied_health"
     elif "clinic" in text or "doctor" in text or "medical" in text:
         service = "GP_OMS"
     else:
         service = "unknown"
+    if service in HIA_BATCH_BY_SERVICE or batch_override:
+        score = max(score + 24, 45)
     score = min(score, 100)
     confidence = confidence_from_score(score)
+    batch = batch_override or HIA_BATCH_BY_SERVICE.get(service, "unknown")
+    hia_relevant = score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36)
     return {
-        "hia_relevant": score >= 45,
+        "hia_relevant": hia_relevant,
         "hia_relevance_score": score,
         "hia_confidence": confidence,
-        "hia_scope_reason": "Website evidence indicates healthcare services and possible patient or health-information handling." if score >= 45 else "Healthcare/HIA scope evidence is weak.",
+        "hia_scope_reason": (
+            "Website evidence indicates a healthcare service type that may fall under HIA health-information, cybersecurity and data-security duties."
+            if hia_relevant
+            else "Healthcare/HIA scope evidence is weak."
+        ),
         "hia_service_type_guess": service,
-        "hia_timeline_batch_guess": "unknown",
-        "hia_deadline_claim_safe": False,
+        "hia_timeline_batch_guess": batch,
+        "hia_deadline_claim_safe": batch != "unknown" and confidence in {"medium", "high"},
         "hia_disclaimer_needed": True,
+    }
+
+
+def hia_llm_enabled() -> bool:
+    if os.getenv("OUTREACH_HIA_LLM_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+
+
+def should_review_hia_with_llm(row: dict[str, Any], text: str, hia: dict[str, Any]) -> bool:
+    if hia.get("hia_confidence") == "high":
+        return False
+    if row.get("hia_llm_review"):
+        return True
+    if hia.get("hia_relevant") and hia.get("hia_service_type_guess") in HIA_BATCH_BY_SERVICE:
+        return False
+    return contains_any(text, AMBIGUOUS_HIA_TERMS)
+
+
+def hia_review_payload(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "company_name": row.get("company_name", ""),
+        "website_url": row.get("best_url") or row.get("url_picked") or "",
+        "company_homepage_name": row.get("company_homepage_name", ""),
+        "industry_guess": row.get("industry_guess", ""),
+        "website_content": compact(row.get("website_content"))[:7000],
+        "services_detected": row.get("services_detected", ""),
+        "locations_detected": row.get("locations_detected", ""),
+        "leadership_or_team_signals": row.get("leadership_or_team_signals", ""),
+        "contact_info_detected": row.get("contact_info_detected", ""),
+        "structured_data_detected": row.get("structured_data_detected", ""),
+        "selected_contact_title": row.get("selected_contact_title", ""),
+        "deterministic_hia": hia,
+    }
+
+
+HIA_LLM_REVIEW_PROMPT = """You classify ambiguous Singapore healthcare scope for HIA outreach.
+Use only provided evidence. Return strict JSON only. Do not invent facts.
+
+Rules:
+- If it is clearly a clinic, GP, outpatient medical provider, dental clinic, retail pharmacy, diagnostic/lab/radiology provider, hospital, nursing home, renal dialysis provider, HIMS provider, or NEHR user, set hia_relevant true.
+- If it is only wellness, beauty, product retail, training, media, or generic care language without healthcare service evidence, set hia_relevant false.
+- For hearing-care or audiology, set hia_relevant true only when the evidence shows hearing tests, appointments, clinical care, audiologists, or patient/customer health records.
+- Return a service type only when evidence supports it.
+- Use medium/high confidence only when evidence quotes are concrete.
+
+Return:
+{
+  "hia_relevant": false,
+  "hia_confidence": "low|medium|high",
+  "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|HIMS_provider|NEHR_user|unknown",
+  "hia_scope_reason": "",
+  "evidence": [{"quote": "", "source_field": "", "reason": ""}],
+  "human_review_required": true
+}
+"""
+
+
+def call_hia_llm_review(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, Any] | None:
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash").strip(),
+                "temperature": 0,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": HIA_LLM_REVIEW_PROMPT},
+                    {"role": "user", "content": json.dumps(hia_review_payload(row, hia), ensure_ascii=False)},
+                ],
+            },
+            timeout=float(os.getenv("OUTREACH_HIA_LLM_TIMEOUT_SECONDS", "20")),
+        )
+        response.raise_for_status()
+        choices = response.json().get("choices") or []
+        content = choices[0].get("message", {}).get("content", "") if choices else ""
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except Exception:
+        return None
+
+
+def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(review, dict):
+        return hia
+    confidence = str(review.get("hia_confidence") or "low").strip().lower()
+    if confidence not in {"medium", "high"}:
+        return {**hia, "hia_llm_review_status": "low_confidence"}
+    service = str(review.get("hia_service_type_guess") or "unknown").strip()
+    valid_services = {
+        "GP_OMS",
+        "specialist_OMS",
+        "dental",
+        "retail_pharmacy",
+        "diagnostic",
+        "hospital",
+        "allied_health",
+        "hearing_care",
+        "long_term_care",
+        "HIMS_provider",
+        "NEHR_user",
+        "unknown",
+    }
+    if service not in valid_services:
+        service = "unknown"
+    relevant = bool(review.get("hia_relevant"))
+    batch = HIA_BATCH_BY_SERVICE.get(service, "unknown")
+    reason = compact(review.get("hia_scope_reason")) or hia.get("hia_scope_reason", "")
+    return {
+        **hia,
+        "hia_relevant": relevant,
+        "hia_relevance_score": max(int(hia.get("hia_relevance_score") or 0), 80 if confidence == "high" and relevant else 55 if relevant else 20),
+        "hia_confidence": confidence,
+        "hia_scope_reason": f"LLM ambiguous-HIA review: {reason}",
+        "hia_service_type_guess": service,
+        "hia_timeline_batch_guess": batch,
+        "hia_deadline_claim_safe": relevant and batch != "unknown" and confidence in {"medium", "high"},
+        "hia_disclaimer_needed": True,
+        "hia_llm_review_status": "applied",
+        "hia_llm_review_json": review,
     }
 
 
@@ -457,6 +666,11 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     text = lower_blob(row)
     entity = infer_entity(row, text)
     hia = infer_hia(row, text)
+    hia_review = row.get("hia_llm_review")
+    if not hia_review and hia_llm_enabled() and should_review_hia_with_llm(row, text, hia):
+        hia_review = call_hia_llm_review(row, hia)
+    if should_review_hia_with_llm(row, text, hia):
+        hia = apply_hia_llm_review(hia, hia_review)
     data_type, personal_intensity, sensitive_likelihood = infer_data_signal(text, hia, entity)
     dpo_owner = is_data_protection_owner(row)
     trust_signal = business_model_trust_signal(text)

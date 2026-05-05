@@ -453,6 +453,115 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(o.sendable_email({"selected_contact_email": "ops@exampleclinic.sg"}), "")
         self.assertEqual(o.sendable_email({}), "")
 
+    def test_american_international_clinic_is_hia_batch_1(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 46,
+                "company_name": "American International Clinic Singapore",
+                "validated_email": "info@aiclinic.com.sg",
+                "best_url": "https://aiclinic.com.sg/",
+                "website_content": "International medical clinic in Singapore with doctors, outpatient appointments and patient treatment services.",
+                "services_detected": "medical clinic; doctor consultations; outpatient appointments",
+                "leadership_or_team_signals": "doctor team",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
+        self.assertEqual(plan.classification["hia_timeline_batch_guess"], "Batch 1 - Sep 2027")
+        self.assertTrue(plan.classification["hia_deadline_claim_safe"])
+        self.assertFalse(plan.classification["pdpa_relevant"])
+
+    def test_dental_and_pharmacy_hia_batches(self):
+        dental = o.classify_row(
+            {
+                "company_name": "Example Dental",
+                "website_content": "Outpatient dental clinic with dentists and patient appointments in Singapore.",
+            }
+        )
+        pharmacy = o.classify_row(
+            {
+                "company_name": "Example Pharmacy",
+                "website_content": "Retail pharmacy in Singapore with patient prescriptions and medication records.",
+            }
+        )
+        self.assertEqual(dental["hia_service_type_guess"], "dental")
+        self.assertEqual(dental["hia_timeline_batch_guess"], "Batch 3 - Mar 2030")
+        self.assertEqual(pharmacy["hia_service_type_guess"], "retail_pharmacy")
+        self.assertEqual(pharmacy["hia_timeline_batch_guess"], "Batch 3 - Mar 2030")
+
+    def test_unsupported_hia_batch_types_do_not_write_invalid_select_options(self):
+        renal = o.classify_row(
+            {
+                "company_name": "Example Dialysis Centre",
+                "website_content": "Outpatient renal dialysis service with patient appointments in Singapore.",
+            }
+        )
+        self.assertEqual(renal["hia_service_type_guess"], "unknown")
+        self.assertEqual(renal["hia_timeline_batch_guess"], "Batch 2 - Sep 2028")
+
+    def test_clinic_entity_precedence_survives_incidental_social_terms(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Amaris B. Clinic",
+                "website_content": "Medical clinic with doctor treatment services. Article mentions a medical society conference.",
+            }
+        )
+        self.assertEqual(classification["entity_type_guess"], "clinic")
+
+    def test_ambiguous_hia_llm_can_promote_hearing_care(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Hearing Group",
+                "website_content": "Hearing care centre with hearing tests, appointments and device fitting records.",
+                "hia_llm_review": {
+                    "hia_relevant": True,
+                    "hia_confidence": "medium",
+                    "hia_service_type_guess": "hearing_care",
+                    "hia_scope_reason": "Evidence shows hearing tests and appointments.",
+                    "evidence": [{"quote": "hearing tests, appointments", "source_field": "website_content", "reason": "healthcare service evidence"}],
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "hearing_care")
+        self.assertIn("LLM ambiguous-HIA review", classification["hia_scope_reason"])
+
+    def test_ambiguous_hia_llm_can_reject_wellness_without_healthcare_scope(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Wellness",
+                "website_content": "Corporate wellness talks and lifestyle coaching for employees.",
+                "hia_llm_review": {
+                    "hia_relevant": False,
+                    "hia_confidence": "high",
+                    "hia_service_type_guess": "unknown",
+                    "hia_scope_reason": "Evidence is wellness education, not healthcare provider scope.",
+                    "evidence": [{"quote": "wellness talks", "source_field": "website_content", "reason": "non-healthcare scope"}],
+                },
+            }
+        )
+        self.assertNotEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+
+    def test_hia_llm_does_not_override_high_confidence_clinic(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Clinic",
+                "website_content": "Medical clinic with doctors, outpatient appointments and patient treatment services.",
+                "hia_llm_review": {
+                    "hia_relevant": False,
+                    "hia_confidence": "high",
+                    "hia_service_type_guess": "unknown",
+                    "hia_scope_reason": "Bad review should be ignored.",
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertNotIn("LLM ambiguous-HIA review", classification["hia_scope_reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,6 +16,36 @@ This stage creates reviewable outreach drafts only. It must never send email. Th
 
 Cyber Essentials is the default first formal route unless evidence supports HIA readiness first, Cyber Trust, DPE or DPTM. Cyber Essentials supports the cybersecurity safeguards and evidence side; it is not full PDPA or HIA compliance.
 
+## HIA Service Siloing
+
+Use HIA before PDPA when the row has medium/high evidence of an in-scope healthcare service type. PDPA is the default only after HIA is false or low-confidence.
+
+The planner uses a hybrid HIA decision path:
+
+- deterministic rules decide clear cases first;
+- high-confidence deterministic HIA results cannot be overridden by the LLM;
+- the LLM is called only for ambiguous healthcare-adjacent rows, such as wellness, therapy, care, hearing-care, audiology, medical-device, screening or test language without a clear service type;
+- the LLM must return strict JSON with `hia_relevant`, `hia_confidence`, `hia_service_type_guess`, `hia_scope_reason`, and evidence quotes;
+- medium/high LLM results can promote or reject HIA on ambiguous rows; low-confidence LLM output is ignored.
+
+Official implementation timeline mapping used by the planner:
+
+| HIA service type guess | Official service examples | Timeline claim |
+| --- | --- | --- |
+| `GP_OMS` | Outpatient Medical Service (GP) | Batch 1 - Sep 2027 |
+| `hospital` | Acute Hospital, Community Hospital | Batch 1 - Sep 2027 |
+| `diagnostic` | Clinical Laboratory, Radiology Laboratory, Nuclear Medicine Service | Batch 1 - Sep 2027 |
+| `specialist_OMS` | Outpatient Medical Service (Specialist) | Batch 2 - Sep 2028 |
+| `long_term_care` | Nursing Home | Batch 2 - Sep 2028 |
+| `unknown` with batch evidence | Outpatient Renal Dialysis | Batch 2 - Sep 2028 |
+| `dental` | Outpatient Dental | Batch 3 - Mar 2030 |
+| `retail_pharmacy` | Retail Pharmacy | Batch 3 - Mar 2030 |
+| `unknown` with batch evidence | Ambulatory Surgical Centre | Batch 3 - Mar 2030 |
+| `unknown` with batch evidence | Assisted Reproduction | Batch 3 - Mar 2030 |
+| `HIMS_provider`, `NEHR_user` | Other HCSA licensees / approved NEHR users not listed in the batch table | Other CS/DS by Sep 2028 |
+
+Example: American International Clinic Singapore should classify as `hia_regulatory` when the row evidence shows a medical clinic, doctors, outpatient appointments, or patient treatment. The likely service type is `GP_OMS`, so the batch guess is `Batch 1 - Sep 2027` when confidence is medium/high.
+
 ## Master Outreach Tracks
 
 The planner now wires outreach around four buying pressures:

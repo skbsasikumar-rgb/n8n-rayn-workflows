@@ -741,3 +741,24 @@ Cold email planner live setup and smoke:
 - smoke ran `POST /webhook/rayn-cold-email-planner` with `limit=3` and patched rows `273`, `274`, and `275` only for draft/review fields.
 - smoke verification: all three rows have email subjects present, `email_send_ready=false`, `human_review_status=ready_for_review`, and `funding_status=possible_match`.
 - no emails were sent, Instantly was not used, and no row was marked as sent.
+
+HIA siloing and funding source refresh:
+
+- `2026-05-05 15:43 +08`: researched official HIA implementation timelines and funding support pages, plus CSA CISOaaS guidance.
+- encoded deterministic HIA service-type siloing so medium/high-confidence healthcare rows lead with `hia_regulatory`; PDPA remains the non-HIA personal-data fallback.
+- added official batch mapping for GP OMS, hospitals, diagnostics, specialist OMS, nursing homes, dialysis, dental, pharmacy, ambulatory surgical, assisted reproduction, and other HCSA/NEHR CS/DS rows.
+- added a verified-current HIA CISOaaS funding route with guarded "up to 70% co-funding" wording for eligible SMEs, subject to programme confirmation.
+- no deployment was performed, no emails were sent, and no Instantly integration was used.
+
+Ambiguous HIA LLM review:
+
+- `2026-05-05 15:43 +08`: added an optional OpenRouter-backed HIA review layer for ambiguous healthcare-adjacent rows only.
+- deterministic high-confidence HIA results remain authoritative and cannot be overridden by the LLM.
+- ambiguous rows can be promoted to HIA or rejected from HIA only when the LLM returns medium/high confidence and evidence-backed strict JSON.
+- local validation passed: compile checks for `app.py`, `outreach_planner.py`, and `funding_programs.py`; targeted outreach/funding tests `33 passed`; full pytest with service path `84 passed`.
+- no deployment was performed by this code patch step, no emails were sent, and no Instantly integration was used.
+- fixed live patch rejection by ensuring `hia_service_type_guess` only writes NocoDB-supported select values; official renal dialysis, ambulatory surgical, and assisted reproduction batch claims now keep the select value as `unknown` with the batch stored in `hia_timeline_batch_guess`.
+- fixed clinic entity precedence so clinic rows are not misclassified as social-service because of incidental words in scraped content.
+- `2026-05-05 16:14 +08`: deployed worker updates to Railway deployment `e096c2f7-0afa-4b90-bd69-ff5d62ecda18` and reran the cold email planner for the first 20 completed rows with validated emails.
+- first-20 verification: all 20 rows have `email_1_subject`, all keep `email_send_ready=false`, and no emails were sent.
+- HIA routing verification: American International Clinic Singapore now patches `pressure_type=hia_regulatory`, `hia_service_type_guess=GP_OMS`, `hia_timeline_batch_guess=Batch 1 - Sep 2027`, and `funding_status=verified_match`.

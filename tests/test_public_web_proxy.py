@@ -26,6 +26,7 @@ class PublicWebProxyTests(unittest.TestCase):
             os.environ,
             {
                 "PUBLIC_WEB_ENRICHMENT_PROXY_URL": "http://proxy.example:8080",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_MODE": "scoped",
                 "PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS": "andental.sg",
             },
             clear=False,
@@ -39,6 +40,7 @@ class PublicWebProxyTests(unittest.TestCase):
             os.environ,
             {
                 "PUBLIC_WEB_ENRICHMENT_PROXY_URL": "203.0.113.10:8080:proxyuser:proxypass",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_MODE": "scoped",
                 "PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS": "andental.sg",
             },
             clear=False,
@@ -63,11 +65,43 @@ class PublicWebProxyTests(unittest.TestCase):
             {"PUBLIC_WEB_ENRICHMENT_PROXY_URL": "http://proxy.example:8080"},
             clear=False,
         ):
-            self.assertTrue(p.proxy_applies_to_url("https://andental.sg/"))
+            self.assertFalse(p.proxy_applies_to_url("https://andental.sg/"))
+            self.assertTrue(p.proxy_retry_available_for_url("https://andental.sg/"))
             self.assertEqual(
-                p.proxy_config_for_url("https://andental.sg/"),
+                p.proxy_config_for_url("https://andental.sg/", force=True),
                 {"server": "http://proxy.example:8080"},
             )
+            session = p.build_requests_session("https://andental.sg/")
+            self.assertFalse(session.proxies)
+
+    def test_proxy_always_mode_stays_global(self):
+        with patch.dict(
+            os.environ,
+            {
+                "PUBLIC_WEB_ENRICHMENT_PROXY_URL": "http://proxy.example:8080",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_MODE": "always",
+            },
+            clear=False,
+        ):
+            self.assertTrue(p.proxy_applies_to_url("https://andental.sg/"))
+            self.assertFalse(p.proxy_retry_available_for_url("https://andental.sg/"))
+            session = p.build_requests_session("https://andental.sg/")
+            self.assertEqual(session.proxies["http"], "http://proxy.example:8080")
+
+    def test_proxy_scoped_mode_uses_domain_scope(self):
+        with patch.dict(
+            os.environ,
+            {
+                "PUBLIC_WEB_ENRICHMENT_PROXY_URL": "http://proxy.example:8080",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_MODE": "scoped",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS": "andental.sg",
+            },
+            clear=False,
+        ):
+            self.assertTrue(p.proxy_applies_to_url("https://andental.sg/"))
+            self.assertFalse(p.proxy_applies_to_url("https://otherclinic.sg/"))
+            self.assertTrue(p.proxy_retry_available_for_url("https://andental.sg/"))
+            self.assertFalse(p.proxy_retry_available_for_url("https://otherclinic.sg/"))
 
 
 if __name__ == "__main__":

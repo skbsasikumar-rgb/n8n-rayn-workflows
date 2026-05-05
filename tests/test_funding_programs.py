@@ -1,6 +1,6 @@
 import unittest
 
-from services.crawl4ai.funding_programs import FundingProgram, match_programmes
+from services.crawl4ai.funding_programs import FundingProgram, PROGRAMMES, match_programmes
 
 
 def verified_cyber_essentials() -> FundingProgram:
@@ -78,6 +78,26 @@ class FundingProgramTests(unittest.TestCase):
         )
         self.assertEqual(match.funding_status, "possible_match")
         self.assertTrue(match.funding_human_review_required)
+
+    def test_hia_cisoaas_route_allows_verified_70_percent_claim_for_clinic(self):
+        match = match_programmes(
+            {
+                "company_name": "American International Clinic Singapore",
+                "entity_type_guess": "clinic",
+                "entity_type_confidence": "high",
+                "hia_relevant": True,
+                "hia_confidence": "high",
+                "hia_service_type_guess": "GP_OMS",
+                "recommended_first_cert": "Cyber Essentials",
+                "website_content": "medical clinic doctors outpatient patient appointments Singapore",
+            },
+            programmes=PROGRAMMES,
+        )
+        self.assertEqual(match.funding_status, "verified_match")
+        self.assertEqual(match.primary_funding_program, "CISO-as-a-Service for HIA Cybersecurity and Data Security Essentials")
+        self.assertIn("up to 70% co-funding", match.funding_claim_line)
+        self.assertIn("subject to programme confirmation", match.funding_claim_line)
+        self.assertFalse(match.funding_human_review_required)
 
 
 if __name__ == "__main__":
