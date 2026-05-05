@@ -847,3 +847,8 @@ Cold email copy QA hardening:
 - non-HIA PDPA and B2B trust copy now use the requested practical safeguard/proof framing without saying Cyber Essentials equals PDPA or HIA compliance.
 - local validation passed: workflow JSON parse, Python compile check for `outreach_planner.py`, and focused outreach/contact/proxy tests `86 passed`.
 - no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 21:41 +08`: deployed the updated Crawl4AI worker to Railway service `n8n-rayn-workflows`; deployment `2b20ff36-56a5-4a03-acd9-cc05289c3d25` reached `SUCCESS`.
+- updated live workflow `HbTPGELQQr9DRdAb` to match the new copy prompt rules and added `force=true` plus `row_ids` support in `Get Outreach Rows` so exact rerun slices can be targeted without changing the normal blank-only selector.
+- reran the first five validated rows explicitly as IDs `273, 274, 275, 276, 277`; live execution `23375` patched all five rows in draft-only mode.
+- verification from execution `23375`: `23375` audit payloads show the new Email 1 structure live, including `American International Clinic Singapore` with `medical clinic, doctor and outpatient appointment signals`, `Batch 1 Sep 2027 HIA window`, and `Cyber Essentials is a practical first baseline for the cybersecurity/data-security side.`
+- no emails were sent and Instantly was not used.
