@@ -761,14 +761,15 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         timeline = "HIA timelines start from 2027; use specific batch dates only when the row has safe deadline evidence."
         asset = "HIA readiness map"
         cta = "Want the HIA readiness map?"
-        problem = f"{company} likely needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
-        mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security evidence side before deeper HIA work."
+        if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
+            problem = f"{company} needs to show where appointment, test and device-related records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        else:
+            problem = f"{company} needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
+        mechanism = "Cyber Essentials is a practical first baseline before deeper HIA work."
         signal_parts = [public_signals["service"]]
         if public_signals["team"]:
             signal_parts.append(public_signals["team"])
-        if public_signals["location"]:
-            signal_parts.append(public_signals["location"])
-        signal = f"{company} shows {sentence_join(signal_parts)}; with HIA timelines starting from 2027, that makes health-information readiness the clearest buying pressure."
+        signal = f"{company} shows {sentence_join(signal_parts)}; HIA timelines starting from 2027 make health-information readiness the clearest pressure."
     elif pressure == "customer_trust":
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."

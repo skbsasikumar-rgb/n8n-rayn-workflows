@@ -19,6 +19,7 @@ Cold email strategy rerun hardening:
 
 - `2026-05-05 14:48:01 +08`: after the first post-deploy rerun showed Claude drafts still drifting into generic structure, meeting CTAs and non-funding Email 3 copy, tightened `/outreach-validate-email`.
 - LLM drafts with strategy rejection flags now fall back to the deterministic `/outreach-plan` patch before NocoDB writeback.
+- shortened deterministic HIA Email 1 copy-brief ingredients so fallback drafts can stay within the 85-word quality limit while retaining the HIA timeline, access/vendor/backup/incident, and Cyber Essentials baseline points.
 - local validation passed: Python compile checks for `services/crawl4ai/app.py` and `services/crawl4ai/outreach_planner.py`, and the full test suite with `76 passed`.
 - no emails were sent and Instantly was not used.
 
