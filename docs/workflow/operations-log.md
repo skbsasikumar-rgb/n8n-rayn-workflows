@@ -762,3 +762,20 @@ Ambiguous HIA LLM review:
 - `2026-05-05 16:14 +08`: deployed worker updates to Railway deployment `e096c2f7-0afa-4b90-bd69-ff5d62ecda18` and reran the cold email planner for the first 20 completed rows with validated emails.
 - first-20 verification: all 20 rows have `email_1_subject`, all keep `email_send_ready=false`, and no emails were sent.
 - HIA routing verification: American International Clinic Singapore now patches `pressure_type=hia_regulatory`, `hia_service_type_guess=GP_OMS`, `hia_timeline_batch_guess=Batch 1 - Sep 2027`, and `funding_status=verified_match`.
+
+Cold email copy QA hardening:
+
+- `2026-05-05 16:28 +08`: tightened deterministic copy fallback after first-20 QA showed LLM drafts could still fail `email_1_too_generic` or drift in funding email 3.
+- copy signals now prefer concrete service/team/record cues such as clinic services, practitioner signals, hearing-care appointment/test/device records, care/community-service data, and B2B reusable evidence.
+- bad LLM email sequences now fall back to deterministic copy when strategy checks reject Email 1, Email 2, Email 3, or generic-inbox greeting.
+- Email 3 is rebuilt when it contains the funding claim plus non-funding HIA/PDPA drift; duplicate programme-confirmation caveats are avoided.
+- local validation passed: Python compile checks for `outreach_planner.py`, `funding_programs.py`, and `ensure_rayn_outreach_columns.py`; targeted outreach/funding tests `37 passed`.
+- no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 16:33 +08`: added compact planner audit reports to `/outreach-plan`, `/outreach-validate-email`, and the n8n collection step.
+- each audit report includes `row_id`, `company_name`, `pressure_type`, `hia_service_type_guess`, `hia_timeline_batch_guess`, `funding_status`, `email_quality_flags`, and email bodies 1-3 for review after each planner run.
+- no deployment was performed by this audit-report patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 16:51 +08`: deployed audit/draft-safety updates to Railway deployment `7a791fa1-02b3-477b-aa40-87ee8ed5807a`; `/health` returned HTTP 200.
+- updated live n8n workflow `HbTPGELQQr9DRdAb` so the collect step returns `audits`, successful execution data is saved, and production rows are passed with `draft_only=true`.
+- reran the first 20 completed, validated-email rows through `rayn-cold-email-planner`; NocoDB verification returned 20 rows patched with email subjects and compact audit fields.
+- final first-20 verification: all 20 rows keep `email_send_ready=false`; row `277` American International Clinic Singapore remains `pressure_type=hia_regulatory`, `hia_service_type_guess=GP_OMS`, `hia_timeline_batch_guess=Batch 1 - Sep 2027`, and `funding_status=verified_match`.
+- Email 3 caveat duplication was removed in the final rerun; no emails were sent and Instantly was not used.

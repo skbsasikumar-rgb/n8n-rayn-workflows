@@ -157,6 +157,107 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("The relevant support route appears worth checking", partial_funding_patch["email_3_body"])
         self.assertNotIn("email_3_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
+    def test_plan_and_patch_includes_compact_audit_report(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 46,
+                "company_name": "Amaris B. Clinic",
+                "services_detected": ["aesthetic clinic services", "doctor consultations"],
+                "leadership_or_team_signals": ["doctor and practitioner team"],
+                "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+                "copy_qa_mode": True,
+            },
+            programmes=[verified_program()],
+            copy_qa_mode=True,
+        )
+        audit = result["audit_report"]
+        self.assertEqual(
+            set(audit),
+            {
+                "row_id",
+                "company_name",
+                "pressure_type",
+                "hia_service_type_guess",
+                "hia_timeline_batch_guess",
+                "funding_status",
+                "email_quality_flags",
+                "email_1_body",
+                "email_2_body",
+                "email_3_body",
+            },
+        )
+        self.assertEqual(audit["row_id"], 46)
+        self.assertEqual(audit["company_name"], "Amaris B. Clinic")
+        self.assertEqual(audit["pressure_type"], "hia_regulatory")
+        self.assertEqual(audit["funding_status"], result["patch"]["funding_status"])
+        self.assertEqual(audit["email_1_body"], result["patch"]["email_1_body"])
+        self.assertIsInstance(audit["email_quality_flags"], list)
+
+    def test_draft_only_forces_not_send_ready_and_funding_caveat_not_duplicated(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 47,
+                "company_name": "Amaris B. Clinic",
+                "services_detected": ["aesthetic clinic services", "doctor consultations"],
+                "leadership_or_team_signals": ["doctor and practitioner team"],
+                "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+                "validated_email": "doctor@example.com",
+                "draft_only": True,
+            },
+            programmes=[verified_program()],
+        )
+        self.assertFalse(result["patch"]["email_send_ready"])
+        self.assertEqual(result["patch"]["email_3_body"].count("subject to programme confirmation"), 1)
+
+    def test_bad_llm_copy_falls_back_to_deterministic_strategy(self):
+        row = {
+            "Id": 44,
+            "company_name": "Amaris B. Clinic",
+            "services_detected": ["aesthetic clinic services", "doctor consultations"],
+            "leadership_or_team_signals": ["doctor and practitioner team"],
+            "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        bad_emails = o.normalize_llm_email_sequence(
+            {
+                "email_1": {"chosen_subject": "checking in", "body": "Hi team,\n\nI noticed your company and wanted to discuss cybersecurity.\n\nBest,\nSK"},
+                "email_2": {"chosen_subject": "Re: checking in", "body": "Cyber Essentials is a baseline certification."},
+                "email_3": {"chosen_subject": "funding", "body": f"{plan.funding.funding_claim_line}\n\nHIA timelines and PDPA safeguards matter too."},
+                "email_4": {"chosen_subject": "close", "body": "Should I close the loop?"},
+            }
+        )
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
+        self.assertIn("clinic service", patch["email_1_body"])
+        self.assertIn("team/practitioner", patch["email_1_body"])
+        self.assertIn("HIA timelines starting from 2027", patch["email_1_body"])
+        self.assertIn("llm_email_strategy_rejected:email_1_too_generic", patch["email_quality_flags"])
+        self.assertNotIn("email_3_not_funding_only", patch["email_quality_flags"])
+
+    def test_funding_email_rebuilt_when_llm_adds_non_funding_claims(self):
+        row = {
+            "Id": 45,
+            "company_name": "Example Charity",
+            "website_content": "Singapore charity supporting beneficiaries and volunteers.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        claim = plan.funding.funding_claim_line
+        bad_emails = {key: dict(value) if key.startswith("email_") else value for key, value in plan.emails.items()}
+        bad_emails["email_3"]["body"] = f"{claim}\n\nHIA timelines and PDPA safeguards matter too."
+        bad_emails["email_3"]["word_count"] = o.word_count(bad_emails["email_3"]["body"])
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
+        self.assertIn(claim, patch["email_3_body"])
+        self.assertNotIn("HIA timelines", patch["email_3_body"])
+        self.assertNotIn("PDPA", patch["email_3_body"])
+        self.assertEqual(patch["email_3_body"].count("subject to programme confirmation"), 1)
+        draft_patch = o.patch_with_email_sequence(
+            {**row, "draft_only": True},
+            plan.classification,
+            plan.funding,
+            bad_emails,
+            plan.copy_brief,
+        )
+        self.assertFalse(draft_patch["email_send_ready"])
+
     def test_llm_email_forbidden_phrase_stays_not_send_ready(self):
         row = {
             "Id": 42,
@@ -320,7 +421,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
         self.assertIn("hearing-care", plan.emails["email_1"]["body"])
         self.assertIn("health-information readiness", plan.emails["email_1"]["body"])
-        self.assertIn("appointments, tests and device support", plan.emails["email_1"]["body"])
+        self.assertIn("appointment, test and device-related record signals", plan.emails["email_1"]["body"])
         self.assertIn("appointment", plan.emails["email_2"]["body"])
         self.assertIn("test", plan.emails["email_2"]["body"])
         self.assertIn("device", plan.emails["email_2"]["body"])

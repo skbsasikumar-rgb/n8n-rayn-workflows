@@ -875,16 +875,31 @@ def public_signal_summary(
 ) -> dict[str, str]:
     service_detail = sentence_join(services[:3])
     if not service_detail:
-        if any(term in text for term in ("hearing", "audiology", "hearing aid", "hearing assessment")):
-            service_detail = "hearing-care services such as appointments, tests and device support"
-        elif any(term in text for term in ("clinic", "doctor", "consultation", "treatment", "patient")):
-            service_detail = "clinic service signals such as consultation, treatment and patient services"
+        name_text = f"{row.get('company_name') or ''} {row.get('company_homepage_name') or ''}".lower()
+        service_cues: list[str] = []
+        if any(term in text or term in name_text for term in ("hearing", "audiology", "hearing aid", "hearing assessment")):
+            service_cues.append("hearing-care services")
+            service_cues.append("appointment, test and device-related record signals")
+        if any(term in text or term in name_text for term in ("dental", "dentist", "orthodontic")):
+            service_cues.append("dental service signals")
+        if any(term in text or term in name_text for term in ("pharmacy", "pharmacist", "compounding")):
+            service_cues.append("pharmacy service signals")
+        if any(term in text or term in name_text for term in ("oncology", "radiation", "endocrinology", "orthopaedic", "digestive", "specialist", "surgery", "aesthetic")):
+            service_cues.append("specialist clinic service signals")
+        if any(term in text or term in name_text for term in ("clinic", "doctor", "consultation", "treatment", "patient", "medical")):
+            service_cues.append("clinic service and patient-care signals")
+        if service_cues:
+            service_detail = sentence_join(service_cues[:3])
+        elif any(term in text for term in ("resident", "beneficiary", "volunteer", "social service", "charity", "community care")):
+            service_detail = "care/community-service signals around residents, beneficiaries, volunteers and staff"
+        elif any(term in text for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas", "client portal")):
+            service_detail = "B2B/client-service signals around customer security questions and reusable evidence"
         elif any(term in text for term in ("resident", "beneficiary", "volunteer", "social service", "charity")):
             service_detail = "care/community-service signals around residents, beneficiaries, volunteers and staff"
         elif any(term in text for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas")):
             service_detail = "enterprise client, vendor-dashboard or integration signals"
         else:
-            service_detail = "public service signals"
+            service_detail = ""
 
     team_detail = sentence_join(team[:2])
     if team_detail and any(term in team_detail.lower() for term in ("doctor", "practitioner", "clinician", "audiologist", "therapist")):
@@ -955,7 +970,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     else:
         business_model = "unknown"
 
-    primary_services = sentence_join(services, public_signals["service"])
+    primary_services = sentence_join(services, public_signals["service"]) or "the public services described on its website"
     location_summary = sentence_join(locations, "Singapore-facing operations")
     team_summary = sentence_join(team, "Public site does not give a clear team structure.")
     profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
@@ -983,6 +998,11 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         signal_parts = [public_signals["service"]]
         if public_signals["team"]:
             signal_parts.append(public_signals["team"])
+        if not any(compact(part) for part in signal_parts):
+            if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
+                signal_parts.append("hearing-care and appointment/test/device record signals")
+            else:
+                signal_parts.append("clinic service and patient-care signals")
         signal = f"{company} shows {sentence_join(signal_parts)}; HIA timelines starting from 2027 make health-information readiness the clearest pressure."
     elif pressure == "customer_trust":
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
@@ -1156,7 +1176,8 @@ def generate_email_sequence(
         email2_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
         funding_line = funding.funding_claim_line or "Funding route needs human review before use."
         email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
-        email3_body = f"{comma_greeting}\n\n{funding_line}\n\nThis is subject to programme confirmation.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+        caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
+        email3_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
         email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
     else:
         email3_subject = "not ready"
@@ -1227,17 +1248,14 @@ def enforce_funding_claim_email(row: dict[str, Any], funding: FundingMatch, emai
     if not claim:
         return emails
     email3 = emails.get("email_3") or {}
-    if claim.lower() in trim_text(email3.get("body")).lower():
+    existing_body = trim_text(email3.get("body"))
+    caveat_count = existing_body.lower().count("subject to programme confirmation")
+    if claim.lower() in existing_body.lower() and funding_only_email_3(existing_body, claim) and caveat_count <= 1:
         return emails
     greeting = email_comma_greeting(row)
     subject = compact(email3.get("chosen_subject")) or "funding route"
-    body = (
-        f"{greeting}\n\n"
-        f"{claim}\n\n"
-        "This is subject to programme confirmation.\n\n"
-        "Should I send the route summary?\n\n"
-        "Best,\nSK\nRAYN Secure"
-    )
+    caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
+    body = f"{greeting}\n\n{claim}{caveat}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
     emails = {**emails}
     emails["email_3"] = {
         "subject_options": list(email3.get("subject_options") or [subject]),
@@ -1545,6 +1563,8 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     copy_brief = build_copy_brief(row, classification, funding)
     emails = generate_email_sequence(row, classification, funding, copy_brief)
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
+    if row.get("draft_only"):
+        send_ready = False
     if row.get("copy_qa_mode"):
         send_ready = False
         if "copy_qa_mode" not in flags:
@@ -1666,9 +1686,48 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     return patch
 
 
+def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, patch: dict[str, Any] | None = None) -> dict[str, Any]:
+    if plan is not None:
+        classification = plan.classification
+        funding = plan.funding
+        emails = plan.emails
+        flags = plan.quality_flags
+        return {
+            "row_id": plan.row_id,
+            "company_name": compact(row.get("company_name")),
+            "pressure_type": classification.get("pressure_type", ""),
+            "hia_service_type_guess": classification.get("hia_service_type_guess", ""),
+            "hia_timeline_batch_guess": classification.get("hia_timeline_batch_guess", ""),
+            "funding_status": funding.funding_status,
+            "email_quality_flags": flags,
+            "email_1_body": (emails.get("email_1") or {}).get("body", ""),
+            "email_2_body": (emails.get("email_2") or {}).get("body", ""),
+            "email_3_body": (emails.get("email_3") or {}).get("body", ""),
+        }
+    patch = patch or {}
+    flags_raw = patch.get("email_quality_flags") or "[]"
+    try:
+        flags = json.loads(flags_raw) if isinstance(flags_raw, str) else flags_raw
+    except json.JSONDecodeError:
+        flags = [str(flags_raw)]
+    return {
+        "row_id": patch.get("Id") or row.get("Id") or row.get("id"),
+        "company_name": compact(row.get("company_name") or patch.get("company_name")),
+        "pressure_type": patch.get("pressure_type", ""),
+        "hia_service_type_guess": patch.get("hia_service_type_guess", ""),
+        "hia_timeline_batch_guess": patch.get("hia_timeline_batch_guess", ""),
+        "funding_status": patch.get("funding_status", ""),
+        "email_quality_flags": flags,
+        "email_1_body": patch.get("email_1_body", ""),
+        "email_2_body": patch.get("email_2_body", ""),
+        "email_3_body": patch.get("email_3_body", ""),
+    }
+
+
 def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, copy_qa_mode: bool = False) -> dict[str, Any]:
     row = {**row, "copy_qa_mode": bool(copy_qa_mode or row.get("copy_qa_mode"))}
     plan = plan_outreach(row, programmes=programmes)
+    patch = build_noco_patch(row, plan)
     return {
         "ok": True,
         "row_id": plan.row_id,
@@ -1676,7 +1735,8 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
         "human_review_status": plan.human_review_status,
         "openrouter_allowed": copy_brief_ready(plan.classification, plan.copy_brief),
         "skip_openrouter": not copy_brief_ready(plan.classification, plan.copy_brief),
-        "patch": build_noco_patch(row, plan),
+        "audit_report": build_audit_report(row, plan=plan),
+        "patch": patch,
         "record": plan.to_dict(),
     }
 
@@ -1711,6 +1771,27 @@ def patch_with_email_sequence(
     if classification.get("pressure_type") != "not_ready":
         emails = enforce_funding_claim_email(row, funding, emails)
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
+    strategy_reject_flags = {
+        "email_1_missing_specific_signal",
+        "email_1_missing_problem_statement",
+        "email_1_missing_mechanism_statement",
+        "email_1_missing_tiny_cta",
+        "email_1_too_generic",
+        "email_2_not_diagnostic",
+        "email_3_not_funding_only",
+        "generic_inbox_wrong_greeting",
+    }
+    rejected_strategy_flags = [flag for flag in flags if flag in strategy_reject_flags]
+    if rejected_strategy_flags and classification.get("pressure_type") != "not_ready":
+        emails = generate_email_sequence(row, classification, funding, copy_brief)
+        emails = enforce_funding_claim_email(row, funding, emails)
+        score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
+        for flag in rejected_strategy_flags:
+            rejected = f"llm_email_strategy_rejected:{flag}"
+            if rejected not in flags:
+                flags.append(rejected)
+    if row.get("draft_only"):
+        send_ready = False
     if row.get("copy_qa_mode"):
         send_ready = False
         if "copy_qa_mode" not in flags:

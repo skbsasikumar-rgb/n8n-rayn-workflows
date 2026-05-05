@@ -1857,6 +1857,7 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
         return {
             "ok": True,
             "row_id": request.row.get("Id") or request.row.get("id"),
+            "audit_report": outreach_planner.build_audit_report(request.row, patch=patch),
             "patch": patch,
             "record": {
                 **request.record,
@@ -1881,6 +1882,7 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
             "ok": False,
             "row_id": request.row.get("Id") or request.row.get("id"),
             "error": error_text,
+            "audit_report": outreach_planner.build_audit_report(request.row, patch=fallback_patch),
             "patch": fallback_patch or {
                 "Id": request.row.get("Id") or request.row.get("id"),
                 "email_send_ready": False,
