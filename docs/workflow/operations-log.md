@@ -4,6 +4,49 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-05
 
+Proxy usage accounting and first-5 rerun:
+
+- `2026-05-05 20:39:49 +08`: added proxy fallback usage accounting to [services/crawl4ai/public_web_enrichment.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/public_web_enrichment.py) so `crawl_context.proxy` now carries a compact `usage` summary and row `notes` include proxy-attempt counts only when fallback actually ran.
+- validation passed: `python3.11 -m py_compile services/crawl4ai/public_web_enrichment.py` and `python3 -m pytest -q tests/test_public_web_proxy.py tests/test_outreach_columns.py tests/test_outreach_planner.py` passed with `55 passed`.
+- reset rows `273-277` for a small rerun slice, repopulated `url_picked` through the live `rayn-url-picker-batch` webhook, then reran public enrichment locally with NocoDB writeback so the new proxy accounting code was exercised.
+- rerun result for the enrichment slice: rows `273-277` all returned to `status=completed`; none of the five rows needed proxy fallback, so no `Proxy fallback attempted ...` note was written for this batch.
+- live `/contact-enrich-batch` rerun on rows `273-277` finished with `3` `contact_found` and `2` `contact_not_found`. Validated emails landed for `273` `ivanpuah@amaris-b.com`, `274` `sharad.govil@amazinghearing.com`, and `276` `jayne@amber-pharmacy.com`.
+- the first cold-planner rerun exposed a live worker mismatch: active n8n execution `23368` failed because `Generate Outreach Plan` hit `https://n8n-rayn-workflows-production.up.railway.app/outreach-plan` and received `404 Not Found`.
+- deployed Railway worker service `n8n-rayn-workflows`; deployment `d93a1b9f-2efc-4c57-a055-9be3d068c4f0` brought `/outreach-plan` back. Direct verification after deploy returned `422` for an empty POST body, confirming the route exists again.
+- because the follow-up n8n planner webhook still did not complete a visible new execution/writeback for the three validated rows, finished the draft pass locally with deterministic `outreach_planner.plan_and_patch()` on rows `273`, `274`, and `276`.
+- final live smoke after the deploy succeeded: cold-planner execution `23369` completed successfully and row `273` repopulated `email_1_subject` via the live n8n workflow.
+- final draft state after the three-stage rerun: rows `273`, `274`, and `276` now have refreshed Email 1-4 subjects/bodies with `human_review_status=ready_for_review` and `email_send_ready=false`; rows `275` and `277` remain undrafted because `validated_email` is blank after contact search.
+- no emails were sent and Instantly was not used.
+
+Anymail company fallback hardening:
+
+- `2026-05-05 20:57:42 +08`: made the last-resort Anymail company fallback auditable even when it returns no deliverable email by preserving a `provider=anymail_finder_company` marker in `email_candidates_json`.
+- set Railway worker variables `CONTACT_COMPANY_EMAIL_FALLBACK_ENABLED=true` and `ANYMAILFINDER_COMPANY_FALLBACK_ENABLED=true` explicitly, then deployed worker service `n8n-rayn-workflows` with deployment `d4704663-c280-46bd-bc07-a73a7f034fc5`.
+- validation passed: `PYTHONPATH=services/crawl4ai:. python3 -m pytest -q tests/test_contact_candidate_verifier.py` returned `27 passed`; `PYTHONPATH=services/crawl4ai:. python3 -m py_compile services/crawl4ai/contact_enrichment.py` passed.
+- reran contact search for rows `275` and `277`; both now show `email_validation_provider=anymail_finder_company` and `contact_search_status=contact_found`.
+- row `275` accepted `contactus@amberfamilyclinic.com` from Anymail company fallback after person-specific lookup had no sendable email.
+- row `277` accepted `zakowich@aiclinic.com.sg` from Anymail company fallback, then identity resolution matched it to `Paul Zakowich`, `Doctor`.
+- no emails were sent and Instantly was not used.
+
+Cold email planner fetch hardening and QA:
+
+- `2026-05-05 19:22:14 +08`: updated `wf-cold-email-planner.json` so `Get Outreach Rows` fetches only completed, validated rows with `email_1_subject` blank. This prevents repeated reprocessing of already drafted rows and deterministic `not_ready` rows.
+- deployed the updated live n8n workflow `HbTPGELQQr9DRdAb`; workflow remained active and draft-only.
+- validation passed: `wf-cold-email-planner.json` parsed as valid JSON, `tests/test_outreach_columns.py` passed with `12 passed`, and `tests/test_outreach_planner.py` passed with `35 passed`.
+- live n8n validation still reports the existing `Prepare OpenRouter Email Draft` Code-node expression warning/error, which appears to come from literal `{{company_name}}` prompt text and was not introduced by this filter change.
+- NocoDB verification returned `0` rows for the live planner fetch condition after catch-up: completed + validated + `email_1_subject` blank.
+- compact QA over the `36` `ready_for_review` drafts found `0` strategy findings. No emails were sent and Instantly was not used.
+- `2026-05-05 20:11:11 +08`: switched the cold-email OpenRouter draft model in `wf-cold-email-planner.json` from `anthropic/claude-sonnet-4.6` to `x-ai/grok-4.3` and updated live workflow `HbTPGELQQr9DRdAb`; workflow remained active and draft-only.
+- validation passed: `wf-cold-email-planner.json` parsed as valid JSON and `tests/test_outreach_columns.py` passed with `13 passed`. Live n8n validation still reports the existing `Prepare OpenRouter Email Draft` Code-node expression warning/error noted above.
+
+Proxy configuration update:
+
+- `2026-05-05 19:34:01 +08`: updated Railway production variables for `n8n-rayn-workflows` to use the DataImpulse residential default-targeting endpoint, keep `PUBLIC_WEB_ENRICHMENT_PROXY_MODE=fallback`, and restrict `PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS` to known difficult domains: `andental.sg`, `aiclinic.com.sg`, `appletreemedicalgroup.com`, `ashforddentalcentre.com.sg`, `ashfordmedical.com.sg`, and `ahvc.com.sg`.
+- Railway started deployment `53d93271-a98d-41b5-8d1f-c4c5ea25d19f` for the environment variable change.
+- no emails were sent and Instantly was not used.
+- `2026-05-05 19:36:52 +08`: removed the hardcoded proxy domain allowlist by setting `PUBLIC_WEB_ENRICHMENT_PROXY_DOMAINS` to a blank value while keeping `PUBLIC_WEB_ENRICHMENT_PROXY_MODE=fallback`; this means the worker should not use proxy for normal crawls and should only try proxy after challenge/anti-bot/timeout-style fallback conditions.
+- Railway started deployment `62dc2bab-5bdc-46a3-9ee9-34369485be83` for the corrected proxy-domain setting.
+
 Cold email copy QA and strategy gate:
 
 - `2026-05-05 14:15:35 +08`: reviewed the contact-gating patch from `829febc` and tightened cold-email strategy quality without enabling any send path.
@@ -792,3 +835,9 @@ Cold email copy QA hardening:
 - rerun row IDs: `273`, `274`, `275`, `276`, `277`, `279`, `280`, `282`, `288`, `291`, `292`, `293`, `295`, `296`, `299`, `302`, `305`, `310`, `312`, `313`, `316`, `317`, `318`, `319`.
 - verification: all 24 rows have `email_send_ready=false`; rows `316` Asia Physio is `not_ready`, `317` Asia Psychology Centre is `hia_regulatory`, `318` AspenHealth Singapore is `pdpa_safeguards`, and `319` Assisi Hospice is `hia_regulatory`.
 - no emails were sent and Instantly was not used.
+- `2026-05-05 17:30 +08`: fixed the audited copy-brief weaknesses from the 24-row manual QA.
+- healthcare service detection now treats company-name and website cues for physio, psychology/mental health, hospice/long-term care, digestive/gastroenterology, diagnostic/screening/lab, oncology/radiation, dental, pharmacy, and hearing care as stronger than generic clinic wording.
+- HIA Email 1 and Email 2 now use segment-specific record language for physiotherapy treatment/exercise-plan records, psychology assessment/case-note records, hospice patient/resident/family/volunteer/staff data, diagnostic reports, digestive/gastroenterology records, oncology/radiation treatment records, and hearing appointment/test/device records.
+- added regression tests for Asia Physio, Asia Psychology Centre, Assisi Hospice, and Asia Digestive Associates style rows so these no longer collapse to generic clinic wording or `not_ready` when the evidence is present.
+- local validation passed: Python compile check for `outreach_planner.py`; focused outreach/audit/funding pytest suite `44 passed`.
+- no deployment was performed by this patch step, no emails were sent, and Instantly was not used.

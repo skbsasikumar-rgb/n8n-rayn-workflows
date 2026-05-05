@@ -113,6 +113,17 @@ class OutreachColumnContractTests(unittest.TestCase):
         missing = sorted(field for field in fields if field not in existing_fields and field not in self.columns)
         self.assertEqual(missing, [])
 
+    def test_workflow_fetch_skips_existing_drafts_and_not_ready_rows(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
+        self.assertIn("(email_1_subject,blank)", url_expr)
+
+    def test_cold_email_openrouter_model_is_grok(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        prepare_node = next(node for node in workflow["nodes"] if node["name"] == "Prepare OpenRouter Email Draft")
+        self.assertIn("model: 'x-ai/grok-4.3'", prepare_node["parameters"]["jsCode"])
+        self.assertNotIn("anthropic/claude-sonnet-4.6", prepare_node["parameters"]["jsCode"])
+
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(
             {

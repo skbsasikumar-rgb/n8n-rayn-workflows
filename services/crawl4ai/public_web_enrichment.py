@@ -645,6 +645,58 @@ def proxy_config_for_url(url: str, force: bool = False) -> dict[str, str] | None
     return config
 
 
+def proxy_usage_summary(proxy_retry_log: list[dict[str, Any]]) -> dict[str, Any]:
+    attempts = len(proxy_retry_log)
+    successes = sum(1 for entry in proxy_retry_log if entry.get("success"))
+    domains: set[str] = set()
+    transports: Counter[str] = Counter()
+    reasons: Counter[str] = Counter()
+    for entry in proxy_retry_log:
+        url = str(entry.get("url") or "")
+        hostname = normalized_hostname(urlsplit(url).hostname or "")
+        if hostname:
+            domains.add(registered_domain(hostname) or hostname)
+        transport = compact_whitespace(entry.get("transport") or "")
+        if transport:
+            transports[transport] += 1
+        reason = compact_whitespace(entry.get("reason") or "")
+        if reason:
+            reasons[reason.split(":", 1)[0]] += 1
+    return {
+        "attempt_count": attempts,
+        "success_count": successes,
+        "failure_count": attempts - successes,
+        "domains": sorted(domains),
+        "transports": dict(sorted(transports.items())),
+        "reasons": dict(sorted(reasons.items())),
+    }
+
+
+def proxy_usage_note(proxy_retry_log: list[dict[str, Any]]) -> str:
+    usage = proxy_usage_summary(proxy_retry_log)
+    attempts = int(usage["attempt_count"])
+    if attempts <= 0:
+        return ""
+    domains = usage["domains"]
+    domain_text = ", ".join(domains[:5]) if domains else "unknown domain"
+    if len(domains) > 5:
+        domain_text += f", +{len(domains) - 5} more"
+    return (
+        f"Proxy fallback attempted {attempts} fetches, recovered {usage['success_count']}, "
+        f"failed {usage['failure_count']}; domains: {domain_text}."
+    )
+
+
+def proxy_context(proxy_retry_log: list[dict[str, Any]], initial_proxy_used: bool) -> dict[str, Any]:
+    return {
+        "mode": proxy_mode(),
+        "configured": bool(configured_proxy_url()),
+        "initial_proxy_used": initial_proxy_used,
+        "usage": proxy_usage_summary(proxy_retry_log),
+        "retries": proxy_retry_log,
+    }
+
+
 def parse_llm_json(text: str) -> dict[str, Any]:
     cleaned = compact_whitespace(text)
     if cleaned.startswith("```"):
@@ -3063,7 +3115,9 @@ async def enrich_row(
                     leadership_or_team_signals=[],
                     social_links=[],
                     structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-                    enrichment_notes=f"Homepage crawl failed: {error_text}",
+                    enrichment_notes=compact_whitespace(
+                        f"Homepage crawl failed: {error_text} {proxy_usage_note(proxy_retry_log)}"
+                    ),
                     confidence_score=0.05,
                     error_notes=[error_text],
                     best_url_candidate=validation.best_url_candidate,
@@ -3072,12 +3126,7 @@ async def enrich_row(
                     url_validation_status=validation.url_validation_status,
                     crawl_context={
                         "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
-                        "proxy": {
-                            "mode": proxy_mode(),
-                            "configured": bool(configured_proxy_url()),
-                            "initial_proxy_used": bool(crawl_proxy_config),
-                            "retries": proxy_retry_log,
-                        },
+                        "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
                     },
                 ))
 
@@ -3185,7 +3234,7 @@ async def enrich_row(
                 leadership_or_team_signals=[],
                 social_links=[],
                 structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-                enrichment_notes=challenge_note,
+                enrichment_notes=compact_whitespace(f"{challenge_note} {proxy_usage_note(proxy_retry_log)}"),
                 confidence_score=0.05,
                 error_notes=[challenge_note],
                 best_url_candidate=validation.best_url_candidate,
@@ -3196,12 +3245,7 @@ async def enrich_row(
                     "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
                     "challenge_hints": homepage_page.challenge_hints,
                     "captcha_solver": captcha_solver.solver_diagnostics(),
-                    "proxy": {
-                        "mode": proxy_mode(),
-                        "configured": bool(configured_proxy_url()),
-                        "initial_proxy_used": bool(crawl_proxy_config),
-                        "retries": proxy_retry_log,
-                    },
+                    "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
                 },
             ))
     resolved_homepage = canonical_root_url(homepage_page.url or best_url)
@@ -3336,9 +3380,9 @@ async def enrich_row(
         f"Crawled {len(crawled_pages)} public pages from {registered_domain(normalization.hostname)}; "
         f"found {len(locations)} location signals, {len(services)} service signals, and {len(leadership_signals)} team signals."
     )
-    proxy_recoveries = [entry for entry in proxy_retry_log if entry.get("success")]
-    if proxy_recoveries:
-        notes += f" Proxy fallback recovered {len(proxy_recoveries)} blocked fetches."
+    proxy_note = proxy_usage_note(proxy_retry_log)
+    if proxy_note:
+        notes += f" {proxy_note}"
     if ignored_errors:
         notes += f" Ignored {len(ignored_errors)} same-domain subpage 404 warnings."
     crawl_status = "crawled" if crawled_pages else ("partial" if fatal_errors else "crawled")
@@ -3410,12 +3454,7 @@ async def enrich_row(
                 "rejected_parent_candidates": parent_verification.rejected_candidates,
                 "parent_company_candidates": [asdict(candidate) for candidate in parent_verification.candidates],
             },
-            "proxy": {
-                "mode": proxy_mode(),
-                "configured": bool(configured_proxy_url()),
-                "initial_proxy_used": bool(crawl_proxy_config),
-                "retries": proxy_retry_log,
-            },
+            "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
         },
     )
     record.confidence_score = confidence_score_for_record(record)

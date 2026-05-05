@@ -581,6 +581,62 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.classification["hia_deadline_claim_safe"])
         self.assertFalse(plan.classification["pdpa_relevant"])
 
+    def test_audited_healthcare_segments_get_specific_copy_briefs(self):
+        cases = [
+            (
+                {
+                    "Id": 47,
+                    "company_name": "Asia Physio",
+                    "website_content": "Physiotherapy clinic in Singapore offering physiotherapy appointments, treatment plans and patient rehabilitation services.",
+                    "services_detected": "physiotherapy appointments; rehabilitation treatment plans",
+                },
+                "allied_health",
+                "physiotherapy/allied-health service signals",
+                "appointment, treatment and exercise-plan records",
+            ),
+            (
+                {
+                    "Id": 48,
+                    "company_name": "Asia Psychology Centre",
+                    "website_content": "Psychology clinic with psychologists, counselling appointments, mental health assessments and patient case notes.",
+                    "leadership_or_team_signals": "psychologist team",
+                },
+                "allied_health",
+                "psychology/mental-health service signals",
+                "appointment, assessment and case-note records",
+            ),
+            (
+                {
+                    "Id": 49,
+                    "company_name": "Assisi Hospice",
+                    "website_content": "Hospice and palliative care provider with patient care, resident support, family contacts, volunteers and staff.",
+                    "services_detected": "patient care; palliative care; volunteer support",
+                },
+                "long_term_care",
+                "hospice/long-term care service signals",
+                "patient, resident, family, volunteer and staff data",
+            ),
+            (
+                {
+                    "Id": 50,
+                    "company_name": "Asia Digestive Associates",
+                    "website_content": "Digestive specialist clinic providing gastroenterology consultations, specialist appointments and patient reports.",
+                },
+                "specialist_OMS",
+                "digestive/gastroenterology specialist-care signals",
+                "digestive/gastroenterology patient records",
+            ),
+        ]
+        for row, service_type, signal, diagnostic in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
+                self.assertIn(signal, plan.emails["email_1"]["body"])
+                self.assertIn(diagnostic, plan.emails["email_1"]["body"])
+                self.assertIn(diagnostic, plan.emails["email_2"]["body"])
+                self.assertIn("Cyber Essentials is a practical first baseline", plan.emails["email_1"]["body"])
+
     def test_dental_and_pharmacy_hia_batches(self):
         dental = o.classify_row(
             {

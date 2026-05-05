@@ -743,6 +743,8 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.contact_search_reason, "no_deliverable_company_email_found")
         self.assertEqual(result.email_validation_provider, "anymail_finder_company")
         self.assertEqual(result.email_validation_evidence["company_email_fallback"]["candidate_count"], 0)
+        self.assertEqual(result.email_candidates[-1]["provider"], "anymail_finder_company")
+        self.assertEqual(result.email_candidates[-1]["status"], "no_deliverable_email")
 
     def test_company_email_fallback_zero_candidates_are_preserved_after_person_lookup_miss(self):
         payload = {
@@ -791,6 +793,8 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_status, "no_deliverable_email")
         self.assertEqual(result.email_validation_provider, "anymail_finder_company")
         self.assertEqual(result.email_validation_evidence["company_email_fallback"]["candidate_count"], 0)
+        self.assertEqual(result.email_candidates[-1]["provider"], "anymail_finder_company")
+        self.assertEqual(result.email_candidates[-1]["status"], "no_deliverable_email")
 
     def test_decision_maker_linkedin_requires_matching_profile_slug(self):
         candidate = c.decision_maker_candidate_from_result(

@@ -2899,6 +2899,19 @@ def try_company_email_fallback(
         }
         for email in candidate_emails
     ]
+    if not company_email_candidates:
+        company_email_candidates.append(
+            {
+                "name": "",
+                "role": "Company Email",
+                "source_url": compact(payload.get("best_url"), 1000) or f"https://{domain}/",
+                "provider": "anymail_finder_company",
+                "status": "no_deliverable_email",
+                "email": "",
+                "valid_email": "",
+                "validation_result": result,
+            }
+        )
     merged_candidates = [*email_candidates, *company_email_candidates]
     evidence["company_email_fallback"]["candidate_count"] = len(candidate_emails)
     evidence["company_email_fallback"]["emails"] = candidate_emails

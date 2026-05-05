@@ -177,8 +177,18 @@ HEALTHCARE_TERMS = (
     "physio",
     "physiotherapy",
     "allied health",
+    "psychology",
+    "psychologist",
+    "mental health",
+    "counselling",
+    "counseling",
     "hearing",
     "audiology",
+    "hospice",
+    "palliative",
+    "nursing home",
+    "long-term care",
+    "long term care",
     "patient",
     "health screening",
     "treatment",
@@ -214,6 +224,40 @@ HIA_BATCH_BY_SERVICE = {
 }
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
+SPECIALIST_SERVICE_TERMS = (
+    "oncology",
+    "radiation",
+    "endocrinology",
+    "orthopaedic",
+    "orthopedic",
+    "digestive",
+    "gastroenterology",
+    "cardiology",
+    "dermatology",
+    "plastic surgery",
+    "aesthetic",
+    "surgery",
+    "specialist",
+)
+DIAGNOSTIC_SERVICE_TERMS = (
+    "diagnostic",
+    "radiology",
+    "clinical laboratory",
+    "laboratory",
+    "nuclear medicine",
+    "health screening",
+    "screening centre",
+    "screening center",
+)
+LONG_TERM_CARE_TERMS = (
+    "hospice",
+    "palliative",
+    "nursing home",
+    "long term care",
+    "long-term care",
+    "eldercare",
+    "lodge",
+)
 B2B_TERMS = (
     "enterprise",
     "vendor",
@@ -434,7 +478,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     if "patient" in text or "health information" in text:
         score += 18
     company = compact(row.get("company_name")).lower()
-    if "clinic" in company:
+    if any(term in company for term in ("clinic", "physio", "psychology", "hospice", "hearing", "dental", "medical", "medic")):
         score += 24
     if "dental" in text or "dentist" in text:
         service = "dental"
@@ -451,17 +495,17 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "renal dialysis" in text or "dialysis" in text:
         service = "unknown"
         batch_override = "Batch 2 - Sep 2028"
-    elif "nursing home" in text or "long term care" in text or "long-term care" in text:
+    elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
-    elif "diagnostic" in text or "radiology" in text or "clinical laboratory" in text or "laboratory" in text or "nuclear medicine" in text:
+    elif contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
         service = "diagnostic"
-    elif "specialist" in text:
+    elif contains_any(text, SPECIALIST_SERVICE_TERMS):
         service = "specialist_OMS"
     elif "hims" in text or "health information management system" in text:
         service = "HIMS_provider"
     elif "nehr" in text:
         service = "NEHR_user"
-    elif "physio" in text or "therapy" in text:
+    elif "physio" in text or "physiotherapy" in text or "psychology" in text or "psychologist" in text or "mental health" in text or "therapy" in text:
         service = "allied_health"
     elif "clinic" in text or "doctor" in text or "medical" in text:
         service = "GP_OMS"
@@ -870,39 +914,72 @@ def first_source_url(row: dict[str, Any]) -> str:
     return compact(row.get("best_url") or row.get("url_picked"))
 
 
+def concrete_service_cues(row: dict[str, Any], text: str) -> list[str]:
+    name_text = f"{row.get('company_name') or ''} {row.get('company_homepage_name') or ''}".lower()
+    haystack = f"{name_text} {text}"
+    cues: list[str] = []
+
+    def add(cue: str) -> None:
+        if cue and cue.lower() not in {existing.lower() for existing in cues}:
+            cues.append(cue)
+
+    if contains_any(haystack, LONG_TERM_CARE_TERMS):
+        if "hospice" in haystack or "palliative" in haystack:
+            add("hospice/long-term care service signals")
+            add("patient, resident, family and volunteer data signals")
+        else:
+            add("long-term care and resident/patient-care signals")
+    if any(term in haystack for term in ("hearing", "audiology", "hearing aid", "hearing assessment", "hearing test")):
+        add("hearing-care services")
+        add("appointment, test and device-related record signals")
+    if "physio" in haystack or "physiotherapy" in haystack:
+        add("physiotherapy/allied-health service signals")
+        add("appointment, treatment and exercise-plan record signals")
+    if any(term in haystack for term in ("psychology", "psychologist", "mental health", "counselling", "counseling")):
+        add("psychology/mental-health service signals")
+        add("appointment, assessment and case-note record signals")
+    if any(term in haystack for term in ("dental", "dentist", "orthodontic")):
+        add("dental service signals")
+    if any(term in haystack for term in ("pharmacy", "pharmacist", "compounding")):
+        add("pharmacy service signals")
+    if contains_any(haystack, DIAGNOSTIC_SERVICE_TERMS):
+        add("diagnostic, screening or laboratory service signals")
+    if contains_any(haystack, SPECIALIST_SERVICE_TERMS):
+        if "oncology" in haystack or "radiation" in haystack:
+            add("radiation/oncology specialist-care signals")
+        elif "digestive" in haystack or "gastroenterology" in haystack:
+            add("digestive/gastroenterology specialist-care signals")
+        elif "orthopaedic" in haystack or "orthopedic" in haystack:
+            add("orthopaedic specialist-care signals")
+        elif "endocrinology" in haystack:
+            add("endocrinology specialist-care signals")
+        elif "aesthetic" in haystack or "plastic surgery" in haystack:
+            add("aesthetic/plastic-surgery specialist-care signals")
+        else:
+            add("specialist clinic service signals")
+    if any(term in haystack for term in ("clinic", "doctor", "consultation", "treatment", "patient", "medical")) and not contains_any(haystack, LONG_TERM_CARE_TERMS):
+        add("clinic service and patient-care signals")
+    if any(term in haystack for term in ("resident", "beneficiary", "volunteer", "social service", "charity", "community care")) and not cues:
+        add("care/community-service signals around residents, beneficiaries, volunteers and staff")
+    if any(term in haystack for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas", "client portal")) and not cues:
+        add("B2B/client-service signals around customer security questions and reusable evidence")
+    return cues
+
+
 def public_signal_summary(
     row: dict[str, Any], text: str, services: list[str], locations: list[str], team: list[str]
 ) -> dict[str, str]:
-    service_detail = sentence_join(services[:3])
-    if not service_detail:
-        name_text = f"{row.get('company_name') or ''} {row.get('company_homepage_name') or ''}".lower()
-        service_cues: list[str] = []
-        if any(term in text or term in name_text for term in ("hearing", "audiology", "hearing aid", "hearing assessment")):
-            service_cues.append("hearing-care services")
-            service_cues.append("appointment, test and device-related record signals")
-        if any(term in text or term in name_text for term in ("dental", "dentist", "orthodontic")):
-            service_cues.append("dental service signals")
-        if any(term in text or term in name_text for term in ("pharmacy", "pharmacist", "compounding")):
-            service_cues.append("pharmacy service signals")
-        if any(term in text or term in name_text for term in ("oncology", "radiation", "endocrinology", "orthopaedic", "digestive", "specialist", "surgery", "aesthetic")):
-            service_cues.append("specialist clinic service signals")
-        if any(term in text or term in name_text for term in ("clinic", "doctor", "consultation", "treatment", "patient", "medical")):
-            service_cues.append("clinic service and patient-care signals")
-        if service_cues:
-            service_detail = sentence_join(service_cues[:3])
-        elif any(term in text for term in ("resident", "beneficiary", "volunteer", "social service", "charity", "community care")):
-            service_detail = "care/community-service signals around residents, beneficiaries, volunteers and staff"
-        elif any(term in text for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas", "client portal")):
-            service_detail = "B2B/client-service signals around customer security questions and reusable evidence"
-        elif any(term in text for term in ("resident", "beneficiary", "volunteer", "social service", "charity")):
-            service_detail = "care/community-service signals around residents, beneficiaries, volunteers and staff"
-        elif any(term in text for term in ("enterprise", "b2b", "vendor", "dashboard", "integration", "outsourcing", "saas")):
-            service_detail = "enterprise client, vendor-dashboard or integration signals"
-        else:
-            service_detail = ""
+    service_cues = concrete_service_cues(row, text)
+    generic_service_terms = ("clinic service", "specialist clinic", "healthcare activity", "customer data")
+    usable_services = [
+        service
+        for service in services
+        if service and not (service_cues and any(term in service.lower() for term in generic_service_terms))
+    ]
+    service_detail = sentence_join([*service_cues, *usable_services][:3])
 
     team_detail = sentence_join(team[:2])
-    if team_detail and any(term in team_detail.lower() for term in ("doctor", "practitioner", "clinician", "audiologist", "therapist")):
+    if team_detail and any(term in team_detail.lower() for term in ("doctor", "practitioner", "clinician", "audiologist", "therapist", "psychologist")):
         team_detail = f"{team_detail} team/practitioner signals"
     if not team_detail:
         if any(term in text for term in ("doctor", "practitioner", "clinician", "audiologist", "therapist")):
@@ -976,10 +1053,25 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
 
     if pressure == "hia_regulatory":
+        service_type = classification.get("hia_service_type_guess")
         personal_data = "patient and health information handled through enquiries, appointments, care records and clinic operations."
         sensitive_examples = "patient identity details, appointment information, health information, treatment notes and staff access records."
-        if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
+        if service_type == "hearing_care" or "hearing" in text:
             systems = "appointments, hearing tests, device-related records, staff access, vendor systems, backups and incident-reporting steps."
+        elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
+            personal_data = "patient, resident, family, volunteer and staff data handled through care operations and support workflows."
+            sensitive_examples = "patient and resident details, care notes, family contacts, volunteer data, staff access records and incident evidence."
+            systems = "patient/resident care records, family contacts, volunteer lists, staff access, vendor systems, backups and incident-reporting steps."
+        elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
+            systems = "appointments, treatment notes, exercise-plan records, staff access, vendor systems, backups and incident-reporting steps."
+        elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+            systems = "appointments, assessment notes, case-note records, staff access, vendor systems, backups and incident-reporting steps."
+        elif service_type == "diagnostic":
+            systems = "screening appointments, diagnostic reports, patient records, vendor systems, backups and incident-reporting steps."
+        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+            systems = "specialist appointments, oncology/radiation treatment records, patient reports, vendor systems, backups and incident-reporting steps."
+        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+            systems = "specialist appointments, digestive/gastroenterology records, patient reports, vendor systems, backups and incident-reporting steps."
         else:
             systems = "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps."
         complexity = "medium" if entity == "clinic" else "high"
@@ -990,8 +1082,20 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         timeline = "HIA timelines start from 2027; use specific batch dates only when the row has safe deadline evidence."
         asset = "HIA readiness map"
         cta = "Want the HIA readiness map?"
-        if classification.get("hia_service_type_guess") == "hearing_care" or "hearing" in text:
+        if service_type == "hearing_care" or "hearing" in text:
             problem = f"{company} needs to show where appointment, test and device-related records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
+            problem = f"{company} needs to show where patient, resident, family, volunteer and staff data sits, who can access it, which vendors touch it, how backups work and who reports an incident."
+        elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
+            problem = f"{company} needs to show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+            problem = f"{company} needs to show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        elif service_type == "diagnostic":
+            problem = f"{company} needs to show where screening, diagnostic and patient-report records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+            problem = f"{company} needs to show where oncology/radiation treatment records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
+        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+            problem = f"{company} needs to show where digestive/gastroenterology patient records sit, who can access them, which vendors touch them, how backups work and who reports an incident."
         else:
             problem = f"{company} needs to show where health information sits, who can access it, which vendors touch it, how backups work and who reports an incident."
         mechanism = "Cyber Essentials is a practical first baseline before deeper HIA work."
@@ -1163,8 +1267,21 @@ def generate_email_sequence(
     if classification["pressure_type"] != "not_ready":
         email1_body = f"{greeting} {trigger}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
         if classification["pressure_type"] == "hia_regulatory":
-            if classification.get("hia_service_type_guess") == "hearing_care":
+            service_type = classification.get("hia_service_type_guess")
+            if service_type == "hearing_care":
                 diagnostic = f"Can {company} show where appointment, test and device-related records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
+            elif service_type == "long_term_care":
+                diagnostic = f"Can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
+            elif service_type == "allied_health" and ("physio" in systems.lower() or "exercise-plan" in systems.lower()):
+                diagnostic = f"Can {company} show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
+            elif service_type == "allied_health" and ("psychology" in trigger.lower() or "case-note" in systems.lower()):
+                diagnostic = f"Can {company} show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
+            elif service_type == "diagnostic":
+                diagnostic = f"Can {company} show where screening, diagnostic and patient-report records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
+            elif service_type == "specialist_OMS" and ("oncology" in systems.lower() or "radiation" in systems.lower()):
+                diagnostic = f"Can {company} show where oncology/radiation treatment records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
+            elif service_type == "specialist_OMS" and ("digestive" in systems.lower() or "gastroenterology" in systems.lower()):
+                diagnostic = f"Can {company} show where digestive/gastroenterology patient records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
             else:
                 diagnostic = f"Can {company} show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?"
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
