@@ -1786,6 +1786,8 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
         required = ("appointment", "treatment", "exercise-plan")
     elif service_type == "long_term_care":
         required = ("patient", "resident", "volunteer")
+    elif service_type == "GP_OMS" and ("aesthetic" in text or "plastic" in text or "treatment" in text):
+        required = ("consultation records", "treatment notes", "appointment details", "clinic email")
     elif service_type == "GP_OMS":
         required = ("patient records", "appointment details", "clinic email")
     else:
@@ -1809,6 +1811,9 @@ def email_2_not_hia_segment_diagnostic_shape(
     service_type = classification.get("hia_service_type_guess")
     if service_type == "long_term_care":
         return " map " not in body_l or "incident contact" not in body_l
+    if service_type == "allied_health":
+        required = ("who can access", "vendors", "backups", "incident")
+        return not all(term in body_l for term in required)
     if " sit today" not in body_l:
         return True
     wrong_segment_terms = {

@@ -282,6 +282,31 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("clinic email", patch["email_2_body"])
         self.assertIn("llm_email_strategy_rejected:email_2_not_hia_segment_diagnostic_shape", patch["email_quality_flags"])
 
+    def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
+        cases = [
+            {
+                "company_name": "Apax Medical & Aesthetics Clinic",
+                "website_content": "Aesthetic medical clinic with doctors, treatments, consultation, appointments and patient services.",
+                "expected": "consultation records, treatment notes, appointment details, clinic email, vendor systems and backups",
+            },
+            {
+                "company_name": "A Plus Physio",
+                "website_content": "Physiotherapy clinic with appointments, treatment plans, exercise-plan records and patient care.",
+                "expected": "appointment, treatment and exercise-plan records",
+            },
+            {
+                "company_name": "Asia Psychology Centre",
+                "website_content": "Psychology and mental-health clinic with appointments, assessments, case-note records and patient care.",
+                "expected": "appointment, assessment and case-note records",
+            },
+        ]
+        for row in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertIn(row["expected"], plan.emails["email_2"]["body"])
+                self.assertNotIn("email_2_missing_hia_segment_terms", plan.quality_flags)
+                self.assertNotIn("email_2_not_hia_segment_diagnostic_shape", plan.quality_flags)
+
     def test_funding_email_rebuilt_when_llm_adds_non_funding_claims(self):
         row = {
             "Id": 45,
