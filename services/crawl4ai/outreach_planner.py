@@ -1700,9 +1700,14 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "hia_timeline_batch_guess": classification.get("hia_timeline_batch_guess", ""),
             "funding_status": funding.funding_status,
             "email_quality_flags": flags,
+            "email_1_subject": (emails.get("email_1") or {}).get("chosen_subject", ""),
             "email_1_body": (emails.get("email_1") or {}).get("body", ""),
+            "email_2_subject": (emails.get("email_2") or {}).get("chosen_subject", ""),
             "email_2_body": (emails.get("email_2") or {}).get("body", ""),
+            "email_3_subject": (emails.get("email_3") or {}).get("chosen_subject", ""),
             "email_3_body": (emails.get("email_3") or {}).get("body", ""),
+            "email_4_subject": (emails.get("email_4") or {}).get("chosen_subject", ""),
+            "email_4_body": (emails.get("email_4") or {}).get("body", ""),
         }
     patch = patch or {}
     flags_raw = patch.get("email_quality_flags") or "[]"
@@ -1718,9 +1723,14 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "hia_timeline_batch_guess": patch.get("hia_timeline_batch_guess", ""),
         "funding_status": patch.get("funding_status", ""),
         "email_quality_flags": flags,
+        "email_1_subject": patch.get("email_1_subject", ""),
         "email_1_body": patch.get("email_1_body", ""),
+        "email_2_subject": patch.get("email_2_subject", ""),
         "email_2_body": patch.get("email_2_body", ""),
+        "email_3_subject": patch.get("email_3_subject", ""),
         "email_3_body": patch.get("email_3_body", ""),
+        "email_4_subject": patch.get("email_4_subject", ""),
+        "email_4_body": patch.get("email_4_body", ""),
     }
 
 

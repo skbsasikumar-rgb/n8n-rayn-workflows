@@ -181,16 +181,24 @@ class OutreachPlannerTests(unittest.TestCase):
                 "hia_timeline_batch_guess",
                 "funding_status",
                 "email_quality_flags",
+                "email_1_subject",
                 "email_1_body",
+                "email_2_subject",
                 "email_2_body",
+                "email_3_subject",
                 "email_3_body",
+                "email_4_subject",
+                "email_4_body",
             },
         )
         self.assertEqual(audit["row_id"], 46)
         self.assertEqual(audit["company_name"], "Amaris B. Clinic")
         self.assertEqual(audit["pressure_type"], "hia_regulatory")
         self.assertEqual(audit["funding_status"], result["patch"]["funding_status"])
+        self.assertEqual(audit["email_1_subject"], result["patch"]["email_1_subject"])
         self.assertEqual(audit["email_1_body"], result["patch"]["email_1_body"])
+        self.assertEqual(audit["email_4_subject"], result["patch"]["email_4_subject"])
+        self.assertEqual(audit["email_4_body"], result["patch"]["email_4_body"])
         self.assertIsInstance(audit["email_quality_flags"], list)
 
     def test_draft_only_forces_not_send_ready_and_funding_caveat_not_duplicated(self):

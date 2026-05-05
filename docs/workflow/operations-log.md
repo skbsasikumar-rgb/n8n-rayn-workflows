@@ -779,3 +779,10 @@ Cold email copy QA hardening:
 - reran the first 20 completed, validated-email rows through `rayn-cold-email-planner`; NocoDB verification returned 20 rows patched with email subjects and compact audit fields.
 - final first-20 verification: all 20 rows keep `email_send_ready=false`; row `277` American International Clinic Singapore remains `pressure_type=hia_regulatory`, `hia_service_type_guess=GP_OMS`, `hia_timeline_batch_guess=Batch 1 - Sep 2027`, and `funding_status=verified_match`.
 - Email 3 caveat duplication was removed in the final rerun; no emails were sent and Instantly was not used.
+- `2026-05-05 17:00 +08`: refined the cold-email planner audit and n8n funding fallback after reviewing commit `3ebbbf0`.
+- n8n fallback funding email now uses `Hi {{company_name}} team,` when a company name is available, otherwise `Hi team,`; it no longer falls back to `Hi,`.
+- n8n fallback avoids duplicating `subject to programme confirmation` when the funding claim already includes it, and still updates `email_sequence_json.email_3.body` plus `word_count`.
+- compact audit reports now include all four email subjects and all four email bodies.
+- added `scripts/export_outreach_audit_markdown.py` to convert n8n audit JSON into a readable markdown QA report with row metadata, flags, and the full 4-email sequence.
+- local validation passed: workflow JSON parse, Python compile checks for `app.py`, `outreach_planner.py`, and the audit export script; focused pytest suite `37 passed`.
+- no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
