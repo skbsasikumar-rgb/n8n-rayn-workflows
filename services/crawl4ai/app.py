@@ -1032,6 +1032,17 @@ async def ensure_browser(app: FastAPI) -> Browser:
 
 
 app = FastAPI(title="Browser Scraper", version="2.0.0")
+
+LLM_EMAIL_STRATEGY_REJECT_FLAGS = {
+    "email_1_missing_specific_signal",
+    "email_1_missing_problem_statement",
+    "email_1_missing_mechanism_statement",
+    "email_1_missing_tiny_cta",
+    "email_1_too_generic",
+    "email_2_not_diagnostic",
+    "email_3_not_funding_only",
+    "generic_inbox_wrong_greeting",
+}
 SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
 scrape_semaphore = asyncio.Semaphore(SCRAPE_CONCURRENCY)
 
@@ -1830,6 +1841,18 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
         classification = request.record.get("classification", {})
         copy_brief = request.record.get("copy_brief", {})
         patch = outreach_planner.patch_with_email_sequence(request.row, classification, funding, emails, copy_brief)
+        flags = json.loads(patch.get("email_quality_flags") or "[]")
+        rejected_flags = [flag for flag in flags if flag in LLM_EMAIL_STRATEGY_REJECT_FLAGS]
+        if rejected_flags:
+            fallback_patch = request.fallback_patch or request.record.get("patch")
+            if isinstance(fallback_patch, dict) and fallback_patch.get("Id"):
+                fallback_flags = json.loads(fallback_patch.get("email_quality_flags") or "[]")
+                fallback_flags.extend(f"llm_email_strategy_rejected:{flag}" for flag in rejected_flags)
+                patch = {
+                    **fallback_patch,
+                    "email_send_ready": False,
+                    "email_quality_flags": json.dumps(list(dict.fromkeys(fallback_flags)), ensure_ascii=False),
+                }
         return {
             "ok": True,
             "row_id": request.row.get("Id") or request.row.get("id"),

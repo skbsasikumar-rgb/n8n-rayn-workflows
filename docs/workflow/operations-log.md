@@ -15,6 +15,13 @@ Cold email copy QA and strategy gate:
 - local validation passed: Python compile checks for `services/crawl4ai/outreach_planner.py` and `services/crawl4ai/app.py`, `jq -e wf-cold-email-planner.json`, focused outreach tests with `34 passed`, and the full test suite with `76 passed`.
 - no deployment was performed, no emails were sent, and Instantly was not used.
 
+Cold email strategy rerun hardening:
+
+- `2026-05-05 14:48:01 +08`: after the first post-deploy rerun showed Claude drafts still drifting into generic structure, meeting CTAs and non-funding Email 3 copy, tightened `/outreach-validate-email`.
+- LLM drafts with strategy rejection flags now fall back to the deterministic `/outreach-plan` patch before NocoDB writeback.
+- local validation passed: Python compile checks for `services/crawl4ai/app.py` and `services/crawl4ai/outreach_planner.py`, and the full test suite with `76 passed`.
+- no emails were sent and Instantly was not used.
+
 ## 2026-05-04
 
 Contact fallback and outreach gating:
