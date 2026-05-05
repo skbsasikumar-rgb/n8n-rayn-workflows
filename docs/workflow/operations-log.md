@@ -786,3 +786,9 @@ Cold email copy QA hardening:
 - added `scripts/export_outreach_audit_markdown.py` to convert n8n audit JSON into a readable markdown QA report with row metadata, flags, and the full 4-email sequence.
 - local validation passed: workflow JSON parse, Python compile checks for `app.py`, `outreach_planner.py`, and the audit export script; focused pytest suite `37 passed`.
 - no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 17:19 +08`: deployed the latest audit/fallback patch to Railway deployment `8b434d3a-4da5-48ae-886d-11cb77db0eb0`; `/health` returned HTTP 200.
+- updated live n8n workflow `HbTPGELQQr9DRdAb` with the latest collect-step audit and funding fallback code.
+- ran the cold-email planner with `limit=50`; the selector found `24` eligible completed rows with validated emails and patched all 24.
+- rerun row IDs: `273`, `274`, `275`, `276`, `277`, `279`, `280`, `282`, `288`, `291`, `292`, `293`, `295`, `296`, `299`, `302`, `305`, `310`, `312`, `313`, `316`, `317`, `318`, `319`.
+- verification: all 24 rows have `email_send_ready=false`; rows `316` Asia Physio is `not_ready`, `317` Asia Psychology Centre is `hia_regulatory`, `318` AspenHealth Singapore is `pdpa_safeguards`, and `319` Assisi Hospice is `hia_regulatory`.
+- no emails were sent and Instantly was not used.
