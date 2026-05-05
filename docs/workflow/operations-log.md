@@ -4,6 +4,17 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-05
 
+Cold email planner live QA hardening:
+
+- `2026-05-05 23:12 +08`: tightened HIA Email 2 validation so OpenRouter drafts that do not follow the segment-specific diagnostic shape fall back to deterministic planner copy.
+- added regression coverage for wrong-segment pharmacy diagnostics and deterministic aesthetic/allied-health diagnostics; local validation passed with `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and `python3 -m pytest tests/test_outreach_planner.py -q` returning `43 passed`.
+- committed and pushed `9313036` (`Tighten HIA email diagnostic QA`) and `6dd3f47` (`Refine HIA diagnostic QA flags`).
+- deployed worker service `n8n-rayn-workflows`; Railway deployments `b5438cac-7e89-412c-8a48-123dfcfcbeb9` and final `4dcd11f1-a1d8-4e9f-acf3-c050ab31a96d` reached `SUCCESS`.
+- reran the cold-email planner against the completed, validated-email rows. Live n8n executions `23383`, `23386`, and `23387` each processed `38` eligible rows; row `291` was then probed again on execution `23389` after the final deploy.
+- live NocoDB verification: `38` eligible rows remain draft-only, `0` rows have `email_send_ready=true`, `0` final email bodies contain `signals`, and `0` final email bodies contain prospect-facing HIA batch/date wording.
+- cleared three stale false-positive non-prefixed HIA diagnostic QA flags on rows `287`, `299`, and `317` after verifying the deployed `/outreach-plan` checker no longer emits them for the same segment copy.
+- no emails were sent and Instantly was not used.
+
 Proxy usage accounting and first-5 rerun:
 
 - `2026-05-05 20:39:49 +08`: added proxy fallback usage accounting to [services/crawl4ai/public_web_enrichment.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/public_web_enrichment.py) so `crawl_context.proxy` now carries a compact `usage` summary and row `notes` include proxy-attempt counts only when fallback actually ran.
