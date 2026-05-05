@@ -1109,14 +1109,16 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
         "digestive" in signal_l or "gastroenterology" in signal_l or "digestive" in text or "gastroenterology" in text
     ):
         return "your website lists gastroenterology consultations and specialist-led care."
-    if pressure == "customer_trust" or "b2b/client-service" in signal_l:
-        return "your company works with business customers who may ask for reusable security evidence."
-    if entity in {"npo", "charity", "social_service"} or "care/community-service" in signal_l:
-        return "your organisation works in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
     if service_type == "retail_pharmacy":
         return "your website lists pharmacy and compounding services."
     if service_type == "dental":
         return "your website lists dental services and patient appointments."
+    if service_type == "specialist_oms":
+        return "your website lists specialist-led clinic services."
+    if pressure == "customer_trust" or "b2b/client-service" in signal_l:
+        return "your company works with business customers who may ask for reusable security evidence."
+    if entity in {"npo", "charity", "social_service"} or "care/community-service" in signal_l:
+        return "your organisation works in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
     if service_type == "gp_oms" or "medical clinic, doctor and outpatient appointment signals" in signal_l:
         if "family" in text:
             return "your website lists family clinic services and doctor-led consultations."
@@ -1194,8 +1196,6 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any]) -> str:
         return "security evidence checklist"
     if classification.get("campaign_track") == "dpo_evidence":
         return "evidence checklist"
-    if entity in {"npo", "charity", "social_service"}:
-        return "care-organisation checklist"
     if classification.get("pressure_type") == "pdpa_safeguards":
         return "safeguards checklist"
     if service_type == "dental":
@@ -1216,6 +1216,8 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any]) -> str:
         return "long-term care readiness map"
     if service_type == "GP_OMS" or entity == "clinic":
         return "clinic readiness map"
+    if entity in {"npo", "charity", "social_service"}:
+        return "care-organisation checklist"
     return "HIA readiness map"
 
 
@@ -1758,6 +1760,39 @@ def email_2_generic_hia_diagnostic(body: str, classification: dict[str, Any]) ->
     return all(marker in body_l for marker in generic_markers) and not any(term in body_l for term in segment_terms)
 
 
+def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classification: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return False
+    body_l = compact(body).lower()
+    text = lower_blob(row)
+    service_type = classification.get("hia_service_type_guess")
+    if service_type == "dental":
+        required = ("patient records", "imaging files", "dental software")
+    elif service_type == "retail_pharmacy":
+        required = ("prescription", "dispensing", "compounding")
+    elif service_type == "diagnostic":
+        required = ("screening", "diagnostic", "lab")
+    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+        required = ("consultation notes", "patient reports", "procedure-related")
+    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+        required = ("oncology", "radiation", "patient reports")
+    elif service_type == "specialist_OMS":
+        required = ("consultation notes", "patient reports", "treatment records")
+    elif service_type == "hearing_care":
+        required = ("hearing test", "appointment", "device-related")
+    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        required = ("appointment", "assessment", "case-note")
+    elif service_type == "allied_health":
+        required = ("appointment", "treatment", "exercise-plan")
+    elif service_type == "long_term_care":
+        required = ("patient", "resident", "volunteer")
+    elif service_type == "GP_OMS":
+        required = ("patient records", "appointment details", "clinic email")
+    else:
+        return False
+    return not all(term in body_l for term in required)
+
+
 def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
@@ -1844,6 +1879,8 @@ def evaluate_email_strategy(
         flags.append("email_1_missing_tiny_cta")
     if email_contains_internal_signal_language(email1):
         flags.append("email_1_contains_internal_signal_language")
+    if email_contains_internal_signal_language("\n".join((email1, email2, email3, email4))):
+        flags.append("email_contains_internal_signal_language")
     if email_contains_hia_batch_wording("\n".join((email1, email2, email3, email4))):
         flags.append("email_contains_hia_batch_wording")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
@@ -1852,6 +1889,8 @@ def evaluate_email_strategy(
         flags.append("email_2_not_diagnostic")
     if email_2_generic_hia_diagnostic(email2, classification):
         flags.append("email_2_generic_hia_diagnostic")
+    if email_2_missing_hia_segment_terms(email2, row, classification):
+        flags.append("email_2_missing_hia_segment_terms")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
         flags.append("asset_offer_too_generic_for_segment")
     if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -1921,6 +1960,8 @@ def quality_gate(
         flags.append("unsafe_hia_deadline_claim")
     if email_contains_hia_batch_wording(blob):
         flags.append("email_contains_hia_batch_wording")
+    if email_contains_internal_signal_language(blob):
+        flags.append("email_contains_internal_signal_language")
     if "pdpa compliant" in blob and "does not make" not in blob:
         flags.append("cyber_essentials_equals_pdpa_compliance")
     if "hia compliant" in blob or "full hia compliance" in blob:
@@ -1961,6 +2002,8 @@ def quality_gate(
             flags.append("email_2_not_diagnostic")
         if email_2_generic_hia_diagnostic(emails["email_2"]["body"], classification):
             flags.append("email_2_generic_hia_diagnostic")
+        if email_2_missing_hia_segment_terms(emails["email_2"]["body"], row, classification):
+            flags.append("email_2_missing_hia_segment_terms")
         if asset_offer_too_generic_for_segment(row, classification, copy_brief):
             flags.append("asset_offer_too_generic_for_segment")
         if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -2255,10 +2298,12 @@ def patch_with_email_sequence(
         "email_1_missing_mechanism_statement",
         "email_1_missing_tiny_cta",
         "email_1_contains_internal_signal_language",
+        "email_contains_internal_signal_language",
         "email_contains_hia_batch_wording",
         "email_1_too_generic",
         "email_2_not_diagnostic",
         "email_2_generic_hia_diagnostic",
+        "email_2_missing_hia_segment_terms",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",
         "lab_classification_ambiguous",
