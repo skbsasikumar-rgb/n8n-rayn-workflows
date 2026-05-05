@@ -2,6 +2,19 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-05
+
+Cold email copy QA and strategy gate:
+
+- `2026-05-05 14:15:35 +08`: reviewed the contact-gating patch from `829febc` and tightened cold-email strategy quality without enabling any send path.
+- added `copy_qa_mode` to `/outreach-plan` so sample companies can generate review drafts without `validated_email`; this mode forces `email_send_ready=false` and cannot auto-approve rows.
+- kept production draft mode gated by `validated_email`.
+- added deterministic email strategy flags for missing specific signal, problem statement, mechanism statement, tiny CTA, generic Email 1, non-diagnostic Email 2, non-funding-only Email 3, and wrong greeting for generic/company inboxes.
+- updated generic/company inbox greetings to use `Hi team,` or `Hi {{company_name}} team,` without inventing a person name.
+- updated `wf-cold-email-planner.json` so OpenRouter is skipped when the copy brief is incomplete or too generic; those rows use the deterministic `/outreach-plan` patch only.
+- local validation passed: Python compile checks for `services/crawl4ai/outreach_planner.py` and `services/crawl4ai/app.py`, `jq -e wf-cold-email-planner.json`, focused outreach tests with `34 passed`, and the full test suite with `76 passed`.
+- no deployment was performed, no emails were sent, and Instantly was not used.
+
 ## 2026-05-04
 
 Contact fallback and outreach gating:

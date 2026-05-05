@@ -360,6 +360,7 @@ class OutreachPlanRequest(BaseModel):
     do_not_contact: Any = False
     unsubscribe_status: Any = "active"
     draft_only: bool = False
+    copy_qa_mode: bool = False
 
 
 class OutreachValidateEmailRequest(BaseModel):
@@ -1784,7 +1785,7 @@ async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
             },
             "record": {},
         }
-    if not outreach_planner.sendable_email(payload):
+    if not payload.get("copy_qa_mode") and not outreach_planner.sendable_email(payload):
         return {
             "ok": False,
             "row_id": request.Id,
@@ -1798,7 +1799,7 @@ async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
             "record": {},
         }
     try:
-        return outreach_planner.plan_and_patch(payload)
+        return outreach_planner.plan_and_patch(payload, copy_qa_mode=bool(payload.get("copy_qa_mode")))
     except Exception as exc:
         error_text = compact_whitespace(str(exc)) or "outreach planning failed"
         return {

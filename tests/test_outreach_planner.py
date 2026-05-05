@@ -212,7 +212,7 @@ class OutreachPlannerTests(unittest.TestCase):
         emails = o.generate_email_sequence({"company_name": "Example Pte Ltd"}, classification, funding)
         emails["email_1"]["body"] += " Hope you are well."
         emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
-        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        _, flags, send_ready = o.quality_gate({"company_name": "Example Pte Ltd"}, classification, funding, emails)
         self.assertIn("forbidden_phrase:hope you are well", flags)
         self.assertFalse(send_ready)
 
@@ -222,7 +222,7 @@ class OutreachPlannerTests(unittest.TestCase):
         emails = o.generate_email_sequence({"company_name": "Example Pte Ltd"}, classification, funding)
         emails["email_1"]["body"] += " Cyber Essentials makes you PDPA compliant."
         emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
-        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        _, flags, send_ready = o.quality_gate({"company_name": "Example Pte Ltd"}, classification, funding, emails)
         self.assertIn("forbidden_phrase:cyber essentials makes you pdpa compliant", flags)
         self.assertFalse(send_ready)
 
@@ -232,7 +232,7 @@ class OutreachPlannerTests(unittest.TestCase):
         emails = o.generate_email_sequence({"company_name": "Example Clinic"}, classification, funding)
         emails["email_1"]["body"] += " Fully HIA compliant with Cyber Essentials."
         emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
-        _, flags, send_ready = o.quality_gate(classification, funding, emails)
+        _, flags, send_ready = o.quality_gate({"company_name": "Example Clinic"}, classification, funding, emails)
         self.assertIn("forbidden_phrase:fully hia compliant with cyber essentials", flags)
         self.assertFalse(send_ready)
 
@@ -262,6 +262,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("backups", brief["data_systems_likely"])
         self.assertIn("incident", brief["data_systems_likely"])
         self.assertEqual(brief["email_asset_offer"], "care-organisation checklist")
+        self.assertIn("PDPA", plan.emails["email_1"]["body"])
+        self.assertIn("Worth sending the care-organisation checklist?", plan.emails["email_1"]["body"])
 
     def test_amaris_clinic_hia_fixture(self):
         plan = o.plan_outreach(
@@ -269,6 +271,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Id": 6,
                 "company_name": "Amaris B. Clinic",
                 "best_url": "https://amaris-b.com/",
+                "services_detected": ["aesthetic clinic services", "doctor consultations"],
+                "leadership_or_team_signals": ["doctor and practitioner team"],
                 "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
             },
             programmes=[verified_program()],
@@ -285,6 +289,13 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("clinic service", plan.emails["email_1"]["body"])
         self.assertIn("team/practitioner", plan.emails["email_1"]["body"])
         self.assertIn("HIA timelines starting from 2027", plan.emails["email_1"]["body"])
+        self.assertIn("where health information sits", plan.emails["email_1"]["body"])
+        self.assertIn("who can access it", plan.emails["email_1"]["body"])
+        self.assertIn("which vendors touch it", plan.emails["email_1"]["body"])
+        self.assertIn("how backups work", plan.emails["email_1"]["body"])
+        self.assertIn("who reports an incident", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials is a practical first baseline", plan.emails["email_1"]["body"])
+        self.assertIn("Want the HIA readiness map?", plan.emails["email_1"]["body"])
         self.assertIn("where health information sits", plan.emails["email_2"]["body"])
         self.assertIn("appointment", brief["data_systems_likely"])
         self.assertIn("backups", brief["data_systems_likely"])
@@ -308,7 +319,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
         self.assertIn("hearing-care", plan.emails["email_1"]["body"])
+        self.assertIn("health-information readiness", plan.emails["email_1"]["body"])
         self.assertIn("appointments, tests and device support", plan.emails["email_1"]["body"])
+        self.assertIn("appointment", plan.emails["email_2"]["body"])
+        self.assertIn("test", plan.emails["email_2"]["body"])
+        self.assertIn("device", plan.emails["email_2"]["body"])
         self.assertIn("hearing tests", plan.copy_brief["data_systems_likely"])
         self.assertIn("device-related records", plan.copy_brief["data_systems_likely"])
         weak_plan = o.plan_outreach(
@@ -322,6 +337,7 @@ class OutreachPlannerTests(unittest.TestCase):
             self.assertNotEqual(weak_plan.classification["pressure_type"], "hia_regulatory")
             if weak_plan.classification["pressure_type"] != "not_ready":
                 self.assertIn("Do not lead with HIA", weak_plan.copy_brief["hia_obligation_angle"])
+                self.assertIn("PDPA", weak_plan.emails["email_1"]["body"])
 
     def test_generic_b2b_copy_brief_uses_customer_trust(self):
         plan = o.plan_outreach(
@@ -340,6 +356,69 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("customer security questions", plan.emails["email_1"]["body"])
         self.assertIn("reusable security evidence", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_2"]["body"])
+
+    def test_copy_qa_mode_bypasses_sendable_email_but_never_send_ready(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 44,
+                "company_name": "Amaris B. Clinic",
+                "best_url": "https://amaris-b.com/",
+                "website_content": "Singapore medical clinic with doctors, treatment services, consultation and patient appointments.",
+                "copy_qa_mode": True,
+            },
+            programmes=[verified_program()],
+            copy_qa_mode=True,
+        )
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["patch"]["email_send_ready"])
+        self.assertEqual(result["patch"]["human_review_status"], "ready_for_review")
+        self.assertIn("copy_qa_mode", result["patch"]["email_quality_flags"])
+
+    def test_generic_inbox_uses_team_greeting(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 45,
+                "company_name": "An Dental",
+                "validated_email": "contact@andental.sg",
+                "best_url": "https://andental.sg/",
+                "website_content": "Singapore dental clinic with patient appointments, dentists and treatment services.",
+            }
+        )
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi An Dental team,"))
+        self.assertNotIn("Hi -", plan.emails["email_1"]["body"])
+        self.assertNotIn("generic_inbox_wrong_greeting", plan.quality_flags)
+
+    def test_strategy_evaluator_flags_bad_email_shape(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 46,
+                "company_name": "Vendor Platform Pte Ltd",
+                "website_content": "B2B SaaS outsourcing platform serving enterprise clients with customer data integrations and vendor dashboards.",
+            }
+        )
+        emails = {
+            key: dict(value)
+            for key, value in plan.emails.items()
+            if key.startswith("email_")
+        }
+        emails["email_1"]["body"] = "Hi team,\n\nWe help companies improve cybersecurity.\n\nWorth a chat?"
+        emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
+        emails["email_2"]["body"] = "Cyber Essentials is a recognised baseline."
+        emails["email_2"]["word_count"] = o.word_count(emails["email_2"]["body"])
+        emails["email_3"]["body"] = f"{plan.funding.funding_claim_line}\n\nHIA timelines and PDPA safeguards matter too."
+        emails["email_3"]["word_count"] = o.word_count(emails["email_3"]["body"])
+        flags = o.evaluate_email_strategy(
+            {"company_name": "Vendor Platform Pte Ltd"},
+            plan.classification,
+            plan.funding,
+            emails,
+            plan.copy_brief,
+        )
+        self.assertIn("email_1_missing_specific_signal", flags)
+        self.assertIn("email_1_missing_problem_statement", flags)
+        self.assertIn("email_1_missing_mechanism_statement", flags)
+        self.assertIn("email_2_not_diagnostic", flags)
+        self.assertIn("email_3_not_funding_only", flags)
 
     def test_copy_brief_not_ready_row_keeps_empty_emails(self):
         plan = o.plan_outreach(
@@ -365,7 +444,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         emails = plan.emails
         copy_brief = {**plan.copy_brief, "email_personalisation_signal": "Example Clinic appears to operate in healthcare."}
-        _, flags, send_ready = o.quality_gate(plan.classification, plan.funding, emails, copy_brief)
+        _, flags, send_ready = o.quality_gate({"company_name": "Example Clinic"}, plan.classification, plan.funding, emails, copy_brief)
         self.assertIn("generic_personalisation_signal", flags)
         self.assertFalse(send_ready)
 

@@ -153,6 +153,29 @@ Forbidden:
 - "hope you are well"
 - "I came across your company"
 
+## Workflow Modes
+
+`copy_qa_mode`:
+
+- Used only for sample-company copy QA and strategy testing.
+- `/outreach-plan` accepts `copy_qa_mode = true` even when `validated_email` is blank.
+- The planner always forces `email_send_ready = false`, adds a `copy_qa_mode` quality flag, and keeps `human_review_status = ready_for_review` unless the row is otherwise `not_ready`.
+- This mode must not be wired to Instantly or any send path.
+
+`production_draft_mode`:
+
+- Current production mode.
+- The workflow fetches only completed enrichment rows with `validated_email` present.
+- `/outreach-plan` rejects rows without `validated_email` unless `copy_qa_mode = true`.
+- Drafts are patched only for human review. `email_send_ready` remains controlled by deterministic quality gates and funding safety.
+- OpenRouter is called only when the copy brief has the required ingredients and the personalisation signal is concrete.
+
+`future send_mode`:
+
+- Not implemented.
+- Any future send mode must require `validated_email`, active unsubscribe status, `do_not_contact = false`, human approval, and final quality checks.
+- It must not treat `copy_qa_mode` rows as sendable or approved.
+
 ## NocoDB Columns
 
 Create or refresh these columns with:
