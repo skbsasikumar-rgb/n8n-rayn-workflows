@@ -852,3 +852,16 @@ Cold email copy QA hardening:
 - reran the first five validated rows explicitly as IDs `273, 274, 275, 276, 277`; live execution `23375` patched all five rows in draft-only mode.
 - verification from execution `23375`: `23375` audit payloads show the new Email 1 structure live, including `American International Clinic Singapore` with `medical clinic, doctor and outpatient appointment signals`, `Batch 1 Sep 2027 HIA window`, and `Cyber Essentials is a practical first baseline for the cybersecurity/data-security side.`
 - no emails were sent and Instantly was not used.
+- `2026-05-05 22:12 +08`: refined prospect-facing cold email wording so internal audit language stays in copy-brief fields but no longer leaks into final email bodies.
+- added `prospect_facing_signal(...)` in `services/crawl4ai/outreach_planner.py`, wired deterministic Email 1 and the OpenRouter prep node to use the translated observation, and added the quality flag `email_1_contains_internal_signal_language`.
+- updated outreach copy tests for American International Clinic Singapore, Amaris B. Clinic, Amazing Hearing Group, Sree Narayana Mission, Assisi Hospice, and generic B2B rows so final email bodies must not contain `signals`.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and `python3 -m pytest tests/test_outreach_planner.py -q` with `37 passed`.
+- no deployment was performed by this patch step, no emails were sent, and Instantly was not used.
+- `2026-05-05 22:27 +08`: refined HIA cold-email copy after first-10 preview QA.
+- final email bodies no longer use prospect-facing HIA batch wording (`Batch 1`, `Batch 2`, `Batch 3`, `Sep 2027`, `Sep 2028`, `Mar 2030`, or `HIA window`); internal classification fields still retain batch guesses for audit/use.
+- added segment-specific HIA observations, problems, diagnostics, assets and CTAs for GP/family clinics, aesthetic clinics, dental, pharmacy, diagnostic/lab, specialist clinics, hearing care, allied health, psychology and long-term care.
+- hearing-care evidence now keeps rows out of `not_ready` when concrete hearing tests/audiology/hearing-aid/appointment evidence exists; generic non-healthcare lab evidence no longer forces HIA diagnostic classification.
+- Email 3 funding copy now still uses `funding_claim_line` but adds the funding-only line: `The useful first step is confirming whether the route applies before spending time on readiness work.`
+- audit reports now include `contains_hia_batch_wording`, `asset_offer_too_generic_for_segment`, and `email_2_generic_hia_diagnostic` booleans for preview/review.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and `python3 -m pytest tests/test_outreach_planner.py -q` with `41 passed`.
+- generated a local dry preview with representative first-10 rows only; no live rows were patched, no deployment was performed, no emails were sent, and Instantly was not used.

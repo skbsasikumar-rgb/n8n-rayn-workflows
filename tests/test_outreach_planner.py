@@ -23,6 +23,13 @@ def verified_program() -> FundingProgram:
 
 
 class OutreachPlannerTests(unittest.TestCase):
+    def assert_no_final_email_batch_or_signal_language(self, plan):
+        forbidden = ("signals", "Batch 1", "Batch 2", "Batch 3", "Sep 2027", "Sep 2028", "Mar 2030", "HIA window")
+        for index in range(1, 5):
+            body = plan.emails[f"email_{index}"]["body"]
+            for phrase in forbidden:
+                self.assertNotIn(phrase, body)
+
     def test_hia_high_confidence_uses_regulatory_pressure(self):
         plan = o.plan_outreach(
             {
@@ -182,6 +189,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "hia_timeline_batch_guess",
                 "funding_status",
                 "email_quality_flags",
+                "contains_hia_batch_wording",
+                "asset_offer_too_generic_for_segment",
+                "email_2_generic_hia_diagnostic",
                 "email_1_subject",
                 "email_1_body",
                 "email_2_subject",
@@ -196,6 +206,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(audit["company_name"], "Amaris B. Clinic")
         self.assertEqual(audit["pressure_type"], "hia_regulatory")
         self.assertEqual(audit["funding_status"], result["patch"]["funding_status"])
+        self.assertFalse(audit["contains_hia_batch_wording"])
+        self.assertFalse(audit["asset_offer_too_generic_for_segment"])
+        self.assertFalse(audit["email_2_generic_hia_diagnostic"])
         self.assertEqual(audit["email_1_subject"], result["patch"]["email_1_subject"])
         self.assertEqual(audit["email_1_body"], result["patch"]["email_1_body"])
         self.assertEqual(audit["email_4_subject"], result["patch"]["email_4_subject"])
@@ -236,9 +249,10 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("Noticed Amaris B. Clinic shows", patch["email_1_body"])
-        self.assertIn("team/practitioner", patch["email_1_body"])
-        self.assertIn("HIA window", patch["email_1_body"])
+        self.assertIn("Noticed your website lists medical/aesthetic clinic services and doctor-led consultations.", patch["email_1_body"])
+        self.assertNotIn("signals", patch["email_1_body"].lower())
+        self.assertIn("With HIA readiness becoming more urgent for healthcare providers", patch["email_1_body"])
+        self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
         self.assertIn("llm_email_strategy_rejected:email_1_too_generic", patch["email_quality_flags"])
         self.assertNotIn("email_3_not_funding_only", patch["email_quality_flags"])
 
@@ -364,6 +378,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Sree Narayana Mission (Singapore) team,"))
         self.assertIn("care/community-service", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_1"]["body"])
+        self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
         self.assertIn("The practical PDPA question", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_2"]["body"])
         self.assertIn("resident", brief["personal_data_handled_guess"])
@@ -399,20 +414,20 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Amaris B. Clinic team,"))
-        self.assertIn("Noticed Amaris B. Clinic shows", plan.emails["email_1"]["body"])
-        self.assertIn("clinic service", plan.emails["email_1"]["body"])
-        self.assertIn("team/practitioner", plan.emails["email_1"]["body"])
-        self.assertIn("HIA window", plan.emails["email_1"]["body"])
-        self.assertIn("patient-data access", plan.emails["email_1"]["body"])
-        self.assertIn("vendors, backups, patching and incident steps", plan.emails["email_1"]["body"])
+        self.assertIn("Noticed your website lists medical/aesthetic clinic services and doctor-led consultations.", plan.emails["email_1"]["body"])
+        self.assertIn("With HIA readiness becoming more urgent for healthcare providers", plan.emails["email_1"]["body"])
+        self.assertIn("consultation records, treatment notes, appointment details, clinic email, vendor systems, backups and incident steps", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials is a practical first baseline for the cybersecurity/data-security side", plan.emails["email_1"]["body"])
-        self.assertIn("Want the HIA readiness map?", plan.emails["email_1"]["body"])
-        self.assertIn("where health information sits", plan.emails["email_2"]["body"])
+        self.assertIn("Want the clinic readiness map?", plan.emails["email_1"]["body"])
+        self.assertIn("consultation records", plan.emails["email_2"]["body"])
+        self.assertIn("treatment notes", plan.emails["email_2"]["body"])
+        self.assertIn("clinic email", plan.emails["email_2"]["body"])
         self.assertIn("appointment", brief["data_systems_likely"])
         self.assertIn("backups", brief["data_systems_likely"])
         self.assertIn("vendor", brief["data_systems_likely"])
         self.assertIn("incident", brief["data_systems_likely"])
-        self.assertEqual(brief["email_asset_offer"], "HIA readiness map")
+        self.assertEqual(brief["email_asset_offer"], "clinic readiness map")
+        self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_american_international_clinic_matches_target_email_1_shape(self):
         plan = o.plan_outreach(
@@ -431,11 +446,13 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertIn("Batch 1 - Sep 2027", plan.classification["hia_timeline_batch_guess"])
         self.assertTrue(body.startswith("Hi American International Clinic Singapore team,"))
-        self.assertIn("Noticed American International Clinic Singapore shows medical clinic, doctor and outpatient appointment signals.", body)
-        self.assertIn("With the Batch 1 Sep 2027 HIA window", body)
-        self.assertIn("patient-data access, vendors, backups, patching and incident steps", body)
+        self.assertIn("Noticed your website lists outpatient medical consultations and doctor-led services.", body)
+        self.assertIn("With HIA readiness becoming more urgent for healthcare providers", body)
+        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems, backups and incident steps", body)
         self.assertIn("Cyber Essentials is a practical first baseline for the cybersecurity/data-security side.", body)
-        self.assertIn("Want the HIA readiness map?", body)
+        self.assertIn("Want the clinic readiness map?", body)
+        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_2"]["body"])
+        self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_amazing_hearing_group_fixture(self):
         plan = o.plan_outreach(
@@ -451,14 +468,15 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.classification["hia_relevant"])
         self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information", "customer_data"})
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
+        self.assertNotEqual(plan.classification["pressure_type"], "not_ready")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
-        self.assertIn("hearing-care", plan.emails["email_1"]["body"])
-        self.assertIn("appointment, test and device-related records may sit across staff and systems", plan.emails["email_1"]["body"])
-        self.assertIn("appointment, test and device-related records", plan.emails["email_1"]["body"])
-        self.assertIn("patching and incident steps", plan.emails["email_1"]["body"])
-        self.assertIn("appointment", plan.emails["email_2"]["body"])
-        self.assertIn("test", plan.emails["email_2"]["body"])
-        self.assertIn("device", plan.emails["email_2"]["body"])
+        self.assertIn("Noticed your website lists hearing tests, hearing aids and audiology support.", plan.emails["email_1"]["body"])
+        self.assertIn("hearing test records, appointment details, device-related records", plan.emails["email_1"]["body"])
+        self.assertIn("hearing test records", plan.emails["email_2"]["body"])
+        self.assertIn("appointment details", plan.emails["email_2"]["body"])
+        self.assertIn("device-related records", plan.emails["email_2"]["body"])
+        self.assertEqual(plan.copy_brief["email_asset_offer"], "hearing-care readiness map")
+        self.assert_no_final_email_batch_or_signal_language(plan)
         self.assertIn("hearing tests", plan.copy_brief["data_systems_likely"])
         self.assertIn("device-related records", plan.copy_brief["data_systems_likely"])
         weak_plan = o.plan_outreach(
@@ -488,10 +506,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "security evidence checklist")
         self.assertIn("without rebuilding answers for every customer review", brief["email_problem_statement"])
-        self.assertIn("customers may ask for reusable security evidence", plan.emails["email_1"]["body"])
+        self.assertIn("Noticed your company works with business customers who may ask for reusable security evidence.", plan.emails["email_1"]["body"])
         self.assertIn("reusable security evidence", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_2"]["body"])
+        self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_copy_qa_mode_bypasses_sendable_email_but_never_send_ready(self):
         result = o.plan_and_patch(
@@ -556,6 +575,39 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("email_2_not_diagnostic", flags)
         self.assertIn("email_3_not_funding_only", flags)
 
+    def test_internal_signal_language_is_flagged(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 46,
+                "company_name": "Amaris B. Clinic",
+                "services_detected": ["aesthetic clinic services", "doctor consultations"],
+                "leadership_or_team_signals": ["doctor and practitioner team"],
+                "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+            },
+            programmes=[verified_program()],
+        )
+        emails = {
+            key: dict(value)
+            for key, value in plan.emails.items()
+            if key.startswith("email_")
+        }
+        emails["email_1"]["body"] = (
+            "Hi Amaris B. Clinic team,\n\n"
+            "Noticed Amaris B. Clinic shows multiple clinic service and team/practitioner signals.\n\n"
+            f"{plan.copy_brief['email_problem_statement']}\n\n"
+            f"{plan.copy_brief['email_mechanism_statement']}\n\n"
+            f"{plan.copy_brief['email_cta']}\n\nBest,\nSK\nRAYN Secure"
+        )
+        emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
+        flags = o.evaluate_email_strategy(
+            {"company_name": "Amaris B. Clinic"},
+            plan.classification,
+            plan.funding,
+            emails,
+            plan.copy_brief,
+        )
+        self.assertIn("email_1_contains_internal_signal_language", flags)
+
     def test_copy_brief_not_ready_row_keeps_empty_emails(self):
         plan = o.plan_outreach(
             {
@@ -608,6 +660,110 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.classification["hia_deadline_claim_safe"])
         self.assertFalse(plan.classification["pdpa_relevant"])
 
+    def test_first_10_hia_segments_use_segment_specific_assets_without_batch_copy(self):
+        cases = [
+            (
+                {
+                    "company_name": "Amber Family Clinic",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation and patient services.",
+                },
+                "family clinic services and doctor-led consultations",
+                "patient records, appointment details, consultation notes, clinic email, vendor systems and backups",
+                "clinic readiness map",
+            ),
+            (
+                {
+                    "company_name": "Amber Compounding Pharmacy",
+                    "website_content": "Retail pharmacy and compounding pharmacy with prescriptions, dispensing, compounding and customer services.",
+                },
+                "pharmacy and compounding services",
+                "prescription, dispensing, compounding, customer and supplier records",
+                "pharmacy HIA checklist",
+            ),
+            (
+                {
+                    "company_name": "Amoy Street Dental",
+                    "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software.",
+                },
+                "dental services and patient appointments",
+                "patient records, imaging files, appointment details, dental software and backups",
+                "dental readiness map",
+            ),
+            (
+                {
+                    "company_name": "Andrea's Digestive, Colon, Liver and Gallbladder Clinic",
+                    "website_content": "Digestive specialist clinic providing gastroenterology consultations, procedure-related records, specialist appointments and patient reports.",
+                },
+                "gastroenterology consultations and specialist-led care",
+                "consultation notes, patient reports, procedure-related records, vendor systems and backups",
+                "specialist clinic readiness map",
+            ),
+        ]
+        for row, observation, diagnostic, asset in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertIn(observation, plan.emails["email_1"]["body"])
+                self.assertIn(diagnostic, plan.emails["email_2"]["body"])
+                self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
+                self.assertIn(f"Want the {asset}?", plan.emails["email_1"]["body"])
+                self.assertIn(f"would the {asset} still be useful", plan.emails["email_4"]["body"])
+                self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_amp_lab_requires_clinical_diagnostic_evidence(self):
+        clinical = o.plan_outreach(
+            {
+                "company_name": "AMP Lab",
+                "website_content": "Clinical laboratory providing diagnostic lab tests, health screening and patient reports.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(clinical.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(clinical.classification["hia_service_type_guess"], "diagnostic")
+        self.assertEqual(clinical.copy_brief["email_asset_offer"], "diagnostic readiness map")
+        self.assertIn("laboratory / diagnostic services", clinical.emails["email_1"]["body"])
+        self.assert_no_final_email_batch_or_signal_language(clinical)
+
+        generic = o.plan_outreach(
+            {
+                "company_name": "AMP Lab",
+                "website_content": "Research lab for product testing and business testing.",
+            }
+        )
+        self.assertIn(generic.classification["pressure_type"], {"not_ready", "customer_trust"})
+        self.assertNotEqual(generic.classification["hia_service_type_guess"], "diagnostic")
+
+    def test_email_3_adds_useful_funding_route_confirmation_only(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "AN Medical Clinic",
+                "website_content": "Medical clinic with doctors, outpatient appointments and patient services.",
+            },
+            programmes=[verified_program()],
+        )
+        email3 = plan.emails["email_3"]["body"]
+        self.assertIn(plan.funding.funding_claim_line, email3)
+        self.assertIn("The useful first step is confirming whether the route applies before spending time on readiness work.", email3)
+        self.assertNotIn("you qualify", email3.lower())
+        self.assertNotIn("you are eligible", email3.lower())
+        self.assertNotIn("guaranteed", email3.lower())
+        self.assertNotIn("free", email3.lower())
+        self.assertNotIn("we can get you 70%", email3.lower())
+        self.assertNotIn("you can get 70%", email3.lower())
+        self.assertTrue(o.funding_only_email_3(email3, plan.funding.funding_claim_line))
+
+    def test_global_final_emails_do_not_contain_batch_or_signal_language(self):
+        rows = [
+            {"company_name": "American International Clinic Singapore", "website_content": "Medical clinic with doctors, outpatient appointments and patient services."},
+            {"company_name": "Amber Compounding Pharmacy", "website_content": "Retail pharmacy and compounding pharmacy with prescriptions and dispensing records."},
+            {"company_name": "Amoy Street Dental", "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software."},
+            {"company_name": "Amazing Hearing Group", "website_content": "Hearing care provider offering audiology, hearing tests, hearing aids and patient appointments."},
+            {"company_name": "Vendor Platform Pte Ltd", "website_content": "B2B SaaS outsourcing platform serving enterprise clients with customer data integrations and vendor dashboards."},
+        ]
+        for row in rows:
+            with self.subTest(company=row["company_name"]):
+                self.assert_no_final_email_batch_or_signal_language(o.plan_outreach(row, programmes=[verified_program()]))
+
     def test_audited_healthcare_segments_get_specific_copy_briefs(self):
         cases = [
             (
@@ -618,7 +774,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": "physiotherapy appointments; rehabilitation treatment plans",
                 },
                 "allied_health",
-                "physiotherapy/allied-health service signals",
+                "your website lists physiotherapy services and treatment support.",
                 "appointment, treatment and exercise-plan records",
             ),
             (
@@ -629,7 +785,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "leadership_or_team_signals": "psychologist team",
                 },
                 "allied_health",
-                "psychology/mental-health service signals",
+                "your website lists psychology / mental-health services and assessment support.",
                 "appointment, assessment and case-note records",
             ),
             (
@@ -640,7 +796,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": "patient care; palliative care; volunteer support",
                 },
                 "long_term_care",
-                "hospice/long-term care service signals",
+                "your website lists hospice / palliative-care services.",
                 "patient, resident, family, volunteer and staff data",
             ),
             (
@@ -650,8 +806,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Digestive specialist clinic providing gastroenterology consultations, specialist appointments and patient reports.",
                 },
                 "specialist_OMS",
-                "digestive/gastroenterology specialist-care signals",
-                "digestive/gastroenterology patient records",
+                "your website lists gastroenterology consultations and specialist-led care.",
+                "consultation notes, patient reports, procedure-related records",
             ),
         ]
         for row, service_type, signal, diagnostic in cases:
@@ -660,6 +816,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
                 self.assertIn(signal, plan.emails["email_1"]["body"])
+                self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
                 self.assertIn(diagnostic, plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic, plan.emails["email_2"]["body"])
                 self.assertIn("Cyber Essentials is a practical first baseline", plan.emails["email_1"]["body"])

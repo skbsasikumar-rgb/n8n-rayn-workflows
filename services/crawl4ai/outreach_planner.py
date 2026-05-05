@@ -386,10 +386,7 @@ def hia_window_label(classification: dict[str, Any]) -> str:
 
 
 def hia_problem_prefix(classification: dict[str, Any]) -> str:
-    window = hia_window_label(classification)
-    if window.startswith("HIA timelines"):
-        return f"With {window},"
-    return f"With the {window} HIA window,"
+    return "With HIA readiness becoming more urgent for healthcare providers,"
 
 
 def trim_text(value: Any) -> str:
@@ -501,6 +498,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     company = compact(row.get("company_name")).lower()
     if any(term in company for term in ("clinic", "physio", "psychology", "hospice", "hearing", "dental", "medical", "medic")):
         score += 24
+    if has_hearing_care_evidence(text):
+        score += 18
+    if has_clinical_lab_evidence(text):
+        score += 18
     if "dental" in text or "dentist" in text:
         service = "dental"
     elif "ambulatory surgical" in text or "day surgery" in text:
@@ -511,15 +512,17 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         batch_override = "Batch 3 - Mar 2030"
     elif "pharmacy" in text:
         service = "retail_pharmacy"
-    elif "hearing" in text or "audiology" in text:
+    elif has_hearing_care_evidence(text) or "audiology" in text:
         service = "hearing_care"
     elif "renal dialysis" in text or "dialysis" in text:
         service = "unknown"
         batch_override = "Batch 2 - Sep 2028"
     elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
-    elif contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
+    elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
         service = "diagnostic"
+    elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
+        service = "GP_OMS"
     elif contains_any(text, SPECIALIST_SERVICE_TERMS):
         service = "specialist_OMS"
     elif "hims" in text or "health information management system" in text:
@@ -537,7 +540,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     score = min(score, 100)
     confidence = confidence_from_score(score)
     batch = batch_override or HIA_BATCH_BY_SERVICE.get(service, "unknown")
-    hia_relevant = score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36)
+    hia_relevant = score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36) or (service == "hearing_care" and has_hearing_care_evidence(text))
     return {
         "hia_relevant": hia_relevant,
         "hia_relevance_score": score,
@@ -725,6 +728,44 @@ def healthcare_segment(classification: dict[str, Any]) -> str:
     if entity and entity != "unknown":
         return entity
     return "healthcare provider"
+
+
+def has_hearing_care_evidence(text: str) -> bool:
+    return "hearing" in text and any(
+        term in text
+        for term in (
+            "hearing care",
+            "audiology",
+            "hearing test",
+            "hearing tests",
+            "hearing aid",
+            "hearing aids",
+            "hearing assessment",
+            "device fitting",
+            "appointment",
+            "patient",
+            "audiologist",
+        )
+    )
+
+
+def has_clinical_lab_evidence(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "clinical laboratory",
+            "diagnostic lab",
+            "diagnostic laboratory",
+            "medical laboratory",
+            "laboratory diagnostic",
+            "lab test",
+            "lab tests",
+            "patient test",
+            "health screening",
+            "radiology",
+            "nuclear medicine",
+        )
+    )
 
 
 def classify_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -1041,6 +1082,223 @@ def empty_email_sequence() -> dict[str, Any]:
     return emails
 
 
+def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    signal_l = compact(signal).lower()
+    if not signal_l:
+        return ""
+    text = lower_blob(row)
+    service_type = compact(classification.get("hia_service_type_guess")).lower()
+    pressure = compact(classification.get("pressure_type")).lower()
+    entity = compact(classification.get("entity_type_guess")).lower()
+
+    if service_type == "hearing_care" or "hearing-care" in signal_l or "hearing" in text:
+        return "your website lists hearing tests, hearing aids and audiology support."
+    if service_type == "long_term_care" or "hospice/long-term care" in signal_l or contains_any(text, LONG_TERM_CARE_TERMS):
+        return "your website lists hospice / palliative-care services."
+    if service_type == "allied_health" and ("physio" in signal_l or "physio" in text or "exercise-plan" in signal_l):
+        return "your website lists physiotherapy services and treatment support."
+    if service_type == "allied_health" and (
+        "psychology" in signal_l or "mental-health" in signal_l or "psychologist" in text or "case-note" in signal_l
+    ):
+        return "your website lists psychology / mental-health services and assessment support."
+    if service_type == "diagnostic" or "screening/diagnostic" in signal_l:
+        return "your website lists laboratory / diagnostic services."
+    if service_type == "specialist_oms" and ("oncology" in signal_l or "radiation" in signal_l or "oncology" in text or "radiation" in text):
+        return "your website lists oncology/radiation care and specialist-led treatment services."
+    if service_type == "specialist_oms" and (
+        "digestive" in signal_l or "gastroenterology" in signal_l or "digestive" in text or "gastroenterology" in text
+    ):
+        return "your website lists gastroenterology consultations and specialist-led care."
+    if pressure == "customer_trust" or "b2b/client-service" in signal_l:
+        return "your company works with business customers who may ask for reusable security evidence."
+    if entity in {"npo", "charity", "social_service"} or "care/community-service" in signal_l:
+        return "your organisation works in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
+    if service_type == "retail_pharmacy":
+        return "your website lists pharmacy and compounding services."
+    if service_type == "dental":
+        return "your website lists dental services and patient appointments."
+    if service_type == "gp_oms" or "medical clinic, doctor and outpatient appointment signals" in signal_l:
+        if "family" in text:
+            return "your website lists family clinic services and doctor-led consultations."
+        if "aesthetic" in text:
+            return "your website lists medical/aesthetic clinic services and doctor-led consultations."
+        return "your website lists outpatient medical consultations and doctor-led services."
+    if "clinic service and team/practitioner signals" in signal_l:
+        return "your website lists clinic services and practitioner-led care."
+    if signal_l.startswith("shows ") and signal_l.endswith("signals."):
+        detail = compact(signal[6:-1]).replace(" signals", "")
+        if detail:
+            return f"your website lists {detail}."
+    if signal_l.startswith("shows "):
+        return f"your website lists {compact(signal[6:])}"
+    if signal_l.startswith("appears to handle "):
+        detail = compact(signal[18:])
+        return f"you appear to handle {detail}"
+    if signal_l.startswith("appears to operate in "):
+        detail = compact(signal[21:])
+        return f"you operate in {detail}"
+    company = compact(row.get("company_name"))
+    if company:
+        signal = re.sub(rf"^{re.escape(company)}\s+", "", compact(signal), flags=re.IGNORECASE)
+    signal = re.sub(r"\bshows\b", "lists", signal, count=1, flags=re.IGNORECASE)
+    signal = re.sub(r"\bsignals\b", "", signal, flags=re.IGNORECASE)
+    signal = re.sub(r"\s+", " ", signal).strip(" .")
+    if signal.lower().startswith("appears to "):
+        signal = signal[11:]
+    if signal.lower().startswith("handle "):
+        company_name = compact(row.get("company_name"))
+        signal = f"{company_name} appears to {signal}" if company_name else "you " + signal
+    elif signal.lower().startswith("provide "):
+        signal = "you " + signal
+    elif signal.lower().startswith("provides "):
+        signal = "you provide " + signal[9:]
+    elif signal.lower().startswith(("lists ", "provide ", "provides ", "work ", "works ")):
+        signal = "your website " + signal
+    elif not signal.lower().startswith(("you ", "your website ")):
+        signal = "your website " + signal
+    return signal.rstrip(".") + "."
+
+
+def email_contains_internal_signal_language(body: str) -> bool:
+    body_l = compact(body).lower()
+    forbidden_patterns = (
+        r"\bsignals\b",
+        r"\bshows\s+.+?\bsignals\b",
+        r"\bpublic signals\b",
+        r"\bservice signals\b",
+        r"\bteam/practitioner signals\b",
+        r"\brecord signals\b",
+    )
+    return any(re.search(pattern, body_l) for pattern in forbidden_patterns)
+
+
+HIA_BATCH_EMAIL_PATTERNS = (
+    r"\bbatch\s+[123]\b",
+    r"\bsep\s+2027\b",
+    r"\bsep\s+2028\b",
+    r"\bmar\s+2030\b",
+    r"\bhia window\b",
+)
+
+
+def email_contains_hia_batch_wording(body: str) -> bool:
+    body_l = compact(body).lower()
+    return any(re.search(pattern, body_l) for pattern in HIA_BATCH_EMAIL_PATTERNS)
+
+
+def segment_asset(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    text = lower_blob(row)
+    service_type = classification.get("hia_service_type_guess")
+    entity = classification.get("entity_type_guess")
+    if classification.get("pressure_type") == "customer_trust":
+        return "security evidence checklist"
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "evidence checklist"
+    if entity in {"npo", "charity", "social_service"}:
+        return "care-organisation checklist"
+    if classification.get("pressure_type") == "pdpa_safeguards":
+        return "safeguards checklist"
+    if service_type == "dental":
+        return "dental readiness map"
+    if service_type == "retail_pharmacy":
+        return "pharmacy HIA checklist"
+    if service_type == "diagnostic":
+        return "diagnostic readiness map"
+    if service_type == "specialist_OMS":
+        return "specialist clinic readiness map"
+    if service_type == "hearing_care":
+        return "hearing-care readiness map"
+    if service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        return "psychology readiness map"
+    if service_type == "allied_health":
+        return "allied-health readiness map"
+    if service_type == "long_term_care":
+        return "long-term care readiness map"
+    if service_type == "GP_OMS" or entity == "clinic":
+        return "clinic readiness map"
+    return "HIA readiness map"
+
+
+def hia_problem_statement(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    text = lower_blob(row)
+    service_type = classification.get("hia_service_type_guess")
+    prefix = hia_problem_prefix(classification)
+    if service_type == "dental":
+        records = "patient records, imaging files, appointment details, dental software, backups, access and incident steps"
+    elif service_type == "retail_pharmacy":
+        records = "prescription, dispensing, compounding, customer and supplier records, access, backups and incident steps"
+    elif service_type == "diagnostic":
+        records = "screening records, diagnostic reports, patient details, lab systems, vendor systems, backups and incident steps"
+    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+        records = "oncology/radiation treatment records, patient reports, vendor systems, backups, access and incident steps"
+    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+        records = "consultation notes, patient reports, procedure-related records, vendor systems, backups, access and incident steps"
+    elif service_type == "specialist_OMS":
+        records = "consultation notes, patient reports, treatment records, vendor systems, backups, access and incident steps"
+    elif service_type == "hearing_care":
+        records = "hearing test records, appointment details, device-related records, vendor systems, backups and incident steps"
+    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        records = "appointment, assessment and case-note records, access, vendors, backups and incident steps"
+    elif service_type == "allied_health":
+        records = "appointment, treatment and exercise-plan records, access, vendors, backups and incident steps"
+    elif service_type == "long_term_care":
+        records = "patient, resident, family, volunteer and staff data access, vendors, backups and incident steps"
+    elif "family" in text:
+        records = "patient records, appointment details, consultation notes, clinic email, vendor systems, backups and incident steps"
+    elif "aesthetic" in text:
+        records = "consultation records, treatment notes, appointment details, clinic email, vendor systems, backups and incident steps"
+    else:
+        records = "patient records, appointment details, consultation notes, clinic email, vendor systems, backups and incident steps"
+    return f"{prefix} the practical question is whether {records} are mapped clearly."
+
+
+def hia_email_2_diagnostic(row: dict[str, Any], classification: dict[str, Any], asset: str) -> str:
+    company = compact(row.get("company_name") or "the organisation")
+    text = lower_blob(row)
+    service_type = classification.get("hia_service_type_guess")
+    if service_type == "dental":
+        question = f"can {company} show where patient records, imaging files, appointment details, dental software and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "retail_pharmacy":
+        question = f"can {company} show where prescription, dispensing, compounding, customer and supplier records sit today?"
+        follow = "If access, backups or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "diagnostic":
+        question = f"can {company} show where screening records, diagnostic reports, patient details, lab systems, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
+        question = f"can {company} show where consultation notes, patient reports, procedure-related records, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
+        question = f"can {company} show where oncology/radiation treatment records, patient reports, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS":
+        question = f"can {company} show where consultation notes, patient reports, treatment records, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "hearing_care":
+        question = f"can {company} show where hearing test records, appointment details, device-related records, vendor systems and backups sit today?"
+        follow = "If access or incident ownership is unclear, that is usually where readiness work starts."
+    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        question = f"can {company} show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work and who reports an incident?"
+        follow = ""
+    elif service_type == "allied_health":
+        question = f"can {company} show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work and who reports an incident?"
+        follow = ""
+    elif service_type == "long_term_care":
+        question = f"can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
+        follow = ""
+    elif service_type == "GP_OMS" and "aesthetic" in text:
+        question = f"can {company} show where consultation records, treatment notes, appointment details, clinic email, vendor systems and backups sit today?"
+        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
+    else:
+        question = f"can {company} show where patient records, appointment details, consultation notes, clinic email, vendor systems and backups sit today?"
+        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
+    parts = [f"A practical diagnostic: {question}"]
+    if follow:
+        parts.append(follow)
+    parts.append(f"Want the {asset}?")
+    return "\n\n".join(parts)
+
+
 def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], funding: FundingMatch) -> dict[str, Any]:
     company = compact(row.get("company_name") or "the organisation")
     text = lower_blob(row)
@@ -1100,27 +1358,10 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         hia_angle = "Map health information access, cybersecurity, data-security, vendor, backup and incident-response duties before the HIA window."
         pdpa_angle = "PDPA safeguards still matter, but the primary outreach angle is HIA readiness for health information."
         trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
-        window = hia_window_label(classification)
-        hia_prefix = hia_problem_prefix(classification)
-        timeline = f"{window}; use specific batch dates only when the row has safe deadline evidence."
-        asset = "HIA readiness map"
-        cta = "Want the HIA readiness map?"
-        if service_type == "hearing_care" or "hearing" in text:
-            problem = f"{hia_prefix} the practical question is whether appointment, test and device-related records, access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
-            problem = f"{hia_prefix} the practical question is whether patient, resident, family, volunteer and staff data access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
-            problem = f"{hia_prefix} the practical question is whether appointment, treatment and exercise-plan records, access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-            problem = f"{hia_prefix} the practical question is whether appointment, assessment and case-note records, access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "diagnostic":
-            problem = f"{hia_prefix} the practical question is whether screening, diagnostic and patient-report records, access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-            problem = f"{hia_prefix} the practical question is whether oncology/radiation treatment records, access, vendors, backups, patching and incident steps are mapped clearly."
-        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-            problem = f"{hia_prefix} the practical question is whether digestive/gastroenterology patient records, access, vendors, backups, patching and incident steps are mapped clearly."
-        else:
-            problem = f"{hia_prefix} the practical question is whether patient-data access, vendors, backups, patching and incident steps are mapped clearly."
+        timeline = "HIA implementation is being phased in; do not use batch labels in prospect-facing email bodies."
+        asset = segment_asset(row, classification)
+        cta = f"Want the {asset}?"
+        problem = hia_problem_statement(row, classification)
         mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security side."
         if service_type == "hearing_care" or "hearing" in text:
             signal = f"{company} appears to provide hearing-care services where appointment, test and device-related records may sit across staff and systems."
@@ -1183,9 +1424,10 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "PDPA safeguards checklist"
             cta = "Worth sending the safeguards checklist?"
             if public_signals["service"]:
-                signal = f"{company} appears to handle customer and employee data through {public_signals['service']}."
+                service_context = str(public_signals["service"]).rstrip(".")
+                signal = f"{company} appears to provide {service_context} services where customer and employee records may sit across enquiries, operations and vendor tools."
             else:
-                signal = f"{company} appears to handle customer and employee data through its services."
+                signal = f"{company} appears to handle customer and employee records through its operations."
             problem = "The practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
@@ -1217,7 +1459,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
 
     funding_safe = funding.funding_status == "verified_match" and funding.funding_confidence == "high"
     funding_level = "high" if funding_safe else "medium" if funding.funding_status == "possible_match" else "low"
-    return {
+    copy_brief = {
         "company_profile_summary": profile,
         "business_model_guess": business_model,
         "primary_services_summary": primary_services,
@@ -1247,6 +1489,8 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "email_cta": cta,
         "email_angle_reason": classification.get("pressure_reason") or classification.get("problem_hypothesis") or "",
     }
+    copy_brief["prospect_facing_signal"] = prospect_facing_signal(signal, row, classification, copy_brief)
+    return copy_brief
 
 
 def generate_email_sequence(
@@ -1262,7 +1506,9 @@ def generate_email_sequence(
     comma_greeting = email_comma_greeting(row, company)
     if not copy_brief_ready(classification, copy_brief):
         return empty_email_sequence()
-    trigger = compact(copy_brief["email_personalisation_signal"])
+    trigger = compact(copy_brief.get("prospect_facing_signal")) or prospect_facing_signal(
+        copy_brief["email_personalisation_signal"], row, classification, copy_brief
+    )
     asset = compact(copy_brief["email_asset_offer"]) or "checklist"
     cta = compact(copy_brief["email_cta"])
     problem = compact(copy_brief["email_problem_statement"])
@@ -1277,9 +1523,7 @@ def generate_email_sequence(
         email3_body = ""
         email4_body = ""
     elif classification["pressure_type"] == "hia_regulatory":
-        lead = "With HIA timelines starting from 2027"
-        if classification.get("hia_deadline_claim_safe") and classification.get("hia_timeline_batch_guess") != "unknown":
-            lead = f"With the {classification['hia_timeline_batch_guess']} HIA window"
+        lead = "With HIA readiness becoming more urgent for healthcare providers"
         segment = healthcare_segment(classification)
         email1_subject = "HIA readiness"
         email2_subject = "Re: HIA readiness"
@@ -1310,34 +1554,19 @@ def generate_email_sequence(
             noticed = noticed[8:].strip()
         email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
         if classification["pressure_type"] == "hia_regulatory":
-            service_type = classification.get("hia_service_type_guess")
-            if service_type == "hearing_care":
-                diagnostic = f"Can {company} show where appointment, test and device-related records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            elif service_type == "long_term_care":
-                diagnostic = f"Can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
-            elif service_type == "allied_health" and ("physio" in systems.lower() or "exercise-plan" in systems.lower()):
-                diagnostic = f"Can {company} show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            elif service_type == "allied_health" and ("psychology" in trigger.lower() or "case-note" in systems.lower()):
-                diagnostic = f"Can {company} show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            elif service_type == "diagnostic":
-                diagnostic = f"Can {company} show where screening, diagnostic and patient-report records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            elif service_type == "specialist_OMS" and ("oncology" in systems.lower() or "radiation" in systems.lower()):
-                diagnostic = f"Can {company} show where oncology/radiation treatment records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            elif service_type == "specialist_OMS" and ("digestive" in systems.lower() or "gastroenterology" in systems.lower()):
-                diagnostic = f"Can {company} show where digestive/gastroenterology patient records sit, who can access them, which vendors touch them, how backups work, and who reports an incident?"
-            else:
-                diagnostic = f"Can {company} show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?"
+            email2_body = hia_email_2_diagnostic(row, classification, asset)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
             diagnostic = "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?"
         else:
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
-        email2_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+        if classification["pressure_type"] != "hia_regulatory":
+            email2_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
         funding_line = funding.funding_claim_line or "Funding route needs human review before use."
         email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
         caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-        email3_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+        email3_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
         email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
     else:
         email3_subject = "not ready"
@@ -1410,12 +1639,13 @@ def enforce_funding_claim_email(row: dict[str, Any], funding: FundingMatch, emai
     email3 = emails.get("email_3") or {}
     existing_body = trim_text(email3.get("body"))
     caveat_count = existing_body.lower().count("subject to programme confirmation")
-    if claim.lower() in existing_body.lower() and funding_only_email_3(existing_body, claim) and caveat_count <= 1:
+    useful_line = "The useful first step is confirming whether the route applies before spending time on readiness work."
+    if claim.lower() in existing_body.lower() and funding_only_email_3(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
         return emails
     greeting = email_comma_greeting(row)
     subject = compact(email3.get("chosen_subject")) or "funding route"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = f"{greeting}\n\n{claim}{caveat}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+    body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
     emails = {**emails}
     emails["email_3"] = {
         "subject_options": list(email3.get("subject_options") or [subject]),
@@ -1496,11 +1726,53 @@ def funding_only_email_3(body: str, claim: str) -> bool:
     return not any(marker in body_l for marker in non_funding_markers)
 
 
+def email_2_generic_hia_diagnostic(body: str, classification: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return False
+    body_l = compact(body).lower()
+    generic_markers = (
+        "where health information sits",
+        "which vendors touch it",
+        "how backups work",
+        "who reports an incident",
+    )
+    segment_terms = (
+        "patient records",
+        "appointment details",
+        "consultation notes",
+        "clinic email",
+        "imaging files",
+        "dental software",
+        "prescription",
+        "dispensing",
+        "compounding",
+        "diagnostic reports",
+        "lab systems",
+        "procedure-related records",
+        "hearing test records",
+        "device-related records",
+        "exercise-plan records",
+        "case-note records",
+        "resident",
+    )
+    return all(marker in body_l for marker in generic_markers) and not any(term in body_l for term in segment_terms)
+
+
+def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return False
+    expected = segment_asset(row, classification).lower()
+    actual = compact(copy_brief.get("email_asset_offer")).lower()
+    return bool(expected and actual) and actual != expected
+
+
 def email_2_is_diagnostic(body: str, copy_brief: dict[str, Any], classification: dict[str, Any]) -> bool:
     body_l = compact(body).lower()
     if "?" not in body_l:
         return False
     if "cyber essentials is" in body_l and "can " not in body_l:
+        return False
+    if email_2_generic_hia_diagnostic(body, classification):
         return False
     systems = compact(copy_brief.get("data_systems_likely")).lower()
     system_terms = [word for word in re.findall(r"[a-z0-9]+", systems) if len(word) > 4]
@@ -1517,7 +1789,7 @@ def email_2_is_diagnostic(body: str, copy_brief: dict[str, Any], classification:
 
 def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) -> bool:
     body_l = compact(body).lower()
-    signal = compact(copy_brief.get("email_personalisation_signal")).lower()
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal")).lower()
     problem = compact(copy_brief.get("email_problem_statement")).lower()
     mechanism = compact(copy_brief.get("email_mechanism_statement")).lower()
     cta = compact(copy_brief.get("email_cta")).lower()
@@ -1560,8 +1832,9 @@ def evaluate_email_strategy(
     email2 = emails["email_2"]["body"]
     email3 = emails["email_3"]["body"]
     email4 = emails["email_4"]["body"]
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
 
-    if not compact(copy_brief.get("email_personalisation_signal")) or not reflects(email1, copy_brief["email_personalisation_signal"]):
+    if not signal or not reflects(email1, signal):
         flags.append("email_1_missing_specific_signal")
     if not compact(copy_brief.get("email_problem_statement")) or not reflects(email1, copy_brief["email_problem_statement"]):
         flags.append("email_1_missing_problem_statement")
@@ -1569,10 +1842,22 @@ def evaluate_email_strategy(
         flags.append("email_1_missing_mechanism_statement")
     if not compact(copy_brief.get("email_cta")) or not reflects(email1, copy_brief["email_cta"]) or "?" not in email1:
         flags.append("email_1_missing_tiny_cta")
+    if email_contains_internal_signal_language(email1):
+        flags.append("email_1_contains_internal_signal_language")
+    if email_contains_hia_batch_wording("\n".join((email1, email2, email3, email4))):
+        flags.append("email_contains_hia_batch_wording")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
     if not email_2_is_diagnostic(email2, copy_brief, classification):
         flags.append("email_2_not_diagnostic")
+    if email_2_generic_hia_diagnostic(email2, classification):
+        flags.append("email_2_generic_hia_diagnostic")
+    if asset_offer_too_generic_for_segment(row, classification, copy_brief):
+        flags.append("asset_offer_too_generic_for_segment")
+    if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
+        flags.append("hearing_care_missing_trigger")
+    if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
+        flags.append("lab_classification_ambiguous")
     if not funding_only_email_3(email3, funding.funding_claim_line):
         flags.append("email_3_not_funding_only")
     if email4 and compact(copy_brief.get("email_asset_offer")) and not reflects(email4, copy_brief["email_asset_offer"]):
@@ -1634,6 +1919,8 @@ def quality_gate(
         flags.append("unverified_exact_percentage")
     if not classification.get("hia_deadline_claim_safe") and re.search(r"\b(sep|mar)\s+20(27|28|30)\b", blob):
         flags.append("unsafe_hia_deadline_claim")
+    if email_contains_hia_batch_wording(blob):
+        flags.append("email_contains_hia_batch_wording")
     if "pdpa compliant" in blob and "does not make" not in blob:
         flags.append("cyber_essentials_equals_pdpa_compliance")
     if "hia compliant" in blob or "full hia compliance" in blob:
@@ -1651,7 +1938,8 @@ def quality_gate(
             if not compact(copy_brief.get(field)):
                 flags.append(f"missing_copy_brief:{field}")
         email1_body = emails["email_1"]["body"]
-        if compact(copy_brief.get("email_personalisation_signal")) and not reflects(email1_body, copy_brief["email_personalisation_signal"]):
+        prospect_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+        if prospect_signal and not reflects(email1_body, prospect_signal):
             flags.append("email_1_missing_specific_signal")
         if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")):
             flags.append("generic_personalisation_signal")
@@ -1661,12 +1949,24 @@ def quality_gate(
             flags.append("email_1_missing_mechanism_statement")
         if compact(copy_brief.get("email_cta")) and (not reflects(email1_body, copy_brief["email_cta"]) or "?" not in email1_body):
             flags.append("email_1_missing_tiny_cta")
+        if email_contains_internal_signal_language(email1_body):
+            flags.append("email_1_contains_internal_signal_language")
+        if email_contains_hia_batch_wording(email1_body):
+            flags.append("email_contains_hia_batch_wording")
         email1_start = email1_body.strip().lower()
         if email1_start.startswith(("i came across your company", "noticed your company", "i noticed your company")):
             flags.append("email_1_too_generic")
         email2_body = emails["email_2"]["body"].lower()
         if "cyber essentials is" in email2_body and "?" not in email2_body:
             flags.append("email_2_not_diagnostic")
+        if email_2_generic_hia_diagnostic(emails["email_2"]["body"], classification):
+            flags.append("email_2_generic_hia_diagnostic")
+        if asset_offer_too_generic_for_segment(row, classification, copy_brief):
+            flags.append("asset_offer_too_generic_for_segment")
+        if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
+            flags.append("hearing_care_missing_trigger")
+        if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
+            flags.append("lab_classification_ambiguous")
         flags.extend(evaluate_email_strategy(row, classification, funding, emails, copy_brief))
 
     score = 0
@@ -1852,6 +2152,7 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         funding = plan.funding
         emails = plan.emails
         flags = plan.quality_flags
+        email_blob = "\n".join((emails.get(f"email_{index}") or {}).get("body", "") for index in range(1, 5))
         return {
             "row_id": plan.row_id,
             "company_name": compact(row.get("company_name")),
@@ -1860,6 +2161,9 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "hia_timeline_batch_guess": classification.get("hia_timeline_batch_guess", ""),
             "funding_status": funding.funding_status,
             "email_quality_flags": flags,
+            "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
+            "asset_offer_too_generic_for_segment": asset_offer_too_generic_for_segment(row, classification, plan.copy_brief),
+            "email_2_generic_hia_diagnostic": email_2_generic_hia_diagnostic((emails.get("email_2") or {}).get("body", ""), classification),
             "email_1_subject": (emails.get("email_1") or {}).get("chosen_subject", ""),
             "email_1_body": (emails.get("email_1") or {}).get("body", ""),
             "email_2_subject": (emails.get("email_2") or {}).get("chosen_subject", ""),
@@ -1875,6 +2179,7 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         flags = json.loads(flags_raw) if isinstance(flags_raw, str) else flags_raw
     except json.JSONDecodeError:
         flags = [str(flags_raw)]
+    email_blob = "\n".join(str(patch.get(f"email_{index}_body", "")) for index in range(1, 5))
     return {
         "row_id": patch.get("Id") or row.get("Id") or row.get("id"),
         "company_name": compact(row.get("company_name") or patch.get("company_name")),
@@ -1883,6 +2188,9 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "hia_timeline_batch_guess": patch.get("hia_timeline_batch_guess", ""),
         "funding_status": patch.get("funding_status", ""),
         "email_quality_flags": flags,
+        "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
+        "asset_offer_too_generic_for_segment": "asset_offer_too_generic_for_segment" in flags,
+        "email_2_generic_hia_diagnostic": "email_2_generic_hia_diagnostic" in flags,
         "email_1_subject": patch.get("email_1_subject", ""),
         "email_1_body": patch.get("email_1_body", ""),
         "email_2_subject": patch.get("email_2_subject", ""),
@@ -1946,8 +2254,14 @@ def patch_with_email_sequence(
         "email_1_missing_problem_statement",
         "email_1_missing_mechanism_statement",
         "email_1_missing_tiny_cta",
+        "email_1_contains_internal_signal_language",
+        "email_contains_hia_batch_wording",
         "email_1_too_generic",
         "email_2_not_diagnostic",
+        "email_2_generic_hia_diagnostic",
+        "asset_offer_too_generic_for_segment",
+        "hearing_care_missing_trigger",
+        "lab_classification_ambiguous",
         "email_3_not_funding_only",
         "generic_inbox_wrong_greeting",
     }
