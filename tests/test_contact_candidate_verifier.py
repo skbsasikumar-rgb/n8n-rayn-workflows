@@ -293,7 +293,15 @@ class ContactCandidateVerifierTests(unittest.TestCase):
                 "mx_exists": True,
             }
 
-        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail):
+        with patch.dict(
+            os.environ,
+            {
+                "CONTACT_PREFLIGHT_LLM_ENABLED": "false",
+                "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false",
+                "CONTACT_COMPANY_EMAIL_FALLBACK_ENABLED": "false",
+            },
+            clear=False,
+        ), patch.object(c, "validate_anymail_person", side_effect=fake_anymail):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "contact_not_found")
@@ -392,14 +400,14 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
         self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 
-    def test_generic_email_fallback_runs_after_person_lookup_miss(self):
+    def test_company_email_fallback_runs_after_person_lookup_miss(self):
         payload = {
             "Id": 123,
             "company_name": "Example Clinic",
             "company_homepage_name": "Example Clinic",
             "canonical_domain": "exampleclinic.sg",
             "best_url": "https://exampleclinic.sg/",
-            "website_content": "Jane Tan, Medical Director, Example Clinic. Contact us at info@exampleclinic.sg",
+            "website_content": "Jane Tan, Medical Director, Example Clinic.",
             "site_fast_path_only": True,
         }
 
@@ -412,70 +420,377 @@ class ContactCandidateVerifierTests(unittest.TestCase):
                 "mx_exists": True,
             }
 
-        def fake_no2bounce(emails, timeout_seconds=None):
-            self.assertEqual(emails, ["info@exampleclinic.sg"])
+        def fake_company(domain, company_name=""):
+            self.assertEqual(domain, "exampleclinic.sg")
             return {
                 "configured": True,
+                "enabled": True,
                 "error": "",
-                "results": [{"email": "info@exampleclinic.sg", "status": "Deliverable", "finalScoreValue": "Deliverable"}],
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["contact@exampleclinic.sg", "info@exampleclinic.sg"],
+                    "valid_emails": ["info@exampleclinic.sg"],
+                }],
+                "email_type": "any",
             }
 
-        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_anymail_company", side_effect=fake_company):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "contact_found")
-        self.assertEqual(result.contact_search_reason, "sendable_generic_email_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
         self.assertEqual(result.validated_email, "info@exampleclinic.sg")
-        self.assertEqual(result.email_validation_provider, "no2bounce")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
         self.assertEqual(result.selected_contact_name, "")
 
-    def test_generic_email_fallback_runs_when_no_named_candidate_exists(self):
+    def test_company_email_fallback_runs_when_no_named_candidate_exists(self):
         payload = {
             "Id": 456,
             "company_name": "Example Community Care",
             "company_homepage_name": "Example Community Care",
             "canonical_domain": "examplecare.sg",
             "best_url": "https://examplecare.sg/",
-            "website_content": "For enquiries email hello@examplecare.sg or support@examplecare.sg",
+            "website_content": "Community care provider in Singapore.",
             "site_fast_path_only": True,
         }
 
-        def fake_no2bounce(emails, timeout_seconds=None):
-            self.assertEqual(emails, ["hello@examplecare.sg", "support@examplecare.sg"])
+        def fake_company(domain, company_name=""):
             return {
                 "configured": True,
+                "enabled": True,
                 "error": "",
-                "results": [{"email": "hello@examplecare.sg", "status": "Deliverable", "finalScoreValue": "Deliverable"}],
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["hello@examplecare.sg", "support@examplecare.sg"],
+                    "valid_emails": ["hello@examplecare.sg", "support@examplecare.sg"],
+                }],
+                "email_type": "any",
             }
 
-        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "contact_found")
-        self.assertEqual(result.contact_search_reason, "sendable_generic_email_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
         self.assertEqual(result.validated_email, "hello@examplecare.sg")
-        self.assertEqual(result.email_validation_provider, "no2bounce")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
 
-    def test_generic_email_fallback_requires_no2bounce_when_generic_email_exists(self):
+    def test_company_email_fallback_runs_after_decision_maker_miss(self):
+        payload = {
+            "Id": 457,
+            "company_name": "Example Community Care",
+            "company_homepage_name": "Example Community Care",
+            "canonical_domain": "examplecare.sg",
+            "best_url": "https://examplecare.sg/",
+            "website_content": "Community care provider in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["ceo", "it", "operations", "hr", "marketing"],
+                "credits_charged": 0,
+                "results": [],
+            }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["hello@examplecare.sg", "support@examplecare.sg"],
+                    "valid_emails": ["hello@examplecare.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker), patch.object(c, "validate_anymail_company", side_effect=fake_company):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
+        self.assertEqual(result.validated_email, "hello@examplecare.sg")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
+
+    def test_company_email_fallback_requires_anymail_configured(self):
         payload = {
             "Id": 789,
             "company_name": "Example Care",
             "company_homepage_name": "Example Care",
             "canonical_domain": "examplecare.sg",
             "best_url": "https://examplecare.sg/",
-            "website_content": "For enquiries email info@examplecare.sg",
+            "website_content": "Primary care clinic.",
             "site_fast_path_only": True,
         }
 
-        def fake_no2bounce(emails, timeout_seconds=None):
-            return {"configured": False, "error": "NO2BOUNCE_API_TOKEN is not configured", "results": []}
+        def fake_company(domain, company_name=""):
+            return {"configured": False, "enabled": True, "error": "ANYMAILFINDER_API_KEY is not configured", "results": []}
 
-        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_no2bounce", side_effect=fake_no2bounce):
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "failed")
-        self.assertEqual(result.contact_search_reason, "generic_email_validation_not_configured")
-        self.assertEqual(result.email_validation_provider, "no2bounce")
+        self.assertEqual(result.contact_search_reason, "company_email_validation_not_configured")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
+
+    def test_company_email_fallback_uses_first_valid_email_in_ranked_results(self):
+        payload = {
+            "Id": 790,
+            "company_name": "Example Rehab",
+            "company_homepage_name": "Example Rehab",
+            "canonical_domain": "examplerehab.sg",
+            "best_url": "https://examplerehab.sg/",
+            "website_content": "Rehab clinic in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["team@examplerehab.sg", "info@examplerehab.sg", "support@examplerehab.sg"],
+                    "valid_emails": ["info@examplerehab.sg", "support@examplerehab.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
+        self.assertEqual(result.validated_email, "info@examplerehab.sg")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
+        self.assertEqual(result.email_validation_evidence["company_email_fallback"]["accepted_email"], "info@examplerehab.sg")
+
+    def test_personal_company_email_resolves_identity_from_search_evidence(self):
+        payload = {
+            "Id": 793,
+            "company_name": "American International Clinic Singapore",
+            "company_homepage_name": "American International Clinic Singapore",
+            "canonical_domain": "aiclinic.com.sg",
+            "best_url": "https://www.aiclinic.com.sg/",
+            "website_content": "International clinic in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["zakowich@aiclinic.com.sg"],
+                    "valid_emails": ["zakowich@aiclinic.com.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        def fake_search(payload):
+            queries = [item["query"] for item in payload.get("search_queries", [])]
+            self.assertTrue(any("zakowich" in query.lower() for query in queries))
+            return [
+                {
+                    "provider": "serper",
+                    "query": 'site:aiclinic.com.sg "zakowich"',
+                    "results": [
+                        {
+                            "rank": 1,
+                            "title": "Dr Paul Zakowich - American International Clinic Singapore",
+                            "url": "https://www.aiclinic.com.sg/our-specialist/",
+                            "snippet": "Dr Paul Zakowich is a Doctor at American International Clinic Singapore.",
+                        }
+                    ],
+                    "usable_results_count": 1,
+                }
+            ]
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", side_effect=fake_search):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
+        self.assertEqual(result.validated_email, "zakowich@aiclinic.com.sg")
+        self.assertEqual(result.selected_contact_name, "Paul Zakowich")
+        self.assertEqual(result.selected_contact_role, "Doctor")
+        self.assertEqual(result.selected_contact_seniority, "manager")
+        self.assertEqual(result.selected_contact_confidence, "High")
+        self.assertEqual(result.selected_contact_source_url, "https://www.aiclinic.com.sg/our-specialist/")
+        self.assertTrue(result.email_validation_evidence["company_email_identity_resolution"]["resolved"])
+
+    def test_personal_company_email_conflicting_person_slug_falls_back_to_homepage_source(self):
+        payload = {
+            "Id": 795,
+            "company_name": "American International Clinic Singapore",
+            "company_homepage_name": "American International Clinic Singapore",
+            "canonical_domain": "aiclinic.com.sg",
+            "best_url": "https://aiclinic.com.sg/",
+            "website_content": "International clinic in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["zakowich@aiclinic.com.sg"],
+                    "valid_emails": ["zakowich@aiclinic.com.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        def fake_search(payload):
+            return [
+                {
+                    "provider": "serper",
+                    "query": 'site:aiclinic.com.sg "zakowich"',
+                    "results": [
+                        {
+                            "rank": 1,
+                            "title": "Dr Paul Zakowich - American International Clinic Singapore",
+                            "url": "https://www.aiclinic.com.sg/ms-amy-tan/",
+                            "snippet": "Dr Paul Zakowich is a Doctor at American International Clinic Singapore.",
+                        }
+                    ],
+                    "usable_results_count": 1,
+                }
+            ]
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", side_effect=fake_search):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.selected_contact_name, "Paul Zakowich")
+        self.assertEqual(result.selected_contact_source_url, "https://aiclinic.com.sg/")
+        self.assertEqual(result.email_validation_evidence["company_email_identity_resolution"]["evidence_url"], "https://www.aiclinic.com.sg/ms-amy-tan/")
+
+    def test_generic_company_email_skips_identity_resolution(self):
+        payload = {
+            "Id": 794,
+            "company_name": "An Dental",
+            "company_homepage_name": "An Dental",
+            "canonical_domain": "andental.sg",
+            "best_url": "https://andental.sg/",
+            "website_content": "Dental clinic in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["contact@andental.sg"],
+                    "valid_emails": ["contact@andental.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade") as search_mock:
+            result = c.enrich_contact(payload, validate_email=True)
+
+        search_mock.assert_not_called()
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.validated_email, "contact@andental.sg")
+        self.assertEqual(result.selected_contact_name, "")
+        self.assertEqual(result.email_validation_evidence["company_email_identity_resolution"]["skipped"], "generic_company_email")
+
+    def test_company_email_fallback_records_zero_candidates_when_none_found(self):
+        payload = {
+            "Id": 791,
+            "company_name": "Example Diagnostics",
+            "company_homepage_name": "Example Diagnostics",
+            "canonical_domain": "exampledx.sg",
+            "best_url": "https://exampledx.sg/",
+            "website_content": "Visit our clinic and call our front desk for appointments.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{"credits_charged": 0, "email_status": "not_found", "emails": [], "valid_emails": []}],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_not_found")
+        self.assertEqual(result.contact_search_reason, "no_deliverable_company_email_found")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
+        self.assertEqual(result.email_validation_evidence["company_email_fallback"]["candidate_count"], 0)
+
+    def test_company_email_fallback_zero_candidates_are_preserved_after_person_lookup_miss(self):
+        payload = {
+            "Id": 792,
+            "company_name": "Example Physio",
+            "company_homepage_name": "Example Physio",
+            "canonical_domain": "examplephysio.sg",
+            "best_url": "https://examplephysio.sg/",
+            "website_content": "Jane Tan, Clinical Director, Example Physio. Call us for appointments.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["ceo", "it", "operations", "hr", "marketing"],
+                "credits_charged": 0,
+                "results": [],
+            }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{"credits_charged": 0, "email_status": "not_found", "emails": [], "valid_emails": []}],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker), patch.object(c, "validate_anymail_company", side_effect=fake_company):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_not_found")
+        self.assertEqual(result.email_validation_status, "no_deliverable_email")
+        self.assertEqual(result.email_validation_provider, "anymail_finder_company")
+        self.assertEqual(result.email_validation_evidence["company_email_fallback"]["candidate_count"], 0)
 
     def test_decision_maker_linkedin_requires_matching_profile_slug(self):
         candidate = c.decision_maker_candidate_from_result(
