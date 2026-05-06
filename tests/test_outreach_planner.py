@@ -1270,7 +1270,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Arden Endocrinology Specialist Clinic",
                 "# Endocrinologists In Singapore | Arden Endocrinology Specialist Clinic\nUnderstanding hypertension, high cholesterol, diabetes and thyroid care. Physiotherapy supports sustainable weight loss.",
                 "specialist_OMS",
-                "a specialist-led clinic focused on endocrinology care",
+                "a specialist-led endocrinology clinic",
                 "allied-health",
             ),
             (
