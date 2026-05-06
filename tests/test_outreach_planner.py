@@ -280,6 +280,25 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(result["patch"]["automation_decision_reason"], reason)
                 self.assertFalse(result["patch"]["email_1_body"])
 
+    def test_missing_validated_email_is_suppressed_without_openrouter_or_bodies(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 170,
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+            }
+        )
+        patch = result["patch"]
+        self.assertEqual(patch["automation_decision"], "suppressed")
+        self.assertEqual(patch["automation_decision_reason"], "suppressed_missing_validated_email")
+        self.assertEqual(patch["automation_blockers_json"], "[\"suppressed_missing_validated_email\"]")
+        self.assertFalse(result["openrouter_allowed"])
+        self.assertTrue(result["skip_openrouter"])
+        self.assertFalse(patch["email_send_ready"])
+        self.assertFalse(patch["final_send_gate_passed"])
+        for index in range(1, 5):
+            self.assertFalse(patch[f"email_{index}_body"])
+
     def test_copy_qa_mode_allows_missing_email_without_send_ready(self):
         result = o.plan_and_patch(
             {

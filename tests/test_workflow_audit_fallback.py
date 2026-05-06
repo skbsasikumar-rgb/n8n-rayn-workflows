@@ -26,6 +26,7 @@ def test_n8n_funding_fallback_uses_company_team_greeting_and_no_duplicate_caveat
             "patch": {
                 "Id": 273,
                 "company_name": "Amaris B. Clinic",
+                "automation_decision": "auto_send_eligible",
                 "pressure_type": "hia_regulatory",
                 "funding_claim_line": claim,
                 "email_3_body": "Funding email missing the exact claim.",
@@ -49,6 +50,7 @@ def test_n8n_funding_fallback_uses_team_greeting_without_company_name():
         {
             "patch": {
                 "Id": 999,
+                "automation_decision": "auto_send_eligible",
                 "pressure_type": "pdpa_safeguards",
                 "funding_claim_line": "Funding route needs human review before use.",
                 "email_3_body": "",

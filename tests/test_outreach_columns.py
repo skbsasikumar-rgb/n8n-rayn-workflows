@@ -138,6 +138,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
         self.assertIn("(email_1_subject,blank)", url_expr)
+        self.assertIn("(automation_decision,blank)", url_expr)
+        self.assertNotIn("(validated_email,notblank)", url_expr)
+
+    def test_workflow_fetch_does_not_refetch_suppressed_rows(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
+        self.assertIn("~and(automation_decision,blank)", url_expr)
+        self.assertIn("~and(email_1_subject,blank)", url_expr)
 
     def test_cold_email_openrouter_model_is_grok(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())

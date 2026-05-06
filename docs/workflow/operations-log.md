@@ -2,6 +2,21 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-06
+
+Cold email planner suppressed-row re-entry guard:
+
+- updated `wf-cold-email-planner.json` fetch criteria to keep missing-`validated_email` rows eligible for one planner pass, then exclude rows once `automation_decision` is set.
+- confirmed `/outreach-plan` planner output for missing `validated_email` remains `automation_decision=suppressed`, `automation_decision_reason=suppressed_missing_validated_email`, `email_send_ready=false`, `final_send_gate_passed=false`, `skip_openrouter=true`, with no email bodies generated.
+- deployed the draft-only workflow update to live n8n workflow `HbTPGELQQr9DRdAb`; no worker/Railway service deploy was needed.
+- added missing live NocoDB outreach metadata columns required for the new `automation_decision` fetch filter, then changed deterministic status/mode columns to plain text metadata so planner decisions can be patched without select-option rejection.
+- first `limit=20` run failed before planning because `automation_decision` did not exist in NocoDB; second run reached patching but exposed that the workflow funding fallback was re-adding Email 3 bodies to suppressed rows.
+- fixed `Collect NocoDB Patches` so funding-body repair only applies to `automation_decision=auto_send_eligible`; reran affected row IDs `278,289,290,294,298,303,304,311,314` with `force=true` to clear suppressed-row bodies.
+- successful execution `23448`: `9` patches, `9` audits, `automation_decision={suppressed:9}`, `contact_send_mode={suppressed:9}`, `email_3_mode={funding:6,value_fallback:3}`, anomalies `[]`; OpenRouter did not run.
+- exported audit markdown to `docs/workflow/cold-email-audit-2026-05-06-limit20.md`.
+- tests run: `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py tests/test_outreach_columns.py tests/test_workflow_audit_fallback.py -q` (`72 passed`).
+- No emails were sent. Instantly was not used.
+
 ## 2026-05-05
 
 Cold email clinic-profile personalisation:
