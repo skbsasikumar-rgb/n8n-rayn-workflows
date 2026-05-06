@@ -939,3 +939,9 @@ Cold email copy QA hardening:
 - HIA Email 1 problem sentence now separates records/systems from controls so it reads less like one long list.
 - local validation passed: `python3 -m pytest tests/test_outreach_planner.py tests/test_outreach_columns.py tests/test_outreach_audit_export.py -q` with `68 passed`.
 - no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-06 16:30 +08`: deployed contact fallback order update commit `8e59cde` to Railway service `n8n-rayn-workflows`; deployment `f33397fc-83f5-45bd-9510-2e2348a8538c` reached `SUCCESS`.
+- contact search now runs official-site preflight first, then Anymail decision-maker, then Anymail company-email, then Serper role search only if the Anymail fallbacks fail.
+- company-email identity proof is capped to one Serper query; row `287` post-deploy dry-run used one unique identity query and partially proved `Jessica Choo` for `jessicachoo@apaxmedical.com`.
+- live `/health` returned HTTP 200 and `/contact-provider-health` returned provider order `serper`.
+- local validation passed before deploy: compile checks for `contact_enrichment.py`, `outreach_planner.py`, and `app.py`; focused contact/outreach/audit tests `88 passed`.
+- post-deploy dry-runs did not patch NocoDB; no emails were sent and Instantly was not used.
