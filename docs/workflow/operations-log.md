@@ -957,3 +957,12 @@ Cold email copy QA hardening:
 - committed as `6349af4` (`Improve cold email track copy`), pushed branch `codex/n8n-workflow-checkpoint`, and deployed Railway service `Primary`; deployment `195599e3-c81d-4c7d-a198-9077f51c7e95` reached `SUCCESS`.
 - post-deploy `/health` returned `{"status":"ok"}` and `/contact-provider-health` returned provider order `serper`.
 - no live rows were patched, no emails were sent, Instantly was not used, and workflow remains draft-only.
+- `2026-05-06 18:28 +08`: deployed cold-email planner fixes to the actual Railway app service `n8n-rayn-workflows`.
+- corrected the live target from the linked n8n `Primary` service to `n8n-rayn-workflows`; worker deployments `d63bfa70-aa26-488e-8b8f-ff899695af1f`, `fe001c3b-38a6-4687-b460-a90730b1d243`, and `23fbd56b-f629-4ee7-9239-e367210d04ca` reached `SUCCESS`.
+- added healthcare routing fixes for rheumatology, endocrinology, gastroenterology/digestive, psychology/mental-health, family/GP, diagnostic/radiology and broad `heart`/`specialist` false positives.
+- final live draft-only run fetched 47 completed rows and patched 47 draft-field rows through `/outreach-plan`; it did not call OpenRouter directly and did not call Instantly.
+- final counts: `auto_send_eligible=33`, `suppressed=9`, `auto_skipped=5`; `hia_regulatory=44`, `pdpa_safeguards=2`, `not_ready=1`; `named_person=21`, `generic_team=17`, `suppressed=9`; `email_3_mode`: `funding=25`, `value_fallback=22`.
+- final audit checks found no mechanical anomalies: suppressed/skipped rows had empty email bodies and `skip_openrouter=true`, funding wording only appeared where `email_3_mode=funding`, and value-fallback Email 3 included the selected asset.
+- audit artifacts exported locally: `/tmp/cold-email-live-draft-all-summary.json` and `/tmp/cold-email-live-draft-all-audit.md`.
+- validation passed before deploy: Python compile for changed Python files, `jq -e wf-cold-email-planner.json`, and focused pytest suites with `83 passed`.
+- live rows were patched only with draft outreach/audit fields; no emails were sent, Instantly was not used, and no rows were marked sent.
