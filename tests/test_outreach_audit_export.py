@@ -39,3 +39,46 @@ def test_export_outreach_audit_markdown_full_sequence():
     assert "### Email 1: HIA readiness" in markdown
     assert "### Email 4: close the loop?" in markdown
     assert "Email four body." in markdown
+
+
+def test_export_outreach_audit_markdown_suppressed_row_is_clean_by_default():
+    markdown = exporter.render_markdown(
+        [
+            {
+                "row_id": 301,
+                "company_name": "No Email Pte Ltd",
+                "automation_decision": "suppressed",
+                "automation_decision_reason": "suppressed_missing_validated_email",
+                "email_quality_flags": [
+                    "email_1_missing_specific_signal",
+                    "email_1_missing_problem_statement",
+                    "email_2_not_diagnostic",
+                    "email_3_not_funding_only",
+                ],
+            }
+        ]
+    )
+
+    assert "Suppressed: `suppressed_missing_validated_email`" in markdown
+    assert "OpenRouter: skipped" in markdown
+    assert "Emails: not generated" in markdown
+    assert "email_1_missing_specific_signal" not in markdown
+    assert "### Email 1" not in markdown
+
+
+def test_export_outreach_audit_markdown_suppressed_row_debug_keeps_raw_flags():
+    markdown = exporter.render_markdown(
+        [
+            {
+                "row_id": 301,
+                "company_name": "No Email Pte Ltd",
+                "automation_decision": "suppressed",
+                "automation_decision_reason": "suppressed_missing_validated_email",
+                "email_quality_flags": ["email_2_not_diagnostic"],
+            }
+        ],
+        debug=True,
+    )
+
+    assert "email_2_not_diagnostic" in markdown
+    assert "### Email 1" in markdown

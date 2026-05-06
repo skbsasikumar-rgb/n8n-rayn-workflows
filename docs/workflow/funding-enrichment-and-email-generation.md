@@ -9,8 +9,8 @@ This stage creates reviewable outreach drafts only. It must never send email. Th
 | pressure_type | Use when | Email lead | Default asset |
 | --- | --- | --- | --- |
 | `hia_regulatory` | HIA relevance is medium/high for healthcare, clinic, pharmacy, diagnostic, allied health, hearing care, HIMS or NEHR-type rows. | "With HIA readiness becoming more urgent for healthcare providers..." | segment-specific readiness asset |
-| `pdpa_safeguards` | HIA is false/low and the organisation likely handles personal data. | "Because {{company_name}} handles {{data_type_signal}}..." | `pdpa_safeguards_checklist` |
-| `customer_trust` | B2B, vendor, SaaS, outsourcing, professional services, finance, education, HR, recruitment or enterprise-facing row. | "When customers share data or ask security questions..." | `security_evidence_checklist` |
+| `pdpa_safeguards` | HIA is false/low and the organisation likely handles personal data. | PDPA is the legal responsibility; Cyber Essentials supports the security-safeguards evidence side. | segment-specific safeguards checklist |
+| `customer_trust` | B2B, vendor, SaaS, outsourcing, professional services, HR/recruitment with vendor/customer-proof evidence, or enterprise-facing row. | Customers may ask for reusable security evidence before sharing data. | segment-specific security evidence checklist |
 | `funding` | Funding is verified, confidence is high, and regulatory/trust pressure is weak. | Funding-specific route. | `funding_route_summary` |
 | `not_ready` | Missing trigger, weak evidence, blocked contact, unsubscribed/bounced/complained, or missing email when not in draft-only mode. | No send-ready email. | none |
 
@@ -54,7 +54,7 @@ The planner now wires outreach around four buying pressures:
 | --- | --- | --- | --- |
 | Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA readiness becoming more urgent..." |
 | Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | PDPA is the legal obligation; Cyber Essentials gives a practical way to structure and evidence the cybersecurity safeguards behind it. | "PDPA security safeguards..." |
-| Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin or HR ownership. | The person owns personal-data responsibility, but evidence sits across IT, HR, vendors and operations. | "Data protection evidence..." |
+| Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin, HR or IT ownership. | Evidence often sits across operations, HR, IT and vendors; do not claim the person owns compliance unless title evidence is explicit. | "Data protection evidence..." |
 | Track D - Customer trust / procurement proof | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence. | Customers and partners may ask for reusable security proof before sharing data. | "Security evidence..." |
 
 Decision tree:
@@ -64,7 +64,7 @@ IF hia_relevant = true and hia_confidence is medium/high
   -> Track A: HIA regulatory readiness
 ELSE IF selected_contact_title contains DPO/compliance/privacy/operations/admin/HR
   -> Track C: PDPA evidence owner
-ELSE IF business model indicates B2B/professional services/SaaS/outsourcing/education/finance/vendor
+ELSE IF business model indicates B2B/professional services/SaaS/outsourcing/vendor/procurement proof
   -> Track D: customer trust / security evidence
 ELSE IF personal_data_intensity is medium/high
   -> Track B: PDPA + Cyber Essentials safeguards
@@ -78,6 +78,12 @@ Messaging hierarchy:
 - Non-HIA PDPA rows: PDPA personal-data responsibility, then practical safeguards and evidence, then Cyber Essentials as a recognised baseline for the security-safeguards side, then funding support.
 - DPO / ops rows: data-protection evidence ownership, then scattered evidence across IT/HR/vendors/operations, then Cyber Essentials as a structure for the security baseline.
 - B2B / trust rows: customer security proof, then scattered evidence, then Cyber Essentials as reusable baseline, then funding support.
+
+Greeting rule:
+
+- If `selected_contact_name` is present, Email 1 starts `Hi {{first_name}},` using the existing first-name helper.
+- If `selected_contact_name` is blank, Email 1 starts `Hello team,`.
+- Do not invent names and do not use the company name as the greeting. The `Noticed...` line still includes the company name.
 
 Recommended value framing:
 
@@ -114,6 +120,8 @@ HIA:
 - Say Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness.
 - Do not say Cyber Essentials equals HIA compliance.
 - Email 2 should diagnose access, data mapping, vendors, backups and incident reporting.
+- Final email bodies must not mention HIA batch labels, HIA batch dates or "HIA window" wording.
+- Specialist subtypes now use more specific profile and record language for heart/cardiology, pain management, surgical, dermatology, eye/ophthalmology and home-care/caregiver rows.
 
 PDPA:
 
@@ -125,8 +133,21 @@ PDPA:
 - DPE/DPTM are mentioned only when the row recommends that path.
 - Better wording: "Cyber Essentials supports the security-safeguards side of PDPA readiness."
 - For broader PDPA governance, DPE/DPTM may be more directly data-protection focused, but only mention them when the enrichment supports that path.
+- PDPA variants use industry-specific examples for education/training, HR/recruitment, non-clinical lab/testing, NPO/social service, accounting/finance/admin and retail/e-commerce rows.
 
 DPO / data-protection owner:
+
+- Email 1 leads with the data-protection / operations contact route, then the evidence problem: owners, access, vendors, backups and incident contacts.
+- Use "often sits across operations, HR, IT and vendors" language.
+- Do not say the person is responsible for compliance unless the title clearly proves that.
+
+Customer trust / procurement proof:
+
+- SaaS/platform rows use customer security evidence around user data, admin access and backups.
+- Professional services rows use reusable security evidence before customers share data.
+- HR/recruitment B2B rows use candidate/employee data proof.
+- Outsourcing/vendor rows use supplier security evidence.
+- Education/training B2B rows use learner-data evidence.
 
 - Use when the contact appears to own DPO, privacy, compliance, operations, admin or HR responsibilities.
 - Lead with evidence ownership, not cybersecurity.
@@ -153,7 +174,7 @@ The copy brief converts public enrichment into company-level messaging ingredien
 
 For HIA/healthcare rows, the copy brief also computes clinic/company profile fields for audit and preview review. These are computed by the planner today and are not required NocoDB columns unless the table installer is extended later:
 
-- `clinic_profile_guess`: profile bucket such as `solo_gp`, `family_gp`, `multi_doctor_gp`, `specialist_led`, `aesthetic_medical`, `dental`, `pharmacy`, `diagnostic_lab`, `hearing_care`, `allied_health`, `mental_health`, `hospice_long_term_care`, or `clinic_group`.
+- `clinic_profile_guess`: profile bucket such as `solo_gp`, `family_gp`, `multi_doctor_gp`, `specialist_led`, `aesthetic_medical`, `dental`, `pharmacy`, `diagnostic_lab`, `hearing_care`, `allied_health`, `mental_health`, `hospice_long_term_care`, `home_care`, or `clinic_group`.
 - `clinic_profile_phrase`: prospect-facing phrase used in Email 1, for example "a family clinic offering GP-style consultations" or "a hearing-care provider offering hearing tests, hearing aids and audiology support".
 - `clinic_structure_guess`, `clinic_structure_confidence`, `umbrella_or_group_guess`: whether the row looks solo, multi-practitioner, grouped, or unclear.
 - `solo_gp_likelihood`, `specialist_led_likelihood`, `multi_practitioner_likelihood`, `primary_service_summary`, `clinic_structure_evidence`: audit helpers explaining why the phrase was chosen.
@@ -218,8 +239,8 @@ Forbidden:
 `production_draft_mode`:
 
 - Current production mode.
-- The workflow fetches only completed enrichment rows with `validated_email` present.
-- `/outreach-plan` rejects rows without `validated_email` unless `copy_qa_mode = true`.
+- The workflow fetches completed enrichment rows with a best URL, no duplicate, blank `email_1_subject`, and blank `automation_decision`.
+- `/outreach-plan` suppresses rows without `validated_email` unless `copy_qa_mode = true`, sets `skip_openrouter=true`, and does not generate or patch email bodies for suppressed/skipped rows.
 - Drafts are patched only for human review. `email_send_ready` remains controlled by deterministic quality gates and funding safety.
 - OpenRouter is called only when the copy brief has the required ingredients and the personalisation signal is concrete.
 
@@ -410,8 +431,9 @@ Contact policy:
 
 - Missing `validated_email` suppresses by default outside `copy_qa_mode`.
 - `copy_qa_mode` may preview rows without `validated_email`, but it never sets `email_send_ready`.
-- `named_person`: validated non-generic email, usable contact name, and `contact_identity_confidence` of `medium` or `high`. Greeting may use first name.
-- `generic_team`: generic/company inbox. Greeting stays team-level and no name is invented.
+- `named_person`: validated non-generic email, usable contact name, and `contact_identity_confidence` of `medium` or `high`.
+- `generic_team`: generic/company inbox or low-confidence personal identity. Send mode can stay generic even when a selected contact name exists.
+- Greeting is intentionally simple: selected contact name present means first-name greeting; blank selected contact name means `Hello team,`.
 - `suppressed`: hard contact/suppression stop.
 - `auto_skipped_unresolved_identity`: personal-looking email without a resolved person identity.
 

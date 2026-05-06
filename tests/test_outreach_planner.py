@@ -69,10 +69,53 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertTrue(plan.classification["pdpa_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("practical PDPA question", plan.emails["email_1"]["body"])
+        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+        self.assertIn("practical question", plan.emails["email_1"]["body"])
         self.assertIn("who has access, where data sits, how backups work", plan.emails["email_1"]["body"])
-        self.assertIn("Cyber Essentials helps turn that responsibility into a practical security baseline and evidence set", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials helps turn the security-safeguards side into practical controls and evidence", plan.emails["email_1"]["body"])
         self.assertNotIn("Cyber Essentials makes", plan.emails["email_1"]["body"])
+
+    def test_pdpa_industry_variants(self):
+        cases = [
+            (
+                "Training Centre",
+                "Education and training provider handling student, parent, staff and enrolment records.",
+                "education/training services handling student, parent, staff or enrolment records",
+                "education data checklist",
+            ),
+            (
+                "Talent Search Pte Ltd",
+                "Recruitment firm handling candidate records, payroll data, employee records and client records.",
+                "HR/recruitment services handling candidate, employee and client records",
+                "HR data safeguards checklist",
+            ),
+            (
+                "Account Admin Pte Ltd",
+                "Accounting, finance and admin services handling client financial records, payroll and business records.",
+                "admin/accounting/finance services handling client financial or business records",
+                "client data safeguards checklist",
+            ),
+            (
+                "Retail Support Pte Ltd",
+                "Retail e-commerce customer service operations handling customer orders, support and payment-related records.",
+                "customer-facing operations handling customer, order, support and payment-related records",
+                "customer data checklist",
+            ),
+            (
+                "Care Volunteers Society",
+                "Charity social service organisation handling beneficiary, volunteer, donor and staff data.",
+                "care/community-service setting handling beneficiary, volunteer, donor and staff data",
+                "care-organisation checklist",
+            ),
+        ]
+        for company, content, profile, asset in cases:
+            with self.subTest(company=company):
+                plan = o.plan_outreach({"company_name": company, "website_content": content})
+                self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+                self.assertIn(profile, plan.emails["email_1"]["body"])
+                self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
+                self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+                self.assertNotIn("PDPA compliant", plan.emails["email_1"]["body"])
 
     def test_dpo_contact_uses_data_protection_evidence_track(self):
         plan = o.plan_outreach(
@@ -87,8 +130,24 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
-        self.assertIn("data-protection or operations contact", plan.emails["email_1"]["body"])
-        self.assertIn("The practical PDPA question", plan.emails["email_1"]["body"])
+        self.assertIn("data-protection / operations contact route", plan.emails["email_1"]["body"])
+        self.assertIn("harder part is often evidence", plan.emails["email_1"]["body"])
+
+    def test_data_protection_owner_titles_use_evidence_angle(self):
+        for title in ("DPO", "Operations Manager", "HR/Admin Manager"):
+            with self.subTest(title=title):
+                plan = o.plan_outreach(
+                    {
+                        "company_name": "Acme Services Pte Ltd",
+                        "selected_contact_title": title,
+                        "website_content": "Singapore private company handling customer records, employee data and vendor tools.",
+                    }
+                )
+                self.assertEqual(plan.classification["campaign_track"], "dpo_evidence")
+                self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
+                self.assertIn("data-protection / operations contact route", plan.emails["email_1"]["body"])
+                self.assertIn("often sits across operations, HR, IT and vendors", plan.emails["email_1"]["body"])
+                self.assertNotIn("is responsible for compliance", plan.emails["email_1"]["body"])
 
     def test_b2b_company_uses_customer_trust_track(self):
         plan = o.plan_outreach(
@@ -101,11 +160,46 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "customer_trust")
         self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "security evidence")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "customer security evidence")
         self.assertIn("without rebuilding answers for every customer review", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("customer security question", plan.emails["email_2"]["body"])
         self.assertNotIn("Cyber Essentials is", plan.emails["email_2"]["body"])
+
+    def test_customer_trust_buyer_context_variants(self):
+        cases = [
+            (
+                "SaaS Platform Pte Ltd",
+                "SaaS platform for enterprise clients with user data, admin access, backups and procurement reviews.",
+                "customers who may ask how user data, admin access and backups are controlled",
+                "customer security evidence checklist",
+            ),
+            (
+                "Advisory Partners Pte Ltd",
+                "Professional services consulting firm working with business customers and client data before procurement reviews.",
+                "business customers who may ask for reusable security evidence before sharing data",
+                "security evidence checklist",
+            ),
+            (
+                "Recruitment Vendor Pte Ltd",
+                "Recruitment HR vendor working with clients who share candidate and employee data.",
+                "clients who may ask how candidate and employee data is protected",
+                "client security evidence checklist",
+            ),
+            (
+                "Outsourcing Vendor Pte Ltd",
+                "Outsourcing vendor and managed service supplier where customers ask for supplier security evidence.",
+                "works as a vendor where customers may ask for supplier security evidence",
+                "vendor security evidence checklist",
+            ),
+        ]
+        for company, content, profile, asset in cases:
+            with self.subTest(company=company):
+                plan = o.plan_outreach({"company_name": company, "website_content": content})
+                self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+                self.assertIn(profile, plan.emails["email_1"]["body"])
+                self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
+                self.assertIn("without rebuilding answers for every customer review", plan.emails["email_1"]["body"])
 
     def test_low_signal_row_is_not_ready(self):
         plan = o.plan_outreach(
@@ -169,7 +263,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(partial_funding_patch["email_send_ready"])
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
         self.assertNotIn("support route", partial_funding_patch["email_3_body"].lower())
-        self.assertIn("Worth sending the PDPA safeguards checklist?", partial_funding_patch["email_3_body"])
+        self.assertIn("Worth sending the safeguards checklist?", partial_funding_patch["email_3_body"])
         self.assertNotIn("email_3_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -347,7 +441,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(generic_with_name["patch"]["contact_send_mode"], "generic_team")
-        self.assertTrue(generic_with_name["patch"]["email_1_body"].startswith("Hello team,"))
+        self.assertTrue(generic_with_name["patch"]["email_1_body"].startswith("Hi Ivan,"))
 
         weak_named = o.plan_and_patch(
             {
@@ -360,6 +454,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(weak_named["patch"]["automation_decision"], "auto_send_eligible")
         self.assertEqual(weak_named["patch"]["contact_identity_confidence"], "low")
         self.assertEqual(weak_named["patch"]["contact_send_mode"], "generic_team")
+        self.assertTrue(weak_named["patch"]["email_1_body"].startswith("Hi Ivan,"))
 
         unresolved = o.plan_and_patch(
             {
@@ -385,7 +480,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(result["patch"]["automation_decision_reason"], "funding_claim_not_safe_used_value_fallback")
         self.assertNotIn("funding", result["patch"]["email_3_body"].lower())
         self.assertNotIn("you qualify", result["patch"]["email_3_body"].lower())
-        self.assertIn("Worth sending the PDPA safeguards checklist?", result["patch"]["email_3_body"])
+        self.assertIn("Worth sending the safeguards checklist?", result["patch"]["email_3_body"])
 
     def test_funding_requires_verified_current_matched_programme(self):
         row = {
@@ -638,13 +733,13 @@ class OutreachPlannerTests(unittest.TestCase):
         brief = plan.copy_brief
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertIn("care/community-service", plan.emails["email_1"]["body"])
-        self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_1"]["body"])
+        self.assertIn("beneficiary, volunteer, donor and staff data", plan.emails["email_1"]["body"])
         self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
-        self.assertIn("PDPA creates the responsibility to protect", plan.emails["email_1"]["body"])
-        self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_2"]["body"])
-        self.assertIn("resident", brief["personal_data_handled_guess"])
+        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+        self.assertIn("beneficiary", plan.emails["email_2"]["body"])
         self.assertIn("beneficiary", brief["personal_data_handled_guess"])
         self.assertIn("volunteer", brief["personal_data_handled_guess"])
+        self.assertIn("donor", brief["personal_data_handled_guess"])
         self.assertIn("staff", brief["personal_data_handled_guess"])
         self.assertIn("PDPA", brief["pdpa_obligation_angle"])
         self.assertIn("backups", brief["data_systems_likely"])
@@ -768,10 +863,10 @@ class OutreachPlannerTests(unittest.TestCase):
         brief = plan.copy_brief
         self.assertIn("security evidence", brief["customer_trust_angle"])
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
-        self.assertEqual(brief["email_asset_offer"], "security evidence checklist")
+        self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
         self.assertIn("without rebuilding answers for every customer review", brief["email_problem_statement"])
-        self.assertIn("Noticed your company works with business customers who may ask for reusable security evidence.", plan.emails["email_1"]["body"])
-        self.assertIn("reusable security evidence", plan.emails["email_1"]["body"])
+        self.assertIn("Noticed Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled.", plan.emails["email_1"]["body"])
+        self.assertIn("admin access", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_2"]["body"])
         self.assert_no_final_email_batch_or_signal_language(plan)
@@ -833,6 +928,18 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Paul,"))
         self.assertIn("Noticed American International Clinic Singapore appears", plan.emails["email_1"]["body"])
+
+    def test_blank_selected_contact_uses_team_greeting_and_keeps_company_observation(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "selected_contact_name": "",
+                "validated_email": "info@acme.com.sg",
+                "website_content": "Singapore private company collecting customer enquiries and employee data.",
+            }
+        )
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
+        self.assertIn("Noticed Acme Services Pte Ltd", plan.emails["email_1"]["body"])
 
     def test_generic_contactus_email_does_not_invent_first_name(self):
         plan = o.plan_outreach(
@@ -1065,6 +1172,67 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(f"Worth sending a short {asset}?", plan.emails["email_1"]["body"])
                 self.assertIn(f"would the {asset} still be useful", plan.emails["email_4"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_specialist_hia_subtypes_use_specific_records_and_diagnostics(self):
+        cases = [
+            (
+                "Heart Centre",
+                "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations.",
+                "a specialist-led heart/cardiology clinic",
+                "cardiac test reports",
+            ),
+            (
+                "Pain Management Clinic",
+                "Specialist pain management clinic offering spine pain care, injections, assessment notes and treatment plans.",
+                "a specialist-led pain management clinic",
+                "assessment notes, treatment plans, procedure-related records",
+            ),
+            (
+                "Surgical Clinic",
+                "Specialist surgical clinic led by a surgeon with consent forms, procedure records and post-operative follow-up notes.",
+                "a specialist-led surgical clinic",
+                "consent forms, procedure records, follow-up notes",
+            ),
+            (
+                "Dermatology Clinic",
+                "Dermatology clinic with dermatologist consultations for skin, acne, eczema, mole checks, laser treatment and clinical images.",
+                "a specialist-led dermatology clinic",
+                "skin consultation notes, treatment records, appointment details, clinical images where used",
+            ),
+            (
+                "Eye Clinic",
+                "Eye ophthalmology clinic with cataract, retina, LASIK, optometry, imaging, prescriptions and referrals.",
+                "a specialist-led eye clinic",
+                "eye examination records, imaging, prescriptions, referrals",
+            ),
+            (
+                "Home Care Provider",
+                "Home care caregiver provider offering home nursing and patient care at home for clients, families and staff.",
+                "a home-care / caregiver provider",
+                "client, patient, caregiver, family and staff records",
+            ),
+        ]
+        for company, content, profile_phrase, diagnostic in cases:
+            with self.subTest(company=company):
+                plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertIn(profile_phrase, plan.emails["email_1"]["body"])
+                self.assertIn(diagnostic, plan.emails["email_2"]["body"])
+                self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_amk_family_clinic_prefers_gp_over_weak_diagnostic_evidence(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "AMK Family Clinic",
+                "website_content": "Family Clinic with doctors, consultation, health screening, patient appointments and treatment services.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
+        self.assertNotEqual(plan.copy_brief["clinic_profile_guess"], "diagnostic_lab")
+        self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
+        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_2"]["body"])
 
     def test_amp_lab_requires_clinical_diagnostic_evidence(self):
         clinical = o.plan_outreach(

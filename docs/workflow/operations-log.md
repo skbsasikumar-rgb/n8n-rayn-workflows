@@ -945,3 +945,13 @@ Cold email copy QA hardening:
 - live `/health` returned HTTP 200 and `/contact-provider-health` returned provider order `serper`.
 - local validation passed before deploy: compile checks for `contact_enrichment.py`, `outreach_planner.py`, and `app.py`; focused contact/outreach/audit tests `88 passed`.
 - post-deploy dry-runs did not patch NocoDB; no emails were sent and Instantly was not used.
+- `2026-05-06 16:54 +08`: refined cold-email copy tracks locally after commit `8e59cde`; no deployment was performed.
+- preserved the simple greeting rule: use `Hi {{first_name}},` when `selected_contact_name` is present, otherwise `Hello team,`; send-mode confidence does not complicate greeting selection.
+- updated the local `wf-cold-email-planner.json` OpenRouter prompt rule to match the same simple greeting rule.
+- strengthened HIA subtype copy for heart/cardiology, pain management, surgical, dermatology, eye/ophthalmology and home-care/caregiver rows, and kept family-clinic rows on the GP/family-clinic path unless strong lab evidence exists.
+- added PDPA variants for education/training, HR/recruitment, accounting/finance/admin, retail/e-commerce, NPO/social service and non-clinical lab/testing; DPO/ops copy now focuses on scattered evidence across operations, HR, IT and vendors.
+- added customer-trust variants for SaaS/platform, professional services, HR/recruitment B2B, outsourcing/vendor and education/training B2B rows, plus shorter track-specific subject lines.
+- cleaned suppressed-row audit markdown so suppressed rows show the reason, OpenRouter skipped and emails not generated without noisy copy-quality flags unless debug mode is used.
+- local validation passed: Python compile for `services/crawl4ai/outreach_planner.py` and `scripts/export_outreach_audit_markdown.py`, `jq -e wf-cold-email-planner.json`, and pytest suites `tests/test_outreach_planner.py`, `tests/test_outreach_columns.py`, `tests/test_workflow_audit_fallback.py`, `tests/test_outreach_audit_export.py` with `81 passed`.
+- preview was not generated: local NocoDB credentials were not available in this shell; `railway variables --json` for the linked service exposed only NocoDB service URL metadata, not a NocoDB API token. No fake preview was produced.
+- no live rows were patched, no emails were sent, Instantly was not used, and workflow remains draft-only.

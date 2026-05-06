@@ -233,10 +233,28 @@ SPECIALIST_SERVICE_TERMS = (
     "digestive",
     "gastroenterology",
     "cardiology",
+    "heart",
+    "cardiac",
+    "cardiovascular",
+    "ecg",
+    "echocardiogram",
     "dermatology",
+    "dermatologist",
+    "pain management",
+    "anaesthesia",
+    "spine pain",
+    "injections",
+    "ophthalmology",
+    "ophthalmologist",
+    "cataract",
+    "retina",
+    "lasik",
+    "optometry",
     "plastic surgery",
     "aesthetic",
     "surgery",
+    "surgeon",
+    "surgical",
     "specialist",
 )
 DIAGNOSTIC_SERVICE_TERMS = (
@@ -256,6 +274,10 @@ LONG_TERM_CARE_TERMS = (
     "long term care",
     "long-term care",
     "eldercare",
+    "caregiver",
+    "home care",
+    "home nursing",
+    "patient care at home",
     "lodge",
 )
 B2B_TERMS = (
@@ -292,6 +314,24 @@ PERSONAL_DATA_TERMS = (
     "payment",
 )
 SENSITIVE_TERMS = ("patient", "health", "medical", "resident", "beneficiary", "student", "financial")
+
+STRONG_CUSTOMER_TRUST_TERMS = (
+    "enterprise",
+    "vendor",
+    "outsourcing",
+    "saas",
+    "software",
+    "platform",
+    "managed service",
+    "consulting",
+    "professional services",
+    "partners",
+    "procurement",
+    "customer review",
+    "security questionnaire",
+    "corporate customer",
+    "business customer",
+)
 
 
 @dataclass
@@ -543,7 +583,7 @@ def advisory_copy_brief_flags(flags: list[str], classification: dict[str, Any], 
 
 def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and contact_send_mode(row) == "named_person":
+    if name:
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -557,7 +597,7 @@ def first_name_from_contact(name: str) -> str:
 
 def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and contact_send_mode(row) == "named_person":
+    if name:
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -570,7 +610,7 @@ def email_greeting_type(row: dict[str, Any]) -> str:
 
 def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and contact_send_mode(row) == "named_person":
+    if name:
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -723,6 +763,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         batch_override = "Batch 2 - Sep 2028"
     elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
+    elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
+        service = "GP_OMS"
     elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
         service = "diagnostic"
     elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
@@ -917,8 +959,16 @@ def is_data_protection_owner(row: dict[str, Any]) -> bool:
     return contains_any(contact_title_blob(row), DPO_TITLE_TERMS)
 
 
+def has_customer_trust_pressure(text: str) -> bool:
+    if contains_any(text, STRONG_CUSTOMER_TRUST_TERMS):
+        return True
+    return any(term in text for term in ("recruitment", "hr", "education", "training")) and any(
+        term in text for term in ("corporate", "business customer", "procurement", "enterprise", "vendor")
+    )
+
+
 def business_model_trust_signal(text: str) -> str:
-    for term in B2B_TERMS:
+    for term in STRONG_CUSTOMER_TRUST_TERMS + B2B_TERMS:
         if term in text:
             return term
     return "clients or business partners"
@@ -972,6 +1022,28 @@ def has_clinical_lab_evidence(text: str) -> bool:
     )
 
 
+def has_strong_diagnostic_lab_evidence(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "clinical laboratory",
+            "diagnostic lab",
+            "diagnostic laboratory",
+            "medical laboratory",
+            "radiology",
+            "nuclear medicine",
+            "test reports",
+            "lab test",
+            "lab tests",
+        )
+    )
+
+
+def has_family_clinic_evidence(row: dict[str, Any], text: str) -> bool:
+    company = compact(row.get("company_name")).lower()
+    return "family clinic" in company or "family clinic" in text or "family medicine" in text
+
+
 def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     text = lower_blob(row)
     entity = infer_entity(row, text)
@@ -999,7 +1071,7 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         trigger = "The selected contact appears to own data-protection, compliance, operations, admin or HR evidence across teams."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials to structure security evidence across IT, HR, vendors and operations; consider DPE/DPTM only when broader data-protection governance evidence supports it."
-    elif contains_any(text, B2B_TERMS):
+    elif has_customer_trust_pressure(text):
         pressure_type = "customer_trust"
         problem_area = "evidence_collection"
         value_asset = "security_evidence_checklist"
@@ -1193,7 +1265,10 @@ def concrete_service_cues(row: dict[str, Any], text: str) -> list[str]:
             cues.append(cue)
 
     if contains_any(haystack, LONG_TERM_CARE_TERMS):
-        if "hospice" in haystack or "palliative" in haystack:
+        if home_care_subtype(haystack):
+            add("home-care / caregiver service signals")
+            add("client, patient, caregiver, family and staff record signals")
+        elif "hospice" in haystack or "palliative" in haystack:
             add("hospice/long-term care service signals")
             add("patient, resident, family and volunteer data signals")
         else:
@@ -1214,7 +1289,18 @@ def concrete_service_cues(row: dict[str, Any], text: str) -> list[str]:
     if contains_any(haystack, DIAGNOSTIC_SERVICE_TERMS):
         add("diagnostic, screening or laboratory service signals")
     if contains_any(haystack, SPECIALIST_SERVICE_TERMS):
-        if "oncology" in haystack or "radiation" in haystack:
+        subtype = specialist_subtype(haystack)
+        if subtype == "cardiology":
+            add("heart/cardiology specialist-care signals")
+        elif subtype == "pain":
+            add("pain-management specialist-care signals")
+        elif subtype == "surgery":
+            add("surgical specialist-care signals")
+        elif subtype == "dermatology":
+            add("dermatology specialist-care signals")
+        elif subtype == "eye":
+            add("eye/ophthalmology specialist-care signals")
+        elif "oncology" in haystack or "radiation" in haystack:
             add("radiation/oncology specialist-care signals")
         elif "digestive" in haystack or "gastroenterology" in haystack:
             add("digestive/gastroenterology specialist-care signals")
@@ -1297,12 +1383,19 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
     service_type = compact(classification.get("hia_service_type_guess")).lower()
     pressure = compact(classification.get("pressure_type")).lower()
     entity = compact(classification.get("entity_type_guess")).lower()
+    company = compact(row.get("company_name"))
 
+    if company and signal_l.startswith(company.lower()) and any(
+        marker in signal_l for marker in (" appears ", " works ", " has ", " runs ", " provides ")
+    ):
+        return compact(signal).rstrip(".") + "."
     if ("appears to be " in signal_l or "appears to provide " in signal_l or "appears to handle " in signal_l) and "signals" not in signal_l:
         return compact(signal).rstrip(".") + "."
     if service_type == "hearing_care" or "hearing-care" in signal_l or "hearing" in text:
         return "your website lists hearing tests, hearing aids and audiology support."
     if service_type == "long_term_care" or "hospice/long-term care" in signal_l or contains_any(text, LONG_TERM_CARE_TERMS):
+        if home_care_subtype(text):
+            return "your website lists home-care / caregiver services."
         return "your website lists hospice / palliative-care services."
     if service_type == "allied_health" and ("physio" in signal_l or "physio" in text or "exercise-plan" in signal_l):
         return "your website lists physiotherapy services and treatment support."
@@ -1312,6 +1405,16 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
         return "your website lists psychology / mental-health services and assessment support."
     if service_type == "diagnostic" or "screening/diagnostic" in signal_l:
         return "your website lists laboratory / diagnostic services."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "cardiology":
+        return "your website lists heart/cardiology consultations and specialist-led care."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "pain":
+        return "your website lists pain management consultations and procedure-related care."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "surgery":
+        return "your website lists surgical consultations and procedure-related care."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "dermatology":
+        return "your website lists dermatology consultations and skin treatment services."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "eye":
+        return "your website lists eye/ophthalmology consultations and specialist-led care."
     if service_type == "specialist_oms" and ("oncology" in signal_l or "radiation" in signal_l or "oncology" in text or "radiation" in text):
         return "your website lists oncology/radiation care and specialist-led treatment services."
     if service_type == "specialist_oms" and (
@@ -1348,7 +1451,6 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
     if signal_l.startswith("appears to operate in "):
         detail = compact(signal[21:])
         return f"you operate in {detail}"
-    company = compact(row.get("company_name"))
     if company:
         signal = re.sub(rf"^{re.escape(company)}\s+", "", compact(signal), flags=re.IGNORECASE)
     signal = re.sub(r"\bshows\b", "lists", signal, count=1, flags=re.IGNORECASE)
@@ -1398,16 +1500,43 @@ def email_contains_hia_batch_wording(body: str) -> bool:
 
 
 SPECIALIST_SERVICE_SUMMARIES = (
+    (("heart", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram"), "heart/cardiology care"),
+    (("pain management", "spine pain", "pain clinic", "anaesthesia", "injections"), "pain management care"),
+    (("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic"), "eye care"),
     (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
     (("oncology", "radiation"), "oncology / radiation care"),
-    (("cardiology", "heart", "vascular"), "cardiology / vascular care"),
-    (("dermatology", "dermatologist"), "dermatology / skin care"),
+    (("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser"), "dermatology care"),
     (("endocrinology", "diabetes", "thyroid"), "endocrinology care"),
     (("orthopaedic", "orthopedic", "sports"), "orthopaedic / sports medicine"),
     (("urology", "robotic"), "urology care"),
     (("brain", "spine", "nerve", "neurology", "neurosurgery"), "brain, spine and nerve care"),
-    (("surgery", "surgeon", "specialist"), "specialist care"),
+    (("surgery", "surgeon", "surgical", "operation", "consent", "post-operative"), "surgical care"),
+    (("specialist",), "specialist care"),
 )
+
+
+def specialist_subtype(text: str) -> str:
+    if any(term in text for term in ("heart", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram")):
+        return "cardiology"
+    if any(term in text for term in ("pain management", "spine pain", "pain clinic", "anaesthesia", "injections")) or (
+        "pain" in text and "clinic" in text
+    ):
+        return "pain"
+    if any(term in text for term in ("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic")):
+        return "eye"
+    if any(term in text for term in ("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser")):
+        return "dermatology"
+    if any(term in text for term in ("surgery", "surgeon", "surgical", "operation", "consent", "post-operative")):
+        return "surgery"
+    if any(term in text for term in ("digestive", "gastroenterology")):
+        return "gastroenterology"
+    if any(term in text for term in ("oncology", "radiation")):
+        return "oncology"
+    return ""
+
+
+def home_care_subtype(text: str) -> bool:
+    return any(term in text for term in ("caregiver", "home care", "home nursing", "patient care at home"))
 
 
 def primary_service_summary_for_profile(row: dict[str, Any], text: str, service_type: str) -> str:
@@ -1473,19 +1602,38 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     else:
         structure = "single_site_or_unknown"
 
-    has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "plastic surgery", "skin", "laser", "injectable"))
+    has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "injectable"))
     has_specialist = any(
         term in source_l
         for term in (
+            "heart",
             "gastroenterology",
             "oncology",
             "cardiology",
+            "cardiac",
+            "cardiovascular",
+            "ecg",
+            "echocardiogram",
             "dermatology",
+            "dermatologist",
+            "pain management",
+            "anaesthesia",
+            "spine pain",
+            "injections",
+            "ophthalmology",
+            "ophthalmologist",
+            "vision",
+            "cataract",
+            "retina",
+            "lasik",
+            "optometry",
             "endocrinology",
             "orthopaedic",
             "radiation",
             "digestive",
             "surgery",
+            "surgeon",
+            "surgical",
             "specialist",
         )
     )
@@ -1502,6 +1650,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
         guess = "hearing_care"
         add_evidence("hearing-care terms")
+    elif home_care_subtype(source_l):
+        guess = "home_care"
+        add_evidence("home-care or caregiver terms")
     elif service_type == "long_term_care" or contains_any(source_l, LONG_TERM_CARE_TERMS):
         guess = "hospice_long_term_care"
         add_evidence("hospice or long-term care terms")
@@ -1580,6 +1731,16 @@ def prospect_facing_profile_phrase(
     if guess == "multi_doctor_gp":
         return "a multi-doctor clinic offering outpatient consultations"
     if guess == "specialist_led":
+        subtype = specialist_subtype(lower_blob(row))
+        subtype_phrases = {
+            "cardiology": "a specialist-led heart/cardiology clinic",
+            "pain": "a specialist-led pain management clinic",
+            "surgery": "a specialist-led surgical clinic",
+            "dermatology": "a specialist-led dermatology clinic",
+            "eye": "a specialist-led eye clinic",
+        }
+        if subtype in subtype_phrases:
+            return subtype_phrases[subtype]
         return f"a specialist-led clinic focused on {(primary or 'specialist care').replace(' / ', ' and ')}"
     if guess == "aesthetic_medical":
         return "a medical/aesthetic clinic with doctor-led consultations"
@@ -1597,6 +1758,8 @@ def prospect_facing_profile_phrase(
         return "a psychology / mental-health provider handling assessment and case-note records"
     if guess == "hospice_long_term_care":
         return "a hospice / long-term care provider handling patient, resident, family, volunteer and staff data"
+    if guess == "home_care":
+        return "a home-care / caregiver provider"
     if guess == "clinic_group":
         return "part of a wider clinic group or multi-location healthcare operation"
     return "a healthcare provider"
@@ -1609,6 +1772,17 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
     if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
         return "patient records, appointment details, consultation notes, clinic email, vendor systems"
     if profile_guess == "specialist_led" or service_type == "specialist_OMS":
+        subtype = specialist_subtype(text)
+        if subtype == "cardiology":
+            return "consultation notes, cardiac test reports, referrals, appointment details and vendor systems"
+        if subtype == "pain":
+            return "assessment notes, treatment plans, procedure-related records, appointment details and vendor systems"
+        if subtype == "surgery":
+            return "consultation notes, consent forms, procedure records, follow-up notes and vendor systems"
+        if subtype == "dermatology":
+            return "skin consultation notes, treatment records, appointment details, clinical images where used and vendor systems"
+        if subtype == "eye":
+            return "eye examination records, imaging, prescriptions, referrals and vendor systems"
         if "oncology" in text or "radiation" in text:
             return "oncology/radiation treatment records, patient reports, vendor systems"
         if "digestive" in text or "gastroenterology" in text:
@@ -1629,6 +1803,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
     if profile_guess == "mental_health":
         return "appointment, assessment and case-note records"
     if profile_guess == "hospice_long_term_care" or service_type == "long_term_care":
+        if profile_guess == "home_care" or home_care_subtype(text):
+            return "client, patient, caregiver, family and staff records"
         return "patient, resident, family, volunteer and staff data"
     if "family" in text or service_type == "GP_OMS":
         return "patient records, appointment details, consultation notes, clinic email, vendor systems"
@@ -1658,6 +1834,8 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_pr
         return "psychology readiness map"
     if profile_guess == "hospice_long_term_care":
         return "long-term care readiness map"
+    if profile_guess == "home_care":
+        return "care readiness map"
     if classification.get("pressure_type") == "customer_trust":
         return "security evidence checklist"
     if classification.get("campaign_track") == "dpo_evidence":
@@ -1723,6 +1901,21 @@ def hia_email_2_diagnostic(
     elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
         question = f"can {company} show where screening records, diagnostic reports, patient details, lab systems, vendor systems and backups sit today?"
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "cardiology":
+        question = f"can {company} show where consultation notes, cardiac test reports, referrals, appointment details, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "pain":
+        question = f"can {company} show where assessment notes, treatment plans, procedure-related records, appointment details, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "surgery":
+        question = f"can {company} show where consultation notes, consent forms, procedure records, follow-up notes, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "dermatology":
+        question = f"can {company} show where skin consultation notes, treatment records, appointment details, clinical images where used, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "eye":
+        question = f"can {company} show where eye examination records, imaging, prescriptions, referrals, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
     elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
         question = f"can {company} show where consultation notes, patient reports, procedure-related records, vendor systems and backups sit today?"
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
@@ -1742,7 +1935,10 @@ def hia_email_2_diagnostic(
         question = f"can {company} show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work and who reports an incident?"
         follow = ""
     elif service_type == "long_term_care":
-        question = f"can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
+        if profile_guess == "home_care" or home_care_subtype(text):
+            question = f"can {company} map client, patient, caregiver, family and staff records to an owner, access list, vendor, backup and incident contact?"
+        else:
+            question = f"can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
         follow = ""
     elif service_type == "GP_OMS" and "aesthetic" in text:
         question = f"can {company} show where consultation records, treatment notes, appointment details, clinic email, vendor systems and backups sit today?"
@@ -1757,6 +1953,155 @@ def hia_email_2_diagnostic(
     return "\n\n".join(parts)
 
 
+def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -> dict[str, str]:
+    if any(term in text for term in ("student", "parent", "enrolment", "enrollment", "education", "training", "tuition", "course")):
+        return {
+            "signal": f"{company} appears to provide education/training services handling student, parent, staff or enrolment records.",
+            "personal_data": "student, parent, staff and enrolment records handled through education/training operations.",
+            "sensitive_examples": "student records, parent contacts, staff data, enrolment details and attendance or course records.",
+            "systems": "student/enrolment systems, email, spreadsheets, learning tools, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is who has access to student, parent, staff and enrolment records, where data sits, how backups work and who responds to incidents.",
+            "asset": "education data checklist",
+        }
+    if any(term in text for term in ("recruitment", "candidate", "payroll", "hr ", "human resource")) and not any(
+        term in text for term in ("accounting", "bookkeeping", "finance", "financial", "admin services", "administrative services", "tax")
+    ):
+        return {
+            "signal": f"{company} appears to provide HR/recruitment services handling candidate, employee and client records.",
+            "personal_data": "candidate, employee and client records handled through HR/recruitment workflows.",
+            "sensitive_examples": "candidate profiles, employee records, payroll-related records, client contacts and access logs.",
+            "systems": "ATS/HR systems, email, file shares, payroll or admin tools, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is whether candidate, employee, payroll or client records have clear access, backup, vendor and incident evidence.",
+            "asset": "HR data safeguards checklist",
+        }
+    if entity in {"npo", "charity", "social_service"} or contains_any(text, NPO_TERMS + SOCIAL_TERMS):
+        return {
+            "signal": f"{company} appears to operate in a care/community-service setting handling beneficiary, volunteer, donor and staff data.",
+            "personal_data": "beneficiary, volunteer, donor and staff data handled through care and community operations.",
+            "sensitive_examples": "beneficiary records, volunteer data, donor contacts, staff records and care-service notes.",
+            "systems": "case records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is whether beneficiary, volunteer, donor and staff data can be mapped to owners, access lists, vendors, backups and incident contacts.",
+            "asset": "care-organisation checklist",
+        }
+    if any(term in text for term in ("accounting", "bookkeeping", "finance", "financial", "admin services", "administrative services", "tax", "payroll")):
+        return {
+            "signal": f"{company} appears to provide admin/accounting/finance services handling client financial or business records.",
+            "personal_data": "client financial, business-contact, employee and admin records handled through service operations.",
+            "sensitive_examples": "client financial records, business records, payroll or tax records, contact data and access records.",
+            "systems": "accounting/admin systems, email, file shares, client portals, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is whether client financial or business records have clear access, backup, vendor and incident evidence.",
+            "asset": "client data safeguards checklist",
+        }
+    if any(term in text for term in ("retail", "e-commerce", "ecommerce", "online store", "customer service", "orders", "payment", "support")):
+        return {
+            "signal": f"{company} appears to run customer-facing operations handling customer, order, support and payment-related records.",
+            "personal_data": "customer, order, support and payment-related records handled through customer-facing operations.",
+            "sensitive_examples": "customer contact data, order history, support records, payment-related records and staff access logs.",
+            "systems": "e-commerce, POS, CRM/support, email, payment-related tools, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is whether customer, order, support and payment-related records have clear access, backup, vendor and incident evidence.",
+            "asset": "customer data checklist",
+        }
+    if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
+        return {
+            "signal": f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools.",
+            "personal_data": "customer, employee and project records handled through lab/testing operations and vendor tools.",
+            "sensitive_examples": "customer records, employee data, project records, test administration records and access logs.",
+            "systems": "testing/project systems, email, file shares, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility; the practical question is whether customer, employee and project records have clear access, backup, vendor and incident evidence.",
+            "asset": "safeguards checklist",
+        }
+    return {
+        "signal": f"{company} appears to handle customer and employee records through its operations.",
+        "personal_data": f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools.",
+        "sensitive_examples": f"{data_type}, employee data, contact records and service history.",
+        "systems": "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts.",
+        "problem": "PDPA is the legal responsibility; the practical question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents.",
+        "asset": "safeguards checklist",
+    }
+
+
+def customer_trust_variant_context(company: str, text: str) -> dict[str, str]:
+    if any(term in text for term in ("saas", "software", "platform", "dashboard", "user data", "admin access")):
+        return {
+            "signal": f"{company} works with customers who may ask how user data, admin access and backups are controlled.",
+            "asset": "customer security evidence checklist",
+            "systems": "user access, admin roles, backups, patching, malware protection and incident response evidence.",
+            "diagnostic": "Can common customer security questions be mapped to evidence for user access, admin roles, backups, patching, malware protection and incident response?",
+        }
+    if any(term in text for term in ("recruitment", "candidate", "hr ", "human resource")):
+        return {
+            "signal": f"{company} works with clients who may ask how candidate and employee data is protected.",
+            "asset": "client security evidence checklist",
+            "systems": "candidate records, employee data, client access, backups, patching, malware protection and incident response evidence.",
+            "diagnostic": "Can client security questions be mapped to evidence for candidate and employee data access, backups, patching, malware protection and incident response?",
+        }
+    if any(term in text for term in ("outsourcing", "vendor", "supplier", "managed service")):
+        return {
+            "signal": f"{company} works as a vendor where customers may ask for supplier security evidence.",
+            "asset": "vendor security evidence checklist",
+            "systems": "supplier access, customer data handling, backups, patching, malware protection and incident response evidence.",
+            "diagnostic": "Can supplier security questions be mapped to evidence for access control, backups, patching, malware protection and incident response?",
+        }
+    if any(term in text for term in ("education", "training", "learner", "corporate learning")):
+        return {
+            "signal": f"{company} works with corporate customers who may ask how learner and staff data is handled.",
+            "asset": "learner-data evidence checklist",
+            "systems": "learner data, staff records, customer access, backups, patching, malware protection and incident response evidence.",
+            "diagnostic": "Can customer security questions be mapped to evidence for learner data, staff data, access, backups, patching, malware protection and incident response?",
+        }
+    return {
+        "signal": f"{company} works with business customers who may ask for reusable security evidence before sharing data.",
+        "asset": "security evidence checklist",
+        "systems": "access control, backups, patching, malware protection and incident response evidence.",
+        "diagnostic": "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?",
+    }
+
+
+def subject_pair(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[str, str]:
+    pressure = classification.get("pressure_type")
+    asset = compact(copy_brief.get("email_asset_offer")).lower()
+    text = lower_blob(row)
+    if pressure == "hia_regulatory":
+        profile_guess = compact(copy_brief.get("clinic_profile_guess"))
+        service = classification.get("hia_service_type_guess")
+        if profile_guess == "dental" or service == "dental":
+            subject = "dental readiness"
+        elif profile_guess == "pharmacy" or service == "retail_pharmacy":
+            subject = "pharmacy HIA checklist"
+        elif profile_guess == "hearing_care" or service == "hearing_care":
+            subject = "hearing-care readiness"
+        elif profile_guess in {"hospice_long_term_care", "home_care"} or service == "long_term_care":
+            subject = "care readiness"
+        elif profile_guess == "specialist_led" or service == "specialist_OMS":
+            subject = "specialist clinic readiness"
+        else:
+            subject = "clinic readiness"
+        return subject, f"Re: {subject}"
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "data protection evidence", "Re: data protection evidence"
+    if pressure == "customer_trust":
+        if "customer" in asset:
+            subject = "customer security evidence"
+        elif "vendor" in asset or "supplier" in text or "outsourcing" in text:
+            subject = "vendor security evidence"
+        else:
+            subject = "security evidence"
+        return subject, f"Re: {subject}"
+    if pressure == "pdpa_safeguards":
+        if "hr" in asset:
+            subject = "HR data safeguards"
+        elif "education" in asset:
+            subject = "education data safeguards"
+        elif "client" in asset:
+            subject = "client data safeguards"
+        elif "customer" in asset:
+            subject = "customer data safeguards"
+        else:
+            subject = "data safeguards"
+        return subject, f"Re: {subject}"
+    return "not ready", "not ready"
+
+
 def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], funding: FundingMatch) -> dict[str, Any]:
     company = compact(row.get("company_name") or "the organisation")
     text = lower_blob(row)
@@ -1769,6 +2114,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     entity = classification.get("entity_type_guess", "unknown")
     data_type = str(classification.get("data_type_signal") or "unknown").replace("_", " ")
     clinic_profile = infer_clinic_profile(row, classification, text) if pressure == "hia_regulatory" else {}
+    email_2_diagnostic = ""
 
     if entity == "clinic":
         business_model = "clinic"
@@ -1799,6 +2145,10 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         sensitive_examples = "patient identity details, appointment information, health information, treatment notes and staff access records."
         if service_type == "hearing_care" or "hearing" in text:
             systems = "appointments, hearing tests, device-related records, staff access, vendor systems, backups and incident-reporting steps."
+        elif home_care_subtype(text):
+            personal_data = "client, patient, caregiver, family and staff records handled through home-care operations."
+            sensitive_examples = "client and patient details, caregiver records, family contacts, staff access records and incident evidence."
+            systems = "client, patient, caregiver, family and staff records, vendor systems, backups and incident-reporting steps."
         elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
             personal_data = "patient, resident, family, volunteer and staff data handled through care operations and support workflows."
             sensitive_examples = "patient and resident details, care notes, family contacts, volunteer data, staff access records and incident evidence."
@@ -1813,6 +2163,15 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             systems = "specialist appointments, oncology/radiation treatment records, patient reports, vendor systems, backups and incident-reporting steps."
         elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
             systems = "specialist appointments, digestive/gastroenterology records, patient reports, vendor systems, backups and incident-reporting steps."
+        elif service_type == "specialist_OMS":
+            subtype_systems = {
+                "cardiology": "consultation notes, cardiac test reports, referrals, appointment details, vendor systems, backups and incident-reporting steps.",
+                "pain": "assessment notes, treatment plans, procedure-related records, appointment details, vendor systems, backups and incident-reporting steps.",
+                "surgery": "consultation notes, consent forms, procedure records, follow-up notes, vendor systems, backups and incident-reporting steps.",
+                "dermatology": "skin consultation notes, treatment records, appointment details, clinical images where used, vendor systems, backups and incident-reporting steps.",
+                "eye": "eye examination records, imaging, prescriptions, referrals, vendor systems, backups and incident-reporting steps.",
+            }
+            systems = subtype_systems.get(specialist_subtype(text), "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps.")
         else:
             systems = "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps."
         complexity = "medium" if entity == "clinic" else "high"
@@ -1831,62 +2190,59 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         else:
             signal = f"{company} appears to be {profile_phrase}."
     elif pressure == "customer_trust":
+        trust_context = customer_trust_variant_context(company, text)
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
-        systems = "CRM, email, file shares, access lists, vendor tools, backups and incident contacts."
+        systems = trust_context["systems"]
         complexity = "medium"
         regulatory = "PDPA creates the personal-data protection responsibility, but customer/procurement proof is the stronger buying pressure."
         hia_angle = "No HIA angle should be used unless healthcare evidence appears."
         pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness without claiming PDPA compliance."
         trust_angle = "Customers may ask for reusable security evidence around access control, patching, backups, malware protection and incident response."
         timeline = "No external HIA deadline was identified; urgency comes from customer evidence and procurement reviews."
-        asset = "security evidence checklist"
-        cta = "Worth sending the evidence checklist?"
+        asset = trust_context["asset"]
+        cta = f"Worth sending the {asset}?"
         problem = "The practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review."
         mechanism = "Cyber Essentials gives a recognised baseline for that evidence."
-        signal = f"{company} shows B2B/client-service signals where customers may ask for reusable security evidence."
+        signal = trust_context["signal"]
+        email_2_diagnostic = trust_context["diagnostic"]
     elif pressure == "pdpa_safeguards":
+        email_2_diagnostic = ""
         if classification.get("campaign_track") == "dpo_evidence":
             personal_data = f"{data_type} handled across IT, HR, vendors and operations."
             sensitive_examples = f"{data_type}, employee data, access records, vendor records and incident evidence."
             systems = "HR/admin systems, email, file shares, vendor tools, access lists, backups and incident contacts."
             asset = "evidence checklist"
             cta = "Worth sending the evidence checklist?"
-            signal = f"{company} has a data-protection or operations contact and likely data spread across HR/admin systems, vendors and staff workflows."
-            problem = "The practical PDPA question is whether safeguards can be shown clearly across IT, HR, vendors and operations: who has access, where data sits, how vendors are managed and who responds to incidents."
+            signal = f"{company} has a data-protection / operations contact route."
+            problem = "For teams handling personal data, the harder part is often evidence: who owns each system, who has access, how vendors are managed, how backups are checked and who handles incidents. It often sits across operations, HR, IT and vendors."
         elif entity in {"npo", "charity", "social_service"}:
-            personal_data = "resident, beneficiary, volunteer, donor and staff data handled through care and community operations."
-            sensitive_examples = "resident details, beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
+            personal_data = "beneficiary, volunteer, donor and staff data handled through care and community operations."
+            sensitive_examples = "beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
             systems = "case or resident records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts."
             asset = "care-organisation checklist"
             cta = "Worth sending the care-organisation checklist?"
-            signal = f"{company} appears to operate in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
-            problem = "PDPA creates the responsibility to protect resident, beneficiary, volunteer and staff data; the practical question is whether safeguards can be shown clearly: who owns each system, who can access it, how backups work and who responds to incidents."
+            signal = f"{company} appears to operate in a care/community-service setting handling beneficiary, volunteer, donor and staff data."
+            problem = "PDPA is the legal responsibility; the practical question is whether beneficiary, volunteer, donor and staff data can be mapped to owners, access lists, vendors, backups and incident contacts."
         else:
-            personal_data = f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools."
-            sensitive_examples = f"{data_type}, employee data, contact records and service history."
-            systems = "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts."
-            asset = "PDPA safeguards checklist"
-            cta = "Worth sending the safeguards checklist?"
-            if public_signals["service"]:
-                service_context = str(public_signals["service"]).rstrip(".")
-                if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
-                    signal = f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools."
-                else:
-                    signal = f"{company} appears to provide {service_context} services where customer and employee records may sit across enquiries, operations and vendor tools."
-            else:
-                if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
-                    signal = f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools."
-                else:
-                    signal = f"{company} appears to handle customer and employee records through its operations."
-            problem = "For organisations handling personal data, the practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
+            pdpa_context = pdpa_variant_context(company, text, entity, data_type)
+            personal_data = pdpa_context["personal_data"]
+            sensitive_examples = pdpa_context["sensitive_examples"]
+            systems = pdpa_context["systems"]
+            asset = pdpa_context["asset"]
+            cta = f"Worth sending the {asset}?"
+            signal = pdpa_context["signal"]
+            problem = pdpa_context["problem"]
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
         hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
         pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning reasonable protection into practical controls and evidence across assets, access, malware protection, patching, backups and incident response."
         trust_angle = "Clear safeguard evidence also helps customers, partners, donors, insurers and internal stakeholders trust how data is handled."
         timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards before a customer, partner or incident review asks for proof."
-        mechanism = "Cyber Essentials helps turn that responsibility into a practical security baseline and evidence set."
+        if classification.get("campaign_track") == "dpo_evidence":
+            mechanism = "Cyber Essentials helps turn that into a practical security baseline and evidence set."
+        else:
+            mechanism = "Cyber Essentials helps turn the security-safeguards side into practical controls and evidence."
     else:
         profile = ""
         business_model = "unknown"
@@ -1945,6 +2301,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "email_mechanism_statement": mechanism,
         "email_asset_offer": asset,
         "email_cta": cta,
+        "email_2_diagnostic": email_2_diagnostic,
         "email_angle_reason": classification.get("pressure_reason") or classification.get("problem_hypothesis") or "",
     }
     copy_brief.update(
@@ -2021,6 +2378,7 @@ def generate_email_sequence(
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
+        email1_subject, email2_subject = subject_pair(row, classification, copy_brief)
         noticed = trigger
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
@@ -2033,7 +2391,7 @@ def generate_email_sequence(
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
-            diagnostic = "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?"
+            diagnostic = compact(copy_brief.get("email_2_diagnostic")) or "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?"
         else:
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
         if classification["pressure_type"] != "hia_regulatory":
@@ -2253,12 +2611,23 @@ def email_2_generic_hia_diagnostic(body: str, classification: dict[str, Any]) ->
         "compounding",
         "diagnostic reports",
         "lab systems",
+        "cardiac test reports",
+        "referrals",
         "procedure-related records",
+        "consent forms",
+        "procedure records",
+        "follow-up notes",
+        "skin consultation notes",
+        "clinical images",
+        "eye examination records",
+        "imaging",
+        "prescriptions",
         "hearing test records",
         "device-related records",
         "exercise-plan records",
         "case-note records",
         "resident",
+        "caregiver",
     )
     return all(marker in body_l for marker in generic_markers) and not any(term in body_l for term in segment_terms)
 
@@ -2280,6 +2649,16 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
         required = ("patient records", "appointment details", "clinic email")
     elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
         required = ("screening", "diagnostic", "lab")
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "cardiology":
+        required = ("consultation notes", "cardiac test reports", "referrals")
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "pain":
+        required = ("assessment notes", "treatment plans", "procedure-related")
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "surgery":
+        required = ("consultation notes", "consent forms", "procedure records")
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "dermatology":
+        required = ("skin consultation notes", "treatment records", "clinical images")
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "eye":
+        required = ("eye examination records", "imaging", "prescriptions")
     elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
         required = ("consultation notes", "patient reports", "procedure-related")
     elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
@@ -2293,7 +2672,7 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
     elif service_type == "allied_health":
         required = ("appointment", "treatment", "exercise-plan")
     elif service_type == "long_term_care":
-        required = ("patient", "resident", "volunteer")
+        required = ("client", "caregiver", "family") if home_care_subtype(text) else ("patient", "resident", "volunteer")
     elif service_type == "GP_OMS" and ("aesthetic" in text or "plastic" in text or "treatment" in text):
         required = ("consultation records", "treatment notes", "appointment details", "clinic email")
     elif service_type == "GP_OMS":
@@ -2360,7 +2739,7 @@ def email_2_is_diagnostic(body: str, copy_brief: dict[str, Any], classification:
     if classification.get("pressure_type") == "hia_regulatory":
         return all(term in body_l for term in ("health information", "access")) and "incident" in body_l
     if classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
-        return "resident" in body_l and "beneficiary" in body_l and "incident" in body_l
+        return "beneficiary" in body_l and "incident" in body_l
     if classification.get("pressure_type") == "customer_trust":
         return "customer security question" in body_l and "evidence" in body_l
     return "personal data" in body_l and "access" in body_l and "incident" in body_l
@@ -2389,7 +2768,7 @@ def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) 
 
 
 def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bool:
-    if compact(row.get("selected_contact_name")) and not is_generic_or_company_inbox(row):
+    if compact(row.get("selected_contact_name")):
         return True
     company = compact(row.get("company_name")).lower()
     allowed_prefixes = ["hi team,", "hello team,"]

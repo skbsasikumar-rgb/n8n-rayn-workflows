@@ -57,10 +57,12 @@ def field(row: dict[str, Any], name: str) -> str:
     return str(row.get(name) or "").strip()
 
 
-def render_markdown(rows: list[dict[str, Any]]) -> str:
+def render_markdown(rows: list[dict[str, Any]], debug: bool = False) -> str:
     lines = ["# Cold Email Planner QA Report", ""]
     for row in rows:
         title = field(row, "company_name") or f"Row {field(row, 'row_id')}"
+        decision = field(row, "automation_decision")
+        decision_reason = field(row, "automation_decision_reason")
         lines.extend(
             [
                 f"## {field(row, 'row_id')} - {title}",
@@ -69,10 +71,23 @@ def render_markdown(rows: list[dict[str, Any]]) -> str:
                 f"- hia_service_type_guess: `{field(row, 'hia_service_type_guess') or 'unknown'}`",
                 f"- hia_timeline_batch_guess: `{field(row, 'hia_timeline_batch_guess') or 'unknown'}`",
                 f"- funding_status: `{field(row, 'funding_status') or 'unknown'}`",
-                f"- email_quality_flags: {flags_text(row.get('email_quality_flags'))}",
-                "",
             ]
         )
+        if decision == "suppressed":
+            lines.extend(
+                [
+                    f"- Suppressed: `{decision_reason or 'suppressed'}`",
+                    "- OpenRouter: skipped",
+                    "- Emails: not generated",
+                ]
+            )
+            if debug:
+                lines.append(f"- email_quality_flags: {flags_text(row.get('email_quality_flags'))}")
+            lines.append("")
+            if not debug:
+                continue
+        else:
+            lines.extend([f"- email_quality_flags: {flags_text(row.get('email_quality_flags'))}", ""])
         for index, key in enumerate(EMAIL_KEYS, start=1):
             subject = field(row, f"{key}_subject") or "(no subject)"
             body = field(row, f"{key}_body") or "(empty)"
@@ -84,9 +99,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", help="Audit JSON file, or '-' for stdin")
     parser.add_argument("-o", "--output", help="Markdown output path. Defaults to stdout.")
+    parser.add_argument("--debug", action="store_true", help="Include raw flags and empty email sections for suppressed rows.")
     args = parser.parse_args()
 
-    markdown = render_markdown(audit_rows(load_payload(args.input)))
+    markdown = render_markdown(audit_rows(load_payload(args.input)), debug=args.debug)
     if args.output:
         Path(args.output).write_text(markdown)
     else:
