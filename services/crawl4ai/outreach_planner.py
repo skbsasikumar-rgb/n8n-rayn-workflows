@@ -232,6 +232,10 @@ SPECIALIST_SERVICE_TERMS = (
     "orthopedic",
     "digestive",
     "gastroenterology",
+    "rheumatology",
+    "rheumatologist",
+    "arthritis",
+    "lupus",
     "cardiology",
     "heart",
     "cardiac",
@@ -1304,6 +1308,8 @@ def concrete_service_cues(row: dict[str, Any], text: str) -> list[str]:
             add("radiation/oncology specialist-care signals")
         elif "digestive" in haystack or "gastroenterology" in haystack:
             add("digestive/gastroenterology specialist-care signals")
+        elif subtype == "rheumatology":
+            add("rheumatology specialist-care signals")
         elif "orthopaedic" in haystack or "orthopedic" in haystack:
             add("orthopaedic specialist-care signals")
         elif "endocrinology" in haystack:
@@ -1421,6 +1427,8 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
         "digestive" in signal_l or "gastroenterology" in signal_l or "digestive" in text or "gastroenterology" in text
     ):
         return "your website lists gastroenterology consultations and specialist-led care."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "rheumatology":
+        return "your website lists rheumatology consultations and specialist-led care."
     if service_type == "retail_pharmacy":
         return "your website lists pharmacy and compounding services."
     if service_type == "dental":
@@ -1504,6 +1512,7 @@ SPECIALIST_SERVICE_SUMMARIES = (
     (("pain management", "spine pain", "pain clinic", "anaesthesia", "injections"), "pain management care"),
     (("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic"), "eye care"),
     (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
+    (("rheumatology", "rheumatologist", "arthritis", "lupus"), "rheumatology care"),
     (("oncology", "radiation"), "oncology / radiation care"),
     (("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser"), "dermatology care"),
     (("endocrinology", "diabetes", "thyroid"), "endocrinology care"),
@@ -1530,6 +1539,8 @@ def specialist_subtype(text: str) -> str:
         return "surgery"
     if any(term in text for term in ("digestive", "gastroenterology")):
         return "gastroenterology"
+    if any(term in text for term in ("rheumatology", "rheumatologist", "arthritis", "lupus")):
+        return "rheumatology"
     if any(term in text for term in ("oncology", "radiation")):
         return "oncology"
     return ""
@@ -1738,6 +1749,7 @@ def prospect_facing_profile_phrase(
             "surgery": "a specialist-led surgical clinic",
             "dermatology": "a specialist-led dermatology clinic",
             "eye": "a specialist-led eye clinic",
+            "rheumatology": "a specialist-led rheumatology clinic",
         }
         if subtype in subtype_phrases:
             return subtype_phrases[subtype]
@@ -1787,6 +1799,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
             return "oncology/radiation treatment records, patient reports, vendor systems"
         if "digestive" in text or "gastroenterology" in text:
             return "consultation notes, patient reports, procedure-related records, vendor systems"
+        if subtype == "rheumatology":
+            return "consultation notes, treatment records, referrals, appointment details and vendor systems"
         return "consultation notes, patient reports, treatment records, vendor systems"
     if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
         return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
@@ -1918,6 +1932,9 @@ def hia_email_2_diagnostic(
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
     elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
         question = f"can {company} show where consultation notes, patient reports, procedure-related records, vendor systems and backups sit today?"
+        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
+    elif service_type == "specialist_OMS" and specialist_subtype(text) == "rheumatology":
+        question = f"can {company} show where consultation notes, treatment records, referrals, appointment details, vendor systems and backups sit today?"
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
     elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
         question = f"can {company} show where oncology/radiation treatment records, patient reports, vendor systems and backups sit today?"

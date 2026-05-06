@@ -1206,6 +1206,12 @@ class OutreachPlannerTests(unittest.TestCase):
                 "eye examination records, imaging, prescriptions, referrals",
             ),
             (
+                "Rheumatology Centre",
+                "Rheumatologist specialist clinic offering arthritis and lupus treatment, referrals and consultations.",
+                "a specialist-led rheumatology clinic",
+                "consultation notes, treatment records, referrals, appointment details",
+            ),
+            (
                 "Home Care Provider",
                 "Home care caregiver provider offering home nursing and patient care at home for clients, families and staff.",
                 "a home-care / caregiver provider",
@@ -1219,6 +1225,23 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(profile_phrase, plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic, plan.emails["email_2"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_rheumatology_clinic_stays_in_hia_not_customer_trust(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Asia Arthritis & Rheumatology Centre",
+                "website_content": "# Asia Arthritis & Rheumatology Centre - Rheumatologist | Lupus Treatment Singapore\nhttps://aarc.sg/",
+            },
+            programmes=[verified_program()],
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
+        self.assertIn("a specialist-led rheumatology clinic", plan.emails["email_1"]["body"])
+        self.assertIn("consultation notes, treatment records, referrals, appointment details", plan.emails["email_2"]["body"])
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "specialist clinic readiness")
+        self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_amk_family_clinic_prefers_gp_over_weak_diagnostic_evidence(self):
         plan = o.plan_outreach(
