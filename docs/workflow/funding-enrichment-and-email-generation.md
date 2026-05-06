@@ -206,9 +206,11 @@ Generate exactly four emails:
 | Email | Purpose | Rules |
 | --- | --- | --- |
 | 1 | Researched note from copy brief. | Start with `email_personalisation_signal`, then `email_problem_statement`, then `email_mechanism_statement`, then `email_cta`. |
-| 2 | Funding or value fallback. | Funding-only when `email_3_mode = funding`; otherwise use the non-funding checklist/evidence fallback. Funding copy must use `funding_claim_line` and include "subject to programme confirmation" or equivalent. |
-| 3 | Diagnostic tied to the same problem. | Use `email_problem_statement` and `data_systems_likely`. Not a generic certification explainer. Tiny CTA. |
+| 2 | Funding or value fallback. | Funding-only when `email_2_mode = funding`; otherwise use the non-funding checklist/evidence fallback. Funding copy must use `funding_claim_line` and include "subject to programme confirmation" or equivalent. `funding_followup_mode` is the canonical mode field. |
+| 3 | Diagnostic tied to the same problem. | Use `email_problem_statement` and `data_systems_likely`. Not a generic certification explainer. No greeting or signature; it is a reply-style diagnostic follow-up. Tiny CTA. |
 | 4 | Respectful close loop. | 20-55 words. Reference `email_asset_offer`. One easy reply. |
+
+Final email bodies do not include a signature, signoff, sender name, or RAYN Secure signature block.
 
 Forbidden:
 
@@ -402,7 +404,7 @@ Fail conditions:
 - score below 7.
 - any forbidden phrase appears.
 - word limits exceeded.
-- Email 2 does not use `funding_claim_line` when `email_3_mode = funding`.
+- Email 2 does not use `funding_claim_line` when `email_2_mode = funding`.
 - Email 2 uses SME/NPO conditional language.
 - exact percentage appears without verified source permission.
 - HIA deadline appears when `hia_deadline_claim_safe = false`.
@@ -425,7 +427,7 @@ Decision values:
 - `auto_skipped`: unresolved identity, weak evidence after retry, unsafe copy, missing concrete observation or unsupported track.
 - `draft_only_review`: QA/testing mode only, such as `copy_qa_mode`.
 
-The patch exposes `automation_decision`, `automation_decision_reason`, `automation_blockers_json`, `automation_advisory_flags_json`, `contact_send_mode`, `contact_identity_confidence`, `email_3_mode`, enrichment/copy quality scores, severe email flags and `final_send_gate_passed`.
+The patch exposes `automation_decision`, `automation_decision_reason`, `automation_blockers_json`, `automation_advisory_flags_json`, `contact_send_mode`, `contact_identity_confidence`, `email_2_mode`, `funding_followup_mode`, legacy `email_3_mode`, enrichment/copy quality scores, severe email flags and `final_send_gate_passed`.
 
 Contact policy:
 
@@ -439,8 +441,9 @@ Contact policy:
 
 Funding policy:
 
-- Email 2 uses the `email_3_mode = funding` path only when the funding match is verified, the claim is safe, entity confidence is medium/high, at least one matched programme exists, and at least one matched programme is `verified_current`.
-- Otherwise Email 2 uses the `email_3_mode = value_fallback` path, does not mention funding, and the row does not require review solely because of funding uncertainty.
+- Email 2 uses the `funding_followup_mode = funding` path only when the funding match is verified, the claim is safe, entity confidence is medium/high, at least one matched programme exists, and at least one matched programme is `verified_current`.
+- Otherwise Email 2 uses the `funding_followup_mode = value_fallback` path, does not mention funding, and the row does not require review solely because of funding uncertainty.
+- `email_2_mode` mirrors `funding_followup_mode`; `email_3_mode` is retained as a legacy alias during migration.
 - Exact percentage claims are allowed only when the matched programme metadata explicitly permits exact claims.
 
 Blocking vs advisory flags:

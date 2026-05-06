@@ -107,6 +107,8 @@ class OutreachColumnContractTests(unittest.TestCase):
             "automation_advisory_flags_json",
             "contact_send_mode",
             "contact_identity_confidence",
+            "email_2_mode",
+            "funding_followup_mode",
             "email_3_mode",
             "enrichment_quality_score",
             "enrichment_quality_flags",

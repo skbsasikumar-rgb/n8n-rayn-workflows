@@ -20,6 +20,9 @@ def test_export_outreach_audit_markdown_full_sequence():
                 "hia_service_type_guess": "diagnostic",
                 "hia_timeline_batch_guess": "Batch 1 - Sep 2027",
                 "funding_status": "verified_match",
+                "email_2_mode": "funding",
+                "funding_followup_mode": "funding",
+                "email_3_mode": "funding",
                 "email_quality_flags": ["funding_needs_review"],
                 "email_1_subject": "HIA readiness",
                 "email_1_body": "Email one body.",
@@ -35,6 +38,9 @@ def test_export_outreach_audit_markdown_full_sequence():
 
     assert "## 273 - Amaris B. Clinic" in markdown
     assert "- pressure_type: `hia_regulatory`" in markdown
+    assert "- email_2_mode: `funding`" in markdown
+    assert "- funding_followup_mode: `funding`" in markdown
+    assert "- email_3_mode: `funding`" in markdown
     assert "funding_needs_review" in markdown
     assert "### Email 1: HIA readiness" in markdown
     assert "### Email 4: close the loop?" in markdown

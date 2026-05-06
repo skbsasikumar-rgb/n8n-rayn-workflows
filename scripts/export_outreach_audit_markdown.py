@@ -71,6 +71,9 @@ def render_markdown(rows: list[dict[str, Any]], debug: bool = False) -> str:
                 f"- hia_service_type_guess: `{field(row, 'hia_service_type_guess') or 'unknown'}`",
                 f"- hia_timeline_batch_guess: `{field(row, 'hia_timeline_batch_guess') or 'unknown'}`",
                 f"- funding_status: `{field(row, 'funding_status') or 'unknown'}`",
+                f"- email_2_mode: `{field(row, 'email_2_mode') or field(row, 'email_3_mode') or 'unknown'}`",
+                f"- funding_followup_mode: `{field(row, 'funding_followup_mode') or field(row, 'email_2_mode') or field(row, 'email_3_mode') or 'unknown'}`",
+                f"- email_3_mode: `{field(row, 'email_3_mode') or 'unknown'}`",
             ]
         )
         if decision == "suppressed":

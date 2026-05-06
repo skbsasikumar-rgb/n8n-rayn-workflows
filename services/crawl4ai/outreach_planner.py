@@ -359,6 +359,8 @@ class OutreachPlan:
     automation_advisory_flags: list[str] = field(default_factory=list)
     contact_send_mode: str = "generic_team"
     contact_identity_confidence: str = "none"
+    email_2_mode: str = "value_fallback"
+    funding_followup_mode: str = "value_fallback"
     email_3_mode: str = "value_fallback"
     enrichment_quality_score: int = 0
     enrichment_quality_flags: list[str] = field(default_factory=list)
@@ -375,6 +377,16 @@ class OutreachPlan:
 
 def compact(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+TRAILING_SIGNATURE_RE = re.compile(
+    r"(?:\n\s*){2,}(?:best|regards|thanks|thank you),?\s*(?:\n\s*(?:sk|sasikumar))?\s*(?:\n\s*rayn secure)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def strip_trailing_signature(body: str) -> str:
+    return TRAILING_SIGNATURE_RE.sub("", str(body or "")).rstrip()
 
 
 def sendable_email(row: dict[str, Any]) -> str:
@@ -500,8 +512,7 @@ def value_fallback_email_2(row: dict[str, Any], emails: dict[str, Any], asset: s
         f"One useful way to check whether the {asset_name} is worth prioritising is to map the evidence already in place: "
         "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
         "If the gaps are small, Cyber Essentials preparation is usually more straightforward.\n\n"
-        f"Worth sending the {asset_name}?\n\n"
-        "Best,\nSK\nRAYN Secure"
+        f"Worth sending the {asset_name}?"
     )
     emails = {**emails}
     emails["email_2"] = {
@@ -519,6 +530,15 @@ def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: s
 
 def email_3_mode_for(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> str:
     return "funding" if funding_claim_send_safe(funding, copy_brief, classification) else "value_fallback"
+
+
+def funding_followup_mode_for(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> str:
+    return str(
+        copy_brief.get("funding_followup_mode")
+        or copy_brief.get("email_2_mode")
+        or copy_brief.get("email_3_mode")
+        or email_3_mode_for(funding, copy_brief, classification)
+    )
 
 
 def enrichment_quality(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[int, list[str]]:
@@ -588,7 +608,7 @@ def blocking_copy_brief_flags(flags: list[str], classification: dict[str, Any], 
 def advisory_copy_brief_flags(flags: list[str], classification: dict[str, Any], copy_brief: dict[str, Any]) -> list[str]:
     blocking = set(blocking_copy_brief_flags(flags, classification, copy_brief))
     advisory = [flag for flag in flags if flag not in blocking]
-    if copy_brief.get("email_3_mode") == "value_fallback" and compact(copy_brief.get("funding_next_check_needed")):
+    if (copy_brief.get("funding_followup_mode") or copy_brief.get("email_2_mode") or copy_brief.get("email_3_mode")) == "value_fallback" and compact(copy_brief.get("funding_next_check_needed")):
         advisory.append("funding_next_check_needed")
     return list(dict.fromkeys(advisory))
 
@@ -2359,6 +2379,8 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "funding_specificity_level": funding_level if pressure != "not_ready" else "unknown",
         "funding_claim_safe": funding_safe,
         "funding_next_check_needed": "" if funding_safe else "Verify programme status, entity type, scope and timing before using funding as a send-ready claim.",
+        "email_2_mode": "funding" if funding_safe else "value_fallback",
+        "funding_followup_mode": "funding" if funding_safe else "value_fallback",
         "email_3_mode": "funding" if funding_safe else "value_fallback",
         "email_personalisation_signal": signal,
         "email_personalisation_quote": compact(row.get("company_homepage_name") or row.get("website_content"))[:220],
@@ -2422,25 +2444,25 @@ def generate_email_sequence(
         segment = healthcare_segment(classification)
         email1_subject = "HIA readiness"
         email2_subject = "Re: HIA readiness"
-        email1_body = f"{greeting} noticed {company} appears to be a {segment}.\n\n{lead}, healthcare providers may need to show stronger readiness around health information access, cybersecurity, data security and incident response.\n\nCyber Essentials is a practical first baseline before deeper HIA work.\n\nWorth sending a simple HIA readiness checklist?\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{greeting} noticed {company} appears to be a {segment}.\n\n{lead}, healthcare providers may need to show stronger readiness around health information access, cybersecurity, data security and incident response.\n\nCyber Essentials is a practical first baseline before deeper HIA work.\n\nWorth sending a simple HIA readiness checklist?"
         email2_body = f"One useful check: can {company} clearly show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?\n\nThose are the areas that usually become messy before HIA deadlines.\n\nWant the quick readiness map?"
     elif classification["pressure_type"] == "customer_trust":
         signal = business_model_trust_signal(lower_blob(row))
         email1_subject = "security evidence"
         email2_subject = "Re: security evidence"
-        email1_body = f"{greeting} noticed {company} works with {signal}.\n\nThe practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review.\n\nCyber Essentials gives a recognised baseline for that evidence.\n\nWorth sending the evidence checklist?\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{greeting} noticed {company} works with {signal}.\n\nThe practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review.\n\nCyber Essentials gives a recognised baseline for that evidence.\n\nWorth sending the evidence checklist?"
         email2_body = f"A practical diagnostic: can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?\n\nIf not, that is usually where reusable evidence work starts.\n\nWant the simple evidence checklist?"
     elif classification.get("campaign_track") == "dpo_evidence":
         data = classification["data_type_signal"].replace("_", " ")
         email1_subject = "data protection evidence"
         email2_subject = "Re: data protection evidence"
-        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor DPOs and ops teams, the hard part is often not the policy. It is proving the safeguards: who has access, where data sits, how vendors are managed, and what happens during an incident.\n\nCyber Essentials helps structure the security baseline.\n\nWorth sending the evidence checklist?\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor DPOs and ops teams, the hard part is often not the policy. It is proving the safeguards: who has access, where data sits, how vendors are managed, and what happens during an incident.\n\nCyber Essentials helps structure the security baseline.\n\nWorth sending the evidence checklist?"
         email2_body = f"A quick self-check: can each system holding personal data be mapped to an owner, access list, vendor, backup process and incident contact?\n\nIf not, that is usually where the evidence work starts.\n\nWant the simple data-safeguards template?"
     else:
         data = classification["data_type_signal"].replace("_", " ")
         email1_subject = "PDPA security safeguards"
         email2_subject = "Re: PDPA security safeguards"
-        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor organisations handling personal data, the practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents.\n\nCyber Essentials helps turn that into a practical security baseline and evidence set.\n\nWorth sending a short safeguards checklist?\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor organisations handling personal data, the practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents.\n\nCyber Essentials helps turn that into a practical security baseline and evidence set.\n\nWorth sending a short safeguards checklist?"
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
@@ -2449,10 +2471,10 @@ def generate_email_sequence(
         noticed = trigger
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
-        email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
-            email1_body = f"{email1_greeting}\n\nNoticed {short_noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
+            email1_body = f"{email1_greeting}\n\nNoticed {short_noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
         if classification["pressure_type"] == "hia_regulatory":
             email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
@@ -2467,12 +2489,12 @@ def generate_email_sequence(
             funding_line = funding.funding_claim_line
             email2_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+            email2_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?"
         else:
             email2_subject = "readiness evidence"
             email2_body = value_fallback_email_2(row, {"email_2": {"chosen_subject": email2_subject}}, asset)["email_2"]["body"]
         email3_subject = diagnostic_subject if diagnostic_subject.lower().startswith("re: ") else f"Re: {email1_subject}"
-        email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
+        email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?"
     else:
         email3_subject = "not ready"
 
@@ -2528,6 +2550,7 @@ def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
         subject_options = item.get("subject_options")
         if not isinstance(subject_options, list):
             subject_options = [subject] if subject else []
+        body = strip_trailing_signature(body)
         emails[key] = {
             "subject_options": [compact(option) for option in subject_options if compact(option)],
             "chosen_subject": subject,
@@ -2535,6 +2558,17 @@ def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
             "word_count": word_count(body),
         }
     return emails
+
+
+def sanitize_email_sequence(emails: dict[str, Any]) -> dict[str, Any]:
+    sanitized = {**emails}
+    for key in ("email_1", "email_2", "email_3", "email_4"):
+        item = dict(sanitized.get(key) or {})
+        body = strip_trailing_signature(item.get("body", ""))
+        item["body"] = body
+        item["word_count"] = word_count(body)
+        sanitized[key] = item
+    return sanitized
 
 
 def enforce_funding_claim_email(
@@ -2558,7 +2592,7 @@ def enforce_funding_claim_email(
     greeting = email_comma_greeting(row)
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+    body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?"
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": list(email2.get("subject_options") or [subject]),
@@ -2922,7 +2956,8 @@ def evaluate_email_strategy(
         flags.append("hearing_care_missing_trigger")
     if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
         flags.append("lab_classification_ambiguous")
-    if copy_brief.get("email_3_mode") == "funding" and not funding_only_email(email2, funding.funding_claim_line):
+    funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
+    if funding_followup_mode == "funding" and not funding_only_email(email2, funding.funding_claim_line):
         flags.append("email_2_not_funding_only")
     elif funding.funding_claim_line and funding.funding_claim_line in email2 and not funding_only_email(email2, funding.funding_claim_line):
         flags.append("email_2_not_funding_only")
@@ -2975,10 +3010,10 @@ def quality_gate(
         if emails[key]["word_count"] > limit:
             flags.append(f"{key}_too_long")
 
-    email_3_mode = str(copy_brief.get("email_3_mode") or email_3_mode_for(funding, copy_brief, classification))
-    if email_3_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_2"]["body"]:
+    funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
+    if funding_followup_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_2"]["body"]:
         flags.append("email_2_missing_funding_claim_line")
-    if has_copy_brief and email_3_mode == "funding" and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
+    if has_copy_brief and funding_followup_mode == "funding" and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
         flags.append("funding_needs_review")
     if re.search(r"\b\d{1,3}%\b", emails["email_2"]["body"]) and not any(
         item.get("exact_claim_allowed_in_email") for item in funding.matched
@@ -2998,7 +3033,7 @@ def quality_gate(
         flags.append("missing_outreach_trigger")
     if classification.get("outreach_trigger_confidence") == "low":
         flags.append("low_trigger_confidence")
-    if email_3_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_status != "verified_match":
+    if funding_followup_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_status != "verified_match":
         flags.append("funding_not_verified")
     if classification.get("pressure_type") == "not_ready" and any(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")):
         flags.append("not_ready_has_email_body")
@@ -3139,7 +3174,7 @@ def automation_decision_for(
         return "auto_skipped", "missing_email_body", ["missing_email_body"], False
     if score < 7:
         return "auto_skipped", "email_quality_gate_failed", flags or ["email_quality_gate_failed"], False
-    if copy_brief.get("email_3_mode") == "value_fallback":
+    if (copy_brief.get("funding_followup_mode") or copy_brief.get("email_2_mode") or copy_brief.get("email_3_mode")) == "value_fallback":
         reason = "funding_claim_not_safe_used_value_fallback"
     else:
         reason = "auto_send_all_gates_passed"
@@ -3177,7 +3212,10 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     classification = classify_row(row)
     funding = match_programmes({**row, **classification}, programmes=programmes)
     copy_brief = build_copy_brief(row, classification, funding)
-    copy_brief["email_3_mode"] = email_3_mode_for(funding, copy_brief, classification)
+    mode = email_3_mode_for(funding, copy_brief, classification)
+    copy_brief["email_2_mode"] = mode
+    copy_brief["funding_followup_mode"] = mode
+    copy_brief["email_3_mode"] = mode
     emails = generate_email_sequence(row, classification, funding, copy_brief)
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
     enrichment_score, enrichment_flags = enrichment_quality(row, classification, copy_brief)
@@ -3237,7 +3275,9 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         automation_advisory_flags=advisory_flags,
         contact_send_mode=contact_send_mode(row),
         contact_identity_confidence=contact_identity_confidence(row),
-        email_3_mode=copy_brief.get("email_3_mode", "value_fallback"),
+        email_2_mode=copy_brief.get("email_2_mode", copy_brief.get("email_3_mode", "value_fallback")),
+        funding_followup_mode=copy_brief.get("funding_followup_mode", copy_brief.get("email_2_mode", copy_brief.get("email_3_mode", "value_fallback"))),
+        email_3_mode=copy_brief.get("email_3_mode", copy_brief.get("email_2_mode", "value_fallback")),
         enrichment_quality_score=enrichment_score,
         enrichment_quality_flags=enrichment_flags,
         copy_brief_quality_score=copy_score,
@@ -3350,6 +3390,8 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "automation_advisory_flags_json": json_dumps(plan.automation_advisory_flags),
         "contact_send_mode": plan.contact_send_mode,
         "contact_identity_confidence": plan.contact_identity_confidence,
+        "email_2_mode": plan.email_2_mode,
+        "funding_followup_mode": plan.funding_followup_mode,
         "email_3_mode": plan.email_3_mode,
         "enrichment_quality_score": plan.enrichment_quality_score,
         "enrichment_quality_flags": json_dumps(plan.enrichment_quality_flags),
@@ -3381,6 +3423,8 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "automation_advisory_flags_json": plan.automation_advisory_flags,
             "contact_send_mode": plan.contact_send_mode,
             "contact_identity_confidence": plan.contact_identity_confidence,
+            "email_2_mode": plan.email_2_mode,
+            "funding_followup_mode": plan.funding_followup_mode,
             "email_3_mode": plan.email_3_mode,
             "enrichment_quality_score": plan.enrichment_quality_score,
             "enrichment_quality_flags": plan.enrichment_quality_flags,
@@ -3428,6 +3472,8 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "automation_advisory_flags_json": patch.get("automation_advisory_flags_json", "[]"),
         "contact_send_mode": patch.get("contact_send_mode", ""),
         "contact_identity_confidence": patch.get("contact_identity_confidence", ""),
+        "email_2_mode": patch.get("email_2_mode", patch.get("email_3_mode", "")),
+        "funding_followup_mode": patch.get("funding_followup_mode", patch.get("email_2_mode", patch.get("email_3_mode", ""))),
         "email_3_mode": patch.get("email_3_mode", ""),
         "enrichment_quality_score": patch.get("enrichment_quality_score", 0),
         "enrichment_quality_flags": patch.get("enrichment_quality_flags", "[]"),
@@ -3508,7 +3554,11 @@ def patch_with_email_sequence(
             reason=str(funding.get("reason") or ""),
         )
     copy_brief = copy_brief or build_copy_brief(row, classification, funding)
-    copy_brief["email_3_mode"] = email_3_mode_for(funding, copy_brief, classification)
+    mode = email_3_mode_for(funding, copy_brief, classification)
+    copy_brief["email_2_mode"] = mode
+    copy_brief["funding_followup_mode"] = mode
+    copy_brief["email_3_mode"] = mode
+    emails = sanitize_email_sequence(emails)
     if classification.get("pressure_type") == "not_ready" or not copy_brief_ready(classification, copy_brief):
         emails = generate_email_sequence(row, classification, funding, copy_brief)
     if classification.get("pressure_type") != "not_ready":
@@ -3610,7 +3660,9 @@ def patch_with_email_sequence(
         automation_advisory_flags=advisory_flags,
         contact_send_mode=contact_send_mode(row),
         contact_identity_confidence=contact_identity_confidence(row),
-        email_3_mode=copy_brief.get("email_3_mode", "value_fallback"),
+        email_2_mode=copy_brief.get("email_2_mode", copy_brief.get("email_3_mode", "value_fallback")),
+        funding_followup_mode=copy_brief.get("funding_followup_mode", copy_brief.get("email_2_mode", copy_brief.get("email_3_mode", "value_fallback"))),
+        email_3_mode=copy_brief.get("email_3_mode", copy_brief.get("email_2_mode", "value_fallback")),
         enrichment_quality_score=enrichment_score,
         enrichment_quality_flags=enrichment_flags,
         copy_brief_quality_score=copy_score,

@@ -30,6 +30,13 @@ class OutreachPlannerTests(unittest.TestCase):
             for phrase in forbidden:
                 self.assertNotIn(phrase, body)
 
+    def assert_no_email_signatures(self, emails):
+        for index in range(1, 5):
+            body = emails[f"email_{index}"]["body"]
+            self.assertNotRegex(body, r"(?im)^\s*Best,?\s*$")
+            self.assertNotRegex(body, r"(?im)^\s*SK\s*$")
+            self.assertNotRegex(body, r"(?im)^\s*RAYN Secure\s*$")
+
     def test_hia_high_confidence_uses_regulatory_pressure(self):
         plan = o.plan_outreach(
             {
@@ -227,9 +234,13 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         claim = plan.funding.funding_claim_line
+        self.assertEqual(plan.email_2_mode, "funding")
+        self.assertEqual(plan.funding_followup_mode, "funding")
+        self.assertEqual(plan.email_3_mode, "funding")
         self.assertIn(claim, plan.emails["email_2"]["body"])
         self.assertNotIn("HIA timelines", plan.emails["email_2"]["body"])
         self.assertNotIn("PDPA", plan.emails["email_2"]["body"])
+        self.assert_no_email_signatures(plan.emails)
 
     def test_normalize_llm_email_sequence_and_patch_quality(self):
         row = {
@@ -249,6 +260,8 @@ class OutreachPlannerTests(unittest.TestCase):
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding.to_dict(), emails)
         self.assertEqual(patch["email_1_body"], plan.emails["email_1"]["body"])
         self.assertFalse(patch["email_send_ready"])
+        self.assertEqual(patch["email_2_mode"], "value_fallback")
+        self.assertEqual(patch["funding_followup_mode"], "value_fallback")
         self.assertEqual(patch["email_3_mode"], "value_fallback")
         self.assertNotIn("funding_not_verified", patch["email_quality_flags"])
         partial_funding_patch = o.patch_with_email_sequence(
@@ -261,6 +274,8 @@ class OutreachPlannerTests(unittest.TestCase):
             emails,
         )
         self.assertFalse(partial_funding_patch["email_send_ready"])
+        self.assertEqual(partial_funding_patch["email_2_mode"], "value_fallback")
+        self.assertEqual(partial_funding_patch["funding_followup_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
         self.assertNotIn("support route", partial_funding_patch["email_2_body"].lower())
         self.assertIn("Worth sending the safeguards checklist?", partial_funding_patch["email_2_body"])
@@ -314,6 +329,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 "automation_advisory_flags_json",
                 "contact_send_mode",
                 "contact_identity_confidence",
+                "email_2_mode",
+                "funding_followup_mode",
                 "email_3_mode",
                 "enrichment_quality_score",
                 "enrichment_quality_flags",
@@ -353,6 +370,8 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertFalse(result["patch"]["email_send_ready"])
         self.assertEqual(result["patch"]["email_2_body"].count("subject to programme confirmation"), 1)
+        self.assertNotIn("Best,", result["patch"]["email_2_body"])
+        self.assertNotIn("RAYN Secure", result["patch"]["email_2_body"])
 
     def test_automation_suppresses_blocked_or_missing_contact_rows(self):
         cases = [
@@ -476,6 +495,8 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(result["patch"]["email_3_mode"], "value_fallback")
+        self.assertEqual(result["patch"]["email_2_mode"], "value_fallback")
+        self.assertEqual(result["patch"]["funding_followup_mode"], "value_fallback")
         self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
         self.assertEqual(result["patch"]["automation_decision_reason"], "funding_claim_not_safe_used_value_fallback")
         self.assertNotIn("funding", result["patch"]["email_2_body"].lower())
@@ -504,6 +525,8 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertEqual(matched.copy_brief["email_3_mode"], "funding")
+        self.assertEqual(matched.copy_brief["email_2_mode"], "funding")
+        self.assertEqual(matched.copy_brief["funding_followup_mode"], "funding")
         self.assertIn(matched.funding.funding_claim_line, matched.emails["email_2"]["body"])
 
     def test_send_readiness_distinguishes_gate_from_draft_mode(self):
@@ -630,6 +653,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("HIA timelines", patch["email_2_body"])
         self.assertNotIn("PDPA", patch["email_2_body"])
         self.assertEqual(patch["email_2_body"].count("subject to programme confirmation"), 1)
+        self.assertNotIn("Best,", patch["email_2_body"])
+        self.assertNotIn("RAYN Secure", patch["email_2_body"])
         draft_patch = o.patch_with_email_sequence(
             {**row, "draft_only": True},
             plan.classification,
@@ -1354,6 +1379,27 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("we can get you 70%", email2.lower())
         self.assertNotIn("you can get 70%", email2.lower())
         self.assertTrue(o.funding_only_email(email2, plan.funding.funding_claim_line))
+        self.assert_no_email_signatures(plan.emails)
+
+    def test_llm_signatures_are_stripped_before_patch(self):
+        row = {
+            "company_name": "Example Charity",
+            "website_content": "Singapore charity supporting beneficiaries and volunteers.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        candidate = {
+            key: {
+                "chosen_subject": value["chosen_subject"],
+                "body": f"{value['body']}\n\nBest,\nSK\nRAYN Secure" if value["body"] else "",
+            }
+            for key, value in plan.emails.items()
+            if key.startswith("email_")
+        }
+        emails = o.normalize_llm_email_sequence(candidate)
+        patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, emails, plan.copy_brief)
+        for index in range(1, 5):
+            self.assertNotIn("Best,", patch[f"email_{index}_body"])
+            self.assertNotIn("RAYN Secure", patch[f"email_{index}_body"])
 
     def test_global_final_emails_do_not_contain_batch_or_signal_language(self):
         rows = [

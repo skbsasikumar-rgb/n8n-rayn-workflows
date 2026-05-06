@@ -134,7 +134,7 @@ Core field groups:
 - HIA enrichment: `hia_relevant`, `hia_relevance_score`, `hia_confidence`, `hia_scope_reason`, `hia_service_type_guess`, `hia_timeline_batch_guess`, `hia_deadline_claim_safe`, `hia_disclaimer_needed`, `hia_evidence_json`.
 - PDPA / certification enrichment: `pdpa_relevant`, `pdpa_reason`, `personal_data_intensity`, `sensitive_data_likelihood`, `pdpa_safeguard_angle`, `recommended_first_cert`, `recommended_cert_path`, `certification_reason`, `certification_fit_score`, `certification_evidence_json`.
 - funding enrichment: `funding_status`, `funding_relevant`, `primary_funding_program`, `funding_programs_matched_json`, `funding_programs_possible_json`, `funding_programs_not_applicable_json`, `funding_eligibility_basis`, `funding_claim_line`, `funding_cta_asset`, `funding_confidence`, `funding_last_checked_at`, `funding_source_urls_json`, `funding_human_review_required`.
-- draft fields: `outreach_variant`, `email_1_subject`, `email_1_body`, `email_2_subject`, `email_2_body`, `email_3_subject`, `email_3_body`, `email_4_subject`, `email_4_body`, `email_sequence_json`, `email_quality_score`, `email_quality_flags`, `email_send_ready`, `human_review_status`.
+- draft fields: `outreach_variant`, `email_1_subject`, `email_1_body`, `email_2_subject`, `email_2_body`, `email_3_subject`, `email_3_body`, `email_4_subject`, `email_4_body`, `email_sequence_json`, `email_quality_score`, `email_quality_flags`, `email_send_ready`, `human_review_status`, `email_2_mode`, `funding_followup_mode`, legacy `email_3_mode`.
 
 Funding claims must come from `funding_claim_line`. `funding_status` must not become `verified_match` unless the programme catalogue source status is `verified_current`.
 
