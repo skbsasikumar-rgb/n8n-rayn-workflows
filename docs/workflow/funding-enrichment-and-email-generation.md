@@ -392,6 +392,45 @@ Fail conditions:
 
 ## Examples
 
+## No-Human-Review Automation Model
+
+The planner now converts uncertainty into deterministic outcomes instead of relying on humans to rescue rows.
+
+Decision values:
+
+- `auto_send_eligible`: contact, enrichment, copy and funding/value-fallback gates passed. In the current workflow this is still draft-only; a future sender should read only this value.
+- `suppressed`: hard stop for `do_not_contact`, unsubscribed/bounced/complained, or missing validated email in production planning.
+- `retry_enrichment_once`: enrichment is weak but has not been retried.
+- `auto_skipped`: unresolved identity, weak evidence after retry, unsafe copy, missing concrete observation or unsupported track.
+- `draft_only_review`: QA/testing mode only, such as `copy_qa_mode`.
+
+The patch exposes `automation_decision`, `automation_decision_reason`, `automation_blockers_json`, `contact_send_mode`, `email_3_mode`, enrichment/copy quality scores, severe email flags and `final_send_gate_passed`.
+
+Contact policy:
+
+- `named_person`: validated non-generic email plus usable contact name. Greeting may use first name.
+- `generic_team`: generic/company inbox. Greeting stays team-level and no name is invented.
+- `suppressed`: hard contact/suppression stop.
+- `auto_skipped_unresolved_identity`: personal-looking email without a resolved person identity.
+
+Funding policy:
+
+- Email 3 uses `email_3_mode = funding` only when the funding match is verified, the claim is safe, entity confidence is medium/high, and the matched source is current where available.
+- Otherwise Email 3 uses `email_3_mode = value_fallback`, does not mention funding, and the row does not require review solely because of funding uncertainty.
+
+HIA uncertainty policy:
+
+- Strong HIA evidence stays `hia_regulatory`.
+- Weak healthcare-adjacent evidence routes to `pdpa_safeguards` when personal-data evidence exists.
+- Weak HIA and weak PDPA/trust evidence is skipped or retried once, not reviewed.
+
+LLM drift policy:
+
+- The deterministic quality gate is authoritative.
+- Severe drift falls back once to deterministic copy.
+- If deterministic fallback passes, the row can still be `auto_send_eligible`.
+- If severe flags remain, the row is `auto_skipped`.
+
 Sree Narayana Mission:
 
 - expected entity: `npo`, `charity` or `social_service`, depending on evidence.

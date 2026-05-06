@@ -58,6 +58,7 @@ class OutreachColumnContractTests(unittest.TestCase):
             "funding_human_review_required",
             "do_not_contact",
             "email_send_ready",
+            "final_send_gate_passed",
         ]:
             with self.subTest(name=name):
                 column = self.columns[name]
@@ -70,6 +71,8 @@ class OutreachColumnContractTests(unittest.TestCase):
             "hia_relevance_score",
             "certification_fit_score",
             "email_quality_score",
+            "enrichment_quality_score",
+            "copy_brief_quality_score",
         ]:
             with self.subTest(name=name):
                 column = self.columns[name]
@@ -93,7 +96,23 @@ class OutreachColumnContractTests(unittest.TestCase):
             self.assertIn(f"email_{index}_body", self.columns)
 
     def test_quality_fields_exist(self):
-        for name in ["email_quality_score", "email_quality_flags", "email_send_ready", "human_review_status"]:
+        for name in [
+            "email_quality_score",
+            "email_quality_flags",
+            "email_send_ready",
+            "human_review_status",
+            "automation_decision",
+            "automation_decision_reason",
+            "automation_blockers_json",
+            "contact_send_mode",
+            "email_3_mode",
+            "enrichment_quality_score",
+            "enrichment_quality_flags",
+            "copy_brief_quality_score",
+            "copy_brief_quality_flags",
+            "severe_email_flags",
+            "final_send_gate_passed",
+        ]:
             self.assertIn(name, self.columns)
 
     def test_workflow_fetch_fields_are_existing_or_installed(self):

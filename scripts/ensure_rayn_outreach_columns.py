@@ -142,6 +142,18 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("email_quality_flags", "LongText", "text", "360px"),
     OutreachColumn("email_send_ready", "Checkbox", "boolean", "140px"),
     OutreachColumn("human_review_status", "SingleSelect", "text"),
+    # Deterministic automation decision fields
+    OutreachColumn("automation_decision", "SingleSelect", "text"),
+    OutreachColumn("automation_decision_reason", "SingleLineText", "text"),
+    OutreachColumn("automation_blockers_json", "LongText", "text", "360px"),
+    OutreachColumn("contact_send_mode", "SingleSelect", "text"),
+    OutreachColumn("email_3_mode", "SingleSelect", "text"),
+    OutreachColumn("enrichment_quality_score", "Number", "numeric", "160px"),
+    OutreachColumn("enrichment_quality_flags", "LongText", "text", "360px"),
+    OutreachColumn("copy_brief_quality_score", "Number", "numeric", "160px"),
+    OutreachColumn("copy_brief_quality_flags", "LongText", "text", "360px"),
+    OutreachColumn("severe_email_flags", "LongText", "text", "360px"),
+    OutreachColumn("final_send_gate_passed", "Checkbox", "boolean", "160px"),
 ]
 
 SELECT_OPTIONS: dict[str, list[str]] = {
@@ -172,6 +184,9 @@ SELECT_OPTIONS: dict[str, list[str]] = {
     "unsubscribe_status": ["active", "unsubscribed", "bounced", "complained"],
     "outreach_variant": ["hia_healthcare", "hia_clinic", "solo_gp", "team_clinic", "dental_clinic", "allied_health", "npo_social_service", "pdpa_general", "dpo_evidence", "customer_trust", "funding_first", "not_ready"],
     "human_review_status": ["not_ready", "ready_for_review", "approved", "rejected", "sent"],
+    "automation_decision": ["auto_send_eligible", "auto_skipped", "retry_enrichment_once", "suppressed", "draft_only_review"],
+    "contact_send_mode": ["named_person", "generic_team", "suppressed", "auto_skipped_unresolved_identity"],
+    "email_3_mode": ["funding", "value_fallback"],
 }
 
 

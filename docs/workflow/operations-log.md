@@ -906,3 +906,9 @@ Cold email copy QA hardening:
 - customer-trust/B2B copy keeps the procurement-proof angle: reusable evidence for access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review.
 - local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and `python3 -m pytest tests/test_outreach_planner.py -q` with `47 passed`.
 - docs updated with the PDPA/Cyber Essentials framing; no deployment was performed by this patch step, no live rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-06 13:18 +08`: added the low/no-human-review automation decision layer for cold-email planning.
+- planner now emits `automation_decision`, reason, blockers, contact-send mode, Email 3 mode, enrichment/copy quality scores, severe flags and final send-gate status.
+- hard contact suppression, unresolved personal-email skip, funding value fallback, deterministic LLM-drift fallback and draft-only QA decision mapping were added.
+- workflow audit output and outreach column installer were updated for the new fields; no send node was added.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and focused pytest suites `63 passed`.
+- no deployment was performed, no live rows were patched, no preview was generated, no emails were sent, and Instantly was not used.

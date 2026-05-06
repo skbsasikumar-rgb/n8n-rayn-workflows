@@ -155,7 +155,8 @@ class OutreachPlannerTests(unittest.TestCase):
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding.to_dict(), emails)
         self.assertEqual(patch["email_1_body"], plan.emails["email_1"]["body"])
         self.assertFalse(patch["email_send_ready"])
-        self.assertIn("funding_not_verified", patch["email_quality_flags"])
+        self.assertEqual(patch["email_3_mode"], "value_fallback")
+        self.assertNotIn("funding_not_verified", patch["email_quality_flags"])
         partial_funding_patch = o.patch_with_email_sequence(
             row,
             plan.classification,
@@ -166,7 +167,8 @@ class OutreachPlannerTests(unittest.TestCase):
             emails,
         )
         self.assertFalse(partial_funding_patch["email_send_ready"])
-        self.assertIn("The relevant support route appears worth checking", partial_funding_patch["email_3_body"])
+        self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
+        self.assertNotIn("support route", partial_funding_patch["email_3_body"].lower())
         self.assertNotIn("email_3_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -211,6 +213,17 @@ class OutreachPlannerTests(unittest.TestCase):
                 "email_3_body",
                 "email_4_subject",
                 "email_4_body",
+                "automation_decision",
+                "automation_decision_reason",
+                "automation_blockers_json",
+                "contact_send_mode",
+                "email_3_mode",
+                "enrichment_quality_score",
+                "enrichment_quality_flags",
+                "copy_brief_quality_score",
+                "copy_brief_quality_flags",
+                "severe_email_flags",
+                "final_send_gate_passed",
             },
         )
         self.assertEqual(audit["row_id"], 46)
@@ -235,12 +248,80 @@ class OutreachPlannerTests(unittest.TestCase):
                 "leadership_or_team_signals": ["doctor and practitioner team"],
                 "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
                 "validated_email": "doctor@example.com",
+                "selected_contact_name": "Ivan Puah",
                 "draft_only": True,
             },
             programmes=[verified_program()],
         )
         self.assertFalse(result["patch"]["email_send_ready"])
         self.assertEqual(result["patch"]["email_3_body"].count("subject to programme confirmation"), 1)
+
+    def test_automation_suppresses_blocked_or_missing_contact_rows(self):
+        cases = [
+            ({"do_not_contact": True, "validated_email": "info@example.com"}, "suppressed_do_not_contact"),
+            ({"unsubscribe_status": "unsubscribed", "validated_email": "info@example.com"}, "suppressed_unsubscribed"),
+            ({}, "suppressed_missing_validated_email"),
+        ]
+        for extra, reason in cases:
+            with self.subTest(reason=reason):
+                result = o.plan_and_patch(
+                    {
+                        "Id": 70,
+                        "company_name": "Acme Services Pte Ltd",
+                        "website_content": "Singapore company collecting customer enquiries and employee data.",
+                        **extra,
+                    }
+                )
+                self.assertEqual(result["patch"]["automation_decision"], "suppressed")
+                self.assertEqual(result["patch"]["automation_decision_reason"], reason)
+                self.assertFalse(result["patch"]["email_1_body"])
+
+    def test_contact_send_mode_named_generic_and_unresolved_personal(self):
+        named = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "ivan@example.com",
+                "selected_contact_name": "Ivan Puah",
+            }
+        )
+        self.assertEqual(named["patch"]["contact_send_mode"], "named_person")
+        self.assertTrue(named["patch"]["email_1_body"].startswith("Hi Ivan,"))
+
+        generic = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "info@example.com",
+            }
+        )
+        self.assertEqual(generic["patch"]["contact_send_mode"], "generic_team")
+        self.assertTrue(generic["patch"]["email_1_body"].startswith("Hello team,"))
+
+        unresolved = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "randomperson@example.com",
+            }
+        )
+        self.assertEqual(unresolved["patch"]["automation_decision"], "auto_skipped")
+        self.assertEqual(unresolved["patch"]["automation_decision_reason"], "unresolved_personal_email_identity")
+        self.assertFalse(unresolved["patch"]["email_1_body"])
+
+    def test_unsafe_funding_uses_value_fallback_without_review(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "info@example.com",
+            }
+        )
+        self.assertEqual(result["patch"]["email_3_mode"], "value_fallback")
+        self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertEqual(result["patch"]["automation_decision_reason"], "funding_claim_not_safe_used_value_fallback")
+        self.assertNotIn("funding", result["patch"]["email_3_body"].lower())
+        self.assertNotIn("you qualify", result["patch"]["email_3_body"].lower())
 
     def test_bad_llm_copy_falls_back_to_deterministic_strategy(self):
         row = {
