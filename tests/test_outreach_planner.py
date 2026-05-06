@@ -514,11 +514,13 @@ class OutreachPlannerTests(unittest.TestCase):
         }
         draft = o.plan_and_patch({**row, "draft_only": True})
         self.assertEqual(draft["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertEqual(draft["patch"]["human_review_status"], "not_required")
         self.assertTrue(draft["patch"]["final_send_gate_passed"])
         self.assertFalse(draft["patch"]["email_send_ready"])
 
         send = o.plan_and_patch({**row, "send_mode": True})
         self.assertEqual(send["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertEqual(send["patch"]["human_review_status"], "not_required")
         self.assertTrue(send["patch"]["final_send_gate_passed"])
         self.assertTrue(send["patch"]["email_send_ready"])
 

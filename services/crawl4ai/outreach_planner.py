@@ -3186,9 +3186,12 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         send_ready = False
         if "copy_qa_mode" not in flags:
             flags.append("copy_qa_mode")
-    human_review_status = "ready_for_review" if decision == "draft_only_review" else "not_ready"
     if decision == "auto_send_eligible":
+        human_review_status = "not_required"
+    elif decision == "draft_only_review":
         human_review_status = "ready_for_review"
+    else:
+        human_review_status = "not_ready"
     if classification["pressure_type"] == "not_ready" or not copy_brief_ready(classification, copy_brief):
         human_review_status = "not_ready"
     return OutreachPlan(
@@ -3567,7 +3570,13 @@ def patch_with_email_sequence(
         quality_score=score,
         quality_flags=flags,
         email_send_ready=send_ready,
-        human_review_status="ready_for_review" if decision in {"auto_send_eligible", "draft_only_review"} and classification.get("pressure_type") != "not_ready" else "not_ready",
+        human_review_status=(
+            "not_required"
+            if decision == "auto_send_eligible" and classification.get("pressure_type") != "not_ready"
+            else "ready_for_review"
+            if decision == "draft_only_review" and classification.get("pressure_type") != "not_ready"
+            else "not_ready"
+        ),
         automation_decision=decision,
         automation_decision_reason=decision_reason,
         automation_blockers=blockers,
