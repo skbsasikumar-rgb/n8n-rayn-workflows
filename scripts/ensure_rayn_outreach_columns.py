@@ -187,7 +187,7 @@ SELECT_OPTIONS: dict[str, list[str]] = {
     "decision_maker_role_guess": ["founder", "owner", "doctor", "clinic_manager", "operations", "dpo", "compliance", "it", "hr", "director", "executive_director", "unknown"],
     "unsubscribe_status": ["active", "unsubscribed", "bounced", "complained"],
     "outreach_variant": ["hia_healthcare", "hia_clinic", "solo_gp", "team_clinic", "dental_clinic", "allied_health", "npo_social_service", "pdpa_general", "dpo_evidence", "customer_trust", "funding_first", "not_ready"],
-    "human_review_status": ["not_ready", "ready_for_review", "approved", "rejected", "sent"],
+    "human_review_status": ["not_required", "not_ready", "ready_for_review", "approved", "rejected", "sent"],
     "automation_decision": ["auto_send_eligible", "auto_skipped", "retry_enrichment_once", "suppressed", "draft_only_review"],
     "contact_send_mode": ["named_person", "generic_team", "suppressed", "auto_skipped_unresolved_identity"],
     "contact_identity_confidence": ["none", "low", "medium", "high"],
@@ -238,7 +238,11 @@ def main() -> None:
         "planned_select_options": [],
     }
 
-    with psycopg.connect(args.database_url) as conn:
+    with psycopg.connect(
+        args.database_url,
+        connect_timeout=15,
+        options="-c statement_timeout=30000 -c lock_timeout=10000",
+    ) as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """

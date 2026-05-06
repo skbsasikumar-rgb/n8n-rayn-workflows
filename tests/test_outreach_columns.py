@@ -119,6 +119,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         ]:
             self.assertIn(name, self.columns)
 
+    def test_human_review_status_options_match_planner_outputs(self):
+        options = self.module.SELECT_OPTIONS["human_review_status"]
+        self.assertIn("not_required", options)
+        self.assertIn("not_ready", options)
+        self.assertIn("ready_for_review", options)
+
     def test_workflow_fetch_fields_are_existing_or_installed(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
