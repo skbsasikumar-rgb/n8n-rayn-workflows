@@ -109,8 +109,8 @@ User input:
 Rules:
 - First decide the pressure type: HIA regulatory pressure, PDPA personal-data safeguard pressure, customer/procurement trust pressure, or funding/budget pressure.
 - Email 1 leads with pressure_type, not with RAYN's services.
-- Email 2 gives a diagnostic tied to the same problem.
-- Email 3 is funding-only and must use funding_claim_line.
+- Email 2 is funding-only when funding is verified-safe; otherwise it gives a non-funding value-fallback asset.
+- Email 3 gives a diagnostic tied to the same problem.
 - Email 4 closes the loop.
 - For HIA rows, lead with HIA timeline / regulatory readiness. Mention Cyber Essentials only as a practical first baseline. Do not say Cyber Essentials completes HIA compliance.
 - For non-HIA rows, lead with PDPA / personal-data safeguards. Say Cyber Essentials supports the security-safeguards side of PDPA readiness. Do not say Cyber Essentials alone equals PDPA compliance.
@@ -492,7 +492,7 @@ def funding_claim_send_safe(funding: FundingMatch, copy_brief: dict[str, Any], c
     return True
 
 
-def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: str | None = None) -> dict[str, Any]:
+def value_fallback_email_2(row: dict[str, Any], emails: dict[str, Any], asset: str | None = None) -> dict[str, Any]:
     greeting = email_comma_greeting(row)
     asset_name = compact(asset) or "checklist"
     body = (
@@ -504,13 +504,17 @@ def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: s
         "Best,\nSK\nRAYN Secure"
     )
     emails = {**emails}
-    emails["email_3"] = {
+    emails["email_2"] = {
         "subject_options": ["readiness evidence", "checklist"],
         "chosen_subject": "readiness evidence",
         "body": body,
         "word_count": word_count(body),
     }
     return emails
+
+
+def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: str | None = None) -> dict[str, Any]:
+    return value_fallback_email_2(row, emails, asset)
 
 
 def email_3_mode_for(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> str:
@@ -2441,6 +2445,7 @@ def generate_email_sequence(
 
     if classification["pressure_type"] != "not_ready":
         email1_subject, email2_subject = subject_pair(row, classification, copy_brief)
+        diagnostic_subject = email2_subject
         noticed = trigger
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
@@ -2449,7 +2454,7 @@ def generate_email_sequence(
             short_noticed = noticed.replace(company, "your clinic", 1)
             email1_body = f"{email1_greeting}\n\nNoticed {short_noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
         if classification["pressure_type"] == "hia_regulatory":
-            email2_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
+            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
@@ -2457,15 +2462,16 @@ def generate_email_sequence(
         else:
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
         if classification["pressure_type"] != "hia_regulatory":
-            email2_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+            email3_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
         if funding_claim_send_safe(funding, copy_brief, classification):
             funding_line = funding.funding_claim_line
-            email3_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
+            email2_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email3_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
+            email2_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
         else:
-            email3_subject = "readiness evidence"
-            email3_body = value_fallback_email_3(row, {"email_3": {"chosen_subject": email3_subject}}, asset)["email_3"]["body"]
+            email2_subject = "readiness evidence"
+            email2_body = value_fallback_email_2(row, {"email_2": {"chosen_subject": email2_subject}}, asset)["email_2"]["body"]
+        email3_subject = diagnostic_subject if diagnostic_subject.lower().startswith("re: ") else f"Re: {email1_subject}"
         email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
     else:
         email3_subject = "not ready"
@@ -2539,23 +2545,23 @@ def enforce_funding_claim_email(
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if classification is not None and copy_brief is not None and not funding_claim_send_safe(funding, copy_brief, classification):
-        return value_fallback_email_3(row, emails, (copy_brief or {}).get("email_asset_offer"))
+        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"))
     claim = trim_text(funding.funding_claim_line)
     if not claim:
-        return value_fallback_email_3(row, emails, (copy_brief or {}).get("email_asset_offer"))
-    email3 = emails.get("email_3") or {}
-    existing_body = trim_text(email3.get("body"))
+        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"))
+    email2 = emails.get("email_2") or {}
+    existing_body = trim_text(email2.get("body"))
     caveat_count = existing_body.lower().count("subject to programme confirmation")
     useful_line = "The useful first step is confirming whether the route applies before spending time on readiness work."
-    if claim.lower() in existing_body.lower() and funding_only_email_3(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
+    if claim.lower() in existing_body.lower() and funding_only_email(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
         return emails
     greeting = email_comma_greeting(row)
-    subject = compact(email3.get("chosen_subject")) or "funding route"
+    subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
     body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
     emails = {**emails}
-    emails["email_3"] = {
-        "subject_options": list(email3.get("subject_options") or [subject]),
+    emails["email_2"] = {
+        "subject_options": list(email2.get("subject_options") or [subject]),
         "chosen_subject": subject,
         "body": body,
         "word_count": word_count(body),
@@ -2633,7 +2639,7 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
     return not reflects(body, phrase)
 
 
-def funding_only_email_3(body: str, claim: str) -> bool:
+def funding_only_email(body: str, claim: str) -> bool:
     body_l = compact(body).lower()
     if claim and claim.lower() not in body_l:
         return False
@@ -2649,6 +2655,10 @@ def funding_only_email_3(body: str, claim: str) -> bool:
         "incident response readiness",
     )
     return not any(marker in body_l for marker in non_funding_markers)
+
+
+def funding_only_email_3(body: str, claim: str) -> bool:
+    return funding_only_email(body, claim)
 
 
 def email_2_generic_hia_diagnostic(body: str, classification: dict[str, Any]) -> bool:
@@ -2744,6 +2754,10 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
     return not all(term in body_l for term in required)
 
 
+def email_3_missing_hia_segment_terms(body: str, row: dict[str, Any], classification: dict[str, Any]) -> bool:
+    return email_2_missing_hia_segment_terms(body, row, classification)
+
+
 def email_2_not_hia_segment_diagnostic_shape(
     body: str,
     row: dict[str, Any],
@@ -2778,6 +2792,14 @@ def email_2_not_hia_segment_diagnostic_shape(
     return any(term in body_l for term in wrong_segment_terms.get(str(service_type), ()))
 
 
+def email_3_not_hia_segment_diagnostic_shape(
+    body: str,
+    row: dict[str, Any],
+    classification: dict[str, Any],
+) -> bool:
+    return email_2_not_hia_segment_diagnostic_shape(body, row, classification)
+
+
 def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
@@ -2805,6 +2827,10 @@ def email_2_is_diagnostic(body: str, copy_brief: dict[str, Any], classification:
     if classification.get("pressure_type") == "customer_trust":
         return "customer security question" in body_l and "evidence" in body_l
     return "personal data" in body_l and "access" in body_l and "incident" in body_l
+
+
+def email_3_is_diagnostic(body: str, copy_brief: dict[str, Any], classification: dict[str, Any]) -> bool:
+    return email_2_is_diagnostic(body, copy_brief, classification)
 
 
 def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) -> bool:
@@ -2836,7 +2862,7 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
     allowed_prefixes = ["hi team,", "hello team,"]
     if company:
         allowed_prefixes.append(f"hi {company} team,")
-    for key in ("email_1", "email_3", "email_4"):
+    for key in ("email_1", "email_2", "email_4"):
         body = trim_text((emails.get(key) or {}).get("body")).lower()
         if body and not any(body.startswith(prefix) for prefix in allowed_prefixes):
             return False
@@ -2882,24 +2908,24 @@ def evaluate_email_strategy(
             flags.append("email_1_missing_clinic_profile")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
-    if not email_2_is_diagnostic(email2, copy_brief, classification):
-        flags.append("email_2_not_diagnostic")
-    if email_2_generic_hia_diagnostic(email2, classification):
-        flags.append("email_2_generic_hia_diagnostic")
-    if email_2_missing_hia_segment_terms(email2, row, classification):
-        flags.append("email_2_missing_hia_segment_terms")
-    if email_2_not_hia_segment_diagnostic_shape(email2, row, classification):
-        flags.append("email_2_not_hia_segment_diagnostic_shape")
+    if not email_3_is_diagnostic(email3, copy_brief, classification):
+        flags.append("email_3_not_diagnostic")
+    if email_2_generic_hia_diagnostic(email3, classification):
+        flags.append("email_3_generic_hia_diagnostic")
+    if email_3_missing_hia_segment_terms(email3, row, classification):
+        flags.append("email_3_missing_hia_segment_terms")
+    if email_3_not_hia_segment_diagnostic_shape(email3, row, classification):
+        flags.append("email_3_not_hia_segment_diagnostic_shape")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
         flags.append("asset_offer_too_generic_for_segment")
     if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
         flags.append("hearing_care_missing_trigger")
     if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
         flags.append("lab_classification_ambiguous")
-    if copy_brief.get("email_3_mode") == "funding" and not funding_only_email_3(email3, funding.funding_claim_line):
-        flags.append("email_3_not_funding_only")
-    elif funding.funding_claim_line and funding.funding_claim_line in email3 and not funding_only_email_3(email3, funding.funding_claim_line):
-        flags.append("email_3_not_funding_only")
+    if copy_brief.get("email_3_mode") == "funding" and not funding_only_email(email2, funding.funding_claim_line):
+        flags.append("email_2_not_funding_only")
+    elif funding.funding_claim_line and funding.funding_claim_line in email2 and not funding_only_email(email2, funding.funding_claim_line):
+        flags.append("email_2_not_funding_only")
     if email4 and compact(copy_brief.get("email_asset_offer")) and not reflects(email4, copy_brief["email_asset_offer"]):
         flags.append("email_4_missing_asset_offer")
     if not generic_inbox_greeting_ok(row, emails):
@@ -2950,11 +2976,11 @@ def quality_gate(
             flags.append(f"{key}_too_long")
 
     email_3_mode = str(copy_brief.get("email_3_mode") or email_3_mode_for(funding, copy_brief, classification))
-    if email_3_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_3"]["body"]:
-        flags.append("email_3_missing_funding_claim_line")
+    if email_3_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_2"]["body"]:
+        flags.append("email_2_missing_funding_claim_line")
     if has_copy_brief and email_3_mode == "funding" and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
         flags.append("funding_needs_review")
-    if re.search(r"\b\d{1,3}%\b", emails["email_3"]["body"]) and not any(
+    if re.search(r"\b\d{1,3}%\b", emails["email_2"]["body"]) and not any(
         item.get("exact_claim_allowed_in_email") for item in funding.matched
     ):
         flags.append("unverified_exact_percentage")
@@ -3006,15 +3032,15 @@ def quality_gate(
         email1_start = email1_body.strip().lower()
         if email1_start.startswith(("i came across your company", "noticed your company", "i noticed your company")):
             flags.append("email_1_too_generic")
-        email2_body = emails["email_2"]["body"].lower()
-        if "cyber essentials is" in email2_body and "?" not in email2_body:
-            flags.append("email_2_not_diagnostic")
-        if email_2_generic_hia_diagnostic(emails["email_2"]["body"], classification):
-            flags.append("email_2_generic_hia_diagnostic")
-        if email_2_missing_hia_segment_terms(emails["email_2"]["body"], row, classification):
-            flags.append("email_2_missing_hia_segment_terms")
-        if email_2_not_hia_segment_diagnostic_shape(emails["email_2"]["body"], row, classification):
-            flags.append("email_2_not_hia_segment_diagnostic_shape")
+        email3_body = emails["email_3"]["body"].lower()
+        if "cyber essentials is" in email3_body and "?" not in email3_body:
+            flags.append("email_3_not_diagnostic")
+        if email_2_generic_hia_diagnostic(emails["email_3"]["body"], classification):
+            flags.append("email_3_generic_hia_diagnostic")
+        if email_3_missing_hia_segment_terms(emails["email_3"]["body"], row, classification):
+            flags.append("email_3_missing_hia_segment_terms")
+        if email_3_not_hia_segment_diagnostic_shape(emails["email_3"]["body"], row, classification):
+            flags.append("email_3_not_hia_segment_diagnostic_shape")
         if asset_offer_too_generic_for_segment(row, classification, copy_brief):
             flags.append("asset_offer_too_generic_for_segment")
         if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -3053,9 +3079,10 @@ SEVERE_EMAIL_FLAGS = {
     "email_contains_internal_signal_language",
     "email_contains_hia_batch_wording",
     "email_1_too_generic",
-    "email_2_not_diagnostic",
-    "email_2_generic_hia_diagnostic",
-    "email_3_not_funding_only",
+    "email_3_not_diagnostic",
+    "email_3_generic_hia_diagnostic",
+    "email_2_missing_funding_claim_line",
+    "email_2_not_funding_only",
     "generic_inbox_wrong_greeting",
     "cyber_essentials_equals_pdpa_compliance",
     "cyber_essentials_equals_hia_compliance",
@@ -3371,7 +3398,7 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "email_quality_flags": flags,
             "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
             "asset_offer_too_generic_for_segment": asset_offer_too_generic_for_segment(row, classification, plan.copy_brief),
-            "email_2_generic_hia_diagnostic": email_2_generic_hia_diagnostic((emails.get("email_2") or {}).get("body", ""), classification),
+            "email_3_generic_hia_diagnostic": email_2_generic_hia_diagnostic((emails.get("email_3") or {}).get("body", ""), classification),
             "email_1_subject": (emails.get("email_1") or {}).get("chosen_subject", ""),
             "email_1_body": (emails.get("email_1") or {}).get("body", ""),
             "email_2_subject": (emails.get("email_2") or {}).get("chosen_subject", ""),
@@ -3418,7 +3445,7 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "email_quality_flags": flags,
         "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
         "asset_offer_too_generic_for_segment": "asset_offer_too_generic_for_segment" in flags,
-        "email_2_generic_hia_diagnostic": "email_2_generic_hia_diagnostic" in flags,
+        "email_3_generic_hia_diagnostic": "email_3_generic_hia_diagnostic" in flags,
         "email_1_subject": patch.get("email_1_subject", ""),
         "email_1_body": patch.get("email_1_body", ""),
         "email_2_subject": patch.get("email_2_subject", ""),
@@ -3499,14 +3526,14 @@ def patch_with_email_sequence(
         "clinic_profile_missing_for_hia",
         "clinic_profile_too_generic",
         "email_1_missing_clinic_profile",
-        "email_2_not_diagnostic",
-        "email_2_generic_hia_diagnostic",
-        "email_2_missing_hia_segment_terms",
-        "email_2_not_hia_segment_diagnostic_shape",
+        "email_3_not_diagnostic",
+        "email_3_generic_hia_diagnostic",
+        "email_3_missing_hia_segment_terms",
+        "email_3_not_hia_segment_diagnostic_shape",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",
         "lab_classification_ambiguous",
-        "email_3_not_funding_only",
+        "email_2_not_funding_only",
         "generic_inbox_wrong_greeting",
     }
     rejected_strategy_flags = [flag for flag in flags if flag in strategy_reject_flags]

@@ -29,20 +29,20 @@ def test_n8n_funding_fallback_uses_company_team_greeting_and_no_duplicate_caveat
                 "automation_decision": "auto_send_eligible",
                 "pressure_type": "hia_regulatory",
                 "funding_claim_line": claim,
-                "email_3_body": "Funding email missing the exact claim.",
-                "email_sequence_json": json.dumps({"email_3": {"body": "", "word_count": 0}}),
-                "email_quality_flags": json.dumps(["email_3_missing_funding_claim_line"]),
+                "email_2_body": "Funding email missing the exact claim.",
+                "email_sequence_json": json.dumps({"email_2": {"body": "", "word_count": 0}}),
+                "email_quality_flags": json.dumps(["email_2_missing_funding_claim_line"]),
             }
         }
     )
 
     patch = result["patches"][0]
     sequence = json.loads(patch["email_sequence_json"])
-    assert patch["email_3_body"].startswith("Hi Amaris B. Clinic team,")
-    assert not patch["email_3_body"].startswith("Hi,")
-    assert patch["email_3_body"].count("subject to programme confirmation") == 1
-    assert sequence["email_3"]["body"] == patch["email_3_body"]
-    assert sequence["email_3"]["word_count"] > 0
+    assert patch["email_2_body"].startswith("Hi Amaris B. Clinic team,")
+    assert not patch["email_2_body"].startswith("Hi,")
+    assert patch["email_2_body"].count("subject to programme confirmation") == 1
+    assert sequence["email_2"]["body"] == patch["email_2_body"]
+    assert sequence["email_2"]["word_count"] > 0
 
 
 def test_n8n_funding_fallback_uses_team_greeting_without_company_name():
@@ -53,14 +53,14 @@ def test_n8n_funding_fallback_uses_team_greeting_without_company_name():
                 "automation_decision": "auto_send_eligible",
                 "pressure_type": "pdpa_safeguards",
                 "funding_claim_line": "Funding route needs human review before use.",
-                "email_3_body": "",
-                "email_sequence_json": json.dumps({"email_3": {"body": "", "word_count": 0}}),
+                "email_2_body": "",
+                "email_sequence_json": json.dumps({"email_2": {"body": "", "word_count": 0}}),
                 "email_quality_flags": "[]",
             }
         }
     )
 
-    assert result["patches"][0]["email_3_body"].startswith("Hi team,")
+    assert result["patches"][0]["email_2_body"].startswith("Hi team,")
 
 
 def test_n8n_audit_includes_subjects_and_email_four_body():

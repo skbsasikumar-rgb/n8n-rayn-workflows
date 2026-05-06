@@ -966,3 +966,9 @@ Cold email copy QA hardening:
 - audit artifacts exported locally: `/tmp/cold-email-live-draft-all-summary.json` and `/tmp/cold-email-live-draft-all-audit.md`.
 - validation passed before deploy: Python compile for changed Python files, `jq -e wf-cold-email-planner.json`, and focused pytest suites with `83 passed`.
 - live rows were patched only with draft outreach/audit fields; no emails were sent, Instantly was not used, and no rows were marked sent.
+- `2026-05-06 20:28 +08`: moved the funding/value-fallback follow-up from Email 3 into Email 2, and moved the diagnostic follow-up into Email 3.
+- funding safety gates remain unchanged: Email 2 uses funding copy only when `email_3_mode=funding`; otherwise Email 2 uses the selected non-funding checklist/evidence asset.
+- updated the local n8n OpenRouter prompt and `Collect NocoDB Patches` fallback so any funding repair updates `email_2_body` and `email_sequence_json.email_2`, not Email 3.
+- Email 3 now carries the access/data mapping/vendor/backup/incident diagnostic and quality flags were renamed around the new structure (`email_3_not_diagnostic`, `email_2_not_funding_only`, `email_2_missing_funding_claim_line`).
+- local validation passed: Python compile for `services/crawl4ai/outreach_planner.py` and `scripts/export_outreach_audit_markdown.py`, `jq -e wf-cold-email-planner.json`, and focused pytest suites `tests/test_outreach_planner.py`, `tests/test_outreach_columns.py`, `tests/test_workflow_audit_fallback.py`, `tests/test_outreach_audit_export.py` with `83 passed`.
+- no deployment was performed, no live rows were patched, no preview was generated, no emails were sent, and Instantly was not used.

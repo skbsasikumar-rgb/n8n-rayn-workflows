@@ -52,8 +52,8 @@ def test_export_outreach_audit_markdown_suppressed_row_is_clean_by_default():
                 "email_quality_flags": [
                     "email_1_missing_specific_signal",
                     "email_1_missing_problem_statement",
-                    "email_2_not_diagnostic",
-                    "email_3_not_funding_only",
+                    "email_3_not_diagnostic",
+                    "email_2_not_funding_only",
                 ],
             }
         ]
@@ -74,11 +74,11 @@ def test_export_outreach_audit_markdown_suppressed_row_debug_keeps_raw_flags():
                 "company_name": "No Email Pte Ltd",
                 "automation_decision": "suppressed",
                 "automation_decision_reason": "suppressed_missing_validated_email",
-                "email_quality_flags": ["email_2_not_diagnostic"],
+                "email_quality_flags": ["email_3_not_diagnostic"],
             }
         ],
         debug=True,
     )
 
-    assert "email_2_not_diagnostic" in markdown
+    assert "email_3_not_diagnostic" in markdown
     assert "### Email 1" in markdown

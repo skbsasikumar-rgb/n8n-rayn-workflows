@@ -98,7 +98,7 @@ Funding is matched by `services/crawl4ai/funding_programs.py`:
 - deterministic entity and industry match first.
 - low entity confidence forces `funding_status = needs_review`.
 - source status other than `verified_current` blocks `verified_match`.
-- `funding_claim_line` is the only source for Email 3 funding language.
+- `funding_claim_line` is the only source for Email 2 funding language.
 - exact percentages are blocked unless the programme entry explicitly allows them after official refresh.
 
 Statuses:
@@ -119,7 +119,7 @@ HIA:
 - For HIA rows, use regulatory readiness, not fear.
 - Say Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness.
 - Do not say Cyber Essentials equals HIA compliance.
-- Email 2 should diagnose access, data mapping, vendors, backups and incident reporting.
+- Email 3 should diagnose access, data mapping, vendors, backups and incident reporting.
 - Final email bodies must not mention HIA batch labels, HIA batch dates or "HIA window" wording.
 - Specialist subtypes now use more specific profile and record language for heart/cardiology, pain management, surgical, dermatology, eye/ophthalmology and home-care/caregiver rows.
 
@@ -206,8 +206,8 @@ Generate exactly four emails:
 | Email | Purpose | Rules |
 | --- | --- | --- |
 | 1 | Researched note from copy brief. | Start with `email_personalisation_signal`, then `email_problem_statement`, then `email_mechanism_statement`, then `email_cta`. |
-| 2 | Diagnostic tied to the same problem. | Use `email_problem_statement` and `data_systems_likely`. Not a generic certification explainer. Tiny CTA. |
-| 3 | Funding only. | 45-95 words. Must use `funding_claim_line`. Must include "subject to programme confirmation" or equivalent. |
+| 2 | Funding or value fallback. | Funding-only when `email_3_mode = funding`; otherwise use the non-funding checklist/evidence fallback. Funding copy must use `funding_claim_line` and include "subject to programme confirmation" or equivalent. |
+| 3 | Diagnostic tied to the same problem. | Use `email_problem_statement` and `data_systems_likely`. Not a generic certification explainer. Tiny CTA. |
 | 4 | Respectful close loop. | 20-55 words. Reference `email_asset_offer`. One easy reply. |
 
 Forbidden:
@@ -402,8 +402,8 @@ Fail conditions:
 - score below 7.
 - any forbidden phrase appears.
 - word limits exceeded.
-- Email 3 does not use `funding_claim_line`.
-- Email 3 uses SME/NPO conditional language.
+- Email 2 does not use `funding_claim_line` when `email_3_mode = funding`.
+- Email 2 uses SME/NPO conditional language.
 - exact percentage appears without verified source permission.
 - HIA deadline appears when `hia_deadline_claim_safe = false`.
 - Cyber Essentials is described as full PDPA or HIA compliance.
@@ -439,14 +439,14 @@ Contact policy:
 
 Funding policy:
 
-- Email 3 uses `email_3_mode = funding` only when the funding match is verified, the claim is safe, entity confidence is medium/high, at least one matched programme exists, and at least one matched programme is `verified_current`.
-- Otherwise Email 3 uses `email_3_mode = value_fallback`, does not mention funding, and the row does not require review solely because of funding uncertainty.
+- Email 2 uses the `email_3_mode = funding` path only when the funding match is verified, the claim is safe, entity confidence is medium/high, at least one matched programme exists, and at least one matched programme is `verified_current`.
+- Otherwise Email 2 uses the `email_3_mode = value_fallback` path, does not mention funding, and the row does not require review solely because of funding uncertainty.
 - Exact percentage claims are allowed only when the matched programme metadata explicitly permits exact claims.
 
 Blocking vs advisory flags:
 
 - `automation_blockers_json` contains only true blockers: severe email flags, missing concrete observation, unsupported pressure, missing problem, unresolved contact identity, weak enrichment below threshold, and missing required copy-brief fields.
-- `automation_advisory_flags_json` can include non-blocking notes such as low trigger confidence, missing optional data-system detail when the score still passes, or funding follow-up notes when Email 3 uses value fallback.
+- `automation_advisory_flags_json` can include non-blocking notes such as low trigger confidence, missing optional data-system detail when the score still passes, or funding follow-up notes when Email 2 uses value fallback.
 
 Send-state distinction:
 
