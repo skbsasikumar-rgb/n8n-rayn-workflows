@@ -576,6 +576,97 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_provider, "anymail_finder_company")
         self.assertEqual(result.email_validation_evidence["company_email_fallback"]["accepted_email"], "info@examplerehab.sg")
 
+    def test_company_email_fallback_prefers_name_like_email_before_generic(self):
+        payload = {
+            "Id": 792,
+            "company_name": "APAX Medical & Aesthetics Clinic",
+            "company_homepage_name": "APAX Medical & Aesthetics Clinic",
+            "canonical_domain": "apaxmedical.com",
+            "best_url": "https://apaxmedical.com/",
+            "website_content": "",
+            "search_attempts": [],
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["us@apaxmedical.com", "jessicachoo@apaxmedical.com"],
+                    "valid_emails": ["us@apaxmedical.com", "jessicachoo@apaxmedical.com"],
+                }],
+                "email_type": "any",
+            }
+
+        def fake_search(payload):
+            queries = [item["query"] for item in payload.get("search_queries", [])]
+            self.assertEqual(len(queries), 1)
+            self.assertIn("Jessica Choo", queries[0])
+            return [
+                {
+                    "provider": "serper",
+                    "query": queries[0],
+                    "results": [
+                        {
+                            "rank": 1,
+                            "title": "Terms of Use & Privacy Policy - APAX Medical & Aesthetics Clinic",
+                            "url": "https://apaxmedical.com/terms-of-use/",
+                            "snippet": "Contact APAX Medical & Aesthetics Clinic at jessicachoo@apaxmedical.com.",
+                        }
+                    ],
+                    "usable_results_count": 1,
+                }
+            ]
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", side_effect=fake_search):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.validated_email, "jessicachoo@apaxmedical.com")
+        self.assertEqual(result.selected_contact_name, "Jessica Choo")
+        self.assertEqual(result.selected_contact_role, "Company Contact")
+        self.assertEqual(result.selected_contact_seniority, "team")
+        self.assertEqual(result.selected_contact_confidence, "Low")
+        self.assertTrue(result.email_validation_evidence["company_email_identity_resolution"]["partially_proved"])
+
+    def test_decision_maker_fallback_runs_before_public_search(self):
+        payload = {
+            "Id": 794,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "",
+        }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "email": "ops@exampleclinic.sg",
+                    "valid_email": "ops@exampleclinic.sg",
+                    "person_full_name": "Olivia Tan",
+                    "person_job_title": "Operations Manager",
+                    "decision_maker_category": "operations",
+                }],
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker), patch.object(c, "execute_provider_cascade") as search:
+            result = c.enrich_contact(payload, validate_email=True)
+
+        search.assert_not_called()
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.validated_email, "ops@exampleclinic.sg")
+        self.assertEqual(result.selected_contact_name, "Olivia Tan")
+        self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
+
     def test_personal_company_email_resolves_identity_from_search_evidence(self):
         payload = {
             "Id": 793,
@@ -603,6 +694,7 @@ class ContactCandidateVerifierTests(unittest.TestCase):
 
         def fake_search(payload):
             queries = [item["query"] for item in payload.get("search_queries", [])]
+            self.assertEqual(len(queries), 1)
             self.assertTrue(any("zakowich" in query.lower() for query in queries))
             return [
                 {

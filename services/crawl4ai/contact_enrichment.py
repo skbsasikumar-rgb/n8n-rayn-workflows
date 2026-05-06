@@ -1680,6 +1680,41 @@ def local_part_identity_tokens(email: str) -> list[str]:
     return list(dict.fromkeys(tokens))
 
 
+COMMON_IDENTITY_FIRST_NAMES = (
+    "aaron", "abdul", "adam", "adeline", "agnes", "aileen", "alex", "alice", "alvin", "amanda",
+    "andrew", "angela", "anna", "anne", "benjamin", "brenda", "bryan", "catherine", "charles",
+    "charlotte", "cheryl", "chris", "christine", "clarence", "daniel", "david", "diana", "edmund",
+    "edwin", "elaine", "elizabeth", "emily", "eugene", "evelyn", "felicia", "francis", "gary",
+    "george", "grace", "hannah", "irene", "jacqueline", "james", "jasmine", "jason", "jean",
+    "jeffrey", "jennifer", "jessica", "joanna", "john", "jonathan", "joseph", "joyce", "justin",
+    "karen", "kelvin", "kenneth", "kevin", "leon", "linda", "marcus", "margaret", "mary",
+    "matthew", "melissa", "michelle", "moses", "natalie", "nicole", "paul", "peter", "philip",
+    "rachel", "raymond", "rebecca", "richard", "samuel", "sarah", "serene", "sharon", "steven",
+    "susan", "terence", "thomas", "valerie", "victor", "vincent", "vivian", "wendy", "william",
+    "yvonne",
+)
+
+
+def infer_name_from_email_local_part(email: str) -> str:
+    local_part = compact(email.partition("@")[0], 120).lower()
+    local_part = re.sub(r"^(?:dr|doctor|mr|mrs|ms|mdm|prof)[._-]?", "", local_part)
+    normalized = re.sub(r"[^a-z]", "", local_part)
+    if len(normalized) < 6 or normalized in GENERIC_LOCAL_PARTS:
+        return ""
+    for first in sorted(COMMON_IDENTITY_FIRST_NAMES, key=len, reverse=True):
+        if not normalized.startswith(first):
+            continue
+        last = normalized[len(first):]
+        if len(last) < 2:
+            continue
+        if len(last) <= 3:
+            last_display = last.upper() if len(last) <= 2 else last.title()
+        else:
+            last_display = last.title()
+        return f"{first.title()} {last_display}"
+    return ""
+
+
 def identity_name_tokens(name: str) -> list[str]:
     return list(dict.fromkeys(part.lower().strip("-'’") for part in clean_name(name).split() if len(part.strip("-'’")) >= 3))
 
@@ -1707,12 +1742,13 @@ def company_email_identity_queries(email: str, payload: dict[str, Any], domain: 
     names_clause = " OR ".join(f'"{name}"' for name in dict.fromkeys(names) if name)
     local_part = compact(email.partition("@")[0], 120).lower()
     domain = compact(domain, 180).lower().removeprefix("www.")
-    raw_queries = [
-        f'"{email}"',
-        f'site:{domain} "{local_part}"',
-        f'"{local_part}" "{domain}"',
-        f'"{local_part}" ({names_clause})' if names_clause else "",
-    ]
+    inferred_name = infer_name_from_email_local_part(email)
+    if inferred_name and names_clause:
+        raw_queries = [f'"{email}" OR "{inferred_name}" ({names_clause} OR "{domain}")']
+    elif inferred_name:
+        raw_queries = [f'"{email}" OR "{inferred_name}" "{domain}"']
+    else:
+        raw_queries = [f'"{email}" OR "{local_part}" "{domain}"']
     output: list[dict[str, Any]] = []
     seen: set[str] = set()
     for query in raw_queries:
@@ -1745,7 +1781,8 @@ def infer_identity_role(evidence: str) -> tuple[str, dict[str, Any] | None]:
 
 def name_matches_local_token(name: str, tokens: list[str]) -> bool:
     lowered_parts = [part.lower().strip("-'’") for part in clean_name(name).split()]
-    return any(token in lowered_parts for token in tokens)
+    compacted = "".join(lowered_parts)
+    return any(token in lowered_parts or token == compacted for token in tokens)
 
 
 def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: str) -> dict[str, Any]:
@@ -1761,7 +1798,7 @@ def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: 
     identity_payload = {
         **payload,
         "search_queries": company_email_identity_queries(email, payload, domain),
-        "max_queries": max(1, int(os.getenv("CONTACT_COMPANY_EMAIL_IDENTITY_MAX_QUERIES", "4"))),
+        "max_queries": max(1, int(os.getenv("CONTACT_COMPANY_EMAIL_IDENTITY_MAX_QUERIES", "1"))),
     }
     attempts = execute_provider_cascade(identity_payload)
     company_name = compact(payload.get("company_name"))
@@ -1830,6 +1867,31 @@ def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: 
 
     if accepted:
         return {**accepted, "attempts": checked_results[:20]}
+    inferred_name = infer_name_from_email_local_part(email)
+    partial = next(
+        (
+            item
+            for item in checked_results
+            if item.get("company_supported") and (item.get("has_identity_token") or item.get("has_email"))
+        ),
+        {},
+    )
+    if inferred_name and partial:
+        return {
+            "resolved": False,
+            "partially_proved": True,
+            "email": email,
+            "name": inferred_name,
+            "role": "Company Contact",
+            "role_bucket": "generic_team",
+            "seniority": "team",
+            "confidence": "Low",
+            "source_url": compact(partial.get("url"), 1000) or best_url,
+            "source_type": partial.get("source_type", ""),
+            "reason": "inferred_name_partially_proved",
+            "tokens": tokens,
+            "attempts": checked_results[:20],
+        }
     return {
         "resolved": False,
         "email": email,
@@ -2885,6 +2947,14 @@ def try_company_email_fallback(
     emails = normalize_company_email_list(result.get("emails"), domain)
     valid_emails = normalize_company_email_list(result.get("valid_emails"), domain)
     candidate_emails = emails or valid_emails
+    ranked_candidate_emails = sorted(
+        candidate_emails,
+        key=lambda email: (
+            1 if is_generic_company_email(email) else 0,
+            1 if not infer_name_from_email_local_part(email) and not local_part_identity_tokens(email) else 0,
+            candidate_emails.index(email),
+        ),
+    )
     company_email_candidates = [
         {
             "name": "",
@@ -2897,7 +2967,7 @@ def try_company_email_fallback(
             "decision": "sendable" if email in valid_emails else "rejected",
             "validation_result": result,
         }
-        for email in candidate_emails
+        for email in ranked_candidate_emails
     ]
     if not company_email_candidates:
         company_email_candidates.append(
@@ -2914,22 +2984,23 @@ def try_company_email_fallback(
         )
     merged_candidates = [*email_candidates, *company_email_candidates]
     evidence["company_email_fallback"]["candidate_count"] = len(candidate_emails)
-    evidence["company_email_fallback"]["emails"] = candidate_emails
+    evidence["company_email_fallback"]["emails"] = ranked_candidate_emails
     evidence["company_email_fallback"]["valid_emails"] = valid_emails
 
     if valid_emails:
-        accepted_email = next((email for email in candidate_emails if email in valid_emails), valid_emails[0])
+        accepted_email = next((email for email in ranked_candidate_emails if email in valid_emails), valid_emails[0])
         evidence["company_email_fallback"]["accepted_email"] = accepted_email
         identity = resolve_company_email_identity(accepted_email, payload, domain)
         evidence["company_email_identity_resolution"] = identity
-        selected_name = compact(identity.get("name"), 160) if identity.get("resolved") else ""
-        selected_role = compact(identity.get("role"), 160) if identity.get("resolved") else ""
-        selected_seniority = compact(identity.get("seniority"), 80) if identity.get("resolved") else ""
-        selected_source_url = compact(identity.get("source_url"), 1000) if identity.get("resolved") else compact(payload.get("best_url"), 1000) or f"https://{domain}/"
-        selected_confidence = compact(identity.get("confidence"), 80) if identity.get("resolved") else ""
+        identity_usable = bool(identity.get("resolved") or identity.get("partially_proved"))
+        selected_name = compact(identity.get("name"), 160) if identity_usable else ""
+        selected_role = compact(identity.get("role"), 160) if identity_usable else ""
+        selected_seniority = compact(identity.get("seniority"), 80) if identity_usable else ""
+        selected_source_url = compact(identity.get("source_url"), 1000) if identity_usable else compact(payload.get("best_url"), 1000) or f"https://{domain}/"
+        selected_confidence = compact(identity.get("confidence"), 80) if identity_usable else ""
         for candidate in company_email_candidates:
             if compact(candidate.get("email"), 320).lower() == accepted_email:
-                if identity.get("resolved"):
+                if identity_usable:
                     candidate.update(
                         {
                             "name": selected_name,
@@ -2938,7 +3009,8 @@ def try_company_email_fallback(
                             "source_url": selected_source_url,
                             "source_type": identity.get("source_type", ""),
                             "confidence": selected_confidence,
-                            "identity_resolved": True,
+                            "identity_resolved": bool(identity.get("resolved")),
+                            "identity_partially_proved": bool(identity.get("partially_proved")),
                             "identity_evidence": identity,
                         }
                     )
@@ -3098,6 +3170,47 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
     ensure_provider_state(compact(payload.get("provider_reset_token") or payload.get("contact_search_run_id"), 160))
     excluded_names = normalized_name_set(payload.get("excluded_candidate_names"))
     excluded_emails = normalized_email_set(payload.get("excluded_email_candidates"))
+    if not payload.get("site_fast_path_only") and validate_email:
+        pre_serper_evidence = {
+            "provider_order": configured_provider_order(),
+            "fallback_reason": compact(payload.get("fallback_reason"), 160),
+            "pre_serper_anymail_fallback": True,
+        }
+        fallback_evidence = {
+            "provider": "anymail_finder",
+            "configured": bool(os.getenv("ANYMAILFINDER_API_KEY", "").strip()),
+            "status": "pre_serper_anymail_fallback",
+            "reason": "pre_serper_anymail_fallback",
+        }
+        early_decision_maker = try_decision_maker_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=[],
+            contact_search_evidence=pre_serper_evidence,
+            email_candidates=[],
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="pre_serper_anymail_fallback",
+        )
+        terminal_result, fallback_email_candidates, fallback_evidence = decision_maker_followup(
+            early_decision_maker,
+            email_candidates=[],
+            email_validation_evidence=fallback_evidence,
+        )
+        if terminal_result:
+            return terminal_result
+        early_company = try_company_email_fallback(
+            row_id=row_id,
+            payload=payload,
+            domain=domain,
+            contact_candidates=[],
+            contact_search_evidence=pre_serper_evidence,
+            email_candidates=fallback_email_candidates,
+            email_validation_evidence=fallback_evidence,
+            fallback_reason="pre_serper_anymail_fallback",
+        )
+        if early_company and early_company.contact_search_status == "contact_found":
+            return early_company
     if not payload.get("site_fast_path_only") and not isinstance(payload.get("search_attempts"), list):
         payload["search_attempts"] = []
     if not payload.get("site_fast_path_only") and not payload.get("search_attempts"):

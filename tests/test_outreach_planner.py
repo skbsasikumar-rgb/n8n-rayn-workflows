@@ -357,8 +357,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "selected_contact_name": "Ivan Puah",
             }
         )
-        self.assertEqual(weak_named["patch"]["automation_decision"], "auto_skipped")
+        self.assertEqual(weak_named["patch"]["automation_decision"], "auto_send_eligible")
         self.assertEqual(weak_named["patch"]["contact_identity_confidence"], "low")
+        self.assertEqual(weak_named["patch"]["contact_send_mode"], "generic_team")
 
         unresolved = o.plan_and_patch(
             {
@@ -367,9 +368,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "validated_email": "randomperson@example.com",
             }
         )
-        self.assertEqual(unresolved["patch"]["automation_decision"], "auto_skipped")
-        self.assertEqual(unresolved["patch"]["automation_decision_reason"], "unresolved_personal_email_identity")
-        self.assertFalse(unresolved["patch"]["email_1_body"])
+        self.assertEqual(unresolved["patch"]["contact_send_mode"], "generic_team")
+        self.assertNotEqual(unresolved["patch"]["automation_decision_reason"], "unresolved_personal_email_identity")
+        self.assertTrue(unresolved["patch"]["email_1_body"].startswith("Hello team,"))
 
     def test_unsafe_funding_uses_value_fallback_without_review(self):
         result = o.plan_and_patch(

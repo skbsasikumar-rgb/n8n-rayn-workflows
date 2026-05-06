@@ -401,6 +401,8 @@ def contact_identity_confidence(row: dict[str, Any]) -> str:
             "selected_contact_role",
         )
     )
+    if any(term in evidence_blob for term in ("inferred_name_partially_proved", "identity_partially_proved", "personal_company_email_identity_unresolved")):
+        return "low"
     if any(term in evidence_blob for term in ("linkedin", "anymail person", "person match", "matched person", "identity confirmed", "accepted person", "decision maker")):
         return "high"
     if first and first in local:
@@ -420,8 +422,6 @@ def contact_send_mode(row: dict[str, Any]) -> str:
         return "generic_team"
     if contact_identity_confidence(row) in {"medium", "high"}:
         return "named_person"
-    if selected_email(row) and not row.get("copy_qa_mode"):
-        return "auto_skipped_unresolved_identity"
     return "generic_team"
 
 
@@ -2649,8 +2649,6 @@ def automation_decision_for(
     if not can_send:
         return "suppressed", suppress_reason, [suppress_reason], False
     mode = contact_send_mode(row)
-    if mode == "auto_skipped_unresolved_identity":
-        return "auto_skipped", "unresolved_personal_email_identity", ["unresolved_personal_email_identity"], False
     if row.get("copy_qa_mode"):
         return "draft_only_review", "copy_qa_mode", ["copy_qa_mode"], False
     if classification.get("pressure_type") == "not_ready":
