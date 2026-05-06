@@ -2671,6 +2671,8 @@ def automation_decision_for(
         return "auto_skipped", "copy_failed_after_llm_and_deterministic_fallback", blockers, False
     if any(not compact((emails.get(f"email_{index}") or {}).get("body")) for index in range(1, 5)):
         return "auto_skipped", "missing_email_body", ["missing_email_body"], False
+    if score < 7:
+        return "auto_skipped", "email_quality_gate_failed", flags or ["email_quality_gate_failed"], False
     if copy_brief.get("email_3_mode") == "value_fallback":
         reason = "funding_claim_not_safe_used_value_fallback"
     else:

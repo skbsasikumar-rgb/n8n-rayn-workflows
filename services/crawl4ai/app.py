@@ -1771,45 +1771,6 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
 @app.post("/outreach-plan")
 async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
     payload = request.model_dump()
-    if payload.get("do_not_contact"):
-        return {
-            "ok": False,
-            "row_id": request.Id,
-            "error": "do_not_contact",
-            "patch": {
-                "Id": request.Id,
-                "email_send_ready": False,
-                "human_review_status": "not_ready",
-                "email_quality_flags": json.dumps(["do_not_contact"], ensure_ascii=False),
-            },
-            "record": {},
-        }
-    if str(payload.get("unsubscribe_status", "")).strip().lower() in {"unsubscribed", "bounced", "complained"}:
-        return {
-            "ok": False,
-            "row_id": request.Id,
-            "error": "unsubscribe_status_blocked",
-            "patch": {
-                "Id": request.Id,
-                "email_send_ready": False,
-                "human_review_status": "not_ready",
-                "email_quality_flags": json.dumps(["unsubscribe_status_blocked"], ensure_ascii=False),
-            },
-            "record": {},
-        }
-    if not payload.get("copy_qa_mode") and not outreach_planner.sendable_email(payload):
-        return {
-            "ok": False,
-            "row_id": request.Id,
-            "error": "missing_sendable_email",
-            "patch": {
-                "Id": request.Id,
-                "email_send_ready": False,
-                "human_review_status": "not_ready",
-                "email_quality_flags": json.dumps(["missing_sendable_email"], ensure_ascii=False),
-            },
-            "record": {},
-        }
     try:
         return outreach_planner.plan_and_patch(payload, copy_qa_mode=bool(payload.get("copy_qa_mode")))
     except Exception as exc:
