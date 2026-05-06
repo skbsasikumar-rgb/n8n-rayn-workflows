@@ -1243,6 +1243,60 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "specialist clinic readiness")
         self.assert_no_final_email_batch_or_signal_language(plan)
 
+    def test_heart_and_generic_specialist_words_do_not_override_better_clinic_routes(self):
+        cases = [
+            (
+                "Amber Family Clinic",
+                "# Amber Family Clinic | Primary Care Physician in Katong\nWelcome to Amber Family Clinic. MOH-approved clinic providing in-person consultations and video consultations for the community. Your health in focus. Our team looks forward to meeting you. We are proud to be recognized as a trusted panel clinic. Is your liver health at risk?",
+                "GP_OMS",
+                "a family clinic offering GP-style consultations",
+                "heart/cardiology",
+            ),
+            (
+                "AO Psychology",
+                "# Clinical Psychologist Singapore | Counselling & Psychotherapy | AO Psychology\nClinical Psychologist in Singapore. Counselling and psychotherapy services for individuals, couples and families. Evidence-based therapy by registered psychologists. Mental wellness blog and resources.",
+                "allied_health",
+                "a psychology / mental-health provider handling assessment and case-note records",
+                "heart/cardiology",
+            ),
+            (
+                "Appletree Medical",
+                "# Appletree Medical Group | Walk-In, Family Doctors, Virtual Care & Telemedicine\nAppletree Medical Group offers Virtual Care, Walk-In, Family Medicine and Specialists services in Ontario, for same-day doctor's visit or ongoing medical care. Healthcare that fits your life.",
+                "GP_OMS",
+                "part of a wider clinic group or multi-location healthcare operation",
+                "heart/cardiology",
+            ),
+            (
+                "Arden Endocrinology Specialist Clinic",
+                "# Endocrinologists In Singapore | Arden Endocrinology Specialist Clinic\nUnderstanding hypertension, high cholesterol, diabetes and thyroid care. Physiotherapy supports sustainable weight loss.",
+                "specialist_OMS",
+                "a specialist-led clinic focused on endocrinology care",
+                "allied-health",
+            ),
+            (
+                "Asia Diagnostics Group",
+                "# Asia Diagnostics Group\nGeneral Radiology Services. ADG is a qualified independent diagnostics service provider with Bedok X-ray Centre and Jurong Imaging Centre. Diagnostics imaging such as Chest X-ray supports diagnosis and monitoring.",
+                "diagnostic",
+                "a diagnostic / laboratory provider handling screening or test records",
+                "dental",
+            ),
+            (
+                "Asia Digestive Associates",
+                "# Home | Asia Digestive Associates\nAt Asia Digestive Associates, we put our heart and soul into providing patient centered care. Our services include digestive and gastroenterology clinics.",
+                "specialist_OMS",
+                "specialist-led gastroenterology and digestive care",
+                "heart/cardiology",
+            ),
+        ]
+        for company, content, service, expected_phrase, forbidden_phrase in cases:
+            with self.subTest(company=company):
+                plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["hia_service_type_guess"], service)
+                self.assertIn(expected_phrase, plan.emails["email_1"]["body"])
+                self.assertNotIn(forbidden_phrase, plan.emails["email_1"]["body"])
+                self.assert_no_final_email_batch_or_signal_language(plan)
+
     def test_amk_family_clinic_prefers_gp_over_weak_diagnostic_evidence(self):
         plan = o.plan_outreach(
             {

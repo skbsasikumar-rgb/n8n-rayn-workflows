@@ -237,7 +237,10 @@ SPECIALIST_SERVICE_TERMS = (
     "arthritis",
     "lupus",
     "cardiology",
-    "heart",
+    "heart clinic",
+    "heart centre",
+    "heart center",
+    "heart & vascular",
     "cardiac",
     "cardiovascular",
     "ecg",
@@ -261,6 +264,7 @@ SPECIALIST_SERVICE_TERMS = (
     "surgical",
     "specialist",
 )
+SPECIFIC_SPECIALIST_SERVICE_TERMS = tuple(term for term in SPECIALIST_SERVICE_TERMS if term != "specialist")
 DIAGNOSTIC_SERVICE_TERMS = (
     "diagnostic",
     "radiology",
@@ -750,7 +754,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         score += 18
     if has_clinical_lab_evidence(text):
         score += 18
-    if "dental" in text or "dentist" in text:
+    if has_strong_diagnostic_lab_evidence(text):
+        service = "diagnostic"
+    elif "dental" in text or "dentist" in text:
         service = "dental"
     elif "ambulatory surgical" in text or "day surgery" in text:
         service = "unknown"
@@ -769,18 +775,20 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "long_term_care"
     elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
         service = "GP_OMS"
-    elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
-        service = "diagnostic"
     elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
         service = "GP_OMS"
+    elif contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS):
+        service = "specialist_OMS"
+    elif "physio" in text or "physiotherapy" in text or "psychology" in text or "psychologist" in text or "mental health" in text or "therapy" in text:
+        service = "allied_health"
     elif contains_any(text, SPECIALIST_SERVICE_TERMS):
         service = "specialist_OMS"
+    elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
+        service = "diagnostic"
     elif "hims" in text or "health information management system" in text:
         service = "HIMS_provider"
     elif "nehr" in text:
         service = "NEHR_user"
-    elif "physio" in text or "physiotherapy" in text or "psychology" in text or "psychologist" in text or "mental health" in text or "therapy" in text:
-        service = "allied_health"
     elif "clinic" in text or "doctor" in text or "medical" in text:
         service = "GP_OMS"
     else:
@@ -1508,7 +1516,7 @@ def email_contains_hia_batch_wording(body: str) -> bool:
 
 
 SPECIALIST_SERVICE_SUMMARIES = (
-    (("heart", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram"), "heart/cardiology care"),
+    (("heart clinic", "heart centre", "heart center", "heart & vascular", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram"), "heart/cardiology care"),
     (("pain management", "spine pain", "pain clinic", "anaesthesia", "injections"), "pain management care"),
     (("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic"), "eye care"),
     (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
@@ -1525,7 +1533,7 @@ SPECIALIST_SERVICE_SUMMARIES = (
 
 
 def specialist_subtype(text: str) -> str:
-    if any(term in text for term in ("heart", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram")):
+    if has_cardiology_subtype(text):
         return "cardiology"
     if any(term in text for term in ("pain management", "spine pain", "pain clinic", "anaesthesia", "injections")) or (
         "pain" in text and "clinic" in text
@@ -1544,6 +1552,23 @@ def specialist_subtype(text: str) -> str:
     if any(term in text for term in ("oncology", "radiation")):
         return "oncology"
     return ""
+
+
+def has_cardiology_subtype(text: str) -> bool:
+    return any(
+        term in text
+        for term in (
+            "cardiology",
+            "cardiac",
+            "cardiovascular",
+            "ecg",
+            "echocardiogram",
+            "heart clinic",
+            "heart centre",
+            "heart center",
+            "heart & vascular",
+        )
+    )
 
 
 def home_care_subtype(text: str) -> bool:
@@ -1614,17 +1639,11 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
         structure = "single_site_or_unknown"
 
     has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "injectable"))
-    has_specialist = any(
+    has_specialist = has_cardiology_subtype(source_l) or any(
         term in source_l
         for term in (
-            "heart",
             "gastroenterology",
             "oncology",
-            "cardiology",
-            "cardiac",
-            "cardiovascular",
-            "ecg",
-            "echocardiogram",
             "dermatology",
             "dermatologist",
             "pain management",
@@ -1652,7 +1671,10 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     has_diagnostic = any(term in source_l for term in ("diagnostic", "screening", "laboratory", " lab ", "radiology", "nuclear medicine", "test reports"))
     has_strong_lab = any(term in source_l for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "radiology", "nuclear medicine", "test reports", "lab test"))
 
-    if service_type == "dental" or any(term in source_l for term in ("dental", "dentist", "orthodont")):
+    if service_type == "diagnostic" and has_strong_lab:
+        guess = "diagnostic_lab"
+        add_evidence("diagnostic, screening or lab terms")
+    elif service_type == "dental" or any(term in source_l for term in ("dental", "dentist", "orthodont")):
         guess = "dental"
         add_evidence("dental terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
@@ -1670,12 +1692,23 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "allied_health" and any(term in source_l for term in ("psychology", "psychologist", "counselling", "counseling", "mental health", "case-note")):
         guess = "mental_health"
         add_evidence("psychology or mental-health terms")
-    elif service_type == "allied_health" or any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support")):
+    elif service_type == "allied_health" or (
+        service_type != "specialist_OMS" and any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support"))
+    ):
         guess = "allied_health"
         add_evidence("allied-health or physiotherapy terms")
     elif has_aesthetic:
         guess = "aesthetic_medical"
         add_evidence("medical/aesthetic terms")
+    elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
+        guess = "solo_gp"
+        add_evidence("solo GP/outpatient evidence")
+    elif service_type == "GP_OMS" and has_family_clinic_evidence(row, source_l):
+        guess = "family_gp"
+        add_evidence("family clinic, GP or outpatient terms")
+    elif service_type == "GP_OMS" and has_gp:
+        guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
+        add_evidence("GP/outpatient evidence")
     elif service_type == "specialist_OMS" or has_specialist:
         guess = "specialist_led"
         add_evidence("specialist-led care terms")
