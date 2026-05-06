@@ -404,19 +404,32 @@ Decision values:
 - `auto_skipped`: unresolved identity, weak evidence after retry, unsafe copy, missing concrete observation or unsupported track.
 - `draft_only_review`: QA/testing mode only, such as `copy_qa_mode`.
 
-The patch exposes `automation_decision`, `automation_decision_reason`, `automation_blockers_json`, `contact_send_mode`, `email_3_mode`, enrichment/copy quality scores, severe email flags and `final_send_gate_passed`.
+The patch exposes `automation_decision`, `automation_decision_reason`, `automation_blockers_json`, `automation_advisory_flags_json`, `contact_send_mode`, `contact_identity_confidence`, `email_3_mode`, enrichment/copy quality scores, severe email flags and `final_send_gate_passed`.
 
 Contact policy:
 
-- `named_person`: validated non-generic email plus usable contact name. Greeting may use first name.
+- Missing `validated_email` suppresses by default outside `copy_qa_mode`.
+- `copy_qa_mode` may preview rows without `validated_email`, but it never sets `email_send_ready`.
+- `named_person`: validated non-generic email, usable contact name, and `contact_identity_confidence` of `medium` or `high`. Greeting may use first name.
 - `generic_team`: generic/company inbox. Greeting stays team-level and no name is invented.
 - `suppressed`: hard contact/suppression stop.
 - `auto_skipped_unresolved_identity`: personal-looking email without a resolved person identity.
 
 Funding policy:
 
-- Email 3 uses `email_3_mode = funding` only when the funding match is verified, the claim is safe, entity confidence is medium/high, and the matched source is current where available.
+- Email 3 uses `email_3_mode = funding` only when the funding match is verified, the claim is safe, entity confidence is medium/high, at least one matched programme exists, and at least one matched programme is `verified_current`.
 - Otherwise Email 3 uses `email_3_mode = value_fallback`, does not mention funding, and the row does not require review solely because of funding uncertainty.
+- Exact percentage claims are allowed only when the matched programme metadata explicitly permits exact claims.
+
+Blocking vs advisory flags:
+
+- `automation_blockers_json` contains only true blockers: severe email flags, missing concrete observation, unsupported pressure, missing problem, unresolved contact identity, weak enrichment below threshold, and missing required copy-brief fields.
+- `automation_advisory_flags_json` can include non-blocking notes such as low trigger confidence, missing optional data-system detail when the score still passes, or funding follow-up notes when Email 3 uses value fallback.
+
+Send-state distinction:
+
+- `final_send_gate_passed = true` means the row passed policy, contact, enrichment and copy gates.
+- `email_send_ready = true` means the current run is allowed to hand the row to a sender. In draft-only runs, `final_send_gate_passed` may be true while `email_send_ready` remains false.
 
 HIA uncertainty policy:
 
@@ -448,7 +461,7 @@ Amaris B. Clinic:
 - problem: `hia_readiness` or `access_control`.
 - copy brief should mention HIA timelines from 2027, patient/health information, appointment or patient systems, access, backups, vendors, incident steps, and an HIA readiness map.
 - recommended first route: `Cyber Essentials` as baseline or `HIA readiness` as map.
-- if batch/deadline is not high-confidence, say "may be in the HIA readiness window" and keep review required.
+- if HIA evidence is weak, route to PDPA safeguards or skip/retry rather than keeping review required.
 
 Amazing Hearing Group:
 

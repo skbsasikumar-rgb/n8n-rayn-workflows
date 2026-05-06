@@ -1,6 +1,6 @@
 import unittest
 
-from services.crawl4ai.funding_programs import FundingProgram
+from services.crawl4ai.funding_programs import FundingMatch, FundingProgram
 from services.crawl4ai import outreach_planner as o
 
 
@@ -169,6 +169,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(partial_funding_patch["email_send_ready"])
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
         self.assertNotIn("support route", partial_funding_patch["email_3_body"].lower())
+        self.assertIn("Worth sending the PDPA safeguards checklist?", partial_funding_patch["email_3_body"])
         self.assertNotIn("email_3_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -216,7 +217,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "automation_decision",
                 "automation_decision_reason",
                 "automation_blockers_json",
+                "automation_advisory_flags_json",
                 "contact_send_mode",
+                "contact_identity_confidence",
                 "email_3_mode",
                 "enrichment_quality_score",
                 "enrichment_quality_flags",
@@ -247,8 +250,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "services_detected": ["aesthetic clinic services", "doctor consultations"],
                 "leadership_or_team_signals": ["doctor and practitioner team"],
                 "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
-                "validated_email": "doctor@example.com",
+                "validated_email": "ivan@example.com",
                 "selected_contact_name": "Ivan Puah",
+                "email_validation_status": "deliverable",
                 "draft_only": True,
             },
             programmes=[verified_program()],
@@ -276,6 +280,21 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(result["patch"]["automation_decision_reason"], reason)
                 self.assertFalse(result["patch"]["email_1_body"])
 
+    def test_copy_qa_mode_allows_missing_email_without_send_ready(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 71,
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "copy_qa_mode": True,
+            },
+            copy_qa_mode=True,
+        )
+        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
+        self.assertFalse(result["patch"]["email_send_ready"])
+        self.assertFalse(result["patch"]["final_send_gate_passed"])
+        self.assertTrue(result["patch"]["email_1_body"])
+
     def test_contact_send_mode_named_generic_and_unresolved_personal(self):
         named = o.plan_and_patch(
             {
@@ -286,6 +305,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(named["patch"]["contact_send_mode"], "named_person")
+        self.assertIn(named["patch"]["contact_identity_confidence"], {"medium", "high"})
         self.assertTrue(named["patch"]["email_1_body"].startswith("Hi Ivan,"))
 
         generic = o.plan_and_patch(
@@ -296,7 +316,30 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(generic["patch"]["contact_send_mode"], "generic_team")
+        self.assertEqual(generic["patch"]["contact_identity_confidence"], "none")
         self.assertTrue(generic["patch"]["email_1_body"].startswith("Hello team,"))
+
+        generic_with_name = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "info@example.com",
+                "selected_contact_name": "Ivan Puah",
+            }
+        )
+        self.assertEqual(generic_with_name["patch"]["contact_send_mode"], "generic_team")
+        self.assertTrue(generic_with_name["patch"]["email_1_body"].startswith("Hello team,"))
+
+        weak_named = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "randomperson@example.com",
+                "selected_contact_name": "Ivan Puah",
+            }
+        )
+        self.assertEqual(weak_named["patch"]["automation_decision"], "auto_skipped")
+        self.assertEqual(weak_named["patch"]["contact_identity_confidence"], "low")
 
         unresolved = o.plan_and_patch(
             {
@@ -322,6 +365,61 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(result["patch"]["automation_decision_reason"], "funding_claim_not_safe_used_value_fallback")
         self.assertNotIn("funding", result["patch"]["email_3_body"].lower())
         self.assertNotIn("you qualify", result["patch"]["email_3_body"].lower())
+        self.assertIn("Worth sending the PDPA safeguards checklist?", result["patch"]["email_3_body"])
+
+    def test_funding_requires_verified_current_matched_programme(self):
+        row = {
+            "company_name": "Amaris B. Clinic",
+            "website_content": "Aesthetic medical clinic with doctors, treatments and patient appointments.",
+        }
+        classification = o.classify_row(row)
+        unsafe_funding = FundingMatch(
+            funding_status="verified_match",
+            funding_relevant=True,
+            primary_funding_program="Cyber Essentials",
+            matched=[],
+            funding_claim_line="Based on the company profile, the Cyber Essentials support route appears worth checking for Amaris B. Clinic.",
+            funding_confidence="high",
+        )
+        brief = o.build_copy_brief(row, classification, unsafe_funding)
+        self.assertFalse(o.funding_claim_send_safe(unsafe_funding, brief, classification))
+
+        matched = o.plan_outreach(
+            row,
+            programmes=[verified_program()],
+        )
+        self.assertEqual(matched.copy_brief["email_3_mode"], "funding")
+        self.assertIn(matched.funding.funding_claim_line, matched.emails["email_3"]["body"])
+
+    def test_send_readiness_distinguishes_gate_from_draft_mode(self):
+        row = {
+            "company_name": "Acme Services Pte Ltd",
+            "website_content": "Singapore company collecting customer enquiries and employee data.",
+            "validated_email": "info@example.com",
+        }
+        draft = o.plan_and_patch({**row, "draft_only": True})
+        self.assertEqual(draft["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertTrue(draft["patch"]["final_send_gate_passed"])
+        self.assertFalse(draft["patch"]["email_send_ready"])
+
+        send = o.plan_and_patch({**row, "send_mode": True})
+        self.assertEqual(send["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertTrue(send["patch"]["final_send_gate_passed"])
+        self.assertTrue(send["patch"]["email_send_ready"])
+
+    def test_advisory_flags_do_not_become_blockers_when_score_passes(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "validated_email": "info@example.com",
+            }
+        )
+        blockers = result["patch"]["automation_blockers_json"]
+        advisory = result["patch"]["automation_advisory_flags_json"]
+        self.assertNotIn("low_trigger_confidence", blockers)
+        self.assertIn("funding_next_check_needed", advisory)
+        self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
 
     def test_bad_llm_copy_falls_back_to_deterministic_strategy(self):
         row = {
@@ -559,7 +657,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertIn("Noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", plan.emails["email_1"]["body"])
         self.assertIn("With HIA readiness becoming more urgent for healthcare providers", plan.emails["email_1"]["body"])
-        self.assertIn("access to consultation records, treatment notes, appointment details, clinic email, vendor systems, backups, patching and incident steps", plan.emails["email_1"]["body"])
+        self.assertIn("access to consultation records, treatment notes, appointment details, clinic email, vendor systems is clear, and whether backups, patching and incident steps are mapped", plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access", plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access, backups, patching, vendors", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side", plan.emails["email_1"]["body"])
@@ -594,7 +692,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Noticed American International Clinic Singapore appears to be an outpatient medical clinic offering doctor-led consultations.", body)
         self.assertNotIn("family clinic", body)
         self.assertIn("With HIA readiness becoming more urgent for healthcare providers", body)
-        self.assertIn("access to patient records, appointment details, consultation notes, clinic email, vendor systems, backups, patching and incident steps", body)
+        self.assertIn("access to patient records, appointment details, consultation notes, clinic email, vendor systems is clear, and whether backups, patching and incident steps are mapped", body)
         self.assertIn("Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side.", body)
         self.assertIn("Worth sending a short clinic readiness map?", body)
         self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_2"]["body"])

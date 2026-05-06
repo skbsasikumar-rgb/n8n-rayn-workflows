@@ -146,7 +146,9 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("automation_decision", "SingleSelect", "text"),
     OutreachColumn("automation_decision_reason", "SingleLineText", "text"),
     OutreachColumn("automation_blockers_json", "LongText", "text", "360px"),
+    OutreachColumn("automation_advisory_flags_json", "LongText", "text", "360px"),
     OutreachColumn("contact_send_mode", "SingleSelect", "text"),
+    OutreachColumn("contact_identity_confidence", "SingleSelect", "text"),
     OutreachColumn("email_3_mode", "SingleSelect", "text"),
     OutreachColumn("enrichment_quality_score", "Number", "numeric", "160px"),
     OutreachColumn("enrichment_quality_flags", "LongText", "text", "360px"),
@@ -186,6 +188,7 @@ SELECT_OPTIONS: dict[str, list[str]] = {
     "human_review_status": ["not_ready", "ready_for_review", "approved", "rejected", "sent"],
     "automation_decision": ["auto_send_eligible", "auto_skipped", "retry_enrichment_once", "suppressed", "draft_only_review"],
     "contact_send_mode": ["named_person", "generic_team", "suppressed", "auto_skipped_unresolved_identity"],
+    "contact_identity_confidence": ["none", "low", "medium", "high"],
     "email_3_mode": ["funding", "value_fallback"],
 }
 

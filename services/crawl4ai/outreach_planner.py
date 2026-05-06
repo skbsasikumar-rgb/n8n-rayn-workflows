@@ -308,7 +308,9 @@ class OutreachPlan:
     automation_decision: str = "draft_only_review"
     automation_decision_reason: str = ""
     automation_blockers: list[str] = field(default_factory=list)
+    automation_advisory_flags: list[str] = field(default_factory=list)
     contact_send_mode: str = "generic_team"
+    contact_identity_confidence: str = "none"
     email_3_mode: str = "value_fallback"
     enrichment_quality_score: int = 0
     enrichment_quality_flags: list[str] = field(default_factory=list)
@@ -370,9 +372,44 @@ def can_contact(row: dict[str, Any]) -> tuple[bool, str]:
     status = compact(row.get("unsubscribe_status") or "active").lower()
     if status in {"unsubscribed", "bounced", "complained"}:
         return False, f"suppressed_{status}"
-    if row.get("require_validated_email") and not sendable_email(row) and not row.get("copy_qa_mode"):
+    if not sendable_email(row) and not row.get("copy_qa_mode"):
         return False, "suppressed_missing_validated_email"
     return True, ""
+
+
+def contact_identity_confidence(row: dict[str, Any]) -> str:
+    email = selected_email(row)
+    name = compact(row.get("selected_contact_name"))
+    if not email or is_generic_or_company_inbox(row) or not name:
+        return "none"
+    first = first_name_from_contact(name).lower()
+    name_parts = [part.lower() for part in re.findall(r"[a-z0-9]+", name) if part.lower() not in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}]
+    local = email.partition("@")[0].lower()
+    evidence_blob = " ".join(
+        compact(row.get(field)).lower()
+        for field in (
+            "contact_search_reason",
+            "contact_search_status",
+            "email_validation_provider",
+            "email_validation_status",
+            "email_validation_summary",
+            "contact_candidates_json",
+            "email_candidates_json",
+            "email_validation_evidence_json",
+            "email_source",
+            "selected_contact_title",
+            "selected_contact_role",
+        )
+    )
+    if any(term in evidence_blob for term in ("linkedin", "anymail person", "person match", "matched person", "identity confirmed", "accepted person", "decision maker")):
+        return "high"
+    if first and first in local:
+        return "high" if any(term in evidence_blob for term in ("deliverable", "valid", "accepted", "no2bounce", "anymail")) else "medium"
+    if any(part for part in name_parts if len(part) >= 4 and part in local):
+        return "medium"
+    if any(term in evidence_blob for term in ("deliverable", "valid", "accepted")):
+        return "low"
+    return "low"
 
 
 def contact_send_mode(row: dict[str, Any]) -> str:
@@ -381,9 +418,9 @@ def contact_send_mode(row: dict[str, Any]) -> str:
         return "suppressed"
     if is_generic_or_company_inbox(row):
         return "generic_team"
-    if compact(row.get("selected_contact_name")):
+    if contact_identity_confidence(row) in {"medium", "high"}:
         return "named_person"
-    if row.get("require_contact_identity") and selected_email(row) and not row.get("copy_qa_mode"):
+    if selected_email(row) and not row.get("copy_qa_mode"):
         return "auto_skipped_unresolved_identity"
     return "generic_team"
 
@@ -398,19 +435,24 @@ def funding_claim_send_safe(funding: FundingMatch, copy_brief: dict[str, Any], c
     if classification.get("entity_type_confidence") not in {"medium", "high"}:
         return False
     matched = funding.matched or []
-    if matched and not any(item.get("verification_status") == "verified_current" for item in matched):
+    if not matched:
+        return False
+    if not any(item.get("verification_status") == "verified_current" for item in matched):
+        return False
+    if re.search(r"\b\d{1,3}%\b", funding.funding_claim_line) and not any(item.get("exact_claim_allowed_in_email") for item in matched):
         return False
     return True
 
 
-def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any]) -> dict[str, Any]:
+def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: str | None = None) -> dict[str, Any]:
     greeting = email_comma_greeting(row)
+    asset_name = compact(asset) or "checklist"
     body = (
         f"{greeting}\n\n"
-        "One useful way to check whether this is worth prioritising is to map the evidence already in place: "
+        f"One useful way to check whether the {asset_name} is worth prioritising is to map the evidence already in place: "
         "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
         "If the gaps are small, Cyber Essentials preparation is usually more straightforward.\n\n"
-        "Worth sending the checklist?\n\n"
+        f"Worth sending the {asset_name}?\n\n"
         "Best,\nSK\nRAYN Secure"
     )
     emails = {**emails}
@@ -465,9 +507,43 @@ def copy_brief_quality(classification: dict[str, Any], copy_brief: dict[str, Any
     return max(0, 10 - len(flags) * 2), list(dict.fromkeys(flags))
 
 
+def blocking_enrichment_flags(flags: list[str], classification: dict[str, Any], score: int) -> list[str]:
+    blocking = {"no_supported_pressure", "no_concrete_company_observation", "missing_problem", "weak_hia_and_pdpa_evidence", "no_personal_data_or_b2b_evidence"}
+    result = [flag for flag in flags if flag in blocking]
+    if "missing_data_systems" in flags and (classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards", "customer_trust"} and score < 7):
+        result.append("missing_data_systems")
+    if classification.get("pressure_type") == "hia_regulatory" and classification.get("hia_service_type_guess") == "unknown":
+        result.append("no_hia_service_evidence")
+    return list(dict.fromkeys(result))
+
+
+def advisory_enrichment_flags(flags: list[str], classification: dict[str, Any], score: int) -> list[str]:
+    blocking = set(blocking_enrichment_flags(flags, classification, score))
+    advisory = [flag for flag in flags if flag not in blocking]
+    return list(dict.fromkeys(advisory))
+
+
+def blocking_copy_brief_flags(flags: list[str], classification: dict[str, Any], copy_brief: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    for flag in flags:
+        if flag.startswith("missing_copy_brief:") or flag == "generic_personalisation_signal":
+            result.append(flag)
+        elif flag == "clinic_profile_missing_for_hia" and classification.get("pressure_type") == "hia_regulatory" and not compact(copy_brief.get("clinic_profile_phrase")):
+            result.append(flag)
+    return list(dict.fromkeys(result))
+
+
+def advisory_copy_brief_flags(flags: list[str], classification: dict[str, Any], copy_brief: dict[str, Any]) -> list[str]:
+    blocking = set(blocking_copy_brief_flags(flags, classification, copy_brief))
+    advisory = [flag for flag in flags if flag not in blocking]
+    if copy_brief.get("email_3_mode") == "value_fallback" and compact(copy_brief.get("funding_next_check_needed")):
+        advisory.append("funding_next_check_needed")
+    return list(dict.fromkeys(advisory))
+
+
 def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and not is_generic_or_company_inbox(row):
+    if name and contact_send_mode(row) == "named_person":
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -481,20 +557,20 @@ def first_name_from_contact(name: str) -> str:
 
 def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and not is_generic_or_company_inbox(row):
+    if name and contact_send_mode(row) == "named_person":
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
 
 def email_greeting_type(row: dict[str, Any]) -> str:
-    if compact(row.get("selected_contact_name")) and not is_generic_or_company_inbox(row):
+    if contact_send_mode(row) == "named_person":
         return "named_person"
     return "generic_team"
 
 
 def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name and not is_generic_or_company_inbox(row):
+    if name and contact_send_mode(row) == "named_person":
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -1616,10 +1692,10 @@ def hia_problem_statement(row: dict[str, Any], classification: dict[str, Any], c
     records = hia_email_1_records(row, classification, clinic_profile)
     profile_guess = compact((clinic_profile or {}).get("clinic_profile_guess"))
     if profile_guess in {"dental", "pharmacy", "specialist_led"}:
-        tail = "backups and incident steps"
+        controls = "backups and incident steps"
     else:
-        tail = "backups, patching and incident steps"
-    return f"{prefix} the practical question is whether access to {records}, {tail} is already mapped clearly."
+        controls = "backups, patching and incident steps"
+    return f"{prefix} the practical question is whether access to {records} is clear, and whether {controls} are mapped."
 
 
 def hia_email_2_diagnostic(
@@ -1969,7 +2045,7 @@ def generate_email_sequence(
             email3_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?\n\nBest,\nSK\nRAYN Secure"
         else:
             email3_subject = "readiness evidence"
-            email3_body = value_fallback_email_3(row, {"email_3": {"chosen_subject": email3_subject}})["email_3"]["body"]
+            email3_body = value_fallback_email_3(row, {"email_3": {"chosen_subject": email3_subject}}, asset)["email_3"]["body"]
         email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?\n\nBest,\nSK\nRAYN Secure"
     else:
         email3_subject = "not ready"
@@ -2043,10 +2119,10 @@ def enforce_funding_claim_email(
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if classification is not None and copy_brief is not None and not funding_claim_send_safe(funding, copy_brief, classification):
-        return value_fallback_email_3(row, emails)
+        return value_fallback_email_3(row, emails, (copy_brief or {}).get("email_asset_offer"))
     claim = trim_text(funding.funding_claim_line)
     if not claim:
-        return value_fallback_email_3(row, emails)
+        return value_fallback_email_3(row, emails, (copy_brief or {}).get("email_asset_offer"))
     email3 = emails.get("email_3") or {}
     existing_body = trim_text(email3.get("body"))
     caveat_count = existing_body.lower().count("subject to programme confirmation")
@@ -2579,7 +2655,9 @@ def automation_decision_for(
         return "draft_only_review", "copy_qa_mode", ["copy_qa_mode"], False
     if classification.get("pressure_type") == "not_ready":
         return "auto_skipped", "weak_hia_and_pdpa_evidence", ["pressure_type_not_ready"], False
-    blockers = list(dict.fromkeys(severe_flags(flags) + enrichment_flags + copy_flags))
+    blocking_enrichment = blocking_enrichment_flags(enrichment_flags, classification, enrichment_score)
+    blocking_copy = blocking_copy_brief_flags(copy_flags, classification, copy_brief)
+    blockers = list(dict.fromkeys(severe_flags(flags) + blocking_enrichment + blocking_copy))
     if "no_concrete_company_observation" in blockers:
         return "auto_skipped", "no_concrete_company_observation", blockers, False
     if enrichment_score < 7:
@@ -2593,7 +2671,7 @@ def automation_decision_for(
         return "auto_skipped", "copy_failed_after_llm_and_deterministic_fallback", blockers, False
     if any(not compact((emails.get(f"email_{index}") or {}).get("body")) for index in range(1, 5)):
         return "auto_skipped", "missing_email_body", ["missing_email_body"], False
-    if copy_brief.get("email_3_mode") == "value_fallback" and funding.funding_status != "verified_match":
+    if copy_brief.get("email_3_mode") == "value_fallback":
         reason = "funding_claim_not_safe_used_value_fallback"
     else:
         reason = "auto_send_all_gates_passed"
@@ -2636,6 +2714,12 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
     enrichment_score, enrichment_flags = enrichment_quality(row, classification, copy_brief)
     copy_score, copy_flags = copy_brief_quality(classification, copy_brief)
+    advisory_flags = list(
+        dict.fromkeys(
+            advisory_enrichment_flags(enrichment_flags, classification, enrichment_score)
+            + advisory_copy_brief_flags(copy_flags, classification, copy_brief)
+        )
+    )
     decision, decision_reason, blockers, final_gate = automation_decision_for(
         row,
         classification,
@@ -2649,27 +2733,18 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         copy_score,
         copy_flags,
     )
-    if decision in {"suppressed", "auto_skipped", "retry_enrichment_once"}:
+    if row.get("enforce_contact_gates") and decision in {"suppressed", "auto_skipped", "retry_enrichment_once"}:
         previous_flags = list(flags)
         emails = empty_email_sequence()
         score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
         for flag in previous_flags:
             if flag not in flags:
                 flags.append(flag)
-    if not row.get("send_mode"):
-        send_ready = False
-    if not row.get("send_mode"):
-        send_ready = False
-    if row.get("draft_only"):
-        send_ready = False
+    send_ready = decision == "auto_send_eligible" and bool(row.get("send_mode")) and not row.get("draft_only")
     if row.get("copy_qa_mode"):
         send_ready = False
         if "copy_qa_mode" not in flags:
             flags.append("copy_qa_mode")
-    if decision == "auto_send_eligible" and (row.get("draft_only") or not row.get("send_mode")):
-        send_ready = False
-    elif decision != "auto_send_eligible":
-        send_ready = False
     human_review_status = "ready_for_review" if decision == "draft_only_review" else "not_ready"
     if decision == "auto_send_eligible":
         human_review_status = "ready_for_review"
@@ -2688,7 +2763,9 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         automation_decision=decision,
         automation_decision_reason=decision_reason,
         automation_blockers=blockers,
+        automation_advisory_flags=advisory_flags,
         contact_send_mode=contact_send_mode(row),
+        contact_identity_confidence=contact_identity_confidence(row),
         email_3_mode=copy_brief.get("email_3_mode", "value_fallback"),
         enrichment_quality_score=enrichment_score,
         enrichment_quality_flags=enrichment_flags,
@@ -2799,7 +2876,9 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "automation_decision": plan.automation_decision,
         "automation_decision_reason": plan.automation_decision_reason,
         "automation_blockers_json": json_dumps(plan.automation_blockers),
+        "automation_advisory_flags_json": json_dumps(plan.automation_advisory_flags),
         "contact_send_mode": plan.contact_send_mode,
+        "contact_identity_confidence": plan.contact_identity_confidence,
         "email_3_mode": plan.email_3_mode,
         "enrichment_quality_score": plan.enrichment_quality_score,
         "enrichment_quality_flags": json_dumps(plan.enrichment_quality_flags),
@@ -2828,7 +2907,9 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "automation_decision": plan.automation_decision,
             "automation_decision_reason": plan.automation_decision_reason,
             "automation_blockers_json": plan.automation_blockers,
+            "automation_advisory_flags_json": plan.automation_advisory_flags,
             "contact_send_mode": plan.contact_send_mode,
+            "contact_identity_confidence": plan.contact_identity_confidence,
             "email_3_mode": plan.email_3_mode,
             "enrichment_quality_score": plan.enrichment_quality_score,
             "enrichment_quality_flags": plan.enrichment_quality_flags,
@@ -2873,7 +2954,9 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "automation_decision": patch.get("automation_decision", ""),
         "automation_decision_reason": patch.get("automation_decision_reason", ""),
         "automation_blockers_json": patch.get("automation_blockers_json", "[]"),
+        "automation_advisory_flags_json": patch.get("automation_advisory_flags_json", "[]"),
         "contact_send_mode": patch.get("contact_send_mode", ""),
+        "contact_identity_confidence": patch.get("contact_identity_confidence", ""),
         "email_3_mode": patch.get("email_3_mode", ""),
         "enrichment_quality_score": patch.get("enrichment_quality_score", 0),
         "enrichment_quality_flags": patch.get("enrichment_quality_flags", "[]"),
@@ -2907,11 +2990,11 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
     row = {
         **row,
         "copy_qa_mode": bool(copy_qa_mode or row.get("copy_qa_mode")),
-        "require_validated_email": True,
-        "require_contact_identity": True,
+        "enforce_contact_gates": True,
     }
     plan = plan_outreach(row, programmes=programmes)
     patch = build_noco_patch(row, plan)
+    openrouter_allowed = copy_brief_ready(plan.classification, plan.copy_brief) and plan.automation_decision not in {"suppressed", "auto_skipped", "retry_enrichment_once"}
     return {
         "ok": True,
         "row_id": plan.row_id,
@@ -2920,8 +3003,9 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
         "automation_decision": plan.automation_decision,
         "automation_decision_reason": plan.automation_decision_reason,
         "automation_blockers": plan.automation_blockers,
-        "openrouter_allowed": copy_brief_ready(plan.classification, plan.copy_brief),
-        "skip_openrouter": not copy_brief_ready(plan.classification, plan.copy_brief),
+        "automation_advisory_flags": plan.automation_advisory_flags,
+        "openrouter_allowed": openrouter_allowed,
+        "skip_openrouter": not openrouter_allowed,
         "audit_report": build_audit_report(row, plan=plan),
         "patch": patch,
         "record": plan.to_dict(),
@@ -3002,6 +3086,12 @@ def patch_with_email_sequence(
                 flags.append(rejected)
     enrichment_score, enrichment_flags = enrichment_quality(row, classification, copy_brief)
     copy_score, copy_flags = copy_brief_quality(classification, copy_brief)
+    advisory_flags = list(
+        dict.fromkeys(
+            advisory_enrichment_flags(enrichment_flags, classification, enrichment_score)
+            + advisory_copy_brief_flags(copy_flags, classification, copy_brief)
+        )
+    )
     decision, decision_reason, blockers, final_gate = automation_decision_for(
         row,
         classification,
@@ -3015,23 +3105,18 @@ def patch_with_email_sequence(
         copy_score,
         copy_flags,
     )
-    if decision in {"suppressed", "auto_skipped", "retry_enrichment_once"}:
+    if row.get("enforce_contact_gates") and decision in {"suppressed", "auto_skipped", "retry_enrichment_once"}:
         previous_flags = list(flags)
         emails = empty_email_sequence()
         score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
         for flag in previous_flags:
             if flag not in flags:
                 flags.append(flag)
-    if not row.get("send_mode"):
-        send_ready = False
-    if row.get("draft_only"):
-        send_ready = False
+    send_ready = decision == "auto_send_eligible" and bool(row.get("send_mode")) and not row.get("draft_only")
     if row.get("copy_qa_mode"):
         send_ready = False
         if "copy_qa_mode" not in flags:
             flags.append("copy_qa_mode")
-    if decision != "auto_send_eligible":
-        send_ready = False
     plan = OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
         classification=classification,
@@ -3045,7 +3130,9 @@ def patch_with_email_sequence(
         automation_decision=decision,
         automation_decision_reason=decision_reason,
         automation_blockers=blockers,
+        automation_advisory_flags=advisory_flags,
         contact_send_mode=contact_send_mode(row),
+        contact_identity_confidence=contact_identity_confidence(row),
         email_3_mode=copy_brief.get("email_3_mode", "value_fallback"),
         enrichment_quality_score=enrichment_score,
         enrichment_quality_flags=enrichment_flags,

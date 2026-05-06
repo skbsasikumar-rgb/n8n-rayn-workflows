@@ -912,3 +912,15 @@ Cold email copy QA hardening:
 - workflow audit output and outreach column installer were updated for the new fields; no send node was added.
 - local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and focused pytest suites `63 passed`.
 - no deployment was performed, no live rows were patched, no preview was generated, no emails were sent, and Instantly was not used.
+- `2026-05-06 13:47 +08`: hardened the low/no-human-review automation gates before deployment.
+- missing `validated_email` now suppresses by default outside `copy_qa_mode`; named-person greetings require medium/high identity confidence; generic inboxes stay team-level.
+- funding Email 3 now requires at least one matched `verified_current` programme and exact-percentage permission where exact percentages appear; otherwise Email 3 uses the non-funding value fallback.
+- split advisory enrichment/copy flags from true automation blockers, added `automation_advisory_flags_json` and `contact_identity_confidence`, and cleaned duplicate send-mode handling.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/funding_programs.py scripts/ensure_rayn_outreach_columns.py`, workflow JSON parse, focused pytest suites `67 passed`, and audit export test `1 passed`.
+- attempted the contact/audit pytest subset; `tests/test_contact_candidate_verifier.py` could not collect locally because `captcha_solver` is not installed in this shell.
+- no deployment was performed, no live rows were patched, no preview was generated because local NocoDB/DATABASE credentials were unavailable, no emails were sent, and Instantly was not used.
+- `2026-05-06 14:03 +08`: polished fallback Email 3 and HIA problem copy.
+- value-fallback Email 3 now reuses the row's selected asset/checklist/map instead of generic checklist wording.
+- HIA Email 1 problem sentence now separates records/systems from controls so it reads less like one long list.
+- local validation passed: `python3 -m pytest tests/test_outreach_planner.py tests/test_outreach_columns.py tests/test_outreach_audit_export.py -q` with `68 passed`.
+- no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
