@@ -8,7 +8,7 @@ This stage creates reviewable outreach drafts only. It must never send email. Th
 
 | pressure_type | Use when | Email lead | Default asset |
 | --- | --- | --- | --- |
-| `hia_regulatory` | HIA relevance is medium/high for healthcare, clinic, pharmacy, diagnostic, allied health, hearing care, HIMS or NEHR-type rows. | "With HIA timelines starting from 2027..." | `hia_readiness_map` |
+| `hia_regulatory` | HIA relevance is medium/high for healthcare, clinic, pharmacy, diagnostic, allied health, hearing care, HIMS or NEHR-type rows. | "With HIA readiness becoming more urgent for healthcare providers..." | segment-specific readiness asset |
 | `pdpa_safeguards` | HIA is false/low and the organisation likely handles personal data. | "Because {{company_name}} handles {{data_type_signal}}..." | `pdpa_safeguards_checklist` |
 | `customer_trust` | B2B, vendor, SaaS, outsourcing, professional services, finance, education, HR, recruitment or enterprise-facing row. | "When customers share data or ask security questions..." | `security_evidence_checklist` |
 | `funding` | Funding is verified, confidence is high, and regulatory/trust pressure is weak. | Funding-specific route. | `funding_route_summary` |
@@ -52,7 +52,7 @@ The planner now wires outreach around four buying pressures:
 
 | Track | Use when | Core problem | Email 1 lead |
 | --- | --- | --- | --- |
-| Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA timelines starting from 2027..." |
+| Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA readiness becoming more urgent..." |
 | Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | The organisation handles personal data and needs reasonable security safeguards that can be shown clearly. | "PDPA security safeguards..." |
 | Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin or HR ownership. | The person owns personal-data responsibility, but evidence sits across IT, HR, vendors and operations. | "Data protection evidence..." |
 | Track D - Customer trust / procurement proof | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence. | Customers and partners may ask for reusable security proof before sharing data. | "Security evidence..." |
@@ -148,6 +148,27 @@ The copy brief converts public enrichment into company-level messaging ingredien
 - `regulatory_pressure_summary`, `hia_obligation_angle`, `pdpa_obligation_angle`, `customer_trust_angle`, `deadline_or_timeline_angle`: the buying pressure in plain language.
 - `funding_entity_basis`, `funding_route_summary`, `funding_specificity_level`, `funding_claim_safe`, `funding_next_check_needed`: funding language safety controls.
 - `email_personalisation_signal`, `email_problem_statement`, `email_mechanism_statement`, `email_asset_offer`, `email_cta`, `email_angle_reason`: the exact email ingredients.
+
+For HIA/healthcare rows, the copy brief also computes clinic/company profile fields for audit and preview review. These are computed by the planner today and are not required NocoDB columns unless the table installer is extended later:
+
+- `clinic_profile_guess`: profile bucket such as `solo_gp`, `family_gp`, `multi_doctor_gp`, `specialist_led`, `aesthetic_medical`, `dental`, `pharmacy`, `diagnostic_lab`, `hearing_care`, `allied_health`, `mental_health`, `hospice_long_term_care`, or `clinic_group`.
+- `clinic_profile_phrase`: prospect-facing phrase used in Email 1, for example "a family clinic offering GP-style consultations" or "a hearing-care provider offering hearing tests, hearing aids and audiology support".
+- `clinic_structure_guess`, `clinic_structure_confidence`, `umbrella_or_group_guess`: whether the row looks solo, multi-practitioner, grouped, or unclear.
+- `solo_gp_likelihood`, `specialist_led_likelihood`, `multi_practitioner_likelihood`, `primary_service_summary`, `clinic_structure_evidence`: audit helpers explaining why the phrase was chosen.
+
+HIA Email 1 should now open with a prospect-facing profile observation:
+
+```text
+Noticed {{company_name}} appears to be {{clinic_profile_phrase}}.
+
+With HIA readiness becoming more urgent for healthcare providers, the practical question is whether {{segment_specific_records}}, access, backups, patching, vendors and incident steps are already mapped clearly.
+
+Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side.
+
+Worth sending a short {{segment_specific_asset}}?
+```
+
+Final email bodies must not contain internal audit wording such as "signals", and must not expose HIA batch labels, dates, or "HIA window" wording.
 
 Hard not-ready rules:
 

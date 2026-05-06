@@ -4,6 +4,31 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-05
 
+Cold email clinic-profile personalisation:
+
+- `2026-05-05 23:34 +08`: added deterministic clinic/company profile inference for HIA rows in `services/crawl4ai/outreach_planner.py`.
+- HIA Email 1 now uses prospect-facing profile phrases such as family/outpatient clinic, solo GP-style clinic, specialist-led clinic, medical/aesthetic clinic, dental clinic, pharmacy / compounding provider, diagnostic / laboratory provider, hearing-care provider, allied-health provider, psychology / mental-health provider, hospice / long-term care provider, and clinic group / multi-location operation.
+- added computed copy-brief/audit fields for `clinic_profile_guess`, `clinic_profile_phrase`, `clinic_structure_guess`, `clinic_structure_confidence`, `umbrella_or_group_guess`, `solo_gp_likelihood`, `specialist_led_likelihood`, `multi_practitioner_likelihood`, `primary_service_summary`, and `clinic_structure_evidence`; these were not added as NocoDB columns in this pass.
+- strengthened HIA quality flags for missing/generic clinic profile copy while keeping final email bodies blocked from internal "signals" language and HIA batch/date/window wording.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and `python3 -m pytest tests/test_outreach_planner.py -q` returned `44 passed`.
+- preview was not generated: local `DATABASE_URL` was unavailable, and no `scripts/preview_first_10_cold_emails.py` helper is present in the repo.
+- no deployment was performed, no live NocoDB rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-06 09:28 +08`: generated a read-only first-10 eligible-row preview from NocoDB API using Railway worker environment variables; no row rerun, no NocoDB patch, no deployment, no email send, and no Instantly use.
+- preview artifacts: `docs/workflow/cold-email-preview-first-10.md` and `docs/workflow/cold-email-preview-first-10-review.md`.
+- preview review found `0` final-body HIA batch/date/window hits, `0` final-body internal "signals" hits, and `0` `email_send_ready=true` rows; row `283` still has `email_1_too_long`, and rows `273` / `284` are currently profiled as `diagnostic_lab`.
+- `2026-05-06 09:38 +08`: fixed the preview findings by prioritising aesthetic/GP clinic profile evidence above broad diagnostic/screening terms, making HIA Email 2 validation use the resolved clinic profile, and shortening long-name HIA Email 1 observations without dropping the profile phrase.
+- regenerated the read-only first-10 preview; current review has `0` final-body HIA batch/date/window hits, `0` final-body internal "signals" hits, `0` `email_send_ready=true` rows, and no strategy flags except row `280` remaining funding/trigger review.
+- validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and `python3 -m pytest tests/test_outreach_planner.py -q` returned `44 passed`.
+- `2026-05-06 09:55 +08`: polished Email 1 greeting and problem copy before deploy.
+- named non-generic recipients now use `Hi {{first_name}},`; generic/company inboxes use `Hello team,`; final Email 1 still keeps the company name in the `Noticed...` line.
+- HIA problem sentences now use `access to {{records/systems}}, backups, patching and incident steps` style wording and avoid duplicate `vendor systems` / `vendors` clutter.
+- solo GP wording is confidence-gated; American International Clinic Singapore and AN Medical Clinic now use outpatient medical clinic wording unless family/solo evidence is stronger.
+- Andrea's Digestive now uses company-specific specialist-led gastroenterology and digestive care wording without `your clinic` or slash-heavy copy.
+- AMP Lab non-clinical lab/testing rows now use PDPA wording around lab/testing services and customer, employee and project records.
+- regenerated the read-only first-10 preview with greeting/profile QA columns; review shows `0` bad greetings, `0` duplicate vendor wording, `0` cluttered problem sentences, `0` final-body HIA batch/date/window hits, `0` final-body internal "signals" hits, and `0` `email_send_ready=true` rows.
+- validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and `python3 -m pytest tests/test_outreach_planner.py -q` returned `47 passed`.
+- no deployment was performed, no live NocoDB rows were patched, no emails were sent, and Instantly was not used.
+
 Cold email planner live QA hardening:
 
 - `2026-05-05 23:12 +08`: tightened HIA Email 2 validation so OpenRouter drafts that do not follow the segment-specific diagnostic shape fall back to deterministic planner copy.

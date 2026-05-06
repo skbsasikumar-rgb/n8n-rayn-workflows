@@ -329,11 +329,13 @@ GENERIC_EMAIL_LOCAL_PARTS = {
     "contactus",
     "enquiries",
     "enquiry",
+    "general",
     "hello",
     "info",
     "mail",
     "reception",
     "sales",
+    "service",
     "support",
     "team",
 }
@@ -354,21 +356,35 @@ def is_generic_or_company_inbox(row: dict[str, Any]) -> bool:
 def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
     if name and not is_generic_or_company_inbox(row):
-        return f"Hi {name.split()[0]} -"
-    company_name = compact(company or row.get("company_name"))
-    if company_name:
-        return f"Hi {company_name} team,"
-    return "Hi team,"
+        return f"Hi {first_name_from_contact(name)},"
+    return "Hello team,"
+
+
+def first_name_from_contact(name: str) -> str:
+    parts = [part for part in compact(name).replace(".", " ").split() if part]
+    while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
+        parts.pop(0)
+    return parts[0] if parts else "there"
+
+
+def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
+    name = compact(row.get("selected_contact_name"))
+    if name and not is_generic_or_company_inbox(row):
+        return f"Hi {first_name_from_contact(name)},"
+    return "Hello team,"
+
+
+def email_greeting_type(row: dict[str, Any]) -> str:
+    if compact(row.get("selected_contact_name")) and not is_generic_or_company_inbox(row):
+        return "named_person"
+    return "generic_team"
 
 
 def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
     if name and not is_generic_or_company_inbox(row):
-        return f"Hi {name.split()[0]},"
-    company_name = compact(company or row.get("company_name"))
-    if company_name:
-        return f"Hi {company_name} team,"
-    return "Hi team,"
+        return f"Hi {first_name_from_contact(name)},"
+    return "Hello team,"
 
 
 def company_team_greeting(company: str | None = None) -> str:
@@ -892,11 +908,14 @@ def certification_reason(pressure_type: str) -> str:
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
 
 
-def first_name_from_contact(row: dict[str, Any]) -> str:
-    name = compact(row.get("selected_contact_name"))
+def first_name_from_contact(row: dict[str, Any] | str) -> str:
+    name = compact(row.get("selected_contact_name") if isinstance(row, dict) else row)
     if not name:
         return ""
-    return name.split()[0]
+    parts = [part for part in name.replace(".", " ").split() if part]
+    while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
+        parts.pop(0)
+    return parts[0] if parts else ""
 
 
 def choose_variant(classification: dict[str, Any]) -> str:
@@ -1091,6 +1110,8 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
     pressure = compact(classification.get("pressure_type")).lower()
     entity = compact(classification.get("entity_type_guess")).lower()
 
+    if ("appears to be " in signal_l or "appears to provide " in signal_l or "appears to handle " in signal_l) and "signals" not in signal_l:
+        return compact(signal).rstrip(".") + "."
     if service_type == "hearing_care" or "hearing-care" in signal_l or "hearing" in text:
         return "your website lists hearing tests, hearing aids and audiology support."
     if service_type == "long_term_care" or "hospice/long-term care" in signal_l or contains_any(text, LONG_TERM_CARE_TERMS):
@@ -1188,10 +1209,267 @@ def email_contains_hia_batch_wording(body: str) -> bool:
     return any(re.search(pattern, body_l) for pattern in HIA_BATCH_EMAIL_PATTERNS)
 
 
-def segment_asset(row: dict[str, Any], classification: dict[str, Any]) -> str:
+SPECIALIST_SERVICE_SUMMARIES = (
+    (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
+    (("oncology", "radiation"), "oncology / radiation care"),
+    (("cardiology", "heart", "vascular"), "cardiology / vascular care"),
+    (("dermatology", "dermatologist"), "dermatology / skin care"),
+    (("endocrinology", "diabetes", "thyroid"), "endocrinology care"),
+    (("orthopaedic", "orthopedic", "sports"), "orthopaedic / sports medicine"),
+    (("urology", "robotic"), "urology care"),
+    (("brain", "spine", "nerve", "neurology", "neurosurgery"), "brain, spine and nerve care"),
+    (("surgery", "surgeon", "specialist"), "specialist care"),
+)
+
+
+def primary_service_summary_for_profile(row: dict[str, Any], text: str, service_type: str) -> str:
+    for terms, summary in SPECIALIST_SERVICE_SUMMARIES:
+        if any(term in text for term in terms):
+            return summary
+    if service_type == "diagnostic":
+        return "screening or diagnostic services"
+    if service_type == "hearing_care":
+        return "hearing tests, hearing aids and audiology support"
+    if service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        return "psychology / mental-health services"
+    if service_type == "allied_health":
+        return "physiotherapy or treatment support"
+    if service_type == "retail_pharmacy":
+        return "pharmacy and compounding services"
+    if service_type == "dental":
+        return "dental services"
+    service_terms = listish_items(row.get("services_detected"))
+    return sentence_join(service_terms[:2]) or ""
+
+
+def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], text: str) -> dict[str, Any]:
+    service_type = str(classification.get("hia_service_type_guess") or "")
+    company = compact(row.get("company_name"))
+    parent = compact(row.get("parent_company"))
+    locations = listish_items(row.get("locations_detected"))
+    team = listish_items(row.get("leadership_or_team_signals")) or listish_items(row.get("contact_info_detected"))
+    source_terms = " ".join(
+        compact(value)
+        for value in (
+            company,
+            row.get("company_homepage_name"),
+            row.get("services_detected"),
+            row.get("locations_detected"),
+            row.get("leadership_or_team_signals"),
+            row.get("website_content"),
+        )
+        if value
+    )
+    source_l = source_terms.lower()
+    evidence: list[str] = []
+
+    def add_evidence(label: str) -> None:
+        if label and label not in evidence:
+            evidence.append(label)
+
+    location_count = len(locations)
+    if not location_count:
+        location_count = len(set(re.findall(r"\b(?:bedok|jurong|novena|chinatown|orchard|tampines|woodlands|toa payoh|ang mo kio|bukit|nex)\b", source_l)))
+    doctor_terms = len(re.findall(r"\b(?:dr\.?|doctor|physician|dentist|audiologist|physiotherapist|psychologist|consultant)\b", source_l))
+    named_doctors = len(set(re.findall(r"\bdr\.?\s+[a-z][a-z]+", source_l)))
+    has_group = bool(parent) or any(term in source_l for term in (" group", "branches", "multiple locations", "our clinics", "clinic group", "medical group"))
+    if has_group or location_count >= 2 or named_doctors >= 4:
+        add_evidence("group, parent, multi-location or many-practitioner evidence")
+        structure = "clinic_group"
+    elif "solo gp" in source_l or (named_doctors == 1 and location_count == 1 and any(term in source_l for term in ("gp", "family clinic", "general practitioner"))):
+        add_evidence("one named doctor or solo GP-style evidence")
+        structure = "solo_gp"
+    elif doctor_terms >= 3 or named_doctors >= 2 or len(team) >= 2:
+        add_evidence("multiple practitioner/team evidence")
+        structure = "multi_practitioner"
+    else:
+        structure = "single_site_or_unknown"
+
+    has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "plastic surgery", "skin", "laser", "injectable"))
+    has_specialist = any(
+        term in source_l
+        for term in (
+            "gastroenterology",
+            "oncology",
+            "cardiology",
+            "dermatology",
+            "endocrinology",
+            "orthopaedic",
+            "radiation",
+            "digestive",
+            "surgery",
+            "specialist",
+        )
+    )
+    has_gp = any(term in source_l for term in ("family clinic", "family medicine", "general practitioner", " gp ", "outpatient", "doctor-led", "medical clinic"))
+    has_diagnostic = any(term in source_l for term in ("diagnostic", "screening", "laboratory", " lab ", "radiology", "nuclear medicine", "test reports"))
+    has_strong_lab = any(term in source_l for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "radiology", "nuclear medicine", "test reports", "lab test"))
+
+    if service_type == "dental" or any(term in source_l for term in ("dental", "dentist", "orthodont")):
+        guess = "dental"
+        add_evidence("dental terms")
+    elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
+        guess = "pharmacy"
+        add_evidence("pharmacy or compounding terms")
+    elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
+        guess = "hearing_care"
+        add_evidence("hearing-care terms")
+    elif service_type == "long_term_care" or contains_any(source_l, LONG_TERM_CARE_TERMS):
+        guess = "hospice_long_term_care"
+        add_evidence("hospice or long-term care terms")
+    elif service_type == "allied_health" and any(term in source_l for term in ("psychology", "psychologist", "counselling", "counseling", "mental health", "case-note")):
+        guess = "mental_health"
+        add_evidence("psychology or mental-health terms")
+    elif service_type == "allied_health" or any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support")):
+        guess = "allied_health"
+        add_evidence("allied-health or physiotherapy terms")
+    elif has_aesthetic:
+        guess = "aesthetic_medical"
+        add_evidence("medical/aesthetic terms")
+    elif service_type == "specialist_OMS" or has_specialist:
+        guess = "specialist_led"
+        add_evidence("specialist-led care terms")
+    elif structure == "solo_gp" and (
+        service_type == "GP_OMS"
+        or has_gp
+    ):
+        guess = "solo_gp"
+        add_evidence("solo GP/outpatient evidence")
+    elif has_gp:
+        guess = "family_gp"
+        add_evidence("family clinic, GP or outpatient terms")
+    elif service_type == "diagnostic" and (has_strong_lab or not has_gp):
+        guess = "diagnostic_lab"
+        add_evidence("diagnostic, screening or lab terms")
+    elif has_diagnostic and has_strong_lab:
+        guess = "diagnostic_lab"
+        add_evidence("diagnostic, screening or lab terms")
+    elif service_type == "GP_OMS":
+        guess = "solo_gp" if structure == "solo_gp" else "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
+        add_evidence("GP/outpatient service type")
+    elif structure == "clinic_group":
+        guess = "clinic_group"
+    else:
+        guess = "healthcare_provider"
+
+    if structure == "clinic_group" and guess in {"family_gp", "multi_doctor_gp", "healthcare_provider"}:
+        guess = "clinic_group"
+
+    confidence = "high" if len(evidence) >= 2 or service_type not in {"", "unknown"} else "medium" if evidence else "low"
+    primary = primary_service_summary_for_profile(row, source_l, service_type)
+    profile = {
+        "clinic_profile_guess": guess,
+        "clinic_profile_phrase": "",
+        "clinic_structure_guess": structure,
+        "clinic_structure_confidence": confidence,
+        "umbrella_or_group_guess": "yes" if structure == "clinic_group" else "no" if structure != "single_site_or_unknown" else "unknown",
+        "solo_gp_likelihood": "likely" if structure == "solo_gp" else "possible" if named_doctors == 1 and guess in {"family_gp", "multi_doctor_gp"} else "unlikely",
+        "specialist_led_likelihood": "likely" if guess == "specialist_led" else "possible" if service_type == "specialist_OMS" else "unlikely",
+        "multi_practitioner_likelihood": "likely" if structure in {"multi_practitioner", "clinic_group"} else "possible" if doctor_terms >= 2 else "unknown",
+        "primary_service_summary": primary,
+        "clinic_structure_evidence": evidence[:6],
+    }
+    profile["clinic_profile_phrase"] = prospect_facing_profile_phrase(profile, row, classification, {})
+    return profile
+
+
+def prospect_facing_profile_phrase(
+    profile: dict[str, Any],
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+) -> str:
+    guess = compact(profile.get("clinic_profile_guess"))
+    primary = compact(profile.get("primary_service_summary"))
+    if guess == "solo_gp":
+        return "a solo GP-style clinic"
+    if guess == "family_gp":
+        text = lower_blob(row)
+        company = compact(row.get("company_name")).lower()
+        if "family clinic" not in company and ("outpatient" in text or "medical clinic" in text or "international clinic" in company):
+            return "an outpatient medical clinic offering doctor-led consultations"
+        return "a family clinic offering GP-style consultations"
+    if guess == "multi_doctor_gp":
+        return "a multi-doctor clinic offering outpatient consultations"
+    if guess == "specialist_led":
+        return f"a specialist-led clinic focused on {(primary or 'specialist care').replace(' / ', ' and ')}"
+    if guess == "aesthetic_medical":
+        return "a medical/aesthetic clinic with doctor-led consultations"
+    if guess == "dental":
+        return "a dental clinic handling patient appointments and dental records"
+    if guess == "pharmacy":
+        return "a pharmacy / compounding provider"
+    if guess == "diagnostic_lab":
+        return "a diagnostic / laboratory provider handling screening or test records"
+    if guess == "hearing_care":
+        return "a hearing-care provider offering hearing tests, hearing aids and audiology support"
+    if guess == "allied_health":
+        return "an allied-health provider offering physiotherapy or treatment support"
+    if guess == "mental_health":
+        return "a psychology / mental-health provider handling assessment and case-note records"
+    if guess == "hospice_long_term_care":
+        return "a hospice / long-term care provider handling patient, resident, family, volunteer and staff data"
+    if guess == "clinic_group":
+        return "part of a wider clinic group or multi-location healthcare operation"
+    return "a healthcare provider"
+
+
+def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any] | None = None) -> str:
+    text = lower_blob(row)
+    profile_guess = compact((copy_brief or {}).get("clinic_profile_guess"))
+    service_type = classification.get("hia_service_type_guess")
+    if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
+        return "patient records, appointment details, consultation notes, clinic email, vendor systems"
+    if profile_guess == "specialist_led" or service_type == "specialist_OMS":
+        if "oncology" in text or "radiation" in text:
+            return "oncology/radiation treatment records, patient reports, vendor systems"
+        if "digestive" in text or "gastroenterology" in text:
+            return "consultation notes, patient reports, procedure-related records, vendor systems"
+        return "consultation notes, patient reports, treatment records, vendor systems"
+    if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
+        return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
+    if profile_guess == "dental" or service_type == "dental":
+        return "patient records, imaging files, appointment details, dental software"
+    if profile_guess == "pharmacy" or service_type == "retail_pharmacy":
+        return "prescription, dispensing, compounding, customer and supplier records"
+    if profile_guess == "diagnostic_lab" or service_type == "diagnostic":
+        return "screening records, diagnostic reports, patient details, lab systems, vendor systems"
+    if profile_guess == "hearing_care" or service_type == "hearing_care":
+        return "hearing test records, appointment details, device-related records, vendor systems"
+    if profile_guess == "allied_health":
+        return "appointment, treatment and exercise-plan records"
+    if profile_guess == "mental_health":
+        return "appointment, assessment and case-note records"
+    if profile_guess == "hospice_long_term_care" or service_type == "long_term_care":
+        return "patient, resident, family, volunteer and staff data"
+    if "family" in text or service_type == "GP_OMS":
+        return "patient records, appointment details, consultation notes, clinic email, vendor systems"
+    return "patient records, appointment details, consultation notes, clinic email, vendor systems"
+
+
+def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_profile: dict[str, Any] | None = None) -> str:
     text = lower_blob(row)
     service_type = classification.get("hia_service_type_guess")
     entity = classification.get("entity_type_guess")
+    profile_guess = compact((clinic_profile or {}).get("clinic_profile_guess"))
+    if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp", "aesthetic_medical"}:
+        return "clinic readiness map"
+    if profile_guess == "diagnostic_lab":
+        return "diagnostic readiness map"
+    if profile_guess == "specialist_led":
+        return "specialist clinic readiness map"
+    if profile_guess == "dental":
+        return "dental readiness map"
+    if profile_guess == "pharmacy":
+        return "pharmacy HIA checklist"
+    if profile_guess == "hearing_care":
+        return "hearing-care readiness map"
+    if profile_guess == "allied_health":
+        return "allied-health readiness map"
+    if profile_guess == "mental_health":
+        return "psychology readiness map"
+    if profile_guess == "hospice_long_term_care":
+        return "long-term care readiness map"
     if classification.get("pressure_type") == "customer_trust":
         return "security evidence checklist"
     if classification.get("campaign_track") == "dpo_evidence":
@@ -1221,50 +1499,40 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any]) -> str:
     return "HIA readiness map"
 
 
-def hia_problem_statement(row: dict[str, Any], classification: dict[str, Any]) -> str:
-    text = lower_blob(row)
-    service_type = classification.get("hia_service_type_guess")
+def hia_problem_statement(row: dict[str, Any], classification: dict[str, Any], clinic_profile: dict[str, Any] | None = None) -> str:
     prefix = hia_problem_prefix(classification)
-    if service_type == "dental":
-        records = "patient records, imaging files, appointment details, dental software, backups, access and incident steps"
-    elif service_type == "retail_pharmacy":
-        records = "prescription, dispensing, compounding, customer and supplier records, access, backups and incident steps"
-    elif service_type == "diagnostic":
-        records = "screening records, diagnostic reports, patient details, lab systems, vendor systems, backups and incident steps"
-    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-        records = "oncology/radiation treatment records, patient reports, vendor systems, backups, access and incident steps"
-    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-        records = "consultation notes, patient reports, procedure-related records, vendor systems, backups, access and incident steps"
-    elif service_type == "specialist_OMS":
-        records = "consultation notes, patient reports, treatment records, vendor systems, backups, access and incident steps"
-    elif service_type == "hearing_care":
-        records = "hearing test records, appointment details, device-related records, vendor systems, backups and incident steps"
-    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-        records = "appointment, assessment and case-note records, access, vendors, backups and incident steps"
-    elif service_type == "allied_health":
-        records = "appointment, treatment and exercise-plan records, access, vendors, backups and incident steps"
-    elif service_type == "long_term_care":
-        records = "patient, resident, family, volunteer and staff data access, vendors, backups and incident steps"
-    elif "family" in text:
-        records = "patient records, appointment details, consultation notes, clinic email, vendor systems, backups and incident steps"
-    elif "aesthetic" in text:
-        records = "consultation records, treatment notes, appointment details, clinic email, vendor systems, backups and incident steps"
+    records = hia_email_1_records(row, classification, clinic_profile)
+    profile_guess = compact((clinic_profile or {}).get("clinic_profile_guess"))
+    if profile_guess in {"dental", "pharmacy", "specialist_led"}:
+        tail = "backups and incident steps"
     else:
-        records = "patient records, appointment details, consultation notes, clinic email, vendor systems, backups and incident steps"
-    return f"{prefix} the practical question is whether {records} are mapped clearly."
+        tail = "backups, patching and incident steps"
+    return f"{prefix} the practical question is whether access to {records}, {tail} is already mapped clearly."
 
 
-def hia_email_2_diagnostic(row: dict[str, Any], classification: dict[str, Any], asset: str) -> str:
+def hia_email_2_diagnostic(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    asset: str,
+    copy_brief: dict[str, Any] | None = None,
+) -> str:
     company = compact(row.get("company_name") or "the organisation")
     text = lower_blob(row)
     service_type = classification.get("hia_service_type_guess")
-    if service_type == "dental":
+    profile_guess = compact((copy_brief or {}).get("clinic_profile_guess"))
+    if profile_guess == "dental" or service_type == "dental":
         question = f"can {company} show where patient records, imaging files, appointment details, dental software and backups sit today?"
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "retail_pharmacy":
+    elif profile_guess == "pharmacy" or service_type == "retail_pharmacy":
         question = f"can {company} show where prescription, dispensing, compounding, customer and supplier records sit today?"
         follow = "If access, backups or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "diagnostic":
+    elif profile_guess == "aesthetic_medical":
+        question = f"can {company} show where consultation records, treatment notes, appointment details, clinic email, vendor systems and backups sit today?"
+        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
+    elif profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
+        question = f"can {company} show where patient records, appointment details, consultation notes, clinic email, vendor systems and backups sit today?"
+        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
+    elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
         question = f"can {company} show where screening records, diagnostic reports, patient details, lab systems, vendor systems and backups sit today?"
         follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
     elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
@@ -1312,6 +1580,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     pressure = classification.get("pressure_type", "not_ready")
     entity = classification.get("entity_type_guess", "unknown")
     data_type = str(classification.get("data_type_signal") or "unknown").replace("_", " ")
+    clinic_profile = infer_clinic_profile(row, classification, text) if pressure == "hia_regulatory" else {}
 
     if entity == "clinic":
         business_model = "clinic"
@@ -1331,7 +1600,10 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     primary_services = sentence_join(services, public_signals["service"]) or "the public services described on its website"
     location_summary = sentence_join(locations, "Singapore-facing operations")
     team_summary = sentence_join(team, "Public site does not give a clear team structure.")
-    profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
+    if clinic_profile:
+        profile = f"{company} appears to be {clinic_profile['clinic_profile_phrase']} in {location_summary}."
+    else:
+        profile = f"{company} appears to be a {business_model.replace('_', ' ')} organisation with public signals around {primary_services} in {location_summary}."
 
     if pressure == "hia_regulatory":
         service_type = classification.get("hia_service_type_guess")
@@ -1361,32 +1633,15 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         pdpa_angle = "PDPA safeguards still matter, but the primary outreach angle is HIA readiness for health information."
         trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
         timeline = "HIA implementation is being phased in; do not use batch labels in prospect-facing email bodies."
-        asset = segment_asset(row, classification)
-        cta = f"Want the {asset}?"
-        problem = hia_problem_statement(row, classification)
-        mechanism = "Cyber Essentials is a practical first baseline for the cybersecurity/data-security side."
-        if service_type == "hearing_care" or "hearing" in text:
-            signal = f"{company} appears to provide hearing-care services where appointment, test and device-related records may sit across staff and systems."
-        elif service_type == "long_term_care" or contains_any(text, LONG_TERM_CARE_TERMS):
-            signal = f"{company} shows hospice/long-term care service signals."
-        elif service_type == "allied_health" and ("physio" in text or "physiotherapy" in text):
-            signal = f"{company} shows physiotherapy/allied-health service signals."
-        elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-            signal = f"{company} shows psychology/mental-health service signals."
-        elif service_type == "diagnostic":
-            signal = f"{company} shows screening/diagnostic service signals."
-        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-            signal = f"{company} shows oncology/radiation specialist-care signals."
-        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-            signal = f"{company} shows digestive/gastroenterology specialist-care signals."
-        elif service_type == "GP_OMS" or "outpatient" in text:
-            signal = f"{company} shows medical clinic, doctor and outpatient appointment signals."
-        elif public_signals["team"]:
-            signal = f"{company} shows multiple clinic service and team/practitioner signals."
-        elif public_signals["service"]:
-            signal = f"{company} shows {public_signals['service']}."
+        asset = segment_asset(row, classification, clinic_profile)
+        cta = f"Worth sending a short {asset}?"
+        problem = hia_problem_statement(row, classification, clinic_profile)
+        mechanism = "Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side."
+        profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
+        if clinic_profile.get("clinic_profile_guess") == "specialist_led" and "gastroenterology and digestive care" in profile_phrase:
+            signal = f"{company} appears to provide specialist-led gastroenterology and digestive care."
         else:
-            signal = f"{company} shows medical clinic, doctor and outpatient appointment signals."
+            signal = f"{company} appears to be {profile_phrase}."
     elif pressure == "customer_trust":
         personal_data = "customer, partner, employee and business-contact data handled through service delivery and client operations."
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
@@ -1427,9 +1682,15 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             cta = "Worth sending the safeguards checklist?"
             if public_signals["service"]:
                 service_context = str(public_signals["service"]).rstrip(".")
-                signal = f"{company} appears to provide {service_context} services where customer and employee records may sit across enquiries, operations and vendor tools."
+                if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
+                    signal = f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools."
+                else:
+                    signal = f"{company} appears to provide {service_context} services where customer and employee records may sit across enquiries, operations and vendor tools."
             else:
-                signal = f"{company} appears to handle customer and employee records through its operations."
+                if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
+                    signal = f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools."
+                else:
+                    signal = f"{company} appears to handle customer and employee records through its operations."
             problem = "The practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
@@ -1491,6 +1752,20 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "email_cta": cta,
         "email_angle_reason": classification.get("pressure_reason") or classification.get("problem_hypothesis") or "",
     }
+    copy_brief.update(
+        {
+            "clinic_profile_guess": clinic_profile.get("clinic_profile_guess", ""),
+            "clinic_profile_phrase": clinic_profile.get("clinic_profile_phrase", ""),
+            "clinic_structure_guess": clinic_profile.get("clinic_structure_guess", ""),
+            "clinic_structure_confidence": clinic_profile.get("clinic_structure_confidence", ""),
+            "umbrella_or_group_guess": clinic_profile.get("umbrella_or_group_guess", ""),
+            "solo_gp_likelihood": clinic_profile.get("solo_gp_likelihood", ""),
+            "specialist_led_likelihood": clinic_profile.get("specialist_led_likelihood", ""),
+            "multi_practitioner_likelihood": clinic_profile.get("multi_practitioner_likelihood", ""),
+            "primary_service_summary": clinic_profile.get("primary_service_summary", ""),
+            "clinic_structure_evidence": clinic_profile.get("clinic_structure_evidence", []),
+        }
+    )
     copy_brief["prospect_facing_signal"] = prospect_facing_signal(signal, row, classification, copy_brief)
     return copy_brief
 
@@ -1504,7 +1779,7 @@ def generate_email_sequence(
     copy_brief = copy_brief or build_copy_brief(row, classification, funding)
     company = compact(row.get("company_name") or "your organisation")
     greeting = email_greeting(row, company)
-    email1_greeting = company_team_greeting(company)
+    email1_greeting = email_1_greeting(row, company)
     comma_greeting = email_comma_greeting(row, company)
     if not copy_brief_ready(classification, copy_brief):
         return empty_email_sequence()
@@ -1555,8 +1830,11 @@ def generate_email_sequence(
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
         email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
+        if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
+            short_noticed = noticed.replace(company, "your clinic", 1)
+            email1_body = f"{email1_greeting}\n\nNoticed {short_noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}\n\nBest,\nSK\nRAYN Secure"
         if classification["pressure_type"] == "hia_regulatory":
-            email2_body = hia_email_2_diagnostic(row, classification, asset)
+            email2_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
@@ -1710,6 +1988,24 @@ def generic_personalisation_signal(signal: str) -> bool:
     return has_generic and not has_concrete
 
 
+def clinic_profile_too_generic(copy_brief: dict[str, Any]) -> bool:
+    phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
+    if not phrase:
+        return True
+    generic = {"a healthcare provider", "a clinic", "a healthcare organisation", "a medical clinic"}
+    return phrase in generic
+
+
+def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> bool:
+    phrase = compact(copy_brief.get("clinic_profile_phrase"))
+    if not phrase:
+        return True
+    if copy_brief.get("clinic_profile_guess") == "specialist_led":
+        primary = compact(copy_brief.get("primary_service_summary")).replace(" / ", " and ")
+        return not ("specialist-led" in body.lower() and (not primary or primary.lower() in body.lower()))
+    return not reflects(body, phrase)
+
+
 def funding_only_email_3(body: str, claim: str) -> bool:
     body_l = compact(body).lower()
     if claim and claim.lower() not in body_l:
@@ -1766,11 +2062,16 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
     body_l = compact(body).lower()
     text = lower_blob(row)
     service_type = classification.get("hia_service_type_guess")
-    if service_type == "dental":
+    profile_guess = infer_clinic_profile(row, classification, text).get("clinic_profile_guess", "")
+    if profile_guess == "dental" or service_type == "dental":
         required = ("patient records", "imaging files", "dental software")
-    elif service_type == "retail_pharmacy":
+    elif profile_guess == "pharmacy" or service_type == "retail_pharmacy":
         required = ("prescription", "dispensing", "compounding")
-    elif service_type == "diagnostic":
+    elif profile_guess == "aesthetic_medical":
+        required = ("consultation records", "treatment notes", "appointment details", "clinic email")
+    elif profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
+        required = ("patient records", "appointment details", "clinic email")
+    elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
         required = ("screening", "diagnostic", "lab")
     elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
         required = ("consultation notes", "patient reports", "procedure-related")
@@ -1805,10 +2106,12 @@ def email_2_not_hia_segment_diagnostic_shape(
     body_l = compact(body).lower()
     if not body_l.startswith("a practical diagnostic: can "):
         return True
-    expected_asset = segment_asset(row, classification).lower()
+    clinic_profile = infer_clinic_profile(row, classification, lower_blob(row))
+    expected_asset = segment_asset(row, classification, clinic_profile).lower()
     if expected_asset and expected_asset not in body_l:
         return True
     service_type = classification.get("hia_service_type_guess")
+    profile_guess = clinic_profile.get("clinic_profile_guess", "")
     if service_type == "long_term_care":
         return " map " not in body_l or "incident contact" not in body_l
     if service_type == "allied_health":
@@ -1822,13 +2125,15 @@ def email_2_not_hia_segment_diagnostic_shape(
         "hearing_care": ("clinic email", "prescription", "dental software", "consultation notes"),
         "diagnostic": ("clinic email", "dental software", "prescription", "dispensing"),
     }
+    if profile_guess in {"aesthetic_medical", "solo_gp", "family_gp", "multi_doctor_gp"}:
+        return False
     return any(term in body_l for term in wrong_segment_terms.get(str(service_type), ()))
 
 
 def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
-    expected = segment_asset(row, classification).lower()
+    expected = segment_asset(row, classification, copy_brief).lower()
     actual = compact(copy_brief.get("email_asset_offer")).lower()
     return bool(expected and actual) and actual != expected
 
@@ -1861,11 +2166,16 @@ def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) 
     mechanism = compact(copy_brief.get("email_mechanism_statement")).lower()
     cta = compact(copy_brief.get("email_cta")).lower()
     positions = []
-    for phrase in (signal, problem, mechanism, cta):
+    for index, phrase in enumerate((signal, problem, mechanism, cta)):
         if not phrase:
             positions.append(-1)
             continue
-        positions.append(body_l.find(phrase[: min(len(phrase), 80)]))
+        position = body_l.find(phrase[: min(len(phrase), 80)])
+        if index == 0 and position < 0:
+            profile_phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
+            if profile_phrase:
+                position = body_l.find(profile_phrase)
+        positions.append(position)
     if any(pos < 0 for pos in positions):
         return False
     return positions == sorted(positions)
@@ -1875,7 +2185,7 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
     if compact(row.get("selected_contact_name")) and not is_generic_or_company_inbox(row):
         return True
     company = compact(row.get("company_name")).lower()
-    allowed_prefixes = ["hi team,"]
+    allowed_prefixes = ["hi team,", "hello team,"]
     if company:
         allowed_prefixes.append(f"hi {company} team,")
     for key in ("email_1", "email_3", "email_4"):
@@ -1915,6 +2225,13 @@ def evaluate_email_strategy(
         flags.append("email_contains_internal_signal_language")
     if email_contains_hia_batch_wording("\n".join((email1, email2, email3, email4))):
         flags.append("email_contains_hia_batch_wording")
+    if classification.get("pressure_type") == "hia_regulatory":
+        if not compact(copy_brief.get("clinic_profile_phrase")):
+            flags.append("clinic_profile_missing_for_hia")
+        if clinic_profile_too_generic(copy_brief):
+            flags.append("clinic_profile_too_generic")
+        if email_1_missing_clinic_profile(email1, copy_brief):
+            flags.append("email_1_missing_clinic_profile")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
     if not email_2_is_diagnostic(email2, copy_brief, classification):
@@ -2028,6 +2345,13 @@ def quality_gate(
             flags.append("email_1_contains_internal_signal_language")
         if email_contains_hia_batch_wording(email1_body):
             flags.append("email_contains_hia_batch_wording")
+        if classification.get("pressure_type") == "hia_regulatory":
+            if not compact(copy_brief.get("clinic_profile_phrase")):
+                flags.append("clinic_profile_missing_for_hia")
+            if clinic_profile_too_generic(copy_brief):
+                flags.append("clinic_profile_too_generic")
+            if email_1_missing_clinic_profile(email1_body, copy_brief):
+                flags.append("email_1_missing_clinic_profile")
         email1_start = email1_body.strip().lower()
         if email1_start.startswith(("i came across your company", "noticed your company", "i noticed your company")):
             flags.append("email_1_too_generic")
@@ -2239,6 +2563,13 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "hia_service_type_guess": classification.get("hia_service_type_guess", ""),
             "hia_timeline_batch_guess": classification.get("hia_timeline_batch_guess", ""),
             "funding_status": funding.funding_status,
+            "clinic_profile_guess": plan.copy_brief.get("clinic_profile_guess", ""),
+            "clinic_profile_phrase": plan.copy_brief.get("clinic_profile_phrase", ""),
+            "clinic_structure_guess": plan.copy_brief.get("clinic_structure_guess", ""),
+            "clinic_structure_confidence": plan.copy_brief.get("clinic_structure_confidence", ""),
+            "umbrella_or_group_guess": plan.copy_brief.get("umbrella_or_group_guess", ""),
+            "primary_service_summary": plan.copy_brief.get("primary_service_summary", ""),
+            "clinic_structure_evidence": plan.copy_brief.get("clinic_structure_evidence", []),
             "email_quality_flags": flags,
             "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
             "asset_offer_too_generic_for_segment": asset_offer_too_generic_for_segment(row, classification, plan.copy_brief),
@@ -2266,6 +2597,13 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "hia_service_type_guess": patch.get("hia_service_type_guess", ""),
         "hia_timeline_batch_guess": patch.get("hia_timeline_batch_guess", ""),
         "funding_status": patch.get("funding_status", ""),
+        "clinic_profile_guess": patch.get("clinic_profile_guess", ""),
+        "clinic_profile_phrase": patch.get("clinic_profile_phrase", ""),
+        "clinic_structure_guess": patch.get("clinic_structure_guess", ""),
+        "clinic_structure_confidence": patch.get("clinic_structure_confidence", ""),
+        "umbrella_or_group_guess": patch.get("umbrella_or_group_guess", ""),
+        "primary_service_summary": patch.get("primary_service_summary", ""),
+        "clinic_structure_evidence": patch.get("clinic_structure_evidence", []),
         "email_quality_flags": flags,
         "contains_hia_batch_wording": email_contains_hia_batch_wording(email_blob),
         "asset_offer_too_generic_for_segment": "asset_offer_too_generic_for_segment" in flags,
@@ -2337,6 +2675,9 @@ def patch_with_email_sequence(
         "email_contains_internal_signal_language",
         "email_contains_hia_batch_wording",
         "email_1_too_generic",
+        "clinic_profile_missing_for_hia",
+        "clinic_profile_too_generic",
+        "email_1_missing_clinic_profile",
         "email_2_not_diagnostic",
         "email_2_generic_hia_diagnostic",
         "email_2_missing_hia_segment_terms",
