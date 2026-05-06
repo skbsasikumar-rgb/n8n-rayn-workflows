@@ -901,3 +901,8 @@ Cold email copy QA hardening:
 - audit reports now include `contains_hia_batch_wording`, `asset_offer_too_generic_for_segment`, and `email_2_generic_hia_diagnostic` booleans for preview/review.
 - local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and `python3 -m pytest tests/test_outreach_planner.py -q` with `41 passed`.
 - generated a local dry preview with representative first-10 rows only; no live rows were patched, no deployment was performed, no emails were sent, and Instantly was not used.
+- `2026-05-06 12:38 +08`: refined the non-HIA PDPA safeguards track.
+- PDPA copy now leads with the legal responsibility to protect personal data, then positions Cyber Essentials as a practical control/evidence baseline for the security-safeguards side rather than PDPA compliance.
+- customer-trust/B2B copy keeps the procurement-proof angle: reusable evidence for access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, workflow JSON parse, and `python3 -m pytest tests/test_outreach_planner.py -q` with `47 passed`.
+- docs updated with the PDPA/Cyber Essentials framing; no deployment was performed by this patch step, no live rows were patched, no emails were sent, and Instantly was not used.

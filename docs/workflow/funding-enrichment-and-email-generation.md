@@ -53,7 +53,7 @@ The planner now wires outreach around four buying pressures:
 | Track | Use when | Core problem | Email 1 lead |
 | --- | --- | --- | --- |
 | Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA readiness becoming more urgent..." |
-| Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | The organisation handles personal data and needs reasonable security safeguards that can be shown clearly. | "PDPA security safeguards..." |
+| Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | PDPA is the legal obligation; Cyber Essentials gives a practical way to structure and evidence the cybersecurity safeguards behind it. | "PDPA security safeguards..." |
 | Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin or HR ownership. | The person owns personal-data responsibility, but evidence sits across IT, HR, vendors and operations. | "Data protection evidence..." |
 | Track D - Customer trust / procurement proof | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence. | Customers and partners may ask for reusable security proof before sharing data. | "Security evidence..." |
 
@@ -75,7 +75,7 @@ ELSE
 Messaging hierarchy:
 
 - HIA rows: HIA timeline / regulatory readiness, then health-information access and security, then Cyber Essentials as a first baseline, then funding support.
-- Non-HIA PDPA rows: personal-data responsibility, then practical safeguards, then Cyber Essentials as recognised baseline, then funding support.
+- Non-HIA PDPA rows: PDPA personal-data responsibility, then practical safeguards and evidence, then Cyber Essentials as a recognised baseline for the security-safeguards side, then funding support.
 - DPO / ops rows: data-protection evidence ownership, then scattered evidence across IT/HR/vendors/operations, then Cyber Essentials as a structure for the security baseline.
 - B2B / trust rows: customer security proof, then scattered evidence, then Cyber Essentials as reusable baseline, then funding support.
 
@@ -118,7 +118,9 @@ HIA:
 PDPA:
 
 - Private-sector organisations handling personal data need reasonable protection/security arrangements.
-- Cyber Essentials supports the security-safeguard evidence side of PDPA readiness.
+- PDPA says the organisation needs to protect personal data; Cyber Essentials helps prove the security side is actually in place.
+- Cyber Essentials supports the security-safeguards side of PDPA readiness by turning reasonable protection into practical controls and evidence across assets, access, malware protection, patching, backups and incident response.
+- The benefit angle is evidence, not only intention: access lists, asset inventory, backup evidence, update process, malware controls, incident plan and staff/security evidence.
 - Do not say Cyber Essentials makes an organisation PDPA compliant.
 - DPE/DPTM are mentioned only when the row recommends that path.
 - Better wording: "Cyber Essentials supports the security-safeguards side of PDPA readiness."

@@ -1647,9 +1647,9 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         sensitive_examples = "customer contact data, business partner data, employee access records and client security-questionnaire evidence."
         systems = "CRM, email, file shares, access lists, vendor tools, backups and incident contacts."
         complexity = "medium"
-        regulatory = "PDPA safeguards matter, but customer/procurement proof is the stronger buying pressure."
+        regulatory = "PDPA creates the personal-data protection responsibility, but customer/procurement proof is the stronger buying pressure."
         hia_angle = "No HIA angle should be used unless healthcare evidence appears."
-        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness without claiming full PDPA compliance."
+        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness without claiming PDPA compliance."
         trust_angle = "Customers may ask for reusable security evidence around access control, patching, backups, malware protection and incident response."
         timeline = "No external HIA deadline was identified; urgency comes from customer evidence and procurement reviews."
         asset = "security evidence checklist"
@@ -1673,7 +1673,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "care-organisation checklist"
             cta = "Worth sending the care-organisation checklist?"
             signal = f"{company} appears to operate in a care/community-service setting handling resident, beneficiary, volunteer and staff data."
-            problem = "The practical PDPA question is whether resident, beneficiary, volunteer and staff data safeguards can be shown clearly: who owns each system, who can access it, how backups work and who responds to incidents."
+            problem = "PDPA creates the responsibility to protect resident, beneficiary, volunteer and staff data; the practical question is whether safeguards can be shown clearly: who owns each system, who can access it, how backups work and who responds to incidents."
         else:
             personal_data = f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools."
             sensitive_examples = f"{data_type}, employee data, contact records and service history."
@@ -1691,14 +1691,14 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
                     signal = f"{company} appears to provide lab/testing services where customer, employee and project records may sit across operations and vendor tools."
                 else:
                     signal = f"{company} appears to handle customer and employee records through its operations."
-            problem = "The practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
+            problem = "For organisations handling personal data, the practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents."
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
-        regulatory = "PDPA requires reasonable protection/security arrangements for personal data."
+        regulatory = "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
         hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
-        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by organising evidence around assets, access, malware protection, patching, backups and incident response."
-        trust_angle = "Clear safeguard evidence also helps customers, donors, partners or staff trust how data is handled."
-        timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards."
-        mechanism = "Cyber Essentials supports that security-safeguards baseline."
+        pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning reasonable protection into practical controls and evidence across assets, access, malware protection, patching, backups and incident response."
+        trust_angle = "Clear safeguard evidence also helps customers, partners, donors, insurers and internal stakeholders trust how data is handled."
+        timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards before a customer, partner or incident review asks for proof."
+        mechanism = "Cyber Essentials helps turn that responsibility into a practical security baseline and evidence set."
     else:
         profile = ""
         business_model = "unknown"
@@ -1810,8 +1810,8 @@ def generate_email_sequence(
         signal = business_model_trust_signal(lower_blob(row))
         email1_subject = "security evidence"
         email2_subject = "Re: security evidence"
-        email1_body = f"{greeting} noticed {company} works with {signal}.\n\nWhen clients share personal or business data, security questions usually come down to proof: access control, backups, patching, malware protection and incident response.\n\nCyber Essentials gives a recognised baseline for that evidence.\n\nWorth sending a sample evidence checklist?\n\nBest,\nSK\nRAYN Secure"
-        email2_body = f"A practical diagnostic is to list the security questions clients already ask, then map each one to current evidence. Missing items usually point to access control, patching, backup or incident-response gaps.\n\nWant the simple evidence checklist?"
+        email1_body = f"{greeting} noticed {company} works with {signal}.\n\nThe practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review.\n\nCyber Essentials gives a recognised baseline for that evidence.\n\nWorth sending the evidence checklist?\n\nBest,\nSK\nRAYN Secure"
+        email2_body = f"A practical diagnostic: can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?\n\nIf not, that is usually where reusable evidence work starts.\n\nWant the simple evidence checklist?"
     elif classification.get("campaign_track") == "dpo_evidence":
         data = classification["data_type_signal"].replace("_", " ")
         email1_subject = "data protection evidence"
@@ -1822,7 +1822,7 @@ def generate_email_sequence(
         data = classification["data_type_signal"].replace("_", " ")
         email1_subject = "PDPA security safeguards"
         email2_subject = "Re: PDPA security safeguards"
-        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor organisations collecting, using or disclosing personal data, the practical question is whether security safeguards can be shown clearly: access, updates, backups, malware protection and incident response.\n\nCyber Essentials supports the security-safeguards side of PDPA readiness.\n\nWorth sending the 5-point readiness checklist?\n\nBest,\nSK\nRAYN Secure"
+        email1_body = f"{greeting} noticed {company} appears to handle {data}.\n\nFor organisations handling personal data, the practical PDPA question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents.\n\nCyber Essentials helps turn that into a practical security baseline and evidence set.\n\nWorth sending a short safeguards checklist?\n\nBest,\nSK\nRAYN Secure"
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":

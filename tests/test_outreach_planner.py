@@ -69,7 +69,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertTrue(plan.classification["pdpa_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("Cyber Essentials supports that security-safeguards baseline", plan.emails["email_1"]["body"])
+        self.assertIn("practical PDPA question", plan.emails["email_1"]["body"])
+        self.assertIn("who has access, where data sits, how backups work", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials helps turn that responsibility into a practical security baseline and evidence set", plan.emails["email_1"]["body"])
+        self.assertNotIn("Cyber Essentials makes", plan.emails["email_1"]["body"])
 
     def test_dpo_contact_uses_data_protection_evidence_track(self):
         plan = o.plan_outreach(
@@ -100,6 +103,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "security evidence")
         self.assertIn("without rebuilding answers for every customer review", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("customer security question", plan.emails["email_2"]["body"])
         self.assertNotIn("Cyber Essentials is", plan.emails["email_2"]["body"])
 
@@ -437,7 +441,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("care/community-service", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_1"]["body"])
         self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
-        self.assertIn("The practical PDPA question", plan.emails["email_1"]["body"])
+        self.assertIn("PDPA creates the responsibility to protect", plan.emails["email_1"]["body"])
         self.assertIn("resident, beneficiary, volunteer and staff data", plan.emails["email_2"]["body"])
         self.assertIn("resident", brief["personal_data_handled_guess"])
         self.assertIn("beneficiary", brief["personal_data_handled_guess"])
