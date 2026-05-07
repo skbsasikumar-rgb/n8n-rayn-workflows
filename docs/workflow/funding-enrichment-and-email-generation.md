@@ -101,7 +101,8 @@ The bank covers the four campaign tracks and segment-specific subject lines:
 Body variants keep the same copy brief and compliance rules:
 
 - Email 1 always keeps greeting, `Noticed...`, problem, mechanism and CTA in order.
-- Email 2 is funding-only when verified-current funding gates pass; otherwise it uses the non-funding value-fallback asset.
+- For HIA rows, Email 2 is now a deterministic pricing/sizing note: CISOaaS is endpoint-based, smaller clinics may use the starting package reference, group/multi-location setups require sizing, and funding wording remains conditional.
+- For non-HIA rows, Email 2 remains funding-only when verified-current funding gates pass; otherwise it uses the non-funding value-fallback asset.
 - Email 3 stays diagnostic.
 - Email 4 is a short close-loop note.
 - No final email body includes signatures or signoffs.
@@ -124,6 +125,26 @@ Funding is matched by `services/crawl4ai/funding_programs.py`:
 - source status other than `verified_current` blocks `verified_match`.
 - `funding_claim_line` is the only source for Email 2 funding language.
 - exact percentages are blocked unless the programme entry explicitly allows them after official refresh.
+
+HIA Email 2 pricing source:
+
+- Source constant: `CISOAAS_HIA_PRICING` in `services/crawl4ai/outreach_planner.py`.
+- Package: `CISOaaS HIA / HIB / HIMS Vendor`.
+- Starting band: `1_5` endpoints.
+- Starting price before funding: `SGD 4,300`, rendered as `S$4,300`.
+- Source workbook: `StaySecure CONTINUITY Suite Pricing.xlsx`, sheet `CISOaaS (HIB & HIMS Vendor)`.
+- Runtime does not parse the workbook. The planner uses the documented constant.
+- Funding caveat: `subject to programme confirmation`.
+
+Pricing safety:
+
+- `clinic_size_guess`, `endpoint_band_guess`, `pricing_email_2_mode`, `pricing_claim_safe`, and `pricing_claim_line` are patched as visible review fields.
+- `clinic_size_confidence`, `endpoint_band_confidence`, and `pricing_evidence_json` hold debug evidence.
+- Unknown endpoint count never suppresses or auto-skips a row by itself. It chooses `pricing_email_2_mode=endpoint_sizing_needed`.
+- Exact starting price copy must say it is for smaller clinics and before funding.
+- Group or multi-location copy must say the setup should be sized properly and must not quote a final larger-clinic price.
+- `70%` wording is allowed only with conditional wording such as "If the route applies" and only when the funding route is safe to use.
+- Non-HIA Email 2 must not mention `S$4,300` or clinic CISOaaS pricing.
 
 Statuses:
 

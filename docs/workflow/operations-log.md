@@ -4,6 +4,17 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-07
 
+HIA Email 2 commercial-pricing clarity:
+
+- added deterministic HIA clinic-size and endpoint-band enrichment in `services/crawl4ai/outreach_planner.py`: `clinic_size_guess`, `clinic_size_confidence`, `endpoint_band_guess`, `endpoint_band_confidence`, `pricing_email_2_mode`, `pricing_claim_safe`, `pricing_claim_line`, and `pricing_evidence_json`.
+- replaced HIA Email 2 with deterministic CISOaaS pricing/sizing copy: endpoint-based caveat, `S$4,300 before funding` only in smaller-clinic context, group/multi-location sizing language, conditional `70%` wording only when funding is safe, and RAYN certification heavy-lifting plus LEARN/GOVERN SaaS support.
+- endpoint uncertainty now selects `pricing_email_2_mode=endpoint_sizing_needed`; it does not suppress or auto-skip rows by itself.
+- non-HIA Email 2 remains evidence/checklist or funding-route focused and must not mention `S$4,300` or clinic CISOaaS pricing.
+- updated `scripts/ensure_rayn_outreach_columns.py`, `scripts/export_outreach_audit_markdown.py`, planner tests, column tests, and funding workflow docs for the new pricing fields.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`80 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- read-only preview generated from 10 completed live NocoDB rows through the local planner only; no patch was sent. Result: `automation_decision={auto_send_eligible:8,suppressed:1,auto_skipped:1}`, `pricing_email_2_mode={endpoint_sizing_needed:3,group_or_larger_sizing_needed:1,small_clinic_starting_price:5,no_price_claim:1}`, `final_send_gate_passed=8`, `suppressed_with_bodies=[]`, `non_hia_price_rows=[]`, `fallback_funding_word_rows=[]`.
+- no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+
 Deterministic cold-email copy polish:
 
 - kept the cold-email planner deterministic-only after removing the OpenRouter humaniser path; no LLM rewrite path was reintroduced.

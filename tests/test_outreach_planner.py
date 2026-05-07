@@ -20,6 +20,8 @@ def verified_program() -> FundingProgram:
         verification_status="verified_current",
         use_in_email_when="verified fixture",
         do_not_claim_when="not verified",
+        exact_claim_allowed_in_email=True,
+        exact_claim_text="Eligible SMEs can receive up to 70% support, subject to programme confirmation.",
     )
 
 
@@ -284,9 +286,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_problem_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
-                if plan.email_2_mode == "funding":
+                if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
-                else:
+                elif not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertNotIn("funding", plan.emails["email_2"]["body"].lower())
             for index in range(1, 5):
                 self.assertEqual(seen[index], {"A", "B", "C"})
@@ -450,6 +452,14 @@ class OutreachPlannerTests(unittest.TestCase):
                 "email_2_mode",
                 "funding_followup_mode",
                 "email_3_mode",
+                "clinic_size_guess",
+                "clinic_size_confidence",
+                "endpoint_band_guess",
+                "endpoint_band_confidence",
+                "pricing_email_2_mode",
+                "pricing_claim_safe",
+                "pricing_claim_line",
+                "pricing_evidence_json",
                 "enrichment_quality_score",
                 "enrichment_quality_flags",
                 "copy_brief_quality_score",
@@ -487,7 +497,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertFalse(result["patch"]["email_send_ready"])
-        self.assertEqual(result["patch"]["email_2_body"].count("subject to programme confirmation"), 1)
+        self.assertLessEqual(result["patch"]["email_2_body"].count("subject to programme confirmation"), 1)
         self.assertNotIn("Best,", result["patch"]["email_2_body"])
         self.assertNotIn("RAYN Secure", result["patch"]["email_2_body"])
 
@@ -647,7 +657,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(matched.copy_brief["email_3_mode"], "funding")
         self.assertEqual(matched.copy_brief["email_2_mode"], "funding")
         self.assertEqual(matched.copy_brief["funding_followup_mode"], "funding")
-        self.assertIn(matched.funding.funding_claim_line, matched.emails["email_2"]["body"])
+        self.assertIn("CISOaaS pricing is endpoint-based", matched.emails["email_2"]["body"])
+        self.assertIn("S$4,300 before funding", matched.emails["email_2"]["body"])
 
     def test_send_readiness_distinguishes_gate_from_draft_mode(self):
         row = {
@@ -1603,25 +1614,111 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(generic.classification["pressure_type"], {"not_ready", "customer_trust"})
         self.assertNotEqual(generic.classification["hia_service_type_guess"], "diagnostic")
 
-    def test_email_2_adds_useful_funding_route_confirmation_only(self):
+    def test_hia_small_clinic_email_2_uses_safe_starting_price(self):
         plan = o.plan_outreach(
             {
                 "company_name": "AN Medical Clinic",
-                "website_content": "Medical clinic with doctors, outpatient appointments and patient services.",
+                "website_content": "Family clinic with GP doctors, outpatient appointments, consultation and patient services.",
+                "validated_email": "team@example.com",
             },
             programmes=[verified_program()],
         )
         email2 = plan.emails["email_2"]["body"]
-        self.assertIn(plan.funding.funding_claim_line, email2)
-        self.assertIn("The useful first step is to check the route before spending time on readiness work.", email2)
+        self.assertIn(plan.copy_brief["clinic_size_guess"], {"solo_gp", "small_single_clinic"})
+        self.assertEqual(plan.copy_brief["endpoint_band_guess"], "1_5")
+        self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
+        self.assertIn("S$4,300 before funding", email2)
+        self.assertIn("If the route applies, 70% support", email2)
+        self.assertIn("LEARN and GOVERN", email2)
+        self.assertTrue(plan.final_send_gate_passed)
         self.assertNotIn("you qualify", email2.lower())
         self.assertNotIn("you are eligible", email2.lower())
         self.assertNotIn("guaranteed", email2.lower())
-        self.assertNotIn("free", email2.lower())
-        self.assertNotIn("we can get you 70%", email2.lower())
-        self.assertNotIn("you can get 70%", email2.lower())
-        self.assertTrue(o.funding_only_email(email2, plan.funding.funding_claim_line))
         self.assert_no_email_signatures(plan.emails)
+
+    def test_hia_unknown_endpoint_does_not_block_pricing_email_2(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 610,
+                "company_name": "Example Medical Clinic",
+                "website_content": "Medical clinic providing doctor consultations, appointments and patient services.",
+                "validated_email": "team@example.com",
+            },
+            programmes=[verified_program()],
+        )
+        patch = result["patch"]
+        record = result["record"]
+        email2 = patch["email_2_body"]
+        self.assertEqual(record["copy_brief"]["endpoint_band_guess"], "unknown")
+        self.assertEqual(record["copy_brief"]["pricing_email_2_mode"], "endpoint_sizing_needed")
+        self.assertIn("CISOaaS pricing is endpoint-based", email2)
+        self.assertIn("smaller clinics", email2)
+        self.assertIn("S$4,300 before funding", email2)
+        self.assertEqual(patch["automation_decision"], "auto_send_eligible")
+        self.assertTrue(patch["final_send_gate_passed"])
+
+    def test_hia_group_email_2_requires_endpoint_sizing(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Example Clinic Group",
+                "website_content": "Clinic group with our clinics at Orchard and Tampines, multiple doctors, medical team and specialist departments.",
+                "locations_detected": json.dumps(["Orchard clinic", "Tampines clinic"]),
+                "leadership_or_team_signals": json.dumps(["Dr Tan", "Dr Lim", "Dr Ong", "Dr Wong", "Dr Lee", "Dr Ng"]),
+                "validated_email": "team@example.com",
+            },
+            programmes=[verified_program()],
+        )
+        email2 = plan.emails["email_2"]["body"]
+        self.assertIn(plan.copy_brief["clinic_size_guess"], {"group_clinic", "multi_location_provider"})
+        self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "group_or_larger_sizing_needed")
+        self.assertIn("endpoint-based", email2)
+        self.assertIn("group or multi-location setup", email2)
+        self.assertIn("larger setups depend on endpoint count", email2)
+        self.assertNotIn("larger setups start", email2.lower())
+        self.assertTrue(plan.final_send_gate_passed)
+
+    def test_hia_funding_unsafe_keeps_pricing_but_omits_70_percent(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Amber Compounding Pharmacy",
+                "website_content": "Retail pharmacy and compounding pharmacy with prescriptions, dispensing, customer and patient records.",
+                "validated_email": "team@example.com",
+            },
+            programmes=[],
+        )
+        email2 = plan.emails["email_2"]["body"]
+        self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
+        self.assertIn("S$4,300 before funding", email2)
+        self.assertNotIn("70%", email2)
+        self.assertNotIn("If the route applies", email2)
+        self.assertTrue(plan.final_send_gate_passed)
+
+    def test_non_hia_email_2_does_not_use_clinic_pricing(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+            }
+        )
+        email2 = plan.emails["email_2"]["body"]
+        self.assertNotEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertNotIn("S$4,300", email2)
+        self.assertNotIn("CISOaaS pricing", email2)
+        self.assertIn("evidence", email2.lower())
+
+    def test_pricing_email_rejects_forbidden_claims(self):
+        row = {
+            "company_name": "Example Clinic",
+            "website_content": "Family clinic with GP doctors, appointments and patient services.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        emails = json.loads(json.dumps(plan.emails))
+        emails["email_2"]["body"] += " You qualify for guaranteed funding."
+        emails["email_2"]["word_count"] = o.word_count(emails["email_2"]["body"])
+        _, flags, send_ready = o.quality_gate(row, plan.classification, plan.funding, emails, plan.copy_brief)
+        self.assertIn("forbidden_phrase:you qualify", flags)
+        self.assertIn("forbidden_phrase:guaranteed funding", flags)
+        self.assertFalse(send_ready)
 
     def test_llm_signatures_are_stripped_before_patch(self):
         row = {

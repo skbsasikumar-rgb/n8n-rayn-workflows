@@ -74,6 +74,13 @@ def render_markdown(rows: list[dict[str, Any]], debug: bool = False) -> str:
                 f"- email_2_mode: `{field(row, 'email_2_mode') or field(row, 'email_3_mode') or 'unknown'}`",
                 f"- funding_followup_mode: `{field(row, 'funding_followup_mode') or field(row, 'email_2_mode') or field(row, 'email_3_mode') or 'unknown'}`",
                 f"- email_3_mode: `{field(row, 'email_3_mode') or 'unknown'}`",
+                f"- clinic_size_guess: `{field(row, 'clinic_size_guess') or 'unknown'}`",
+                f"- clinic_size_confidence: `{field(row, 'clinic_size_confidence') or 'unknown'}`",
+                f"- endpoint_band_guess: `{field(row, 'endpoint_band_guess') or 'unknown'}`",
+                f"- endpoint_band_confidence: `{field(row, 'endpoint_band_confidence') or 'unknown'}`",
+                f"- pricing_email_2_mode: `{field(row, 'pricing_email_2_mode') or 'unknown'}`",
+                f"- pricing_claim_safe: `{field(row, 'pricing_claim_safe') or 'unknown'}`",
+                f"- pricing_claim_line: {field(row, 'pricing_claim_line') or 'none'}",
             ]
         )
         if decision == "suppressed":

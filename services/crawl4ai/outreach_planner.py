@@ -141,6 +141,9 @@ FORBIDDEN_PHRASES = (
     "if you are an sme",
     "if you are an npo",
     "eligible smes and npos may",
+    "you qualify",
+    "you are eligible",
+    "all clinics qualify for funding",
     "companies with higher assurance needs",
     "you are non-compliant",
     "guaranteed funding",
@@ -154,6 +157,17 @@ FORBIDDEN_PHRASES = (
     "hope you are well",
     "i came across your company",
 )
+
+CISOAAS_HIA_PRICING = {
+    "package_name": "CISOaaS HIA / HIB / HIMS Vendor",
+    "endpoint_band": "1_5",
+    "starting_price_before_funding": 4300,
+    "currency": "SGD",
+    "price_text": "S$4,300",
+    "source": "StaySecure CONTINUITY Suite Pricing.xlsx",
+    "source_sheet": "CISOaaS (HIB & HIMS Vendor)",
+    "funding_caveat": "subject to programme confirmation",
+}
 
 HEALTHCARE_TERMS = (
     "clinic",
@@ -550,6 +564,142 @@ def funding_followup_mode_for(funding: FundingMatch, copy_brief: dict[str, Any],
         or copy_brief.get("email_3_mode")
         or email_3_mode_for(funding, copy_brief, classification)
     )
+
+
+def hia_pricing_active(classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
+    return (
+        classification.get("pressure_type") == "hia_regulatory"
+        and compact(copy_brief.get("pricing_email_2_mode")) not in {"", "no_price_claim"}
+    )
+
+
+def infer_hia_clinic_size(row: dict[str, Any], classification: dict[str, Any], clinic_profile: dict[str, Any]) -> dict[str, Any]:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return {
+            "clinic_size_guess": "unknown",
+            "clinic_size_confidence": "low",
+            "endpoint_band_guess": "unknown",
+            "endpoint_band_confidence": "low",
+            "pricing_email_2_mode": "no_price_claim",
+            "pricing_claim_safe": False,
+            "pricing_claim_line": "",
+            "pricing_evidence_json": {},
+        }
+
+    text = lower_blob(row)
+    locations = listish_items(row.get("locations_detected"), limit=12)
+    services = listish_items(row.get("services_detected"), limit=12) or listish_items(row.get("primary_services_summary"), limit=12)
+    team = listish_items(row.get("leadership_or_team_signals"), limit=20) or listish_items(row.get("contact_info_detected"), limit=20)
+    parent = compact(row.get("parent_company"))
+    profile_guess = compact(clinic_profile.get("clinic_profile_guess"))
+    service_type = compact(classification.get("hia_service_type_guess"))
+
+    location_terms = sorted({term for term in ("locations", "branches", "outlets", "our clinics", "islandwide") if term in text})
+    group_terms = sorted({term for term in ("group", "network", "multi-location", "multilocation", "multi clinic", "multi-clinic") if term in text})
+    practitioner_names = sorted(set(re.findall(r"\b(?:dr|doctor|dentist|specialist)\.?\s+[a-z][a-z]+", text)))[:12]
+    team_terms = sorted({term for term in ("our doctors", "our specialists", "our dentists", "medical team", "clinical team") if term in text})
+    department_terms = sorted(
+        {
+            term
+            for term in (
+                "cardiology",
+                "dermatology",
+                "ophthalmology",
+                "surgery",
+                "gastroenterology",
+                "physiotherapy",
+                "psychology",
+                "pharmacy",
+                "dental",
+                "radiology",
+                "laboratory",
+            )
+            if term in text
+        }
+    )
+    address_count = len(set(re.findall(r"\bsingapore\s+\d{6}\b", text)))
+    explicit_location_count = max(len(locations), address_count)
+    practitioner_count = max(len(practitioner_names), len(team))
+
+    size_guess = "unknown"
+    size_confidence = "low"
+    endpoint_band = "unknown"
+    endpoint_confidence = "low"
+
+    group_evidence = bool(parent or group_terms or explicit_location_count >= 2 or "our clinics" in text or "islandwide" in text)
+    larger_team_evidence = practitioner_count >= 6 or len(department_terms) >= 4
+    if group_evidence:
+        size_guess = "multi_location_provider" if explicit_location_count >= 2 or "our clinics" in text or "islandwide" in text else "group_clinic"
+        size_confidence = "high" if explicit_location_count >= 2 or parent else "medium"
+        endpoint_band = "11_20" if larger_team_evidence else "unknown"
+        endpoint_confidence = "medium" if endpoint_band != "unknown" else "low"
+    elif larger_team_evidence:
+        size_guess = "group_clinic"
+        size_confidence = "medium"
+        endpoint_band = "11_20"
+        endpoint_confidence = "medium"
+    elif profile_guess == "solo_gp" or "solo gp" in text or "family clinic" in text or "single clinic" in text:
+        size_guess = "solo_gp" if profile_guess == "solo_gp" or "solo gp" in text else "small_single_clinic"
+        size_confidence = "high" if ("solo gp" in text or "family clinic" in text or practitioner_count <= 2) else "medium"
+        endpoint_band = "1_5"
+        endpoint_confidence = "medium"
+    elif profile_guess == "dental" or service_type == "dental":
+        size_guess = "dental_single_clinic"
+        size_confidence = "medium"
+        endpoint_band = "1_5"
+        endpoint_confidence = "medium"
+    elif profile_guess == "pharmacy" or service_type == "retail_pharmacy":
+        size_guess = "pharmacy_single_site"
+        size_confidence = "medium"
+        endpoint_band = "1_5"
+        endpoint_confidence = "medium"
+    elif service_type == "allied_health" or profile_guess in {"allied_health", "psychology", "hearing_care"}:
+        size_guess = "allied_health_single_site"
+        size_confidence = "medium"
+        endpoint_band = "1_5"
+        endpoint_confidence = "medium"
+    elif profile_guess == "specialist_led" or service_type == "specialist_OMS":
+        size_guess = "specialist_single_clinic"
+        size_confidence = "medium"
+        endpoint_band = "6_10" if practitioner_count >= 3 else "unknown"
+        endpoint_confidence = "low" if endpoint_band == "unknown" else "medium"
+    elif classification.get("entity_type_guess") in {"clinic", "healthcare_provider"}:
+        size_guess = "small_single_clinic"
+        size_confidence = "low"
+        endpoint_band = "unknown"
+        endpoint_confidence = "low"
+
+    if size_guess in {"group_clinic", "multi_location_provider"}:
+        pricing_mode = "group_or_larger_sizing_needed"
+        claim = "CISOaaS pricing is endpoint-based; group or multi-location setups should be sized properly before quoting a final number."
+    elif endpoint_band in {"1_5", "6_10"} and size_confidence in {"medium", "high"}:
+        pricing_mode = "small_clinic_starting_price"
+        claim = f"For smaller clinics, the starting CISOaaS package is around {CISOAAS_HIA_PRICING['price_text']} before funding."
+    else:
+        pricing_mode = "endpoint_sizing_needed"
+        claim = "CISOaaS pricing is endpoint-based, so the final number should be checked against endpoint count."
+
+    evidence = {
+        "locations_found": locations,
+        "address_count": address_count,
+        "branch_group_wording_found": location_terms + group_terms,
+        "practitioner_team_count_evidence": {"count": practitioner_count, "examples": practitioner_names or team[:8], "team_terms": team_terms},
+        "parent_group_evidence": parent,
+        "service_departments_evidence": department_terms or services[:8],
+        "endpoint_proxy_reasoning": f"{size_guess} with endpoint band {endpoint_band}; endpoint count is inferred conservatively from public website evidence only.",
+        "confidence_explanation": f"clinic_size_confidence={size_confidence}; endpoint_band_confidence={endpoint_confidence}",
+        "pricing_source": CISOAAS_HIA_PRICING,
+    }
+    return {
+        "clinic_size_guess": size_guess,
+        "clinic_size_confidence": size_confidence,
+        "endpoint_band_guess": endpoint_band,
+        "endpoint_band_confidence": endpoint_confidence,
+        "pricing_email_2_mode": pricing_mode,
+        "pricing_claim_safe": True,
+        "pricing_claim_line": claim,
+        "pricing_evidence_json": evidence,
+    }
 
 
 def enrichment_quality(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[int, list[str]]:
@@ -1473,6 +1623,36 @@ def funding_email_2_variant_body(variant_id: str, greeting: str, funding_line: s
         f"{funding_line}{caveat}\n\n"
         "The useful first step is to check the route before spending time on readiness work.\n\n"
         "Should I send the route summary?"
+    )
+
+
+def hia_pricing_email_2_body(greeting: str, pricing_mode: str, funding_safe: bool) -> str:
+    price_text = CISOAAS_HIA_PRICING["price_text"]
+    funding_sentence = "\n\nIf the route applies, 70% support can reduce the outlay." if funding_safe else ""
+    if pricing_mode == "small_clinic_starting_price":
+        return (
+            f"{greeting}\n\n"
+            f"Straight up on cost: for smaller clinics, the starting CISOaaS package is around {price_text} before funding."
+            f"{funding_sentence}\n\n"
+            "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the clinic gets certified and stays ready.\n\n"
+            "Worth doing a quick endpoint check?"
+        )
+    if pricing_mode == "group_or_larger_sizing_needed":
+        return (
+            f"{greeting}\n\n"
+            "Straight up on cost: CISOaaS pricing is endpoint-based, so this should be sized properly for a group or multi-location setup.\n\n"
+            f"For smaller clinics, the starting package is around {price_text} before funding, but larger setups depend on endpoint count."
+            f"{funding_sentence}\n\n"
+            "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the team gets certified and stays ready.\n\n"
+            "Worth doing a quick endpoint check?"
+        )
+    return (
+        f"{greeting}\n\n"
+        "Straight up on cost: CISOaaS pricing is endpoint-based, so I would not guess final price from outside.\n\n"
+        f"For smaller clinics, the starting package is around {price_text} before funding. Larger/group setups should be sized properly because endpoint count changes the price."
+        f"{funding_sentence}\n\n"
+        "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the clinic gets certified and stays ready.\n\n"
+        "Worth doing a quick endpoint check?"
     )
 
 
@@ -2612,6 +2792,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         and classification.get("entity_type_confidence") in {"medium", "high"}
         and (not funding.matched or any(item.get("verification_status") == "verified_current" for item in funding.matched))
     )
+    pricing = infer_hia_clinic_size(row, classification, clinic_profile)
     funding_level = "high" if funding_safe else "medium" if funding.funding_status == "possible_match" else "low"
     copy_brief = {
         "company_profile_summary": profile,
@@ -2634,6 +2815,14 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "funding_specificity_level": funding_level if pressure != "not_ready" else "unknown",
         "funding_claim_safe": funding_safe,
         "funding_next_check_needed": "" if funding_safe else "Verify programme status, entity type, scope and timing before using funding as a send-ready claim.",
+        "clinic_size_guess": pricing["clinic_size_guess"],
+        "clinic_size_confidence": pricing["clinic_size_confidence"],
+        "endpoint_band_guess": pricing["endpoint_band_guess"],
+        "endpoint_band_confidence": pricing["endpoint_band_confidence"],
+        "pricing_email_2_mode": pricing["pricing_email_2_mode"],
+        "pricing_claim_safe": pricing["pricing_claim_safe"],
+        "pricing_claim_line": pricing["pricing_claim_line"],
+        "pricing_evidence_json": pricing["pricing_evidence_json"],
         "email_2_mode": "funding" if funding_safe else "value_fallback",
         "funding_followup_mode": "funding" if funding_safe else "value_fallback",
         "email_3_mode": "funding" if funding_safe else "value_fallback",
@@ -2744,7 +2933,17 @@ def generate_email_sequence(
             email3_body = diagnostic_email_3_variant_body(email3_variant_id, diagnostic, cta)
         else:
             email3_variant_id = email3_subject_variant_id
-        if funding_claim_send_safe(funding, copy_brief, classification):
+        if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
+            hia_pricing_subjects = {"A": "endpoint check", "B": "CISOaaS sizing", "C": "cost check"}
+            email2_variant_id = variant_id_for(row, classification, 2, list(hia_pricing_subjects.keys()))
+            email2_subject = hia_pricing_subjects[email2_variant_id]
+            email2_subject_options = list(hia_pricing_subjects.values())
+            email2_body = hia_pricing_email_2_body(
+                comma_greeting,
+                compact(copy_brief.get("pricing_email_2_mode")) or "endpoint_sizing_needed",
+                funding_claim_send_safe(funding, copy_brief, classification),
+            )
+        elif funding_claim_send_safe(funding, copy_brief, classification):
             email2_variant_id, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
             funding_line = funding.funding_claim_line
             if classification["pressure_type"] == "hia_regulatory" and email2_variant_id == "A":
@@ -2982,6 +3181,32 @@ def funding_only_email_3(body: str, claim: str) -> bool:
     return funding_only_email(body, claim)
 
 
+def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_brief: dict[str, Any]) -> list[str]:
+    body_l = compact(body).lower()
+    flags: list[str] = []
+    price_present = "s$4,300" in body_l or "s$4300" in body_l
+    cisaas_pricing_present = "cisaas pricing" in body_l or "endpoint-based" in body_l
+    if classification.get("pressure_type") != "hia_regulatory":
+        if price_present or cisaas_pricing_present:
+            flags.append("non_hia_pricing_claim")
+        return flags
+
+    pricing_mode = compact(copy_brief.get("pricing_email_2_mode"))
+    if pricing_mode in {"", "no_price_claim"}:
+        return flags
+    if pricing_mode in {"endpoint_sizing_needed", "group_or_larger_sizing_needed"} and "endpoint-based" not in body_l:
+        flags.append("hia_pricing_missing_endpoint_caveat")
+    if price_present and not any(term in body_l for term in ("smaller clinics", "small clinics", "smaller clinic", "small clinic")):
+        flags.append("hia_pricing_exact_price_without_small_clinic_context")
+    if "70%" in body_l and not any(term in body_l for term in ("if the route applies", "subject to programme confirmation")):
+        flags.append("hia_pricing_percentage_missing_caveat")
+    if pricing_mode == "group_or_larger_sizing_needed" and price_present and "larger setups depend on endpoint count" not in body_l:
+        flags.append("hia_pricing_group_exact_price_claim")
+    if any(term in body_l for term in ("you qualify", "you are eligible", "guaranteed funding", "all clinics qualify for funding")):
+        flags.append("hia_pricing_forbidden_funding_claim")
+    return flags
+
+
 def email_2_generic_hia_diagnostic(body: str, classification: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
@@ -3217,10 +3442,12 @@ def evaluate_email_strategy(
     if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
         flags.append("lab_classification_ambiguous")
     funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
-    if funding_followup_mode == "funding" and not funding_only_email(email2, funding.funding_claim_line):
+    hia_pricing = hia_pricing_active(classification, copy_brief)
+    if funding_followup_mode == "funding" and not hia_pricing and not funding_only_email(email2, funding.funding_claim_line):
         flags.append("email_2_not_funding_only")
-    elif funding.funding_claim_line and funding.funding_claim_line in email2 and not funding_only_email(email2, funding.funding_claim_line):
+    elif not hia_pricing and funding.funding_claim_line and funding.funding_claim_line in email2 and not funding_only_email(email2, funding.funding_claim_line):
         flags.append("email_2_not_funding_only")
+    flags.extend(pricing_email_quality_flags(email2, classification, copy_brief))
     if email4 and compact(copy_brief.get("email_asset_offer")) and not reflects(email4, copy_brief["email_asset_offer"]):
         flags.append("email_4_missing_asset_offer")
     if not generic_inbox_greeting_ok(row, emails):
@@ -3271,9 +3498,10 @@ def quality_gate(
             flags.append(f"{key}_too_long")
 
     funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
-    if funding_followup_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_2"]["body"]:
+    hia_pricing = hia_pricing_active(classification, copy_brief)
+    if funding_followup_mode == "funding" and not hia_pricing and classification.get("pressure_type") != "not_ready" and funding.funding_claim_line not in emails["email_2"]["body"]:
         flags.append("email_2_missing_funding_claim_line")
-    if has_copy_brief and funding_followup_mode == "funding" and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
+    if has_copy_brief and funding_followup_mode == "funding" and not hia_pricing and not copy_brief.get("funding_claim_safe") and classification.get("pressure_type") != "not_ready":
         flags.append("funding_needs_review")
     if re.search(r"\b\d{1,3}%\b", emails["email_2"]["body"]) and not any(
         item.get("exact_claim_allowed_in_email") for item in funding.matched
@@ -3381,6 +3609,12 @@ SEVERE_EMAIL_FLAGS = {
     "email_3_not_hia_segment_diagnostic_shape",
     "email_2_missing_funding_claim_line",
     "email_2_not_funding_only",
+    "hia_pricing_missing_endpoint_caveat",
+    "hia_pricing_exact_price_without_small_clinic_context",
+    "hia_pricing_percentage_missing_caveat",
+    "hia_pricing_group_exact_price_claim",
+    "hia_pricing_forbidden_funding_claim",
+    "non_hia_pricing_claim",
     "generic_inbox_wrong_greeting",
     "cyber_essentials_equals_pdpa_compliance",
     "cyber_essentials_equals_hia_compliance",
@@ -3644,6 +3878,14 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "funding_specificity_level": b["funding_specificity_level"],
         "funding_claim_safe": b["funding_claim_safe"],
         "funding_next_check_needed": b["funding_next_check_needed"],
+        "clinic_size_guess": b.get("clinic_size_guess", ""),
+        "clinic_size_confidence": b.get("clinic_size_confidence", ""),
+        "endpoint_band_guess": b.get("endpoint_band_guess", ""),
+        "endpoint_band_confidence": b.get("endpoint_band_confidence", ""),
+        "pricing_email_2_mode": b.get("pricing_email_2_mode", ""),
+        "pricing_claim_safe": b.get("pricing_claim_safe", False),
+        "pricing_claim_line": b.get("pricing_claim_line", ""),
+        "pricing_evidence_json": json_dumps(b.get("pricing_evidence_json", {})),
         "email_personalisation_signal": b["email_personalisation_signal"],
         "email_personalisation_quote": b["email_personalisation_quote"],
         "email_personalisation_source_url": b["email_personalisation_source_url"],
@@ -3709,6 +3951,14 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "email_2_mode": plan.email_2_mode,
             "funding_followup_mode": plan.funding_followup_mode,
             "email_3_mode": plan.email_3_mode,
+            "clinic_size_guess": plan.copy_brief.get("clinic_size_guess", ""),
+            "clinic_size_confidence": plan.copy_brief.get("clinic_size_confidence", ""),
+            "endpoint_band_guess": plan.copy_brief.get("endpoint_band_guess", ""),
+            "endpoint_band_confidence": plan.copy_brief.get("endpoint_band_confidence", ""),
+            "pricing_email_2_mode": plan.copy_brief.get("pricing_email_2_mode", ""),
+            "pricing_claim_safe": plan.copy_brief.get("pricing_claim_safe", False),
+            "pricing_claim_line": plan.copy_brief.get("pricing_claim_line", ""),
+            "pricing_evidence_json": plan.copy_brief.get("pricing_evidence_json", {}),
             "enrichment_quality_score": plan.enrichment_quality_score,
             "enrichment_quality_flags": plan.enrichment_quality_flags,
             "copy_brief_quality_score": plan.copy_brief_quality_score,
@@ -3758,6 +4008,14 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "email_2_mode": patch.get("email_2_mode", patch.get("email_3_mode", "")),
         "funding_followup_mode": patch.get("funding_followup_mode", patch.get("email_2_mode", patch.get("email_3_mode", ""))),
         "email_3_mode": patch.get("email_3_mode", ""),
+        "clinic_size_guess": patch.get("clinic_size_guess", ""),
+        "clinic_size_confidence": patch.get("clinic_size_confidence", ""),
+        "endpoint_band_guess": patch.get("endpoint_band_guess", ""),
+        "endpoint_band_confidence": patch.get("endpoint_band_confidence", ""),
+        "pricing_email_2_mode": patch.get("pricing_email_2_mode", ""),
+        "pricing_claim_safe": patch.get("pricing_claim_safe", False),
+        "pricing_claim_line": patch.get("pricing_claim_line", ""),
+        "pricing_evidence_json": patch.get("pricing_evidence_json", "{}"),
         "enrichment_quality_score": patch.get("enrichment_quality_score", 0),
         "enrichment_quality_flags": patch.get("enrichment_quality_flags", "[]"),
         "copy_brief_quality_score": patch.get("copy_brief_quality_score", 0),
