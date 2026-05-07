@@ -11,8 +11,9 @@ Parent-company cleanup:
 - corrected live NocoDB row `284` by clearing the bad `parent_company=Primary Care Network (PCN)` value and removing the stale PCN parent-evidence note; follow-up count confirmed `0` rows currently have nonblank `parent_company`.
 - also restored real HIA Email 3 diagnostic body variants and softened Email 2 funding variant B wording in `services/crawl4ai/outreach_planner.py`.
 - tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/public_web_enrichment.py tests/test_outreach_planner.py tests/test_parent_company_extraction.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest -q tests/test_outreach_planner.py tests/test_parent_company_extraction.py tests/test_public_web_proxy.py` (`93 passed`).
-- committed and pushed `d6584f2` (`Tighten parent company and email variants`) to `origin/codex/n8n-workflow-checkpoint`.
-- Railway deployment was attempted through the CLI/MCP path, but the local Railway token is expired and no `RAILWAY_API_TOKEN` is available in the environment; live `/health` still returns OK, but deployment could not be confirmed from this session.
+- committed and pushed `d6584f2` (`Tighten parent company and email variants`) and follow-up log commit `b81cc5f` to `origin/codex/n8n-workflow-checkpoint`.
+- deployed commit `b81cc5fb522f7451143b856f75198457d37b71d1` to Railway worker service `n8n-rayn-workflows`; deployment `fe99fc50-af3e-4129-b41a-464ff3d0fe36` reached `SUCCESS`.
+- live verification passed: `/health` returned `{"status":"ok"}`, and `/outreach-plan` returned the expected `422` validation response for an empty body.
 - no emails were sent, and Instantly was not used.
 
 ## 2026-05-06
