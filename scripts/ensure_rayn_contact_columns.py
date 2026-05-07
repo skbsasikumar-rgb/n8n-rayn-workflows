@@ -30,6 +30,16 @@ CONTACT_COLUMNS: list[tuple[str, str, str]] = [
     ("contact_search_run_id", "SingleLineText", "text"),
 ]
 
+DEFAULT_VISIBLE_CONTACT_COLUMNS = {
+    "contact_search_status",
+    "contact_search_reason",
+    "selected_contact_name",
+    "selected_contact_role",
+    "selected_contact_linkedin_url",
+    "validated_email",
+    "email_validation_status",
+}
+
 
 def make_id(prefix: str, existing: set[str], length: int = 14) -> str:
     alphabet = string.ascii_lowercase + string.digits
@@ -136,16 +146,18 @@ def main() -> None:
                     )
 
                 cur.execute(
-                    "select id from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s",
+                    "select id, show from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s",
                     (view_id, column_id),
                 )
-                if not cur.fetchone():
+                grid_row = cur.fetchone()
+                desired_show = name in DEFAULT_VISIBLE_CONTACT_COLUMNS
+                if not grid_row:
                     grid_id = make_id("nc", existing_grid_ids)
                     cur.execute(
                         """
                         insert into public.nc_grid_view_columns_v2 (
                             id, fk_view_id, fk_column_id, source_id, base_id, width, show, "order", fk_workspace_id
-                        ) values (%s, %s, %s, %s, %s, '220px', true, %s, %s)
+                        ) values (%s, %s, %s, %s, %s, '220px', %s, %s, %s)
                         """,
                         (
                             grid_id,
@@ -153,9 +165,15 @@ def main() -> None:
                             column_id,
                             source_id,
                             base_id,
+                            desired_show,
                             next_grid_order + index,
                             workspace_id,
                         ),
+                    )
+                elif bool(grid_row[1]) != desired_show:
+                    cur.execute(
+                        "update public.nc_grid_view_columns_v2 set show = %s where id = %s",
+                        (desired_show, grid_row[0]),
                     )
 
             cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))

@@ -160,6 +160,39 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("final_send_gate_passed", "Checkbox", "boolean", "160px"),
 ]
 
+DEFAULT_VISIBLE_GRID_COLUMNS = {
+    "company_name",
+    "status",
+    "best_url",
+    "contact_search_status",
+    "contact_search_reason",
+    "selected_contact_name",
+    "selected_contact_role",
+    "validated_email",
+    "entity_type_guess",
+    "pressure_type",
+    "hia_service_type_guess",
+    "funding_status",
+    "selected_contact_title",
+    "do_not_contact",
+    "unsubscribe_status",
+    "email_1_subject",
+    "email_1_body",
+    "email_2_subject",
+    "email_2_body",
+    "email_3_subject",
+    "email_3_body",
+    "email_4_subject",
+    "email_4_body",
+    "email_send_ready",
+    "funding_claim_safe",
+    "automation_decision",
+    "automation_decision_reason",
+    "contact_send_mode",
+    "final_send_gate_passed",
+    "email_2_mode",
+}
+
 SELECT_OPTIONS: dict[str, list[str]] = {
     "entity_type_guess": ["sme", "npo", "charity", "social_service", "healthcare_provider", "clinic", "private_company", "sole_proprietor", "partnership", "foreign_entity_sg_ops", "unknown"],
     "entity_type_confidence": ["low", "medium", "high"],
@@ -233,6 +266,8 @@ def main() -> None:
         "planned_physical_columns": [],
         "planned_metadata_columns": [],
         "planned_grid_columns": [],
+        "updated_grid_visibility": 0,
+        "planned_grid_visibility_updates": [],
         "created_select_options": 0,
         "existing_select_options": 0,
         "planned_select_options": [],
@@ -343,24 +378,30 @@ def main() -> None:
                         )
 
                 grid_exists = False
+                grid_id = ""
+                grid_show = None
                 if column_id:
                     cur.execute(
-                        "select id from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s",
+                        'select id, show from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s',
                         (view_id, column_id),
                     )
-                    grid_exists = bool(cur.fetchone())
+                    grid_row = cur.fetchone()
+                    if grid_row:
+                        grid_id, grid_show = grid_row
+                        grid_exists = True
                 if grid_exists:
                     summary["existing_grid"] = int(summary["existing_grid"]) + 1
                 else:
                     summary["created_grid"] = int(summary["created_grid"]) + 1
                     summary["planned_grid_columns"].append(column.name)  # type: ignore[union-attr]
+                desired_show = column.name in DEFAULT_VISIBLE_GRID_COLUMNS
                 if not grid_exists and not args.dry_run:
                     grid_id = make_id("nc", existing_grid_ids)
                     cur.execute(
                         """
                         insert into public.nc_grid_view_columns_v2 (
                             id, fk_view_id, fk_column_id, source_id, base_id, width, show, "order", fk_workspace_id
-                        ) values (%s, %s, %s, %s, %s, %s, true, %s, %s)
+                        ) values (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             grid_id,
@@ -369,10 +410,19 @@ def main() -> None:
                             source_id,
                             base_id,
                             column.grid_width,
+                            desired_show,
                             next_grid_order + index,
                             workspace_id,
                         ),
                     )
+                elif grid_exists and grid_show is not None and bool(grid_show) != desired_show:
+                    summary["updated_grid_visibility"] = int(summary["updated_grid_visibility"]) + 1
+                    summary["planned_grid_visibility_updates"].append(f"{column.name}:{desired_show}")  # type: ignore[union-attr]
+                    if not args.dry_run:
+                        cur.execute(
+                            "update public.nc_grid_view_columns_v2 set show = %s where id = %s",
+                            (desired_show, grid_id),
+                        )
 
                 for option_index, option_title in enumerate(SELECT_OPTIONS.get(column.name, []), start=1):
                     if not column_id:

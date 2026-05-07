@@ -89,15 +89,17 @@ The worker does not:
 
 ## Contact Search Extension
 
-Contact search runs after company URL enrichment and must not overwrite company facts. It uses `canonical_domain` as the email domain, OpenSERP for public people discovery, and No2Bounce as the validation authority.
+Contact search runs after company URL enrichment and must not overwrite company facts. It uses `canonical_domain` as the email domain, the worker-owned public-search fallback for people discovery, and Anymail Finder as the validation authority.
 
 Rules:
 
 - search senior and managerial role buckets in priority order.
 - validate person-company association before generating emails.
-- generate only person-specific email permutations.
-- do not generate generic inboxes such as `info@`, `contact@`, `admin@`, `hello@`, `enquiry@`, `appointments@`, `clinic@`, or `reception@`.
-- accept only No2Bounce `deliverable` results that are not catch-all, risky, invalid, bounce, spam, unknown, or timeout.
+- prefer person-specific Anymail Finder results.
+- run decision-maker fallback before company-email fallback.
+- accept company-email fallback only through the provider-backed company-email path; leave `selected_contact_name` blank unless identity proof exists.
+- do not use direct SMTP probing or generated generic-inbox guesses.
+- accept only provider-valid same-domain email results.
 - stop at the first validated contact and email.
 - write `contact_search_status = contact_not_found` when all approved role buckets are exhausted.
 - never output `needs_review` from the contact-search stage.

@@ -47,13 +47,13 @@ Contact search must use separate fields so company enrichment state is not overw
 - `selected_contact_source_url`: strongest evidence URL.
 - `selected_contact_linkedin_url`: accepted contact LinkedIn profile URL when the provider or public evidence supplies one.
 - `selected_contact_confidence`: confidence for person-company match and role relevance.
-- `email_candidates_json`: generated person-specific permutations and validation outcomes.
-- `validated_email`: accepted deliverable person-specific email.
-- `email_validation_status`: No2Bounce status for the accepted email.
-- `email_validation_provider`: `no2bounce`.
-- `email_validation_evidence_json`: No2Bounce tracking and response summary.
+- `email_candidates_json`: Anymail Finder person, decision-maker, and company-email lookup outcomes.
+- `validated_email`: accepted deliverable email. Prefer person-specific email; company-email fallback may be accepted when the contact workflow cannot prove a person-specific address.
+- `email_validation_status`: accepted provider status, normally `sendable`, `valid`, `no_deliverable_email`, or a worker error state.
+- `email_validation_provider`: active email lookup provider, currently Anymail Finder variants such as `anymail_finder`, `anymail_finder_decision_maker`, or `anymail_finder_company`.
+- `email_validation_evidence_json`: provider attempts, fallback path, cache status, validation response, and charged-credit evidence.
 
-Do not create or accept generic inboxes for this stage. Do not output `needs_review`; use `contact_not_found` when no deliverable person-specific contact is found.
+Company-email fallback must stay auditable. If no deliverable email is found, use `contact_not_found` rather than `needs_review`.
 
 ## Outreach Planning Fields
 
@@ -194,4 +194,4 @@ URL discovery reruns may update `url_picked`, `canonical_domain`, `duplicate_of_
 
 Enrichment reruns must preserve `url_picked` and must not call the Google SERP provider. They may update only downstream website fields such as `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `status`, `status_reason`, `run_id`, processing timestamps, retry fields, `last_stage`, and `last_error`.
 
-Contact-search reruns must preserve URL and company enrichment fields. They may update only contact-search fields, including candidates, selected contact, generated email candidates, No2Bounce validation evidence, and contact-search status fields.
+Contact-search reruns must preserve URL and company enrichment fields. They may update only contact-search fields, including candidates, selected contact, email candidates, Anymail Finder validation evidence, and contact-search status fields.

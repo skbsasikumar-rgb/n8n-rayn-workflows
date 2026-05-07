@@ -103,7 +103,7 @@ Provider adapter behavior:
 
 ### Email Validation
 
-Validation authority: Anymail Finder person lookup, with Anymail Finder decision-maker lookup as the only email fallback.
+Validation authority: Anymail Finder person lookup, with Anymail Finder decision-maker lookup first and company-email lookup as the final auditable fallback.
 
 Anymail Finder flow:
 
@@ -115,11 +115,13 @@ Anymail Finder flow:
 6. If no candidate exists or all candidate lookups miss, call `POST /v5.1/find-email/decision-maker`.
 7. Decision-maker category order is `ceo`, `it`, `operations`, `hr`, `marketing`.
 8. Accept only `email_status = valid` with same-domain `valid_email`.
-9. Store provider response, credit count, decision-maker category order, and candidate attempt order in `email_validation_evidence_json`.
+9. If decision-maker lookup misses, call Anymail Finder company-email lookup as the last fallback.
+10. For company-email fallback, keep `selected_contact_name` blank unless identity proof is present; use generic-team send mode in outreach.
+11. Store provider response, credit count, decision-maker category order, company-email fallback evidence, and candidate attempt order in `email_validation_evidence_json`.
 
 ### Email Discovery Libraries
 
-Do not use third-party SMTP probing libraries for this stage. Use deterministic name filtering and Anymail Finder person lookup; do not generate generic inboxes.
+Do not use third-party SMTP probing libraries for this stage. Use deterministic name filtering and Anymail Finder lookups. Company-email fallback is allowed only through the provider-backed company-email path and must be auditable.
 
 Do not perform direct SMTP probing. No direct mailbox verification over ports `25`, `465`, or `587` is part of this workflow.
 Keep provider routing simple and auditable. Do not use Serper/OpenSERP as an email-finding fallback after Anymail misses.
@@ -185,7 +187,8 @@ Candidate progression is bounded and explicit:
 - cap at `5` validated candidates per row by default.
 - run at most one Anymail Finder person lookup per candidate.
 - after no verified candidates or exhausted person lookups, run one decision-maker fallback request.
-- if validated candidates existed but every Anymail lookup and the decision-maker fallback were rejected or not found, end as `contact_not_found / candidates_found_but_no_sendable_email`.
+- after decision-maker misses, run the provider-backed company-email fallback once.
+- if every Anymail person, decision-maker and company-email lookup is rejected or not found, end as `contact_not_found / no_deliverable_company_email_found` or the more specific no-sendable-email reason.
 
 ## Query Strategy
 

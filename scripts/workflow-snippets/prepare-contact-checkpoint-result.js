@@ -211,7 +211,7 @@ const existingParent = clean(contact.parent_company || url.parent_company || '')
 const trustedExistingParent = looksLikeParent(existingParent) && overlapScore(existingParent, companyHomepageName) < 0.85
   ? cleanParentBusinessName(existingParent)
   : '';
-const parentCompany = normalizeParentName(explicitParent || contentParent || corporateParent || trustedExistingParent || companyHomepageName || cleanCompanyName);
+const parentCompany = normalizeParentName(explicitParent || contentParent || corporateParent || trustedExistingParent);
 
 return {
   json: {
@@ -219,7 +219,7 @@ return {
     company_name: clean(input.company_name),
     clean_company_name: cleanCompanyName || anchorName,
     company_homepage_name: companyHomepageName || cleanCompanyName || anchorName,
-    parent_company: parentCompany || companyHomepageName || cleanCompanyName || anchorName,
+    parent_company: parentCompany,
     hia_batch: clean(input.hia_batch),
     status: 'partial',
     best_url: clean(url.best_url),

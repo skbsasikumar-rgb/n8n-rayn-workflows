@@ -16,6 +16,18 @@ Parent-company cleanup:
 - live verification passed: `/health` returned `{"status":"ok"}`, and `/outreach-plan` returned the expected `422` validation response for an empty body.
 - no emails were sent, and Instantly was not used.
 
+Workflow and NocoDB clutter cleanup:
+
+- verified the live active worker workflow `BQEa6M2pKYmuEYMV` before cleanup: the active contact path was already `Webhook Contact Search Trigger -> Run Contact Search Batch`, while the older contact-search branch starting at `Get Contact Search Rows` had no incoming connection.
+- removed the disconnected legacy contact-search branch from `wf-worker.json` and updated the live workflow; the live workflow remains active with `27` nodes, the contact path is still `Webhook Contact Search Trigger -> Run Contact Search Batch`, and `OpenRouter URL Pick` was left unchanged.
+- backed up the previous live workflow JSON to `/tmp/n8n-workflow-BQEa6M2pKYmuEYMV-before-clutter-cleanup.json`.
+- cleaned the live NocoDB main view from `35` shown columns to `30` shown columns: hid `id`, `last_error`, `selected_contact_seniority`, `selected_contact_email`, `outreach_variant`, `human_review_status`, and `contact_identity_confidence`; showed `contact_search_status` and `contact_search_reason`.
+- cleared stale timeout error clutter on `47` completed rows by blanking `error_type`, `error_message`, and `last_error`, and setting `retry_eligible=false`; follow-up query found `0` completed rows with stale error metadata.
+- updated NocoDB column helper scripts so future reruns preserve the cleaner default visible-column set.
+- updated contact-search docs to reflect current Anymail Finder person, decision-maker, and company-email fallback behavior instead of old No2Bounce-only wording.
+- validation passed: `jq -e . wf-worker.json`, `jq -e . wf-cold-email-planner.json`, `python3 -m py_compile scripts/ensure_rayn_outreach_columns.py scripts/ensure_rayn_contact_columns.py`, and `python3 -m pytest -q tests/test_outreach_columns.py` (`18 passed`).
+- no emails were sent, and Instantly was not used.
+
 ## 2026-05-06
 
 Cold email planner suppressed-row re-entry guard:
