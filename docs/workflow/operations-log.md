@@ -10,6 +10,10 @@ Selected rerun recovery guard:
 - the rerun script refuses to call the planner for upstream failed/skipped rows and only plans rows with `status=completed`, `best_url` present, and terminal contact status.
 - added `allow_low_limits` to `/public-enrich` so controlled retry runs can use lower page/scrape limits instead of being forced back to production minimums.
 - purpose: prevent mixed-state anomalies where planner output is patched onto rows whose URL/enrichment stage failed.
+- deployed commit `8b0b8c7` to Railway worker service `n8n-rayn-workflows`; deployment `bf2457af-0d9c-46a6-8b96-a055f5882915` reached `SUCCESS`.
+- used the guarded rerun script on failed/mixed rows `273,274,275,276,277,278,279,313,316`; all 9 recovered to `status=completed`.
+- guarded rerun outcome for those 9 rows: `7 auto_send_eligible`, `1 suppressed`, `1 retry_enrichment_once`; planner was not run until rows were completed with `best_url` and terminal contact status.
+- final 50-row audit after recovery: `status={completed:48,skipped:2}`, `automation_decision={auto_send_eligible:29,suppressed:15,auto_skipped:2,retry_enrichment_once:2,blank:2}`, `mixed_failed_with_decision=[]`, `suppressed_with_bodies=[]`.
 - no emails sent; Instantly not used.
 
 Parent-company cleanup:
