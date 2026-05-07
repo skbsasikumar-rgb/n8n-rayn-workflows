@@ -4,6 +4,14 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-07
 
+Selected rerun recovery guard:
+
+- added `scripts/rayn_selected_rerun.py` so selected rows can be reset and rerun through URL discovery, public enrichment, contact search, and draft-only planner with explicit gating.
+- the rerun script refuses to call the planner for upstream failed/skipped rows and only plans rows with `status=completed`, `best_url` present, and terminal contact status.
+- added `allow_low_limits` to `/public-enrich` so controlled retry runs can use lower page/scrape limits instead of being forced back to production minimums.
+- purpose: prevent mixed-state anomalies where planner output is patched onto rows whose URL/enrichment stage failed.
+- no emails sent; Instantly not used.
+
 Parent-company cleanup:
 
 - tightened `services/crawl4ai/public_web_enrichment.py` so public programmes, public schemes, subsidies, PCNs, Healthier SG, CHAS, Medisave, MOH, and immunisation programmes cannot populate `parent_company`.

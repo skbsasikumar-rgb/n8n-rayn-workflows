@@ -309,6 +309,7 @@ class PublicEnrichmentRequest(BaseModel):
     page_timeout_ms: int = Field(default=20000, ge=5000, le=60000)
     request_delay_seconds: float = Field(default=0.3, ge=0.0, le=5.0)
     scrape_char_limit: int = Field(default=120000, ge=2000, le=180000)
+    allow_low_limits: bool = False
 
 
 class ContactSearchRequest(BaseModel):
@@ -1622,14 +1623,18 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
 
     try:
         async with scrape_semaphore:
-            effective_page_limit = min(
-                24,
-                max(request.page_limit, int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "12"))),
-            )
-            effective_scrape_char_limit = min(
-                180000,
-                max(request.scrape_char_limit, int(os.getenv("PUBLIC_ENRICH_MIN_SCRAPE_CHARS", "120000"))),
-            )
+            if request.allow_low_limits:
+                effective_page_limit = min(24, max(1, request.page_limit))
+                effective_scrape_char_limit = min(180000, max(2000, request.scrape_char_limit))
+            else:
+                effective_page_limit = min(
+                    24,
+                    max(request.page_limit, int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "12"))),
+                )
+                effective_scrape_char_limit = min(
+                    180000,
+                    max(request.scrape_char_limit, int(os.getenv("PUBLIC_ENRICH_MIN_SCRAPE_CHARS", "120000"))),
+                )
             try:
                 record = await run_attempt(
                     effective_page_limit,
