@@ -361,6 +361,7 @@ class OutreachPlanRequest(BaseModel):
     unsubscribe_status: Any = "active"
     draft_only: bool = False
     copy_qa_mode: bool = False
+    use_llm: bool = False
     hia_llm_review: Any = Field(default_factory=dict)
 
 
@@ -1808,13 +1809,7 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
         if rejected_flags:
             fallback_patch = request.fallback_patch or request.record.get("patch")
             if isinstance(fallback_patch, dict) and fallback_patch.get("Id"):
-                fallback_flags = json.loads(fallback_patch.get("email_quality_flags") or "[]")
-                fallback_flags.extend(f"llm_email_strategy_rejected:{flag}" for flag in rejected_flags)
-                patch = {
-                    **fallback_patch,
-                    "email_send_ready": False,
-                    "email_quality_flags": json.dumps(list(dict.fromkeys(fallback_flags)), ensure_ascii=False),
-                }
+                patch = fallback_patch
         return {
             "ok": True,
             "row_id": request.row.get("Id") or request.row.get("id"),
@@ -1831,14 +1826,6 @@ async def outreach_validate_email(request: OutreachValidateEmailRequest) -> dict
     except Exception as exc:
         fallback_patch = request.fallback_patch or request.record.get("patch")
         error_text = compact_whitespace(str(exc)) or "llm_email_validation_failed"
-        if isinstance(fallback_patch, dict) and fallback_patch.get("Id"):
-            flags = json.loads(fallback_patch.get("email_quality_flags") or "[]")
-            flags.append(f"llm_email_validation_failed:{error_text}")
-            fallback_patch = {
-                **fallback_patch,
-                "email_send_ready": False,
-                "email_quality_flags": json.dumps(flags, ensure_ascii=False),
-            }
         return {
             "ok": False,
             "row_id": request.row.get("Id") or request.row.get("id"),

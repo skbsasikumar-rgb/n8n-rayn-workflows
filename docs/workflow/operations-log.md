@@ -1015,3 +1015,11 @@ Cold email copy QA hardening:
 - artifacts: `/tmp/cold-email-live-direct-draft-patch-47-clean.json` and `/tmp/cold-email-live-draft-audit-47-clean.json`.
 - validation passed before deployment: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and focused pytest suites `tests/test_outreach_planner.py`, `tests/test_outreach_columns.py`, `tests/test_workflow_audit_fallback.py`, and `tests/test_outreach_audit_export.py` with `92 passed`.
 - no emails were sent, Instantly was not used, and no rows were marked sent.
+- `2026-05-07 11:45 +08`: made the cold-email OpenRouter path opt-in and removed pre-planner contact suppression filtering locally.
+- `wf-cold-email-planner.json` now sends rows through `/outreach-plan` by default and only enters the OpenRouter branch when `use_llm=true` is explicitly present in the webhook payload, while keeping `openrouter_allowed` and `skip_openrouter` as secondary gates.
+- `Rows To Items` no longer drops `do_not_contact`, unsubscribed, bounced or complained rows before the planner; those rows can now be deterministically suppressed by `/outreach-plan` and patched with the reason.
+- `/outreach-validate-email` now returns the deterministic fallback patch unchanged when LLM validation rejects or fails, avoiding partial mutation of `automation_decision`, `final_send_gate_passed`, severe flags, blockers or send readiness.
+- investigated live rows `316` and `320` read-only: row `316` is still a true `auto_skipped` weak-evidence/scrape-depth issue; row `320` was a classifier bug where a bare `fertility` term and aesthetic precedence pushed a family clinic away from GP/HIA copy.
+- fixed the row `320` family-clinic route so weak fertility wording does not override family-clinic evidence, while strong aesthetic-clinic rows still use the medical/aesthetic profile and diagnostic copy.
+- local validation passed: `python3 -m py_compile services/crawl4ai/app.py services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and focused pytest suites `tests/test_outreach_planner.py`, `tests/test_outreach_columns.py`, `tests/test_workflow_audit_fallback.py`, and `tests/test_outreach_audit_export.py` with `96 passed`.
+- no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.

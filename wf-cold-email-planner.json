@@ -53,7 +53,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst draftOnly = true;\nconst blockedStatuses = new Set(['unsubscribed', 'bounced', 'complained']);\nconst textFields = ['company_homepage_name', 'parent_company', 'best_url', 'canonical_domain', 'industry_guess', 'website_content', 'source_urls', 'services_detected', 'locations_detected', 'leadership_or_team_signals', 'contact_info_detected', 'structured_data_detected', 'selected_contact_name', 'selected_contact_title', 'selected_contact_role', 'selected_contact_email', 'selected_contact_linkedin_url', 'validated_email', 'unsubscribe_status', 'email_source'];\nconst output = [];\nfor (const row of rows) {\n  const normalized = { ...row };\n  for (const field of textFields) normalized[field] = String(normalized[field] || '').trim();\n  normalized.unsubscribe_status = normalized.unsubscribe_status || 'active';\n  normalized.do_not_contact = normalized.do_not_contact === true || String(normalized.do_not_contact).toLowerCase() === 'true';\n  const unsub = normalized.unsubscribe_status.toLowerCase();\n  if (normalized.do_not_contact) continue;\n  if (blockedStatuses.has(unsub)) continue;\n  output.push({ json: { ...normalized, draft_only: draftOnly } });\n}\nreturn output;"
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst draftOnly = true;\nfunction truthy(value) {\n  return value === true || String(value || '').trim().toLowerCase() === 'true';\n}\nfunction triggerPayload() {\n  for (const nodeName of ['Webhook Trigger', 'Manual Trigger']) {\n    try {\n      const data = $(nodeName).first().json || {};\n      return data.body && typeof data.body === 'object' ? data.body : data;\n    } catch (_) {}\n  }\n  return {};\n}\nconst request = triggerPayload();\nconst useLlm = truthy(request.use_llm);\nconst textFields = ['company_homepage_name', 'parent_company', 'best_url', 'canonical_domain', 'industry_guess', 'website_content', 'source_urls', 'services_detected', 'locations_detected', 'leadership_or_team_signals', 'contact_info_detected', 'structured_data_detected', 'selected_contact_name', 'selected_contact_title', 'selected_contact_role', 'selected_contact_email', 'selected_contact_linkedin_url', 'validated_email', 'unsubscribe_status', 'email_source'];\nconst output = [];\nfor (const row of rows) {\n  const normalized = { ...row };\n  for (const field of textFields) normalized[field] = String(normalized[field] || '').trim();\n  normalized.unsubscribe_status = normalized.unsubscribe_status || 'active';\n  normalized.do_not_contact = normalized.do_not_contact === true || String(normalized.do_not_contact).toLowerCase() === 'true';\n  output.push({ json: { ...normalized, draft_only: draftOnly, use_llm: useLlm } });\n}\nreturn output;"
       },
       "id": "rows-to-items",
       "name": "Rows To Items",
@@ -223,8 +223,8 @@
           },
           "conditions": [
             {
-              "id": "openrouter-allowed",
-              "leftValue": "={{ (() => { const raw = $json.body !== undefined ? $json.body : $json; let payload = raw; if (typeof raw === 'string') { try { payload = JSON.parse(raw); } catch (_) { payload = {}; } } return payload.openrouter_allowed === true && payload.skip_openrouter !== true; })() }}",
+              "id": "explicit-use-llm-and-openrouter-allowed",
+              "leftValue": "={{ (() => { const raw = $json.body !== undefined ? $json.body : $json; let payload = raw; if (typeof raw === 'string') { try { payload = JSON.parse(raw); } catch (_) { payload = {}; } } return payload.use_llm === true && payload.openrouter_allowed === true && payload.skip_openrouter !== true; })() }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

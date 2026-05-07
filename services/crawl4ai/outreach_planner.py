@@ -796,7 +796,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "ambulatory surgical" in text or "day surgery" in text:
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
-    elif "assisted reproduction" in text or "ivf" in text or "fertility" in text:
+    elif "assisted reproduction" in text or "ivf" in text or ("fertility" in text and not has_family_clinic_evidence(row, text)):
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
     elif "pharmacy" in text:
@@ -2032,15 +2032,15 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     ):
         guess = "allied_health"
         add_evidence("allied-health or physiotherapy terms")
-    elif has_aesthetic:
-        guess = "aesthetic_medical"
-        add_evidence("medical/aesthetic terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
         guess = "solo_gp"
         add_evidence("solo GP/outpatient evidence")
     elif service_type == "GP_OMS" and has_family_clinic_evidence(row, source_l):
         guess = "family_gp"
         add_evidence("family clinic, GP or outpatient terms")
+    elif has_aesthetic:
+        guess = "aesthetic_medical"
+        add_evidence("medical/aesthetic terms")
     elif service_type == "GP_OMS" and has_gp:
         guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
         add_evidence("GP/outpatient evidence")
@@ -3771,6 +3771,7 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
         "automation_decision_reason": plan.automation_decision_reason,
         "automation_blockers": plan.automation_blockers,
         "automation_advisory_flags": plan.automation_advisory_flags,
+        "use_llm": row.get("use_llm") is True or compact(row.get("use_llm")).lower() == "true",
         "openrouter_allowed": openrouter_allowed,
         "skip_openrouter": not openrouter_allowed,
         "audit_report": build_audit_report(row, plan=plan),

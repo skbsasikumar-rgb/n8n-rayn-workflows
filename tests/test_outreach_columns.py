@@ -161,6 +161,22 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("model: 'x-ai/grok-4.3'", prepare_node["parameters"]["jsCode"])
         self.assertNotIn("anthropic/claude-sonnet-4.6", prepare_node["parameters"]["jsCode"])
 
+    def test_cold_email_openrouter_requires_explicit_use_llm(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        if_node = next(node for node in workflow["nodes"] if node["name"] == "Copy Brief Ready?")
+        left_value = if_node["parameters"]["conditions"]["conditions"][0]["leftValue"]
+        self.assertIn("payload.use_llm === true", left_value)
+        self.assertIn("payload.openrouter_allowed === true", left_value)
+        self.assertIn("payload.skip_openrouter !== true", left_value)
+
+    def test_rows_to_items_does_not_pre_filter_contact_suppression_rows(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        rows_node = next(node for node in workflow["nodes"] if node["name"] == "Rows To Items")
+        js_code = rows_node["parameters"]["jsCode"]
+        self.assertIn("use_llm: useLlm", js_code)
+        self.assertNotIn("if (normalized.do_not_contact) continue", js_code)
+        self.assertNotIn("blockedStatuses", js_code)
+
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(
             {

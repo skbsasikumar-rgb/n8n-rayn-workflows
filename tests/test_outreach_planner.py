@@ -532,6 +532,29 @@ class OutreachPlannerTests(unittest.TestCase):
         for index in range(1, 5):
             self.assertFalse(patch[f"email_{index}_body"])
 
+    def test_plan_and_patch_echoes_explicit_use_llm_flag(self):
+        default = o.plan_and_patch(
+            {
+                "Id": 171,
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore clinic handling patient records and appointments.",
+                "validated_email": "info@example.com",
+                "draft_only": True,
+            }
+        )
+        explicit = o.plan_and_patch(
+            {
+                "Id": 172,
+                "company_name": "Acme Services Pte Ltd",
+                "website_content": "Singapore clinic handling patient records and appointments.",
+                "validated_email": "info@example.com",
+                "draft_only": True,
+                "use_llm": True,
+            }
+        )
+        self.assertFalse(default["use_llm"])
+        self.assertTrue(explicit["use_llm"])
+
     def test_copy_qa_mode_allows_missing_email_without_send_ready(self):
         result = o.plan_and_patch(
             {
@@ -1497,6 +1520,22 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.copy_brief["clinic_profile_guess"], "diagnostic_lab")
         self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
         self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_3"]["body"])
+
+    def test_family_clinic_not_overridden_by_bare_fertility_term(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Assure Family Clinic",
+                "website_content": "Family Clinic with doctors, family medicine, health screening, fertility support, patient appointments and treatment services.",
+                "validated_email": "woodlands@example.com",
+                "draft_only": True,
+            }
+        )
+        patch = result["patch"]
+        self.assertEqual(patch["hia_service_type_guess"], "GP_OMS")
+        self.assertIn("family clinic offering GP-style consultations", patch["email_1_body"])
+        self.assertEqual(patch["automation_decision"], "auto_send_eligible")
+        self.assertTrue(patch["final_send_gate_passed"])
+        self.assertEqual(patch["email_quality_flags"], "[]")
 
     def test_amp_lab_requires_clinical_diagnostic_evidence(self):
         clinical = o.plan_outreach(
