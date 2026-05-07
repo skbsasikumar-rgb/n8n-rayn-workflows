@@ -989,3 +989,11 @@ Cold email copy QA hardening:
 - final live safety check: `email_send_ready_true=0`, `final_send_gate_passed_true=36`, no auto-send-eligible rows were missing email bodies, and no suppressed rows had email bodies.
 - local validation passed: Python compile for `scripts/ensure_rayn_outreach_columns.py` and `services/crawl4ai/outreach_planner.py`; `jq -e wf-cold-email-planner.json`; focused pytest suites `tests/test_outreach_columns.py`, `tests/test_outreach_planner.py`, `tests/test_workflow_audit_fallback.py`, and `tests/test_outreach_audit_export.py` with `85 passed`.
 - no emails were sent, Instantly was not used, and no rows were marked sent.
+- `2026-05-07 01:12 +08`: added controlled rotating subject/body variants for cold-email drafts.
+- added an approved deterministic variant bank in `services/crawl4ai/outreach_planner.py` for `hia_regulatory`, `pdpa_safeguards`, `dpo_evidence`, and `customer_trust`, with segment-specific subjects and Email 1-4 variants.
+- selection uses a stable SHA-256 seed from row id, campaign id and email step; rows without a stable id use variant `A` for predictable local previews.
+- variant metadata is stored only behind the scenes in `email_sequence_json.variant_metadata`; no new visible NocoDB variant columns were added.
+- variation keeps the same copy brief and compliance gates: Email 1 keeps the company observation/problem/mechanism/CTA order, Email 2 remains funding-only only when funding gates pass, Email 3 stays diagnostic, and no signatures/signoffs are added.
+- added tests confirming every rotated A/B/C body path passes the same quality gate guardrails and that variant metadata is not exposed as patch-level fields.
+- local validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py`, `jq -e wf-cold-email-planner.json`, and focused pytest suites `tests/test_outreach_planner.py`, `tests/test_outreach_columns.py`, `tests/test_workflow_audit_fallback.py`, and `tests/test_outreach_audit_export.py` with `90 passed`.
+- no preview was generated, no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.

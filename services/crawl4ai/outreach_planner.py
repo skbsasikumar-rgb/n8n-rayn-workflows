@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -504,22 +505,32 @@ def funding_claim_send_safe(funding: FundingMatch, copy_brief: dict[str, Any], c
     return True
 
 
-def value_fallback_email_2(row: dict[str, Any], emails: dict[str, Any], asset: str | None = None) -> dict[str, Any]:
+def value_fallback_email_2(
+    row: dict[str, Any],
+    emails: dict[str, Any],
+    asset: str | None = None,
+    classification: dict[str, Any] | None = None,
+    copy_brief: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     greeting = email_comma_greeting(row)
     asset_name = compact(asset) or "checklist"
-    body = (
-        f"{greeting}\n\n"
-        f"One useful way to check whether the {asset_name} is worth prioritising is to map the evidence already in place: "
-        "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
-        "If the gaps are small, Cyber Essentials preparation is usually more straightforward.\n\n"
-        f"Worth sending the {asset_name}?"
-    )
+    variant_id = "A"
+    subject = "readiness evidence"
+    subject_options = ["readiness evidence", "checklist"]
+    if classification is not None and copy_brief is not None:
+        fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
+        available = list(fallback_subjects.keys())
+        variant_id = variant_id_for(row, classification, 2, available)
+        subject = fallback_subjects[variant_id]
+        subject_options = list(fallback_subjects.values())
+    body = value_fallback_body_variant(variant_id, greeting, asset_name)
     emails = {**emails}
     emails["email_2"] = {
-        "subject_options": ["readiness evidence", "checklist"],
-        "chosen_subject": "readiness evidence",
+        "subject_options": subject_options,
+        "chosen_subject": subject,
         "body": body,
         "word_count": word_count(body),
+        "variant_id": variant_id,
     }
     return emails
 
@@ -1231,6 +1242,300 @@ def choose_variant(classification: dict[str, Any]) -> str:
     if classification["pressure_type"] == "not_ready":
         return "not_ready"
     return "pdpa_general"
+
+
+TRACK_SEGMENT_SUBJECT_VARIANTS: dict[str, dict[str, dict[int, dict[str, str]]]] = {
+    "hia_regulatory": {
+        "clinic": {
+            1: {"A": "clinic readiness", "B": "clinic checklist", "C": "readiness map"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: clinic readiness", "B": "clinic evidence check", "C": "readiness question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "dental": {
+            1: {"A": "dental readiness", "B": "dental checklist", "C": "dental evidence"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: dental readiness", "B": "dental records check", "C": "dental readiness map"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "specialist": {
+            1: {"A": "specialist clinic readiness", "B": "specialist checklist", "C": "clinic evidence map"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: specialist clinic readiness", "B": "specialist records check", "C": "readiness question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "pharmacy": {
+            1: {"A": "pharmacy HIA checklist", "B": "pharmacy readiness", "C": "pharmacy records"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: pharmacy HIA checklist", "B": "pharmacy records check", "C": "readiness question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "hearing_care": {
+            1: {"A": "hearing-care readiness", "B": "hearing-care checklist", "C": "audiology records"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: hearing-care readiness", "B": "hearing records check", "C": "readiness question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "care": {
+            1: {"A": "care readiness", "B": "care records map", "C": "care checklist"},
+            2: {"A": "HIA / cyber funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: care readiness", "B": "care records check", "C": "readiness question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+    },
+    "pdpa_safeguards": {
+        "education": {
+            1: {"A": "education data safeguards", "B": "student data checklist", "C": "data safeguards"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: education data safeguards", "B": "student data check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "hr_recruitment": {
+            1: {"A": "HR data safeguards", "B": "candidate data checklist", "C": "client data safeguards"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: HR data safeguards", "B": "candidate data check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "client_data": {
+            1: {"A": "client data safeguards", "B": "client records checklist", "C": "data safeguards"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: client data safeguards", "B": "client records check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "customer_data": {
+            1: {"A": "customer data safeguards", "B": "customer data checklist", "C": "data safeguards"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: customer data safeguards", "B": "customer data check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "care": {
+            1: {"A": "data safeguards", "B": "care data checklist", "C": "care records"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: data safeguards", "B": "care records check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "general": {
+            1: {"A": "data safeguards", "B": "safeguards checklist", "C": "data evidence"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: data safeguards", "B": "personal data check", "C": "safeguards question"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+    },
+    "dpo_evidence": {
+        "general": {
+            1: {"A": "data protection evidence", "B": "evidence checklist", "C": "data evidence"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: data protection evidence", "B": "evidence check", "C": "owner evidence"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+    },
+    "customer_trust": {
+        "saas": {
+            1: {"A": "customer security evidence", "B": "security evidence", "C": "customer checklist"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: customer security evidence", "B": "customer evidence check", "C": "security questions"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "vendor": {
+            1: {"A": "vendor security evidence", "B": "supplier evidence", "C": "security evidence"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: vendor security evidence", "B": "vendor evidence check", "C": "security questions"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+        "general": {
+            1: {"A": "security evidence", "B": "customer security evidence", "C": "evidence checklist"},
+            2: {"A": "Cyber Essentials funding", "B": "funding route check", "C": "support route"},
+            3: {"A": "Re: security evidence", "B": "evidence check", "C": "security questions"},
+            4: {"A": "close the loop?", "B": "still useful?", "C": "last note"},
+        },
+    },
+}
+
+
+def email_variant_track(classification: dict[str, Any]) -> str:
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "dpo_evidence"
+    pressure = compact(classification.get("pressure_type"))
+    if pressure in {"hia_regulatory", "pdpa_safeguards", "customer_trust"}:
+        return pressure
+    return "not_ready"
+
+
+def email_variant_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    track = email_variant_track(classification)
+    asset = compact(copy_brief.get("email_asset_offer")).lower()
+    profile = compact(copy_brief.get("clinic_profile_guess"))
+    service = compact(classification.get("hia_service_type_guess"))
+    text = lower_blob(row)
+    if track == "hia_regulatory":
+        if profile == "dental" or service == "dental":
+            return "dental"
+        if profile == "pharmacy" or service == "retail_pharmacy":
+            return "pharmacy"
+        if profile == "hearing_care" or service == "hearing_care":
+            return "hearing_care"
+        if profile in {"hospice_long_term_care", "home_care"} or service == "long_term_care":
+            return "care"
+        if profile == "specialist_led" or service == "specialist_OMS":
+            return "specialist"
+        return "clinic"
+    if track == "pdpa_safeguards":
+        if "education" in asset:
+            return "education"
+        if "hr" in asset or "candidate" in asset:
+            return "hr_recruitment"
+        if "client" in asset:
+            return "client_data"
+        if "customer" in asset:
+            return "customer_data"
+        if "care" in asset or classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
+            return "care"
+        return "general"
+    if track == "customer_trust":
+        if "vendor" in asset or "supplier" in text or "outsourcing" in text:
+            return "vendor"
+        if "customer" in asset or any(term in text for term in ("saas", "software", "platform", "dashboard")):
+            return "saas"
+        return "general"
+    return "general"
+
+
+def campaign_id_for(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    return compact(row.get("campaign_id") or row.get("campaign") or classification.get("campaign_track") or classification.get("pressure_type") or "cold_email")
+
+
+def row_id_for_variant(row: dict[str, Any]) -> str:
+    return compact(row.get("row_id") or row.get("Id") or row.get("id") or "")
+
+
+def variant_id_for(row: dict[str, Any], classification: dict[str, Any], email_step: int, available: list[str]) -> str:
+    if not available:
+        return "A"
+    row_id = row_id_for_variant(row)
+    if not row_id:
+        return available[0]
+    seed = f"{row_id}:{campaign_id_for(row, classification)}:{email_step}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return available[int(digest[:12], 16) % len(available)]
+
+
+def subject_variants_for(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], email_step: int) -> dict[str, str]:
+    track = email_variant_track(classification)
+    segment = email_variant_segment(row, classification, copy_brief)
+    track_bank = TRACK_SEGMENT_SUBJECT_VARIANTS.get(track) or {}
+    segment_bank = track_bank.get(segment) or track_bank.get("general") or {}
+    return segment_bank.get(email_step) or {}
+
+
+def chosen_subject_variant(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    email_step: int,
+    fallback: str,
+) -> tuple[str, str, list[str]]:
+    variants = subject_variants_for(row, classification, copy_brief, email_step)
+    if not variants:
+        return "A", fallback, [fallback]
+    available = list(variants.keys())
+    variant_id = variant_id_for(row, classification, email_step, available)
+    subject = variants.get(variant_id) or fallback
+    options = list(dict.fromkeys([subject, *variants.values(), fallback]))
+    return variant_id, subject, options[:4]
+
+
+def email_1_variant_body(variant_id: str, greeting: str, noticed: str, problem: str, mechanism: str, cta: str) -> str:
+    if variant_id == "B":
+        return f"{greeting}\n\nNoticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
+    if variant_id == "C":
+        return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+    return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+
+
+def funding_email_2_variant_body(variant_id: str, greeting: str, funding_line: str, caveat: str) -> str:
+    if variant_id == "B":
+        return (
+            f"{greeting}\n\n"
+            f"{funding_line}{caveat}\n\n"
+            "I would check the route first, before anyone spends time lining up readiness work.\n\n"
+            "Should I send the route summary?"
+        )
+    if variant_id == "C":
+        return (
+            f"{greeting}\n\n"
+            f"{funding_line}{caveat}\n\n"
+            "The practical next move is just to confirm whether the route applies.\n\n"
+            "Should I send the route summary?"
+        )
+    return (
+        f"{greeting}\n\n"
+        f"{funding_line}{caveat}\n\n"
+        "The useful first step is confirming whether the route applies before spending time on readiness work.\n\n"
+        "Should I send the route summary?"
+    )
+
+
+def value_fallback_body_variant(variant_id: str, greeting: str, asset_name: str) -> str:
+    if variant_id == "B":
+        return (
+            f"{greeting}\n\n"
+            f"The {asset_name} is usually worth doing only after the basics are visible: access lists, backup proof, update process, malware controls and incident contacts.\n\n"
+            "If those are already mostly in place, Cyber Essentials preparation is usually more straightforward.\n\n"
+            f"Worth sending the {asset_name}?"
+        )
+    if variant_id == "C":
+        return (
+            f"{greeting}\n\n"
+            f"A useful first pass is to mark what evidence already exists for the {asset_name}: access, backups, updates, malware protection and incident contacts.\n\n"
+            "That keeps the readiness work grounded in what is already there.\n\n"
+            f"Worth sending the {asset_name}?"
+        )
+    return (
+        f"{greeting}\n\n"
+        f"One useful way to check whether the {asset_name} is worth prioritising is to map the evidence already in place: "
+        "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
+        "If the gaps are small, Cyber Essentials preparation is usually more straightforward.\n\n"
+        f"Worth sending the {asset_name}?"
+    )
+
+
+def diagnostic_email_3_variant_body(variant_id: str, diagnostic: str, cta: str) -> str:
+    if variant_id == "B":
+        return f"Simple check: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+    if variant_id == "C":
+        return f"One question I would use: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+    return f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+
+
+def close_loop_variant_body(variant_id: str, greeting: str, asset: str) -> str:
+    if variant_id == "B":
+        return f"{greeting}\n\nStill useful for me to send the {asset}, or should I leave this here?"
+    if variant_id == "C":
+        return f"{greeting}\n\nLast note from me. Would the {asset} help, or should I close this off?"
+    return f"{greeting}\n\nShould I close the loop, or would the {asset} still be useful?"
+
+
+def email_sequence_variant_metadata(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    emails: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "track": email_variant_track(classification),
+        "segment": email_variant_segment(row, classification, copy_brief),
+        "campaign_id": campaign_id_for(row, classification),
+        "row_id": row_id_for_variant(row),
+        "selector": "sha256(row_id:campaign_id:email_step)",
+        "email_steps": {
+            key: {
+                "email_step": index,
+                "variant_id": compact((emails.get(key) or {}).get("variant_id")) or "A",
+                "chosen_subject": compact((emails.get(key) or {}).get("chosen_subject")),
+            }
+            for index, key in enumerate(("email_1", "email_2", "email_3", "email_4"), start=1)
+        },
+    }
 
 
 def word_count(text: str) -> int:
@@ -2466,15 +2771,16 @@ def generate_email_sequence(
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
-        email1_subject, email2_subject = subject_pair(row, classification, copy_brief)
-        diagnostic_subject = email2_subject
+        base_email1_subject, base_thread_subject = subject_pair(row, classification, copy_brief)
+        email1_variant_id, email1_subject, email1_subject_options = chosen_subject_variant(row, classification, copy_brief, 1, base_email1_subject)
+        email3_subject_variant_id, diagnostic_subject, email3_subject_options = chosen_subject_variant(row, classification, copy_brief, 3, base_thread_subject)
         noticed = trigger
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
-        email1_body = f"{email1_greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+        email1_body = email_1_variant_body(email1_variant_id, email1_greeting, noticed, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
-            email1_body = f"{email1_greeting}\n\nNoticed {short_noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+            email1_body = email_1_variant_body(email1_variant_id, email1_greeting, short_noticed, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory":
             email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
@@ -2484,40 +2790,63 @@ def generate_email_sequence(
         else:
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
         if classification["pressure_type"] != "hia_regulatory":
-            email3_body = f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
-        if funding_claim_send_safe(funding, copy_brief, classification):
-            funding_line = funding.funding_claim_line
-            email2_subject = "HIA / cyber funding" if classification["pressure_type"] == "hia_regulatory" else "Cyber Essentials funding"
-            caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = f"{comma_greeting}\n\n{funding_line}{caveat}\n\nThe useful first step is confirming whether the route applies before spending time on readiness work.\n\nShould I send the route summary?"
+            email3_variant_id = email3_subject_variant_id
+            email3_body = diagnostic_email_3_variant_body(email3_variant_id, diagnostic, cta)
         else:
-            email2_subject = "readiness evidence"
-            email2_body = value_fallback_email_2(row, {"email_2": {"chosen_subject": email2_subject}}, asset)["email_2"]["body"]
-        email3_subject = diagnostic_subject if diagnostic_subject.lower().startswith("re: ") else f"Re: {email1_subject}"
-        email4_body = f"{comma_greeting}\n\nShould I close the loop, or would the {asset} still be useful?"
+            email3_variant_id = email3_subject_variant_id
+        if funding_claim_send_safe(funding, copy_brief, classification):
+            email2_variant_id, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
+            funding_line = funding.funding_claim_line
+            if classification["pressure_type"] == "hia_regulatory" and email2_variant_id == "A":
+                email2_subject = "HIA / cyber funding"
+                email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
+            caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
+            email2_body = funding_email_2_variant_body(email2_variant_id, comma_greeting, funding_line, caveat)
+        else:
+            fallback_email2 = value_fallback_email_2(row, {"email_2": {"chosen_subject": "readiness evidence"}}, asset, classification, copy_brief)["email_2"]
+            email2_variant_id = fallback_email2.get("variant_id", "A")
+            email2_subject = fallback_email2["chosen_subject"]
+            email2_subject_options = fallback_email2["subject_options"]
+            email2_body = fallback_email2["body"]
+        email3_subject = diagnostic_subject
+        email4_variant_id, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
+        email4_body = close_loop_variant_body(email4_variant_id, comma_greeting, asset)
     else:
+        email1_variant_id = "A"
+        email2_variant_id = "A"
+        email3_variant_id = "A"
+        email4_variant_id = "A"
+        email1_subject_options = [email1_subject, "readiness checklist"]
+        email2_subject_options = [email2_subject, "quick diagnostic"]
+        email4_subject = "close the loop?"
+        email4_subject_options = ["close the loop?", "checklist?"]
         email3_subject = "not ready"
+        email3_subject_options = [email3_subject, "funding route"]
 
     emails = {
         "email_1": {
-            "subject_options": [email1_subject, "readiness checklist"],
+            "subject_options": email1_subject_options,
             "chosen_subject": email1_subject,
             "body": email1_body,
+            "variant_id": email1_variant_id,
         },
         "email_2": {
-            "subject_options": [email2_subject, "quick diagnostic"],
+            "subject_options": email2_subject_options,
             "chosen_subject": email2_subject,
             "body": email2_body,
+            "variant_id": email2_variant_id,
         },
         "email_3": {
-            "subject_options": [email3_subject, "funding route"],
+            "subject_options": email3_subject_options,
             "chosen_subject": email3_subject,
             "body": email3_body,
+            "variant_id": email3_variant_id,
         },
         "email_4": {
-            "subject_options": ["close the loop?", "checklist?"],
-            "chosen_subject": "close the loop?",
+            "subject_options": email4_subject_options,
+            "chosen_subject": email4_subject,
             "body": email4_body,
+            "variant_id": email4_variant_id,
         },
         "evidence_used": [trigger],
         "claims_avoided": [
@@ -2529,6 +2858,7 @@ def generate_email_sequence(
     }
     for key in ("email_1", "email_2", "email_3", "email_4"):
         emails[key]["word_count"] = word_count(emails[key]["body"])
+    emails["variant_metadata"] = email_sequence_variant_metadata(row, classification, copy_brief, emails)
     return emails
 
 
@@ -2579,10 +2909,10 @@ def enforce_funding_claim_email(
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if classification is not None and copy_brief is not None and not funding_claim_send_safe(funding, copy_brief, classification):
-        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"))
+        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"), classification, copy_brief)
     claim = trim_text(funding.funding_claim_line)
     if not claim:
-        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"))
+        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"), classification, copy_brief)
     email2 = emails.get("email_2") or {}
     existing_body = trim_text(email2.get("body"))
     caveat_count = existing_body.lower().count("subject to programme confirmation")
@@ -2592,13 +2922,17 @@ def enforce_funding_claim_email(
     greeting = email_comma_greeting(row)
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?"
+    variant_id = compact(email2.get("variant_id")) or "A"
+    body = funding_email_2_variant_body(variant_id, greeting, claim, caveat)
+    if variant_id == "A" and useful_line.lower() not in body.lower():
+        body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?"
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": list(email2.get("subject_options") or [subject]),
         "chosen_subject": subject,
         "body": body,
         "word_count": word_count(body),
+        "variant_id": variant_id,
     }
     return emails
 

@@ -85,6 +85,30 @@ Greeting rule:
 - If `selected_contact_name` is blank, Email 1 starts `Hello team,`.
 - Do not invent names and do not use the company name as the greeting. The `Noticed...` line still includes the company name.
 
+## Controlled Email Variants
+
+Email variation is deterministic and comes from the approved variant bank in `services/crawl4ai/outreach_planner.py`. The planner does not ask the LLM to rewrite copy randomly, and it does not add visible NocoDB columns for variants.
+
+Variant selection uses a stable SHA-256 seed based on `row_id/Id`, `campaign_id` and `email_step`. If a row has no stable id, variant `A` is used so local fixtures and ad hoc previews stay predictable. The selected track, segment, campaign id, selector and per-email `variant_id` values are stored behind the scenes inside `email_sequence_json.variant_metadata`.
+
+The bank covers the four campaign tracks and segment-specific subject lines:
+
+- `hia_regulatory`: clinic, dental, specialist, pharmacy, hearing-care and care.
+- `pdpa_safeguards`: education, HR/recruitment, client data, customer data, care/NPO and general safeguards.
+- `dpo_evidence`: data-protection / operations evidence owner copy.
+- `customer_trust`: SaaS/customer evidence, vendor/supplier evidence and general B2B evidence.
+
+Body variants keep the same copy brief and compliance rules:
+
+- Email 1 always keeps greeting, `Noticed...`, problem, mechanism and CTA in order.
+- Email 2 is funding-only when verified-current funding gates pass; otherwise it uses the non-funding value-fallback asset.
+- Email 3 stays diagnostic.
+- Email 4 is a short close-loop note.
+- No final email body includes signatures or signoffs.
+- Every rotated variant must pass the same quality gate: no internal `signals` wording, no HIA batch/date/window wording, no Cyber Essentials equals PDPA/HIA compliance claim, no unsupported funding, no generic copy, and Email 1 must preserve trigger/problem/mechanism/CTA.
+
+Copy style guardrails: avoid internal words such as `signals`, avoid HIA batch/date wording in final bodies, avoid inflated promotional language, avoid common AI filler words, and keep the phrasing practical and human.
+
 Recommended value framing:
 
 - RAYN helps Singapore organisations prepare for Cyber Essentials and related cyber/data readiness requirements by identifying gaps, implementing controls, organising evidence, and keeping certification readiness current through consulting plus SaaS.

@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from services.crawl4ai.funding_programs import FundingMatch, FundingProgram
@@ -136,7 +137,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
+        self.assertIn(plan.emails["email_1"]["chosen_subject"], {"data protection evidence", "evidence checklist", "data evidence"})
         self.assertIn("data-protection / operations contact route", plan.emails["email_1"]["body"])
         self.assertIn("harder part is often evidence", plan.emails["email_1"]["body"])
 
@@ -167,11 +168,128 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "customer_trust")
         self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "customer security evidence")
+        self.assertIn(plan.emails["email_1"]["chosen_subject"], {"customer security evidence", "security evidence", "customer checklist"})
         self.assertIn("without rebuilding answers for every customer review", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials gives a recognised baseline for that evidence", plan.emails["email_1"]["body"])
         self.assertIn("customer security question", plan.emails["email_3"]["body"])
         self.assertNotIn("Cyber Essentials is", plan.emails["email_3"]["body"])
+
+    def test_subject_and_template_variants_are_approved_and_deterministic(self):
+        row = {
+            "Id": 132,
+            "campaign_id": "cold_email_may",
+            "company_name": "Vendor Platform Pte Ltd",
+            "website_content": "Singapore SaaS platform for enterprise clients with user data, admin access and procurement reviews.",
+        }
+        first = o.plan_outreach(row)
+        second = o.plan_outreach(dict(row))
+        self.assertEqual(first.emails["email_1"]["chosen_subject"], second.emails["email_1"]["chosen_subject"])
+        self.assertEqual(first.emails["email_1"]["body"], second.emails["email_1"]["body"])
+        for index in range(1, 5):
+            self.assertIn(first.emails[f"email_{index}"]["variant_id"], {"A", "B", "C"})
+        self.assertIn("variant_metadata", first.emails)
+        self.assertEqual(first.emails["variant_metadata"], second.emails["variant_metadata"])
+
+    def test_variant_metadata_is_stored_only_inside_email_sequence_json(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 132,
+                "campaign_id": "cold_email_may",
+                "company_name": "Vendor Platform Pte Ltd",
+                "validated_email": "info@vendor.example",
+                "website_content": "Singapore SaaS platform for enterprise clients with user data, admin access and procurement reviews.",
+            }
+        )
+        patch = result["patch"]
+        sequence = json.loads(patch["email_sequence_json"])
+        self.assertIn("variant_metadata", sequence)
+        self.assertEqual(sequence["variant_metadata"]["selector"], "sha256(row_id:campaign_id:email_step)")
+        self.assertEqual(sequence["variant_metadata"]["email_steps"]["email_1"]["variant_id"], sequence["email_1"]["variant_id"])
+        self.assertNotIn("variant_metadata", patch)
+        for index in range(1, 5):
+            self.assertNotIn(f"email_{index}_variant_id", patch)
+
+    def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
+        for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
+            with self.subTest(track=track):
+                segment_bank = next(iter(o.TRACK_SEGMENT_SUBJECT_VARIANTS[track].values()))
+                for step in (1, 2, 3, 4):
+                    self.assertGreaterEqual(len(segment_bank[step]), 2)
+
+    def test_rotated_templates_avoid_ai_vocabulary_and_keep_signatures_out(self):
+        rows = [
+            {"Id": 201, "company_name": "Heart Centre", "website_content": "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations."},
+            {"Id": 202, "company_name": "Acme Training", "website_content": "Education and training provider handling student, parent, staff and enrolment records."},
+            {"Id": 203, "company_name": "Vendor Platform Pte Ltd", "website_content": "B2B SaaS platform for enterprise customers with user data and admin access."},
+        ]
+        forbidden = ("delve", "landscape", "leverage", "tapestry", "moreover", "furthermore", "additionally", "pivotal moment")
+        for row in rows:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                for index in range(1, 5):
+                    body = plan.emails[f"email_{index}"]["body"].lower()
+                    for word in forbidden:
+                        self.assertNotIn(word, body)
+                self.assert_no_email_signatures(plan.emails)
+
+    def test_all_rotated_body_variants_pass_quality_gate_guardrails(self):
+        cases = [
+            (
+                "hia_regulatory",
+                {
+                    "company_name": "AMK Family Clinic",
+                    "website_content": "Singapore family clinic with doctors, outpatient consultations, patient appointments and treatment services.",
+                },
+                [verified_program()],
+            ),
+            (
+                "pdpa_safeguards",
+                {
+                    "company_name": "Acme Training Pte Ltd",
+                    "website_content": "Singapore private education and training provider handling student, parent, staff and enrolment records for courses.",
+                },
+                [],
+            ),
+            (
+                "dpo_evidence",
+                {
+                    "company_name": "Acme Services Pte Ltd",
+                    "selected_contact_title": "Operations Manager",
+                    "website_content": "Singapore private company handling customer records, employee data and vendor tools.",
+                },
+                [],
+            ),
+            (
+                "customer_trust",
+                {
+                    "company_name": "Vendor Platform Pte Ltd",
+                    "website_content": "B2B SaaS platform for enterprise clients with user data, admin access, backups and procurement reviews.",
+                },
+                [],
+            ),
+        ]
+        forbidden = ("signals", "Batch 1", "Batch 2", "Batch 3", "Sep 2027", "Sep 2028", "Mar 2030", "HIA window")
+        for expected_track, base_row, programmes in cases:
+            seen = {index: set() for index in range(1, 5)}
+            for row_id in range(1, 80):
+                row = {**base_row, "Id": row_id, "campaign_id": f"{expected_track}_variant_test"}
+                plan = o.plan_outreach(row, programmes=programmes)
+                self.assertEqual(o.email_variant_track(plan.classification), expected_track)
+                self.assertEqual(plan.quality_flags, [])
+                for index in range(1, 5):
+                    item = plan.emails[f"email_{index}"]
+                    seen[index].add(item["variant_id"])
+                    for phrase in forbidden:
+                        self.assertNotIn(phrase, item["body"])
+                self.assertIn(plan.copy_brief["email_problem_statement"], plan.emails["email_1"]["body"])
+                self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
+                self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
+                if plan.email_2_mode == "funding":
+                    self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
+                else:
+                    self.assertNotIn("funding", plan.emails["email_2"]["body"].lower())
+            for index in range(1, 5):
+                self.assertEqual(seen[index], {"A", "B", "C"})
 
     def test_customer_trust_buyer_context_variants(self):
         cases = [
