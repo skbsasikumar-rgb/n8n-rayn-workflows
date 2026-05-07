@@ -18,6 +18,13 @@ if "crawl4ai" not in sys.modules:
     crawl4ai.CrawlerRunConfig = object
     sys.modules["crawl4ai"] = crawl4ai
 
+if "captcha_solver" not in sys.modules:
+    captcha_solver = types.ModuleType("captcha_solver")
+    captcha_solver.solver_diagnostics = lambda: {}
+    captcha_solver.is_configured = lambda: False
+    captcha_solver._detect_captcha_type = lambda *args, **kwargs: False
+    sys.modules["captcha_solver"] = captcha_solver
+
 from services.crawl4ai import public_web_enrichment as p
 
 
@@ -62,7 +69,7 @@ class ParentCompanyExtractionTests(unittest.TestCase):
             ("Our doctors are members of the Singapore Medical Association.", "Singapore Medical Association"),
             ("Dr Tan completed residency at National University Hospital.", "National University Hospital"),
             ("Dr Tan is a Fellow of the Academy of Medicine Singapore.", ""),
-            ("Clinic is accredited by CHAS.", "CHAS"),
+            ("Clinic is accredited by CHAS.", ""),
             ("Located at Mount Elizabeth Medical Centre.", "Mount Elizabeth Medical Centre"),
             ("Our website is powered by Example Vendor.", "Example Vendor"),
         ]
@@ -82,6 +89,26 @@ class ParentCompanyExtractionTests(unittest.TestCase):
         result = self.verify("Example Clinic is an affiliate clinic of Example Hospital.")
         self.assertEqual(result.parent_company, "")
         self.assertIn("Example Hospital", {item["name"] for item in result.affiliations})
+
+    def test_rejects_public_programmes_and_care_networks_as_parent_company(self):
+        cases = [
+            "We are Now under the Primary Care Network (PCN).",
+            "Our clinic is now officially one of the Healthier SG clinics under the national initiative by the Ministry of Health (MOH).",
+            "We are a participating clinic in the HPV Immunisation Programme.",
+            "Clinic is part of the Community Health Assist Scheme.",
+        ]
+        for text in cases:
+            with self.subTest(text=text):
+                result = self.verify(text)
+                self.assertEqual(result.parent_company, "")
+
+    def test_part_of_requires_known_private_healthcare_group(self):
+        accepted = self.verify("Example Clinic is part of Qualitas Health.")
+        self.assertEqual(accepted.parent_company, "Qualitas Health")
+        self.assertEqual(accepted.relationship_type, "clinic_network")
+
+        rejected = self.verify("Example Clinic is part of Example Community Network.")
+        self.assertEqual(rejected.parent_company, "")
 
     def test_schema_parent_still_works_when_llm_disabled(self):
         page = page_with_blocks("About Example Clinic")

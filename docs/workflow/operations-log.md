@@ -2,6 +2,16 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-07
+
+Parent-company cleanup:
+
+- tightened `services/crawl4ai/public_web_enrichment.py` so public programmes, public schemes, subsidies, PCNs, Healthier SG, CHAS, Medisave, MOH, and immunisation programmes cannot populate `parent_company`.
+- weak wording such as `part of`, `under`, and `group company` now only becomes a parent/company-network relationship when the candidate matches the known private healthcare group registry; strong ownership/operator/schema evidence still works.
+- corrected live NocoDB row `284` by clearing the bad `parent_company=Primary Care Network (PCN)` value and removing the stale PCN parent-evidence note; follow-up count confirmed `0` rows currently have nonblank `parent_company`.
+- tests run: `python3 -m py_compile services/crawl4ai/public_web_enrichment.py tests/test_parent_company_extraction.py`; `python3 -m pytest -q tests/test_parent_company_extraction.py tests/test_public_web_proxy.py` (`17 passed`).
+- no workflow deployment was performed in this pass.
+
 ## 2026-05-06
 
 Cold email planner suppressed-row re-entry guard:

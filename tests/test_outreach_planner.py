@@ -751,8 +751,9 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         bad_emails["email_3"]["word_count"] = o.word_count(bad_emails["email_3"]["body"])
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("A practical diagnostic: can Amber Compounding Pharmacy show where prescription, dispensing, compounding, customer and supplier records and backups sit today", patch["email_3_body"])
-        self.assertIn("who owns access, how backups work and who handles incidents", patch["email_3_body"])
+        self.assertIn("prescription, dispensing, compounding, customer and supplier records", patch["email_3_body"])
+        self.assertIn("backups", patch["email_3_body"])
+        self.assertIn("incidents", patch["email_3_body"])
         self.assertNotIn("clinic email", patch["email_3_body"])
         self.assertIn("llm_email_strategy_rejected:email_3_not_hia_segment_diagnostic_shape", patch["email_quality_flags"])
 
@@ -820,8 +821,40 @@ class OutreachPlannerTests(unittest.TestCase):
         plan = o.plan_outreach(row, programmes=[verified_program()])
         self.assertEqual(plan.quality_flags, [])
         records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
-        self.assertIn(o.hia_records_with_backups(records), plan.emails["email_3"]["body"])
-        self.assertIn("who owns access, how backups work and who handles incidents", plan.emails["email_3"]["body"])
+        self.assertIn(records, plan.emails["email_3"]["body"])
+        self.assertIn("backups", plan.emails["email_3"]["body"])
+        self.assertIn("incidents", plan.emails["email_3"]["body"])
+
+    def test_hia_email_3_variants_keep_segment_diagnostic_shape(self):
+        row = {
+            "company_name": "Asian Heart & Vascular Centre",
+            "website_content": "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+        expected = {
+            "A": f"A practical diagnostic: can Asian Heart & Vascular Centre show where {records} sit today, who owns access, how backups work and who handles incidents?",
+            "B": f"Simple check: can Asian Heart & Vascular Centre point to who owns access to {records}, where backups sit, and who handles incidents?",
+            "C": f"One question I would use: if {records} were needed during an incident, would ownership, access and backups be clear?",
+        }
+        for variant_id, opener in expected.items():
+            with self.subTest(variant_id=variant_id):
+                body = o.hia_email_2_diagnostic(row, plan.classification, "specialist clinic readiness map", plan.copy_brief, variant_id)
+                self.assertIn(opener, body)
+                self.assertFalse(o.email_3_not_hia_segment_diagnostic_shape(body, row, plan.classification))
+
+    def test_funding_email_2_variant_b_uses_human_followup_sentence(self):
+        body = o.funding_email_2_variant_body(
+            "B",
+            "Hello team,",
+            "Based on the company profile, the Cyber Essentials support route appears worth checking for Example Clinic.",
+            "\n\nThis is subject to programme confirmation.",
+        )
+        self.assertIn(
+            "I would check the route first before spending time lining up the readiness work.",
+            body,
+        )
+        self.assertNotIn("before anyone spends time", body)
 
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
@@ -844,7 +877,9 @@ class OutreachPlannerTests(unittest.TestCase):
         for row in cases:
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
-                self.assertIn(row["expected"], plan.emails["email_3"]["body"])
+                self.assertIn(row["expected"].replace(" and backups", ""), plan.emails["email_3"]["body"])
+                self.assertIn("backups", plan.emails["email_3"]["body"])
+                self.assertIn("incident", plan.emails["email_3"]["body"])
                 self.assertNotIn("email_3_missing_hia_segment_terms", plan.quality_flags)
                 self.assertNotIn("email_3_not_hia_segment_diagnostic_shape", plan.quality_flags)
 
@@ -1048,7 +1083,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("access to patient records, appointment details, consultation notes, clinic email, vendor systems is clear, and whether backups, patching and incident steps are mapped", body)
         self.assertIn("Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side.", body)
         self.assertIn("Worth sending a short clinic readiness map?", body)
-        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_3"]["body"])
+        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems", plan.emails["email_3"]["body"])
+        self.assertIn("backups", plan.emails["email_3"]["body"])
         self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_amazing_hearing_group_fixture(self):
@@ -1405,7 +1441,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertIn(observation, plan.emails["email_1"]["body"])
-                self.assertIn(diagnostic, plan.emails["email_3"]["body"])
+                self.assertIn(diagnostic.replace(" and backups", ""), plan.emails["email_3"]["body"])
+                self.assertIn("backups", plan.emails["email_3"]["body"])
                 self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
                 self.assertIn(f"Worth sending a short {asset}?", plan.emails["email_1"]["body"])
                 self.assertIn(f"would the {asset} still be useful", plan.emails["email_4"]["body"])
@@ -1547,7 +1584,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertNotEqual(plan.copy_brief["clinic_profile_guess"], "diagnostic_lab")
         self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
-        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems and backups", plan.emails["email_3"]["body"])
+        self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems", plan.emails["email_3"]["body"])
+        self.assertIn("backups", plan.emails["email_3"]["body"])
 
     def test_family_clinic_not_overridden_by_bare_fertility_term(self):
         result = o.plan_and_patch(

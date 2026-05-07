@@ -124,6 +124,7 @@ AFFILIATION_RELATIONSHIP_TYPES = {
     "hospital_appointment",
     "vendor",
     "location_or_landlord",
+    "public_programme",
     "partner",
     "unknown",
     "rejected",
@@ -2014,9 +2015,59 @@ def normalize_known_parent_name(candidate: str) -> str:
     return candidate
 
 
+def is_known_parent_group(candidate: str) -> bool:
+    normalized = normalize_org_name(candidate)
+    if not normalized:
+        return False
+    for group in load_parent_company_registry().get("known_healthcare_groups", []):
+        if not isinstance(group, dict):
+            continue
+        names = [group.get("name", ""), *(group.get("aliases") or [])]
+        if any(normalize_org_name(str(name)) == normalized for name in names):
+            return True
+    return False
+
+
+def is_public_programme_or_scheme(candidate: str) -> bool:
+    lowered = compact_whitespace(candidate).lower()
+    if not lowered:
+        return False
+    exact = {
+        "primary care network",
+        "primary care network pcn",
+        "pcn",
+        "healthier sg",
+        "community health assist scheme",
+        "chas",
+        "medisave",
+        "moh",
+        "ministry of health",
+    }
+    if lowered in exact:
+        return True
+    return any(
+        term in lowered
+        for term in (
+            "primary care network",
+            "healthier sg",
+            "community health assist",
+            "national initiative",
+            "national programme",
+            "national program",
+            "subsidy",
+            "subsidies",
+            "scheme",
+            "immunisation programme",
+            "immunisation program",
+        )
+    )
+
+
 def clean_parent_or_affiliation_candidate(value: str) -> str:
     candidate = clean_name_candidate(value)
     if not candidate or is_generic_name_candidate(candidate):
+        return ""
+    if is_public_programme_or_scheme(candidate):
         return ""
     candidate = re.sub(r"^(?:the|a|an)\s+", "", candidate, flags=re.I)
     if re.match(r"^(?:our|my|this|that|its|their)\s+", candidate, flags=re.I):
@@ -2099,6 +2150,8 @@ def clean_parent_candidate(value: str, company_homepage_name: str) -> str:
     if not candidate or is_generic_name_candidate(candidate):
         return ""
     lowered = candidate.lower()
+    if is_public_programme_or_scheme(candidate):
+        return ""
     if lowered in {
         "singapore",
         "ministry of health",
@@ -2301,6 +2354,8 @@ def classify_parent_candidate(candidate: ParentCompanyCandidate, company_homepag
         return "training_institution", "training"
     if "accredited by" in text or "accredited" in text or "subsidies" in text:
         return "accreditation", "accreditation"
+    if is_public_programme_or_scheme(candidate.name):
+        return "public_programme", "programme_or_scheme"
     if "scheme" in name_lower or "subsid" in name_lower:
         return "accreditation", "accreditation"
     if any(term in name_lower for term in ("medical examination", "health screening package", "work pass", "injury management")):
@@ -2326,7 +2381,7 @@ def classify_parent_candidate(candidate: ParentCompanyCandidate, company_homepag
     if "parent company" in text or "schema.org parentorganization" in text:
         return "parent", ""
     if "part of" in text or "under" in text or "group company" in text:
-        if re.search(r"\b(group|network|health|healthcare|medical|clinic)\b", text):
+        if is_known_parent_group(candidate.name) and re.search(r"\b(group|network|health|healthcare|medical|clinic)\b", text):
             return "clinic_network" if re.search(r"\b(clinic|health|healthcare|medical|network)\b", text) else "brand_group", ""
         return "unknown", "insufficient_evidence"
     return "unknown", "insufficient_evidence"

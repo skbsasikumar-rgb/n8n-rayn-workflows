@@ -1457,7 +1457,7 @@ def funding_email_2_variant_body(variant_id: str, greeting: str, funding_line: s
         return (
             f"{greeting}\n\n"
             f"{funding_line}{caveat}\n\n"
-            "I would check the route first, before anyone spends time lining up readiness work.\n\n"
+            "I would check the route first before spending time lining up the readiness work.\n\n"
             "Should I send the route summary?"
         )
     if variant_id == "C":
@@ -2275,13 +2275,18 @@ def hia_email_2_diagnostic(
     classification: dict[str, Any],
     asset: str,
     copy_brief: dict[str, Any] | None = None,
+    variant_id: str = "A",
 ) -> str:
     company = compact(row.get("company_name") or "the organisation")
     records = hia_email_1_records(row, classification, copy_brief)
-    records_with_backups = hia_records_with_backups(records)
-    question = f"can {company} show where {records_with_backups} sit today, who owns access, how backups work and who handles incidents?"
+    if variant_id == "B":
+        question = f"Simple check: can {company} point to who owns access to {records}, where backups sit, and who handles incidents?"
+    elif variant_id == "C":
+        question = f"One question I would use: if {records} were needed during an incident, would ownership, access and backups be clear?"
+    else:
+        question = f"A practical diagnostic: can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?"
     follow = "If access, backup or incident ownership are unclear, that is usually where readiness work starts."
-    parts = [f"A practical diagnostic: {question}"]
+    parts = [question]
     if follow:
         parts.append(follow)
     parts.append(f"Want the {asset}?")
@@ -2726,7 +2731,7 @@ def generate_email_sequence(
             short_noticed = noticed.replace(company, "your clinic", 1)
             email1_body = email_1_variant_body(email1_variant_id, email1_greeting, short_noticed, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory":
-            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief)
+            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_subject_variant_id)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
@@ -3044,17 +3049,29 @@ def email_2_not_hia_segment_diagnostic_shape(
     if classification.get("pressure_type") != "hia_regulatory":
         return False
     body_l = compact(body).lower()
-    if not body_l.startswith("a practical diagnostic: can "):
+    approved_openers = (
+        "a practical diagnostic: can ",
+        "simple check: can ",
+        "one question i would use: if ",
+    )
+    if not body_l.startswith(approved_openers):
         return True
     clinic_profile = infer_clinic_profile(row, classification, lower_blob(row))
     expected_asset = segment_asset(row, classification, clinic_profile).lower()
     if expected_asset and expected_asset not in body_l:
         return True
-    if "sit today" not in body_l:
-        return True
-    required = ("who owns access", "backups", "handles incidents")
-    if not all(term in body_l for term in required):
-        return True
+    if body_l.startswith("a practical diagnostic: can "):
+        required = ("sit today", "who owns access", "backups", "handles incidents")
+        if not all(term in body_l for term in required):
+            return True
+    elif body_l.startswith("simple check: can "):
+        required = ("who owns access", "where backups sit", "handles incidents")
+        if not all(term in body_l for term in required):
+            return True
+    else:
+        required = ("needed during an incident", "ownership", "access", "backups")
+        if not all(term in body_l for term in required):
+            return True
     wrong_segment_terms = {
         "retail_pharmacy": ("clinic email", "appointment forms", "dental software", "consultation notes"),
         "dental": ("clinic email", "prescription", "dispensing", "compounding"),
