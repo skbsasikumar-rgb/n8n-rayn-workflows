@@ -2196,6 +2196,15 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
     return "patient records, appointment details, consultation notes, clinic email, vendor systems"
 
 
+def hia_records_with_backups(records: str) -> str:
+    text = compact(records)
+    if "backup" in text.lower():
+        return text
+    if text.endswith(" and vendor systems"):
+        return text[: -len(" and vendor systems")] + ", vendor systems and backups"
+    return f"{text} and backups"
+
+
 def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_profile: dict[str, Any] | None = None) -> str:
     text = lower_blob(row)
     service_type = classification.get("hia_service_type_guess")
@@ -2268,75 +2277,10 @@ def hia_email_2_diagnostic(
     copy_brief: dict[str, Any] | None = None,
 ) -> str:
     company = compact(row.get("company_name") or "the organisation")
-    text = lower_blob(row)
-    service_type = classification.get("hia_service_type_guess")
-    profile_guess = compact((copy_brief or {}).get("clinic_profile_guess"))
-    if profile_guess == "dental" or service_type == "dental":
-        question = f"can {company} show where patient records, imaging files, appointment details, dental software and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif profile_guess == "pharmacy" or service_type == "retail_pharmacy":
-        question = f"can {company} show where prescription, dispensing, compounding, customer and supplier records sit today?"
-        follow = "If access, backups or incident ownership are unclear, that is usually where readiness work starts."
-    elif profile_guess == "aesthetic_medical":
-        question = f"can {company} show where consultation records, treatment notes, appointment details, clinic email, vendor systems and backups sit today?"
-        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
-    elif profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
-        question = f"can {company} show where patient records, appointment details, consultation notes, clinic email, vendor systems and backups sit today?"
-        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
-    elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
-        question = f"can {company} show where screening records, diagnostic reports, patient details, lab systems, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "cardiology":
-        question = f"can {company} show where consultation notes, cardiac test reports, referrals, appointment details, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "pain":
-        question = f"can {company} show where assessment notes, treatment plans, procedure-related records, appointment details, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "surgery":
-        question = f"can {company} show where consultation notes, consent forms, procedure records, follow-up notes, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "dermatology":
-        question = f"can {company} show where skin consultation notes, treatment records, appointment details, clinical images where used, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "eye":
-        question = f"can {company} show where eye examination records, imaging, prescriptions, referrals, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-        question = f"can {company} show where consultation notes, patient reports, procedure-related records, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "rheumatology":
-        question = f"can {company} show where consultation notes, treatment records, referrals, appointment details, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "endocrinology":
-        question = f"can {company} show where consultation notes, treatment records, referrals, appointment details, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-        question = f"can {company} show where oncology/radiation treatment records, patient reports, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "specialist_OMS":
-        question = f"can {company} show where consultation notes, patient reports, treatment records, vendor systems and backups sit today?"
-        follow = "If access or incident ownership are unclear, that is usually where readiness work starts."
-    elif service_type == "hearing_care":
-        question = f"can {company} show where hearing test records, appointment details, device-related records, vendor systems and backups sit today?"
-        follow = "If access or incident ownership is unclear, that is usually where readiness work starts."
-    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-        question = f"can {company} show where appointment, assessment and case-note records sit, who can access them, which vendors touch them, how backups work and who reports an incident?"
-        follow = ""
-    elif service_type == "allied_health":
-        question = f"can {company} show where appointment, treatment and exercise-plan records sit, who can access them, which vendors touch them, how backups work and who reports an incident?"
-        follow = ""
-    elif service_type == "long_term_care":
-        if profile_guess == "home_care" or home_care_subtype(text):
-            question = f"can {company} map client, patient, caregiver, family and staff records to an owner, access list, vendor, backup and incident contact?"
-        else:
-            question = f"can {company} map patient, resident, family, volunteer and staff data to an owner, access list, vendor, backup and incident contact?"
-        follow = ""
-    elif service_type == "GP_OMS" and "aesthetic" in text:
-        question = f"can {company} show where consultation records, treatment notes, appointment details, clinic email, vendor systems and backups sit today?"
-        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
-    else:
-        question = f"can {company} show where patient records, appointment details, consultation notes, clinic email, vendor systems and backups sit today?"
-        follow = "If access, offboarding or incident ownership are unclear, that is usually where HIA readiness work starts."
+    records = hia_email_1_records(row, classification, copy_brief)
+    records_with_backups = hia_records_with_backups(records)
+    question = f"can {company} show where {records_with_backups} sit today, who owns access, how backups work and who handles incidents?"
+    follow = "If access, backup or incident ownership are unclear, that is usually where readiness work starts."
     parts = [f"A practical diagnostic: {question}"]
     if follow:
         parts.append(follow)
@@ -3001,10 +2945,13 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
     phrase = compact(copy_brief.get("clinic_profile_phrase"))
     if not phrase:
         return True
-    if copy_brief.get("clinic_profile_guess") == "specialist_led":
-        primary = compact(copy_brief.get("primary_service_summary")).replace(" / ", " and ")
-        return not ("specialist-led" in body.lower() and (not primary or primary.lower() in body.lower()))
     return not reflects(body, phrase)
+
+
+def hia_record_terms(records: str) -> list[str]:
+    normalized = compact(records)
+    terms = [compact(part) for part in re.split(r",|\band\b", normalized) if compact(part)]
+    return [term for term in terms if len(term) > 3 and term.lower() not in {"where used"}]
 
 
 def funding_only_email(body: str, claim: str) -> bool:
@@ -3076,50 +3023,13 @@ def email_2_missing_hia_segment_terms(body: str, row: dict[str, Any], classifica
     if classification.get("pressure_type") != "hia_regulatory":
         return False
     body_l = compact(body).lower()
-    text = lower_blob(row)
-    service_type = classification.get("hia_service_type_guess")
-    profile_guess = infer_clinic_profile(row, classification, text).get("clinic_profile_guess", "")
-    if profile_guess == "dental" or service_type == "dental":
-        required = ("patient records", "imaging files", "dental software")
-    elif profile_guess == "pharmacy" or service_type == "retail_pharmacy":
-        required = ("prescription", "dispensing", "compounding")
-    elif profile_guess == "aesthetic_medical":
-        required = ("consultation records", "treatment notes", "appointment details", "clinic email")
-    elif profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
-        required = ("patient records", "appointment details", "clinic email")
-    elif profile_guess == "diagnostic_lab" or service_type == "diagnostic":
-        required = ("screening", "diagnostic", "lab")
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "cardiology":
-        required = ("consultation notes", "cardiac test reports", "referrals")
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "pain":
-        required = ("assessment notes", "treatment plans", "procedure-related")
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "surgery":
-        required = ("consultation notes", "consent forms", "procedure records")
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "dermatology":
-        required = ("skin consultation notes", "treatment records", "clinical images")
-    elif service_type == "specialist_OMS" and specialist_subtype(text) == "eye":
-        required = ("eye examination records", "imaging", "prescriptions")
-    elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-        required = ("consultation notes", "patient reports", "procedure-related")
-    elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-        required = ("oncology", "radiation", "patient reports")
-    elif service_type == "specialist_OMS":
-        required = ("consultation notes", "patient reports", "treatment records")
-    elif service_type == "hearing_care":
-        required = ("hearing test", "appointment", "device-related")
-    elif service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-        required = ("appointment", "assessment", "case-note")
-    elif service_type == "allied_health":
-        required = ("appointment", "treatment", "exercise-plan")
-    elif service_type == "long_term_care":
-        required = ("client", "caregiver", "family") if home_care_subtype(text) else ("patient", "resident", "volunteer")
-    elif service_type == "GP_OMS" and ("aesthetic" in text or "plastic" in text or "treatment" in text):
-        required = ("consultation records", "treatment notes", "appointment details", "clinic email")
-    elif service_type == "GP_OMS":
-        required = ("patient records", "appointment details", "clinic email")
-    else:
+    clinic_profile = infer_clinic_profile(row, classification, lower_blob(row))
+    records = hia_email_1_records(row, classification, clinic_profile)
+    required = hia_record_terms(records)
+    if not required:
         return False
-    return not all(term in body_l for term in required)
+    required_hits = sum(1 for term in required if term.lower() in body_l)
+    return required_hits < min(3, len(required))
 
 
 def email_3_missing_hia_segment_terms(body: str, row: dict[str, Any], classification: dict[str, Any]) -> bool:
@@ -3140,14 +3050,10 @@ def email_2_not_hia_segment_diagnostic_shape(
     expected_asset = segment_asset(row, classification, clinic_profile).lower()
     if expected_asset and expected_asset not in body_l:
         return True
-    service_type = classification.get("hia_service_type_guess")
-    profile_guess = clinic_profile.get("clinic_profile_guess", "")
-    if service_type == "long_term_care":
-        return " map " not in body_l or "incident contact" not in body_l
-    if service_type == "allied_health":
-        required = ("who can access", "vendors", "backups", "incident")
-        return not all(term in body_l for term in required)
-    if " sit today" not in body_l:
+    if "sit today" not in body_l:
+        return True
+    required = ("who owns access", "backups", "handles incidents")
+    if not all(term in body_l for term in required):
         return True
     wrong_segment_terms = {
         "retail_pharmacy": ("clinic email", "appointment forms", "dental software", "consultation notes"),
@@ -3155,6 +3061,8 @@ def email_2_not_hia_segment_diagnostic_shape(
         "hearing_care": ("clinic email", "prescription", "dental software", "consultation notes"),
         "diagnostic": ("clinic email", "dental software", "prescription", "dispensing"),
     }
+    service_type = classification.get("hia_service_type_guess")
+    profile_guess = clinic_profile.get("clinic_profile_guess", "")
     if profile_guess in {"aesthetic_medical", "solo_gp", "family_gp", "multi_doctor_gp"}:
         return False
     return any(term in body_l for term in wrong_segment_terms.get(str(service_type), ()))
@@ -3450,6 +3358,9 @@ SEVERE_EMAIL_FLAGS = {
     "email_1_too_generic",
     "email_3_not_diagnostic",
     "email_3_generic_hia_diagnostic",
+    "email_1_missing_clinic_profile",
+    "email_3_missing_hia_segment_terms",
+    "email_3_not_hia_segment_diagnostic_shape",
     "email_2_missing_funding_claim_line",
     "email_2_not_funding_only",
     "generic_inbox_wrong_greeting",
@@ -3630,6 +3541,11 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     f = plan.funding
     b = plan.copy_brief
     e = plan.emails
+    visible_quality_flags = plan.quality_flags
+    if plan.automation_decision in {"suppressed", "auto_skipped", "retry_enrichment_once"} and not any(
+        compact(e.get(f"email_{index}", {}).get("body")) for index in range(1, 5)
+    ):
+        visible_quality_flags = []
     patch = {
         "Id": row.get("Id") or row.get("id"),
         "entity_type_guess": c["entity_type_guess"],
@@ -3715,7 +3631,7 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_4_body": e["email_4"]["body"],
         "email_sequence_json": json_dumps(e),
         "email_quality_score": plan.quality_score,
-        "email_quality_flags": json_dumps(plan.quality_flags),
+        "email_quality_flags": json_dumps(visible_quality_flags),
         "email_send_ready": plan.email_send_ready,
         "human_review_status": plan.human_review_status,
         "automation_decision": plan.automation_decision,

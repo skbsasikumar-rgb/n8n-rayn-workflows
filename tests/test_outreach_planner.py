@@ -527,6 +527,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(result["skip_openrouter"])
         self.assertFalse(patch["email_send_ready"])
         self.assertFalse(patch["final_send_gate_passed"])
+        self.assertEqual(patch["email_quality_flags"], "[]")
+        self.assertIn("email_1_missing_problem_statement", patch["severe_email_flags"])
         for index in range(1, 5):
             self.assertFalse(patch[f"email_{index}_body"])
 
@@ -726,9 +728,49 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         bad_emails["email_3"]["word_count"] = o.word_count(bad_emails["email_3"]["body"])
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("A practical diagnostic: can Amber Compounding Pharmacy show where prescription, dispensing, compounding, customer and supplier records sit today?", patch["email_3_body"])
+        self.assertIn("A practical diagnostic: can Amber Compounding Pharmacy show where prescription, dispensing, compounding, customer and supplier records and backups sit today", patch["email_3_body"])
+        self.assertIn("who owns access, how backups work and who handles incidents", patch["email_3_body"])
         self.assertNotIn("clinic email", patch["email_3_body"])
         self.assertIn("llm_email_strategy_rejected:email_3_not_hia_segment_diagnostic_shape", patch["email_quality_flags"])
+
+    def test_hia_profile_and_diagnostic_flags_block_final_send_gate(self):
+        row = {
+            "Id": 49,
+            "company_name": "Heart Specialist Clinic",
+            "website_content": "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations.",
+            "validated_email": "contact@example.com",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        flags = ["email_1_missing_clinic_profile", "email_3_not_hia_segment_diagnostic_shape"]
+        decision, reason, blockers, final_gate = o.automation_decision_for(
+            row,
+            plan.classification,
+            plan.funding,
+            plan.copy_brief,
+            plan.emails,
+            8,
+            flags,
+            plan.enrichment_quality_score,
+            plan.enrichment_quality_flags,
+            plan.copy_brief_quality_score,
+            plan.copy_brief_quality_flags,
+        )
+        self.assertEqual(decision, "auto_skipped")
+        self.assertEqual(reason, "copy_failed_after_llm_and_deterministic_fallback")
+        self.assertFalse(final_gate)
+        self.assertIn("email_1_missing_clinic_profile", blockers)
+        self.assertIn("email_3_not_hia_segment_diagnostic_shape", blockers)
+
+    def test_hia_specialist_diagnostic_uses_same_records_as_email_1(self):
+        row = {
+            "company_name": "Asian Heart & Vascular Centre",
+            "website_content": "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        self.assertEqual(plan.quality_flags, [])
+        records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+        self.assertIn(o.hia_records_with_backups(records), plan.emails["email_3"]["body"])
+        self.assertIn("who owns access, how backups work and who handles incidents", plan.emails["email_3"]["body"])
 
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
