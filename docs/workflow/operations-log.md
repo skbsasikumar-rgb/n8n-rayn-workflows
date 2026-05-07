@@ -9,8 +9,11 @@ Parent-company cleanup:
 - tightened `services/crawl4ai/public_web_enrichment.py` so public programmes, public schemes, subsidies, PCNs, Healthier SG, CHAS, Medisave, MOH, and immunisation programmes cannot populate `parent_company`.
 - weak wording such as `part of`, `under`, and `group company` now only becomes a parent/company-network relationship when the candidate matches the known private healthcare group registry; strong ownership/operator/schema evidence still works.
 - corrected live NocoDB row `284` by clearing the bad `parent_company=Primary Care Network (PCN)` value and removing the stale PCN parent-evidence note; follow-up count confirmed `0` rows currently have nonblank `parent_company`.
-- tests run: `python3 -m py_compile services/crawl4ai/public_web_enrichment.py tests/test_parent_company_extraction.py`; `python3 -m pytest -q tests/test_parent_company_extraction.py tests/test_public_web_proxy.py` (`17 passed`).
-- no workflow deployment was performed in this pass.
+- also restored real HIA Email 3 diagnostic body variants and softened Email 2 funding variant B wording in `services/crawl4ai/outreach_planner.py`.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/public_web_enrichment.py tests/test_outreach_planner.py tests/test_parent_company_extraction.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest -q tests/test_outreach_planner.py tests/test_parent_company_extraction.py tests/test_public_web_proxy.py` (`93 passed`).
+- committed and pushed `d6584f2` (`Tighten parent company and email variants`) to `origin/codex/n8n-workflow-checkpoint`.
+- Railway deployment was attempted through the CLI/MCP path, but the local Railway token is expired and no `RAILWAY_API_TOKEN` is available in the environment; live `/health` still returns OK, but deployment could not be confirmed from this session.
+- no emails were sent, and Instantly was not used.
 
 ## 2026-05-06
 
