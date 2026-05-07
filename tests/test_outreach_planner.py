@@ -784,6 +784,34 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("email_1_missing_clinic_profile", blockers)
         self.assertIn("email_3_not_hia_segment_diagnostic_shape", blockers)
 
+    def test_weak_not_ready_rows_retry_once_before_auto_skip(self):
+        first_pass = o.plan_and_patch(
+            {
+                "Id": 50,
+                "company_name": "Asia Physio",
+                "website_content": "# Asia Physio\nhttps://www.asiaphysio.com/",
+                "validated_email": "team@example.com",
+                "attempt_count": 1,
+            }
+        )
+        first_patch = first_pass["patch"]
+        self.assertEqual(first_patch["automation_decision"], "retry_enrichment_once")
+        self.assertEqual(first_patch["automation_decision_reason"], "healthcare_evidence_retry_once")
+        self.assertIn("retry_deeper_healthcare_pages", first_patch["automation_blockers_json"])
+
+        retried = o.plan_and_patch(
+            {
+                "Id": 51,
+                "company_name": "Asia Physio",
+                "website_content": "# Asia Physio\nhttps://www.asiaphysio.com/",
+                "validated_email": "team@example.com",
+                "attempt_count": 2,
+            }
+        )
+        retried_patch = retried["patch"]
+        self.assertEqual(retried_patch["automation_decision"], "auto_skipped")
+        self.assertEqual(retried_patch["automation_decision_reason"], "weak_hia_and_pdpa_evidence")
+
     def test_hia_specialist_diagnostic_uses_same_records_as_email_1(self):
         row = {
             "company_name": "Asian Heart & Vascular Centre",

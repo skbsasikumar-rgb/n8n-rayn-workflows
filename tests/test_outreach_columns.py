@@ -138,6 +138,7 @@ class OutreachColumnContractTests(unittest.TestCase):
             "canonical_domain",
             "website_content",
             "source_urls",
+            "attempt_count",
         }
         missing = sorted(field for field in fields if field not in existing_fields and field not in self.columns)
         self.assertEqual(missing, [])
@@ -167,7 +168,18 @@ class OutreachColumnContractTests(unittest.TestCase):
         left_value = if_node["parameters"]["conditions"]["conditions"][0]["leftValue"]
         self.assertIn("payload.use_llm === true", left_value)
         self.assertIn("payload.openrouter_allowed === true", left_value)
+        self.assertIn("$env.ALLOW_COLD_EMAIL_LLM", left_value)
+        self.assertIn("allowLlm", left_value)
         self.assertIn("payload.skip_openrouter !== true", left_value)
+
+    def test_collect_node_does_not_mutate_email_bodies(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        collect_node = next(node for node in workflow["nodes"] if node["name"] == "Collect NocoDB Patches")
+        js_code = collect_node["parameters"]["jsCode"]
+        self.assertNotIn("ensureFundingClaim", js_code)
+        self.assertNotIn("fundingGreeting", js_code)
+        self.assertNotIn("email_2_body: replacement", js_code)
+        self.assertIn("const patch = body.patch;", js_code)
 
     def test_rows_to_items_does_not_pre_filter_contact_suppression_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())

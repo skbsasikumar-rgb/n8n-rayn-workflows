@@ -1031,3 +1031,8 @@ Cold email copy QA hardening:
 - row `316` remains correctly blocked as `auto_skipped / weak_hia_and_pdpa_evidence`; row `320` now patches as `auto_send_eligible`, `hia_service_type_guess=GP_OMS`, `final_send_gate_passed=true`, and `email_quality_flags=[]`.
 - post-patch anomaly check found no suppressed rows with email bodies, no final-gate rows with severe flags, and no rows with `email_send_ready=true`.
 - no emails were sent, Instantly was not used, and no rows were marked sent.
+- `2026-05-07 12:08 +08`: hardened the cold-email LLM path and removed workflow-side email body mutation locally.
+- `wf-cold-email-planner.json` now requires `use_llm=true`, `openrouter_allowed=true`, `ALLOW_COLD_EMAIL_LLM=true`, and `skip_openrouter!=true` before entering the OpenRouter branch.
+- `Collect NocoDB Patches` no longer repairs or rewrites funding Email 2 copy; the planner is the only source of truth for final email bodies and flags.
+- the cold-email fetch includes `attempt_count`, and `/outreach-plan` now returns `retry_enrichment_once` for first-pass weak/not-ready enrichment, including healthcare-looking rows that need deeper healthcare pages; after retry it returns `auto_skipped`.
+- local validation only; no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.

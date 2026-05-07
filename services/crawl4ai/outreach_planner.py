@@ -3400,6 +3400,21 @@ def automation_decision_for(
     if row.get("copy_qa_mode"):
         return "draft_only_review", "copy_qa_mode", ["copy_qa_mode"], False
     if classification.get("pressure_type") == "not_ready":
+        attempt_count = int(
+            row.get("enrichment_attempt_count")
+            or row.get("public_enrichment_attempt_count")
+            or row.get("attempt_count")
+            or 0
+        )
+        healthcare_hint = (
+            classification.get("entity_type_guess") in {"clinic", "healthcare_provider"}
+            or classification.get("hia_service_type_guess") not in {"", "unknown", None}
+            or classification.get("data_type_signal") in {"patient_data", "health_information"}
+        )
+        if attempt_count <= 1:
+            blockers = ["pressure_type_not_ready", "retry_deeper_healthcare_pages"] if healthcare_hint else ["pressure_type_not_ready"]
+            reason = "healthcare_evidence_retry_once" if healthcare_hint else "weak_enrichment_retry_once"
+            return "retry_enrichment_once", reason, blockers, False
         return "auto_skipped", "weak_hia_and_pdpa_evidence", ["pressure_type_not_ready"], False
     blocking_enrichment = blocking_enrichment_flags(enrichment_flags, classification, enrichment_score)
     blocking_copy = blocking_copy_brief_flags(copy_flags, classification, copy_brief)

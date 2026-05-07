@@ -19,7 +19,7 @@ console.log(JSON.stringify(result[0].json));
     return json.loads(output)
 
 
-def test_n8n_funding_fallback_uses_company_team_greeting_and_no_duplicate_caveat():
+def test_n8n_collect_does_not_repair_funding_copy():
     claim = "The relevant route appears worth checking, subject to programme confirmation."
     result = run_collect_node(
         {
@@ -38,16 +38,12 @@ def test_n8n_funding_fallback_uses_company_team_greeting_and_no_duplicate_caveat
 
     patch = result["patches"][0]
     sequence = json.loads(patch["email_sequence_json"])
-    assert patch["email_2_body"].startswith("Hi Amaris B. Clinic team,")
-    assert not patch["email_2_body"].startswith("Hi,")
-    assert patch["email_2_body"].count("subject to programme confirmation") == 1
-    assert "Best," not in patch["email_2_body"]
-    assert "RAYN Secure" not in patch["email_2_body"]
-    assert sequence["email_2"]["body"] == patch["email_2_body"]
-    assert sequence["email_2"]["word_count"] > 0
+    assert patch["email_2_body"] == "Funding email missing the exact claim."
+    assert sequence["email_2"]["body"] == ""
+    assert sequence["email_2"]["word_count"] == 0
 
 
-def test_n8n_funding_fallback_uses_team_greeting_without_company_name():
+def test_n8n_collect_keeps_blank_funding_copy_blank():
     result = run_collect_node(
         {
             "patch": {
@@ -62,8 +58,7 @@ def test_n8n_funding_fallback_uses_team_greeting_without_company_name():
         }
     )
 
-    assert result["patches"][0]["email_2_body"].startswith("Hi team,")
-    assert "Best," not in result["patches"][0]["email_2_body"]
+    assert result["patches"][0]["email_2_body"] == ""
 
 
 def test_n8n_audit_includes_subjects_and_email_four_body():

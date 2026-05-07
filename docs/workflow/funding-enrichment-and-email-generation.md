@@ -484,7 +484,9 @@ HIA uncertainty policy:
 
 - Strong HIA evidence stays `hia_regulatory`.
 - Weak healthcare-adjacent evidence routes to `pdpa_safeguards` when personal-data evidence exists.
-- Weak HIA and weak PDPA/trust evidence is skipped or retried once, not reviewed.
+- Weak scrape / not-ready evidence returns `retry_enrichment_once` on the first pass.
+- Obvious healthcare rows without enough HIA evidence use `retry_enrichment_once` with a deeper-healthcare-pages blocker on the first pass.
+- After the retry, weak HIA and weak PDPA/trust evidence is `auto_skipped`, not reviewed.
 
 LLM drift policy:
 
