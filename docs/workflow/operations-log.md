@@ -13,7 +13,13 @@ HIA Email 2 commercial-pricing clarity:
 - updated `scripts/ensure_rayn_outreach_columns.py`, `scripts/export_outreach_audit_markdown.py`, planner tests, column tests, and funding workflow docs for the new pricing fields.
 - tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`80 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
 - read-only preview generated from 10 completed live NocoDB rows through the local planner only; no patch was sent. Result: `automation_decision={auto_send_eligible:8,suppressed:1,auto_skipped:1}`, `pricing_email_2_mode={endpoint_sizing_needed:3,group_or_larger_sizing_needed:1,small_clinic_starting_price:5,no_price_claim:1}`, `final_send_gate_passed=8`, `suppressed_with_bodies=[]`, `non_hia_price_rows=[]`, `fallback_funding_word_rows=[]`.
-- no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+- committed and pushed `441ed62` (`Add HIA pricing clarity to email two`) to `origin/codex/n8n-workflow-checkpoint`.
+- deployed Railway service `n8n-rayn-workflows`; deployment `3663d498-cb3c-4795-80d9-db72684021a2` reached `SUCCESS`.
+- updated live NocoDB outreach columns using the Postgres public URL; created `8` physical columns, `8` metadata columns, `8` grid columns and `24` select options for the pricing fields. NocoDB service was restarted to reload its schema cache.
+- updated live workflow `HbTPGELQQr9DRdAb` from `wf-cold-email-planner.json`; it is active with `7` nodes and no OpenRouter/use_llm path.
+- ran a forced draft-only live batch for rows `273,274,275,276,277,278,279,280,282,283`; execution `23734` succeeded.
+- live batch result: `automation_decision={auto_send_eligible:8,suppressed:1,auto_skipped:1}`, `pricing_email_2_mode={endpoint_sizing_needed:3,group_or_larger_sizing_needed:1,small_clinic_starting_price:5,no_price_claim:1}`, `endpoint_band_guess={unknown:5,1_5:5}`, `final_send_gate_passed=8`, `email_send_ready=0`, `suppressed_with_bodies=[]`, `non_hia_price_rows=[]`, `fallback_funding_word_rows=[]`.
+- no emails were sent, and Instantly was not used.
 
 Deterministic cold-email copy polish:
 
