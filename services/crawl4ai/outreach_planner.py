@@ -475,7 +475,7 @@ def can_contact(row: dict[str, Any]) -> tuple[bool, str]:
 def contact_identity_confidence(row: dict[str, Any]) -> str:
     email = selected_email(row)
     name = compact(row.get("selected_contact_name"))
-    if not email or is_generic_or_company_inbox(row) or not name:
+    if not email or is_generic_or_company_inbox(row) or not valid_person_contact_name(name):
         return "none"
     first = first_name_from_contact(name).lower()
     name_parts = [part.lower() for part in re.findall(r"[a-z0-9]+", name) if part.lower() not in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}]
@@ -518,6 +518,45 @@ def contact_send_mode(row: dict[str, Any]) -> str:
     if contact_identity_confidence(row) in {"medium", "high"}:
         return "named_person"
     return "generic_team"
+
+
+NON_PERSON_CONTACT_NAME_TERMS = {
+    "admin",
+    "admissions",
+    "appointment",
+    "appointments",
+    "centre",
+    "center",
+    "clinic",
+    "committee",
+    "contact",
+    "department",
+    "enquiry",
+    "enquiries",
+    "group",
+    "info",
+    "membership",
+    "memberships",
+    "office",
+    "reception",
+    "secretariat",
+    "service",
+    "support",
+    "team",
+}
+
+
+def valid_person_contact_name(name: Any) -> bool:
+    text = compact(name)
+    if not text or "@" in text or "/" in text:
+        return False
+    parts = [part.lower() for part in re.findall(r"[a-z]+", text.lower()) if part]
+    parts = [part for part in parts if part not in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}]
+    if not parts or len(parts) > 5:
+        return False
+    if any(part in NON_PERSON_CONTACT_NAME_TERMS for part in parts):
+        return False
+    return any(len(part) >= 2 for part in parts)
 
 
 def funding_claim_send_safe(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> bool:
@@ -796,7 +835,7 @@ def advisory_copy_brief_flags(flags: list[str], classification: dict[str, Any], 
 
 def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name:
+    if valid_person_contact_name(name):
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -810,7 +849,7 @@ def first_name_from_contact(name: str) -> str:
 
 def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name:
+    if valid_person_contact_name(name):
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -823,7 +862,7 @@ def email_greeting_type(row: dict[str, Any]) -> str:
 
 def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str:
     name = compact(row.get("selected_contact_name"))
-    if name:
+    if valid_person_contact_name(name):
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
 
@@ -976,10 +1015,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "renal dialysis" in text or "dialysis" in text:
         service = "unknown"
         batch_override = "Batch 2 - Sep 2028"
-    elif contains_any(text, LONG_TERM_CARE_TERMS):
-        service = "long_term_care"
     elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
         service = "GP_OMS"
+    elif contains_any(text, LONG_TERM_CARE_TERMS):
+        service = "long_term_care"
     elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
         service = "GP_OMS"
     elif contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS):
@@ -2428,6 +2467,8 @@ def specialist_subtype(text: str) -> str:
         return "oncology"
     if has_cardiology_subtype(text):
         return "cardiology"
+    if any(term in text for term in ("orthopaedic", "orthopedic", "orthopaedics", "orthopedics", "sports medicine")):
+        return "orthopaedic"
     if any(term in text for term in ("pain management", "spine pain", "pain clinic", "anaesthesia", "injections")) or (
         "pain" in text and "clinic" in text
     ):
@@ -2570,6 +2611,18 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
         guess = "hearing_care"
         add_evidence("hearing-care terms")
+    elif has_aesthetic:
+        guess = "aesthetic_medical"
+        add_evidence("medical/aesthetic terms")
+    elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
+        guess = "solo_gp"
+        add_evidence("solo GP/outpatient evidence")
+    elif service_type == "GP_OMS" and has_family_clinic_evidence(row, source_l):
+        guess = "family_gp"
+        add_evidence("family clinic, GP or outpatient terms")
+    elif service_type == "GP_OMS" and has_gp:
+        guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
+        add_evidence("GP/outpatient evidence")
     elif home_care_subtype(source_l):
         guess = "home_care"
         add_evidence("home-care or caregiver terms")
@@ -2590,9 +2643,6 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "GP_OMS" and has_family_clinic_evidence(row, source_l):
         guess = "family_gp"
         add_evidence("family clinic, GP or outpatient terms")
-    elif has_aesthetic:
-        guess = "aesthetic_medical"
-        add_evidence("medical/aesthetic terms")
     elif service_type == "GP_OMS" and has_gp:
         guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
         add_evidence("GP/outpatient evidence")
@@ -2671,6 +2721,7 @@ def prospect_facing_profile_phrase(
             "eye": "a specialist-led eye clinic",
             "rheumatology": "a specialist-led rheumatology clinic",
             "endocrinology": "a specialist-led endocrinology clinic",
+            "orthopaedic": "a specialist-led orthopaedic / sports medicine clinic",
         }
         if subtype in subtype_phrases:
             return subtype_phrases[subtype]
@@ -2716,14 +2767,16 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
             return "skin consultation notes, treatment records, appointment details, clinical images where used and vendor systems"
         if subtype == "eye":
             return "eye examination records, imaging, prescriptions, referrals and vendor systems"
-        if "oncology" in text or "radiation" in text:
-            return "oncology/radiation treatment records, patient reports, vendor systems"
-        if "digestive" in text or "gastroenterology" in text:
+        if subtype == "gastroenterology":
             return "consultation notes, patient reports, procedure-related records, vendor systems"
         if subtype == "rheumatology":
             return "consultation notes, treatment records, referrals, appointment details and vendor systems"
+        if subtype == "oncology":
+            return "oncology/radiation treatment records, patient reports, vendor systems"
         if subtype == "endocrinology":
-            return "consultation notes, treatment records, referrals, appointment details and vendor systems"
+            return "endocrinology consultation notes, diabetes/thyroid care records, referrals, appointment details and vendor systems"
+        if subtype == "orthopaedic":
+            return "orthopaedic consultation notes, imaging/referral records, treatment plans, appointment details and vendor systems"
         return "consultation notes, patient reports, treatment records, vendor systems"
     if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
         return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
@@ -3060,10 +3113,6 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             systems = "appointments, assessment notes, case-note records, staff access, vendor systems, backups and incident-reporting steps."
         elif service_type == "diagnostic":
             systems = "screening appointments, diagnostic reports, patient records, vendor systems, backups and incident-reporting steps."
-        elif service_type == "specialist_OMS" and ("oncology" in text or "radiation" in text):
-            systems = "specialist appointments, oncology/radiation treatment records, patient reports, vendor systems, backups and incident-reporting steps."
-        elif service_type == "specialist_OMS" and ("digestive" in text or "gastroenterology" in text):
-            systems = "specialist appointments, digestive/gastroenterology records, patient reports, vendor systems, backups and incident-reporting steps."
         elif service_type == "specialist_OMS":
             subtype_systems = {
                 "cardiology": "consultation notes, cardiac test reports, referrals, appointment details, vendor systems, backups and incident-reporting steps.",
@@ -3071,6 +3120,11 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
                 "surgery": "consultation notes, consent forms, procedure records, follow-up notes, vendor systems, backups and incident-reporting steps.",
                 "dermatology": "skin consultation notes, treatment records, appointment details, clinical images where used, vendor systems, backups and incident-reporting steps.",
                 "eye": "eye examination records, imaging, prescriptions, referrals, vendor systems, backups and incident-reporting steps.",
+                "gastroenterology": "specialist appointments, digestive/gastroenterology records, patient reports, vendor systems, backups and incident-reporting steps.",
+                "rheumatology": "specialist consultation notes, arthritis/rheumatology records, referrals, appointment details, vendor systems, backups and incident-reporting steps.",
+                "oncology": "specialist appointments, oncology/radiation treatment records, patient reports, vendor systems, backups and incident-reporting steps.",
+                "endocrinology": "endocrinology consultation notes, diabetes/thyroid care records, referrals, appointment details, vendor systems, backups and incident-reporting steps.",
+                "orthopaedic": "orthopaedic consultation notes, imaging/referral records, treatment plans, appointment details, vendor systems, backups and incident-reporting steps.",
             }
             systems = subtype_systems.get(specialist_subtype(text), "appointment forms, patient records, clinic email, vendor systems, backups and incident-reporting steps.")
         else:

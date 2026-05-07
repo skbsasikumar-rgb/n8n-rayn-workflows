@@ -7,14 +7,15 @@ Use this file to record rebuild progress and decisions.
 Friendly deterministic copy style:
 
 - replaced whole-email A/B/C body variants with deterministic sentence-level rotation. The planner now keeps one fixed structure per email step and rotates approved sentence slots inside that structure.
+- fixed preview QA anomalies from the 10-row read-only test: family clinic evidence now outranks weak long-term-care wording, endocrinology records no longer get overwritten by incidental oncology/radiation text, orthopaedic/sports-medicine rows use orthopaedic record phrases, and non-person labels such as `Committee Memberships` fall back to generic greeting/contact mode.
 - kept the cold-email planner deterministic-only; no LLM rewriter, OpenRouter path, send node, or Instantly path was added.
 - updated `services/crawl4ai/outreach_planner.py` so final emails use shorter, friendlier template wording while preserving the four track spines: HIA healthcare readiness, PDPA safeguards, DPO/data-protection evidence, and customer-trust/procurement proof.
 - added sentence-slot metadata behind the scenes in `email_sequence_json.sentence_slot_metadata`, plus copy-shaping metadata in `email_sequence_json.style_metadata`.
 - tightened HIA Email 2 wording to keep endpoint-based pricing, `S$4,300 before funding` only in smaller-clinic context, conditional `70%` wording, messy evidence work, and LEARN/GOVERN software support.
 - kept non-HIA Email 2 evidence/checklist focused and blocked clinic pricing leakage.
 - updated `scripts/export_outreach_audit_markdown.py` so audit output includes sentence-slot metadata, word counts, final gate status, and a simple style check summary for long paragraphs, banned words, pricing safety, and HIA diagnostic checks.
-- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`81 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
-- preview generated: no live preview generated for this copy polish yet.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- preview generated: local read-only `draft_only=true` planner preview for rows `278`, `293`, and `301`; no live rows were patched.
 - deployment performed: no.
 - live rows patched: no.
 - no emails were sent, and Instantly was not used.

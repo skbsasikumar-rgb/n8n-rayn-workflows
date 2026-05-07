@@ -617,6 +617,19 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(unresolved["patch"]["automation_decision_reason"], "unresolved_personal_email_identity")
         self.assertTrue(unresolved["patch"]["email_1_body"].startswith("Hello team,"))
 
+        non_person_name = o.plan_and_patch(
+            {
+                "company_name": "Artisan Sports & Orthopaedics Clinic",
+                "website_content": "Specialist orthopaedic clinic offering sports medicine consultations, imaging referrals and treatment plans.",
+                "validated_email": "committee@example.com",
+                "selected_contact_name": "Committee Memberships",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(non_person_name["patch"]["contact_send_mode"], "generic_team")
+        self.assertEqual(non_person_name["patch"]["contact_identity_confidence"], "none")
+        self.assertTrue(non_person_name["patch"]["email_1_body"].startswith("Hello team,"))
+
     def test_unsafe_funding_uses_value_fallback_without_review(self):
         result = o.plan_and_patch(
             {
@@ -813,6 +826,38 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(records, plan.emails["email_3"]["body"])
         self.assertIn("backups", plan.emails["email_3"]["body"])
         self.assertIn("incidents", plan.emails["email_3"]["body"])
+
+    def test_hia_specialist_subtype_records_do_not_bleed_between_specialties(self):
+        endocrinology = {
+            "company_name": "Arden Endocrinology Specialist Clinic",
+            "website_content": "Endocrinology specialist clinic for diabetes and thyroid care. Nearby oncology and radiation services are listed in the hospital directory.",
+        }
+        endo_plan = o.plan_outreach(endocrinology, programmes=[verified_program()])
+        endo_records = o.hia_email_1_records(endocrinology, endo_plan.classification, endo_plan.copy_brief)
+        self.assertIn("diabetes/thyroid care records", endo_records)
+        self.assertNotIn("oncology/radiation", endo_records)
+        self.assertIn(endo_records, endo_plan.emails["email_3"]["body"])
+
+        orthopaedic = {
+            "company_name": "Artisan Sports & Orthopaedics Clinic",
+            "website_content": "Specialist orthopaedic and sports medicine clinic for musculoskeletal pain, imaging referrals and treatment plans.",
+        }
+        ortho_plan = o.plan_outreach(orthopaedic, programmes=[verified_program()])
+        self.assertIn("orthopaedic / sports medicine clinic", ortho_plan.copy_brief["clinic_profile_phrase"])
+        self.assertNotIn("pain management clinic", ortho_plan.copy_brief["clinic_profile_phrase"])
+        ortho_records = o.hia_email_1_records(orthopaedic, ortho_plan.classification, ortho_plan.copy_brief)
+        self.assertIn("orthopaedic consultation notes", ortho_records)
+        self.assertIn(ortho_records, ortho_plan.emails["email_3"]["body"])
+
+    def test_family_clinic_evidence_overrides_weak_long_term_care_terms(self):
+        row = {
+            "company_name": "AMK Family Clinic",
+            "website_content": "Family clinic with doctors, outpatient consultations, patient appointments, family contacts and care records.",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
+        self.assertEqual(plan.copy_brief["clinic_profile_guess"], "family_gp")
+        self.assertIn("family clinic", plan.copy_brief["clinic_profile_phrase"])
 
     def test_hia_email_3_sentence_slots_keep_segment_diagnostic_shape(self):
         row = {
