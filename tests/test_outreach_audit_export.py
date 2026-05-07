@@ -32,6 +32,7 @@ def test_export_outreach_audit_markdown_full_sequence():
                 "email_3_body": "Email three body.",
                 "email_4_subject": "close the loop?",
                 "email_4_body": "Email four body.",
+                "email_sequence_json": '{"sentence_slot_metadata":{"email_steps":{"email_2":{"cost_opener":"one_note_on_cost","cta":"quick_endpoint_check"}}}}',
             }
         ]
     )
@@ -42,6 +43,12 @@ def test_export_outreach_audit_markdown_full_sequence():
     assert "- funding_followup_mode: `funding`" in markdown
     assert "- email_3_mode: `funding`" in markdown
     assert "funding_needs_review" in markdown
+    assert "### Style Check" in markdown
+    assert "### Sentence Slots" in markdown
+    assert "cost_opener: `one_note_on_cost`" in markdown
+    assert "- word_count: `3`" in markdown
+    assert "email_2_price_funding_safety: `ok`" in markdown
+    assert "hia_diagnostic_segment_check: `check`" in markdown
     assert "### Email 1: HIA readiness" in markdown
     assert "### Email 4: close the loop?" in markdown
     assert "Email four body." in markdown

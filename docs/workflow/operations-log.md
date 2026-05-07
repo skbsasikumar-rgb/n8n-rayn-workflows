@@ -4,6 +4,21 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-07
 
+Friendly deterministic copy style:
+
+- replaced whole-email A/B/C body variants with deterministic sentence-level rotation. The planner now keeps one fixed structure per email step and rotates approved sentence slots inside that structure.
+- kept the cold-email planner deterministic-only; no LLM rewriter, OpenRouter path, send node, or Instantly path was added.
+- updated `services/crawl4ai/outreach_planner.py` so final emails use shorter, friendlier template wording while preserving the four track spines: HIA healthcare readiness, PDPA safeguards, DPO/data-protection evidence, and customer-trust/procurement proof.
+- added sentence-slot metadata behind the scenes in `email_sequence_json.sentence_slot_metadata`, plus copy-shaping metadata in `email_sequence_json.style_metadata`.
+- tightened HIA Email 2 wording to keep endpoint-based pricing, `S$4,300 before funding` only in smaller-clinic context, conditional `70%` wording, messy evidence work, and LEARN/GOVERN software support.
+- kept non-HIA Email 2 evidence/checklist focused and blocked clinic pricing leakage.
+- updated `scripts/export_outreach_audit_markdown.py` so audit output includes sentence-slot metadata, word counts, final gate status, and a simple style check summary for long paragraphs, banned words, pricing safety, and HIA diagnostic checks.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`81 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- preview generated: no live preview generated for this copy polish yet.
+- deployment performed: no.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
+
 HIA Email 2 commercial-pricing clarity:
 
 - added deterministic HIA clinic-size and endpoint-band enrichment in `services/crawl4ai/outreach_planner.py`: `clinic_size_guess`, `clinic_size_confidence`, `endpoint_band_guess`, `endpoint_band_confidence`, `pricing_email_2_mode`, `pricing_claim_safe`, `pricing_claim_line`, and `pricing_evidence_json`.

@@ -85,11 +85,11 @@ Greeting rule:
 - If `selected_contact_name` is blank, Email 1 starts `Hello team,`.
 - Do not invent names and do not use the company name as the greeting. The `Noticed...` line still includes the company name.
 
-## Controlled Email Variants
+## Controlled Sentence Rotation
 
-Email variation is deterministic and comes from the approved variant bank in `services/crawl4ai/outreach_planner.py`. The planner does not ask the LLM to rewrite copy randomly, and it does not add visible NocoDB columns for variants.
+Email variation is deterministic and comes from approved sentence-slot options in `services/crawl4ai/outreach_planner.py`. The planner does not ask the LLM to rewrite copy randomly, and it does not add visible NocoDB columns for sentence choices.
 
-Variant selection uses a stable SHA-256 seed based on `row_id/Id`, `campaign_id` and `email_step`. If a row has no stable id, variant `A` is used so local fixtures and ad hoc previews stay predictable. The selected track, segment, campaign id, selector and per-email `variant_id` values are stored behind the scenes inside `email_sequence_json.variant_metadata`.
+Sentence selection uses a stable SHA-256 seed based on `row_id/Id`, `campaign_id`, track, pressure type, email step and slot name. The selected track, segment, campaign id, selector and per-email slot choices are stored behind the scenes inside `email_sequence_json.sentence_slot_metadata`.
 
 The bank covers the four campaign tracks and segment-specific subject lines:
 
@@ -98,22 +98,43 @@ The bank covers the four campaign tracks and segment-specific subject lines:
 - `dpo_evidence`: data-protection / operations evidence owner copy.
 - `customer_trust`: SaaS/customer evidence, vendor/supplier evidence and general B2B evidence.
 
-Body variants keep the same copy brief and compliance rules:
+The planner no longer rotates whole Email 1/2/3/4 A/B/C body templates. Each email step has one fixed structure:
 
-- Email 1 always keeps greeting, `Noticed...`, problem, mechanism and CTA in order.
-- For HIA rows, Email 2 is now a deterministic pricing/sizing note: CISOaaS is endpoint-based, smaller clinics may use the starting package reference, group/multi-location setups require sizing, and funding wording remains conditional.
-- For non-HIA rows, Email 2 remains funding-only when verified-current funding gates pass; otherwise it uses the non-funding value-fallback asset.
-- Email 3 stays diagnostic.
-- Email 4 is a short close-loop note.
+- Email 1 always keeps greeting, `Noticed...`, problem, mechanism and CTA in order, but uses short paragraphs and plain wording.
+- For HIA rows, Email 2 is a deterministic pricing/sizing note: CISOaaS is endpoint-based, smaller clinics may use the starting package reference, group/multi-location setups require sizing, and funding wording remains conditional.
+- For non-HIA rows, Email 2 remains evidence/checklist focused unless verified-current funding gates explicitly pass. It must not introduce clinic pricing.
+- Email 3 stays diagnostic and, for HIA rows, must use the segment-specific records phrase with access, backups and incidents.
+- Email 4 is a very short close-loop note.
 - No final email body includes signatures or signoffs.
-- Every rotated variant must pass the same quality gate: no internal `signals` wording, no HIA batch/date/window wording, no Cyber Essentials equals PDPA/HIA compliance claim, no unsupported funding, no generic copy, and Email 1 must preserve trigger/problem/mechanism/CTA.
+- Every sentence rotation must pass the same quality gate: no internal `signals` wording, no HIA batch/date/window wording, no Cyber Essentials equals PDPA/HIA compliance claim, no unsupported funding, no generic copy, and Email 1 must preserve trigger/problem/mechanism/CTA.
 
-Copy style guardrails: avoid internal words such as `signals`, avoid HIA batch/date wording in final bodies, avoid inflated promotional language, avoid common AI filler words, and keep the phrasing practical and human.
+Sentence slots include:
+
+- Email 1: `problem_line`, `mechanism_line`.
+- HIA Email 2: `cost_opener`, `endpoint_caveat`, `small_clinic_price`, `group_larger_setup`, `conditional_funding`, `rayn_value_line`, `cta`.
+- Non-HIA Email 2: `evidence_line`, `second_line`, `cta`.
+- Email 3: `diagnostic_opener`, `question_shape` for HIA, `gap_line`, `cta`.
+- Email 4: `close_loop`.
+
+Copy style guardrails: use short sentences, one idea per paragraph, one tiny CTA, and plain friendly language. Avoid internal words such as `signals`, HIA batch/date wording, inflated promotional language, common AI filler words, and brochure phrases such as `comprehensive`, `robust`, `tailored`, `leverage`, `landscape`, `readiness journey`, `certification work`, `value proposition`, `stakeholders`, `end-to-end`, `unlock`, `empower`, `delve`, `furthermore`, `moreover`, and `additionally`.
+
+The planner stores copy-shaping metadata behind the scenes in `email_sequence_json.style_metadata`:
+
+- `human_email_style`: currently `short_plain_low_cta`.
+- `plain_company_type`: prospect-facing company/segment phrase.
+- `pain_line`, `why_now_line`, `cost_line`, `proof_line`, and `cta_line`: deterministic ingredients used to keep copy short and track-specific.
+
+Track spine:
+
+- HIA keeps the HIA pressure, patient/healthcare evidence problem, Cyber Essentials/CISOaaS route, and Email 2 endpoint/pricing check.
+- PDPA safeguards keeps PDPA as the legal responsibility and focuses on proving safeguards with Cyber Essentials as a practical baseline.
+- DPO/evidence keeps the proof-owner angle across HR, IT, vendors and operations.
+- Customer trust keeps reusable customer/security evidence for reviews and procurement checks.
 
 Recommended value framing:
 
-- RAYN helps Singapore organisations prepare for Cyber Essentials and related cyber/data readiness requirements by identifying gaps, implementing controls, organising evidence, and keeping certification readiness current through consulting plus SaaS.
-- For healthcare providers, RAYN helps map Cyber Essentials into the wider HIA readiness journey.
+- RAYN helps Singapore organisations prepare for Cyber Essentials and related cyber/data readiness requirements by identifying gaps, implementing controls, organising evidence, and keeping readiness current through consulting plus SaaS.
+- For healthcare providers, RAYN helps map Cyber Essentials into wider HIA readiness.
 - For non-healthcare organisations, RAYN helps turn PDPA security-safeguard expectations into practical Cyber Essentials controls and evidence.
 
 ## Funding Enrichment Model

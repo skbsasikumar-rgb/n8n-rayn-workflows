@@ -158,6 +158,26 @@ FORBIDDEN_PHRASES = (
     "i came across your company",
 )
 
+STYLE_BANNED_PHRASES = (
+    "comprehensive",
+    "robust",
+    "tailored",
+    "leverage",
+    "landscape",
+    "readiness journey",
+    "certification work",
+    "value proposition",
+    "stakeholders",
+    "end-to-end",
+    "unlock",
+    "empower",
+    "delve",
+    "furthermore",
+    "moreover",
+    "additionally",
+    "practical question is whether",
+)
+
 CISOAAS_HIA_PRICING = {
     "package_name": "CISOaaS HIA / HIB / HIMS Vendor",
     "endpoint_band": "1_5",
@@ -528,23 +548,23 @@ def value_fallback_email_2(
 ) -> dict[str, Any]:
     greeting = email_comma_greeting(row)
     asset_name = compact(asset) or "checklist"
-    variant_id = "A"
     subject = "readiness evidence"
     subject_options = ["readiness evidence", "checklist"]
     if classification is not None and copy_brief is not None:
         fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
         available = list(fallback_subjects.keys())
-        variant_id = variant_id_for(row, classification, 2, available)
-        subject = fallback_subjects[variant_id]
+        subject_key = deterministic_option_key_for(row, classification, 2, available)
+        subject = fallback_subjects[subject_key]
         subject_options = list(fallback_subjects.values())
-    body = value_fallback_body_variant(variant_id, greeting, asset_name)
+    sentence_slots: dict[str, dict[str, str]] = {}
+    slots = non_hia_email_2_sentence_slots(row, classification or {}, sentence_slots, asset_name) if classification is not None else {}
+    body = value_fallback_body_fixed(greeting, asset_name, slots)
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": subject_options,
         "chosen_subject": subject,
         "body": body,
         "word_count": word_count(body),
-        "variant_id": variant_id,
     }
     return emails
 
@@ -1558,7 +1578,7 @@ def row_id_for_variant(row: dict[str, Any]) -> str:
     return compact(row.get("row_id") or row.get("Id") or row.get("id") or "")
 
 
-def variant_id_for(row: dict[str, Any], classification: dict[str, Any], email_step: int, available: list[str]) -> str:
+def deterministic_option_key_for(row: dict[str, Any], classification: dict[str, Any], email_step: int, available: list[str]) -> str:
     if not available:
         return "A"
     row_id = row_id_for_variant(row)
@@ -1567,6 +1587,31 @@ def variant_id_for(row: dict[str, Any], classification: dict[str, Any], email_st
     seed = f"{row_id}:{campaign_id_for(row, classification)}:{email_step}"
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     return available[int(digest[:12], 16) % len(available)]
+
+
+def sentence_slot_choice(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    email_step: int,
+    slot_name: str,
+    options: dict[str, str],
+) -> tuple[str, str]:
+    if not options:
+        return "", ""
+    keys = list(options.keys())
+    seed = "|".join(
+        (
+            row_id_for_variant(row),
+            campaign_id_for(row, classification),
+            email_variant_track(classification),
+            str(classification.get("pressure_type") or ""),
+            f"email_{email_step}",
+            slot_name,
+        )
+    )
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    key = keys[int(digest[:12], 16) % len(keys)]
+    return key, options[key]
 
 
 def subject_variants_for(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], email_step: int) -> dict[str, str]:
@@ -1588,134 +1633,460 @@ def chosen_subject_variant(
     if not variants:
         return "A", fallback, [fallback]
     available = list(variants.keys())
-    variant_id = variant_id_for(row, classification, email_step, available)
-    subject = variants.get(variant_id) or fallback
+    subject_key = deterministic_option_key_for(row, classification, email_step, available)
+    subject = variants.get(subject_key) or fallback
     options = list(dict.fromkeys([subject, *variants.values(), fallback]))
-    return variant_id, subject, options[:4]
+    return subject_key, subject, options[:4]
 
 
-def email_1_variant_body(variant_id: str, greeting: str, noticed: str, problem: str, mechanism: str, cta: str) -> str:
-    if variant_id == "B":
-        return f"{greeting}\n\nNoticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
-    if variant_id == "C":
-        mechanism_clause = mechanism or "Cyber Essentials can help turn that into a practical baseline."
-        return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\nThat is where {mechanism_clause}\n\n{cta}"
-    return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+def email_1_body_fixed(greeting: str, noticed: str, problem: str, mechanism: str, cta: str) -> str:
+    return f"{greeting}\n\nNoticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
 
 
-def funding_email_2_variant_body(variant_id: str, greeting: str, funding_line: str, caveat: str) -> str:
-    if variant_id == "B":
-        return (
-            f"{greeting}\n\n"
-            f"{funding_line}{caveat}\n\n"
-            "I would check the route first, then decide how much readiness work is worth lining up.\n\n"
-            "Should I send the route summary?"
-        )
-    if variant_id == "C":
-        return (
-            f"{greeting}\n\n"
-            f"{funding_line}{caveat}\n\n"
-            "The simple next step is to confirm whether the route applies.\n\n"
-            "Should I send the route summary?"
-        )
+def funding_email_2_body_fixed(greeting: str, funding_line: str, caveat: str) -> str:
     return (
         f"{greeting}\n\n"
         f"{funding_line}{caveat}\n\n"
-        "The useful first step is to check the route before spending time on readiness work.\n\n"
+        "The useful first step is to check the route before lining up readiness work.\n\n"
         "Should I send the route summary?"
     )
 
 
-def hia_pricing_email_2_body(greeting: str, pricing_mode: str, funding_safe: bool) -> str:
+def hia_pricing_email_2_body(
+    greeting: str,
+    pricing_mode: str,
+    funding_safe: bool,
+    slots: dict[str, str] | None = None,
+) -> str:
+    slots = slots or {}
     price_text = CISOAAS_HIA_PRICING["price_text"]
-    funding_sentence = "\n\nIf the route applies, 70% support can reduce the outlay." if funding_safe else ""
+    cost_opener = slots.get("cost_opener") or "Straight up on cost:"
+    endpoint_caveat = slots.get("endpoint_caveat") or "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside."
+    small_price = slots.get("small_clinic_price") or f"For smaller clinics, the starting package is around {price_text} before funding."
+    group_line = slots.get("group_larger_setup") or "Bigger or group setups need a quick endpoint check."
+    funding_sentence = f" {slots.get('conditional_funding')}" if funding_safe and slots.get("conditional_funding") else ""
+    value_line = slots.get("rayn_value_line") or "We handle the messy evidence work. The software helps keep training and governance tidy after certification."
+    cta = slots.get("cta") or "Worth doing a quick endpoint check?"
     if pricing_mode == "small_clinic_starting_price":
         return (
             f"{greeting}\n\n"
-            f"Straight up on cost: for smaller clinics, the starting CISOaaS package is around {price_text} before funding."
+            f"{cost_opener} {small_price}"
             f"{funding_sentence}\n\n"
-            "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the clinic gets certified and stays ready.\n\n"
-            "Worth doing a quick endpoint check?"
+            f"{value_line}\n\n"
+            f"{cta}"
         )
     if pricing_mode == "group_or_larger_sizing_needed":
         return (
             f"{greeting}\n\n"
-            "Straight up on cost: CISOaaS pricing is endpoint-based, so this should be sized properly for a group or multi-location setup.\n\n"
-            f"For smaller clinics, the starting package is around {price_text} before funding, but larger setups depend on endpoint count."
+            f"{cost_opener} {endpoint_caveat}\n\n"
+            f"{small_price} {group_line}"
             f"{funding_sentence}\n\n"
-            "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the team gets certified and stays ready.\n\n"
-            "Worth doing a quick endpoint check?"
+            f"{value_line}\n\n"
+            f"{cta}"
         )
     return (
         f"{greeting}\n\n"
-        "Straight up on cost: CISOaaS pricing is endpoint-based, so I would not guess final price from outside.\n\n"
-        f"For smaller clinics, the starting package is around {price_text} before funding. Larger/group setups should be sized properly because endpoint count changes the price."
+        f"{cost_opener} {endpoint_caveat}\n\n"
+        f"{small_price} {group_line}"
         f"{funding_sentence}\n\n"
-        "RAYN handles certification heavy lifting, with LEARN and GOVERN SaaS support so the clinic gets certified and stays ready.\n\n"
-        "Worth doing a quick endpoint check?"
+        f"{value_line}\n\n"
+        f"{cta}"
     )
 
 
-def value_fallback_body_variant(variant_id: str, greeting: str, asset_name: str) -> str:
-    if variant_id == "B":
-        return (
-            f"{greeting}\n\n"
-            f"The {asset_name} is more useful once the basics are visible: access lists, backup proof, update process, malware controls and incident contacts.\n\n"
-            "If those are already in decent shape, Cyber Essentials preparation is usually more straightforward.\n\n"
-            f"Worth sending the {asset_name}?"
-        )
-    if variant_id == "C":
-        return (
-            f"{greeting}\n\n"
-            f"A useful first pass is to mark what already exists for the {asset_name}: access, backups, updates, malware protection and incident contacts.\n\n"
-            "That keeps the readiness work grounded in the current setup.\n\n"
-            f"Worth sending the {asset_name}?"
-        )
+def value_fallback_body_fixed(greeting: str, asset_name: str, slots: dict[str, str] | None = None) -> str:
+    slots = slots or {}
+    evidence_line = slots.get("evidence_line") or "A simple first pass is to check what evidence already exists: access lists, backups, updates, malware controls and incident contacts."
+    second_line = slots.get("second_line") or "If those are already in decent shape, Cyber Essentials is usually a cleaner job."
+    cta = slots.get("cta") or f"Worth sending the {asset_name}?"
     return (
         f"{greeting}\n\n"
-        f"Before prioritising the {asset_name}, the useful thing is to map the evidence already in place: "
-        "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
-        "If the gaps are small, Cyber Essentials preparation is usually a cleaner job.\n\n"
-        f"Worth sending the {asset_name}?"
+        f"{evidence_line}\n\n"
+        f"{second_line}\n\n"
+        f"{cta}"
     )
 
 
-def diagnostic_email_3_variant_body(variant_id: str, diagnostic: str, cta: str) -> str:
-    if variant_id == "B":
-        return f"Simple check: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
-    if variant_id == "C":
-        return f"One question I would use: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
-    return f"A practical diagnostic: {diagnostic}\n\nIf any of those are unclear, that is usually where readiness work starts.\n\n{cta}"
+def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None = None) -> str:
+    slots = slots or {}
+    opener = slots.get("diagnostic_opener") or "Simple check:"
+    gap_line = slots.get("gap_line") or "If any of those are unclear, that is usually where the cleanup starts."
+    cta = slots.get("cta") or "Worth sending the checklist?"
+    return f"{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
 
 
-def close_loop_variant_body(variant_id: str, greeting: str, asset: str) -> str:
-    if variant_id == "B":
-        return f"{greeting}\n\nShould I send the {asset}, or leave this here?"
-    if variant_id == "C":
-        return f"{greeting}\n\nLast note from me. Worth sending the {asset}?"
-    return f"{greeting}\n\nShould I close the loop, or send the {asset}?"
+def close_loop_body_fixed(greeting: str, close_loop_line: str) -> str:
+    return f"{greeting}\n\n{close_loop_line}"
 
 
-def email_sequence_variant_metadata(
+def choose_sentence_slot(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    metadata: dict[str, dict[str, str]],
+    email_key: str,
+    email_step: int,
+    slot_name: str,
+    options: dict[str, str],
+) -> str:
+    key, sentence = sentence_slot_choice(row, classification, email_step, slot_name, options)
+    metadata.setdefault(email_key, {})[slot_name] = key
+    return sentence
+
+
+def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], metadata: dict[str, dict[str, str]]) -> dict[str, str]:
+    track = email_variant_track(classification)
+    if track == "hia_regulatory":
+        problem_options = {
+            "hia_messy_evidence": "With HIA coming in, the messy part is usually evidence: access, vendors, backups and incident steps.",
+            "hia_access_backup_incident": "For HIA, the messy bit is usually proving who can access what, where backups sit and what happens during an incident.",
+            "hia_incident_ownership": "For HIA, the part that usually gets messy is access, vendors, backups and incident ownership.",
+        }
+        mechanism_options = {
+            "decent_cyber_data_baseline": "Cyber Essentials is a decent first baseline for that cyber/data side.",
+            "practical_cyber_data_baseline": "Cyber Essentials is a practical first baseline for the cyber/data side.",
+            "controls_evidence_baseline": "Cyber Essentials gives a simple baseline for the controls and evidence.",
+        }
+    elif track == "dpo_evidence":
+        problem_options = {
+            "proof_across_ops": "The tricky part is usually finding the proof across HR, IT, vendors and operations.",
+            "evidence_different_places": "The evidence usually sits in different places, which makes it painful to pull together.",
+            "intent_vs_proof": "The issue is usually not intent. It is finding the proof.",
+        }
+        mechanism_options = {
+            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
+            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+        }
+    elif track == "customer_trust":
+        problem_options = {
+            "rebuilding_security_proof": "The annoying part is usually rebuilding the same security proof for each customer review.",
+            "customer_same_proof": "Customers tend to ask for the same proof around access, backups, updates and incidents.",
+            "reusable_security_evidence": "The useful thing is having reusable security evidence before customers ask.",
+        }
+        mechanism_options = {
+            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
+            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+        }
+    else:
+        problem_options = {
+            "safeguards_not_policy": "PDPA is the legal responsibility. The hard part is usually proving safeguards, not writing another policy.",
+            "pdpa_evidence_not_policy": "PDPA is the legal responsibility. The useful bit is having evidence for the safeguards, not just a policy.",
+            "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how personal data is actually protected day to day.",
+        }
+        mechanism_options = {
+            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
+            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+        }
+    return {
+        "problem_line": choose_sentence_slot(row, classification, metadata, "email_1", 1, "problem_line", problem_options),
+        "mechanism_line": choose_sentence_slot(row, classification, metadata, "email_1", 1, "mechanism_line", mechanism_options),
+    }
+
+
+def hia_email_2_sentence_slots(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    metadata: dict[str, dict[str, str]],
+    funding_safe: bool,
+) -> dict[str, str]:
+    price_text = CISOAAS_HIA_PRICING["price_text"]
+    slots = {
+        "cost_opener": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "cost_opener",
+            {
+                "straight_up_on_cost": "Straight up on cost:",
+                "one_note_on_cost": "One note on cost:",
+                "quick_note_on_pricing": "Quick note on pricing:",
+                "on_the_cost_side": "On the cost side:",
+            },
+        ),
+        "endpoint_caveat": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "endpoint_caveat",
+            {
+                "endpoint_based_no_guess": "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside.",
+                "endpoint_count_drives_quote": "The final number depends on endpoint count, so I would size it before quoting.",
+                "endpoint_count_drives_price": "Endpoint count drives the pricing, so I would not assume the tier from the outside.",
+            },
+        ),
+        "small_clinic_price": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "small_clinic_price",
+            {
+                "smaller_clinics_starting_package": f"For smaller clinics, the starting package is around {price_text} before funding.",
+                "smaller_clinics_usually_start": f"Smaller clinics usually start around {price_text} before funding.",
+                "small_clinic_setups_starting_package": f"For small clinic setups, the starting package is around {price_text} before funding.",
+            },
+        ),
+        "group_larger_setup": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "group_larger_setup",
+            {
+                "quick_endpoint_check": "Bigger or group setups need a quick endpoint check.",
+                "sized_properly": "Larger setups should be sized properly because endpoint count changes the price.",
+                "different_tier": "Group clinics can move into a different tier quickly, so I would size it first.",
+            },
+        ),
+        "rayn_value_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "rayn_value_line",
+            {
+                "messy_evidence_work": "We handle the messy evidence work. Software keeps training and governance tidy after certification.",
+                "learn_govern_after": "We take on the evidence work. LEARN and GOVERN support keeps it tidy after certification.",
+                "heavy_lifting_no_scramble": "We help with the heavy lifting. Software keeps training and governance from becoming a scramble.",
+            },
+        ),
+        "cta": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "cta",
+            {
+                "quick_endpoint_check": "Worth doing a quick endpoint check?",
+                "send_endpoint_check": "Should I send a quick endpoint check?",
+                "check_endpoint_tier": "Worth checking the endpoint tier first?",
+            },
+        ),
+    }
+    if funding_safe:
+        slots["conditional_funding"] = choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "conditional_funding",
+            {
+                "route_applies_70": "If the route applies, 70% support can reduce cost.",
+                "route_applies_funding": "If the route applies, funding can change the outlay.",
+                "programme_confirmation_support": "Subject to programme confirmation, support can reduce upfront cost.",
+            },
+        )
+    return slots
+
+
+def non_hia_email_2_sentence_slots(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    metadata: dict[str, dict[str, str]],
+    asset_name: str,
+) -> dict[str, str]:
+    track = email_variant_track(classification)
+    if track == "customer_trust":
+        evidence_options = {
+            "one_security_question": "The annoying part is usually not answering one customer security question.",
+            "same_security_proof": "The hard part is rebuilding the same security proof for every customer review.",
+            "customer_reviews_same_proof": "Customer reviews tend to ask for the same proof: access, backups, patching, malware protection and incident response.",
+        }
+        second_options = {
+            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
+            "basics_cleaner_job": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
+            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        }
+    elif track == "dpo_evidence":
+        evidence_options = {
+            "not_policy": "The tricky part is usually not the policy.",
+            "proof_across_ops": "The hard part is finding the proof across HR, IT, vendors and day-to-day operations.",
+            "different_teams_tools": "Most of the evidence usually sits across different teams and tools.",
+        }
+        second_options = {
+            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
+            "basics_cleaner_job": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
+            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        }
+    else:
+        evidence_options = {
+            "simple_first_pass": "A simple first pass is to check what proof already exists: access lists, backups, updates, malware controls and incident contacts.",
+            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
+            "existing_proof": "Before making this bigger than it needs to be, I would check the existing proof: access, backups, updates, malware controls and incident contacts.",
+        }
+        second_options = {
+            "decent_shape": "If those are already in decent shape, Cyber Essentials is usually a cleaner job.",
+            "basics_straightforward": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
+            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        }
+    return {
+        "evidence_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "evidence_line", evidence_options),
+        "second_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "second_line", second_options),
+        "cta": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "cta",
+            {
+                "safeguards_checklist": f"Worth sending the {asset_name}?",
+                "evidence_checklist": f"Should I send the {asset_name}?",
+                "security_evidence_checklist": f"Worth sending the {asset_name}?",
+            },
+        ),
+    }
+
+
+def email_3_sentence_slots(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    metadata: dict[str, dict[str, str]],
+    company: str,
+    records: str,
+    asset: str,
+) -> dict[str, str]:
+    if classification.get("pressure_type") == "hia_regulatory":
+        return {
+            "diagnostic_opener": choose_sentence_slot(
+                row,
+                classification,
+                metadata,
+                "email_3",
+                3,
+                "diagnostic_opener",
+                {
+                    "simple_check": "Simple check:",
+                    "one_useful_check": "One useful check:",
+                    "practical_diagnostic": "A practical diagnostic:",
+                },
+            ),
+            "question_shape": choose_sentence_slot(
+                row,
+                classification,
+                metadata,
+                "email_3",
+                3,
+                "question_shape",
+                {
+                    "where_records_sit": f"can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?",
+                    "map_records": f"can {company} map {records} to owners, access lists, backups and incident contacts?",
+                    "owns_access": f"can {company} show who owns access to {records}, where backups sit and who handles incidents?",
+                },
+            ),
+            "gap_line": choose_sentence_slot(
+                row,
+                classification,
+                metadata,
+                "email_3",
+                3,
+                "gap_line",
+                {
+                    "first_gap": "If that is fuzzy, that is usually the first readiness gap to close.",
+                    "cleanup_starts": "If that is unclear, that is usually where the cleanup starts.",
+                    "ownership_unclear": "If access or backup ownership is unclear, that is usually where readiness work starts.",
+                },
+            ),
+            "cta": choose_sentence_slot(
+                row,
+                classification,
+                metadata,
+                "email_3",
+                3,
+                "cta",
+                {
+                    "want_asset": f"Want the {asset}?",
+                    "worth_asset": f"Worth sending the {asset}?",
+                    "send_asset": f"Should I send the {asset}?",
+                },
+            ),
+        }
+    return {
+        "diagnostic_opener": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_3",
+            3,
+            "diagnostic_opener",
+            {
+                "simple_check": "Simple check:",
+                "one_useful_check": "One useful check:",
+                "practical_diagnostic": "A practical diagnostic:",
+            },
+        ),
+        "gap_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_3",
+            3,
+            "gap_line",
+            {
+                "cleanup_starts": "If any of those are unclear, that is usually where the cleanup starts.",
+                "first_gap": "If that is fuzzy, that is usually the first readiness gap to close.",
+                "readiness_work": "If access or backup ownership is unclear, that is usually where readiness work starts.",
+            },
+        ),
+        "cta": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_3",
+            3,
+            "cta",
+            {
+                "worth_asset": f"Worth sending the {asset}?",
+                "send_asset": f"Should I send the {asset}?",
+                "want_asset": f"Want the {asset}?",
+            },
+        ),
+    }
+
+
+def email_4_sentence_slots(row: dict[str, Any], classification: dict[str, Any], metadata: dict[str, dict[str, str]], asset: str) -> dict[str, str]:
+    return {
+        "close_loop": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_4",
+            4,
+            "close_loop",
+            {
+                "send_or_leave": f"Should I send the {asset}, or leave this here?",
+                "last_note": f"Last note from me. Worth sending the {asset}?",
+                "close_or_send": f"Should I close the loop, or send the {asset}?",
+                "still_useful": f"Still useful for me to send the {asset}?",
+            },
+        )
+    }
+
+
+def email_sequence_sentence_slot_metadata(
     row: dict[str, Any],
     classification: dict[str, Any],
     copy_brief: dict[str, Any],
-    emails: dict[str, Any],
+    sentence_slots: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     return {
         "track": email_variant_track(classification),
         "segment": email_variant_segment(row, classification, copy_brief),
         "campaign_id": campaign_id_for(row, classification),
         "row_id": row_id_for_variant(row),
-        "selector": "sha256(row_id:campaign_id:email_step)",
-        "email_steps": {
-            key: {
-                "email_step": index,
-                "variant_id": compact((emails.get(key) or {}).get("variant_id")) or "A",
-                "chosen_subject": compact((emails.get(key) or {}).get("chosen_subject")),
-            }
-            for index, key in enumerate(("email_1", "email_2", "email_3", "email_4"), start=1)
-        },
+        "selector": "sha256(row_id:campaign_id:track:pressure_type:email_step:slot_name)",
+        "email_steps": sentence_slots,
     }
 
 
@@ -2441,14 +2812,7 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_pr
 
 
 def hia_problem_statement(row: dict[str, Any], classification: dict[str, Any], clinic_profile: dict[str, Any] | None = None) -> str:
-    prefix = hia_problem_prefix(classification)
-    records = hia_email_1_records(row, classification, clinic_profile)
-    profile_guess = compact((clinic_profile or {}).get("clinic_profile_guess"))
-    if profile_guess in {"dental", "pharmacy", "specialist_led"}:
-        controls = "backups and incident steps"
-    else:
-        controls = "backups, patching and incident steps"
-    return f"{prefix} the practical question is whether access to {records} is clear, and whether {controls} are mapped."
+    return "With HIA coming in, the messy part is usually evidence: access, vendors, backups and incident steps."
 
 
 def hia_email_2_diagnostic(
@@ -2456,22 +2820,38 @@ def hia_email_2_diagnostic(
     classification: dict[str, Any],
     asset: str,
     copy_brief: dict[str, Any] | None = None,
-    variant_id: str = "A",
+    slots: dict[str, str] | str | None = None,
 ) -> str:
     company = compact(row.get("company_name") or "the organisation")
     records = hia_email_1_records(row, classification, copy_brief)
-    if variant_id == "B":
-        question = f"Simple check: can {company} show who owns access to {records}, where backups sit, and who handles incidents?"
-    elif variant_id == "C":
-        question = f"One question I would use: can {company} map {records} to owners, access lists, backups and incident contacts?"
-    else:
-        question = f"A practical diagnostic: can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?"
-    follow = "If access, backup or incident ownership are unclear, that is usually where readiness work starts."
-    parts = [question]
-    if follow:
-        parts.append(follow)
-    parts.append(f"Want the {asset}?")
-    return "\n\n".join(parts)
+    if isinstance(slots, str):
+        legacy = {
+            "A": {
+                "diagnostic_opener": "A practical diagnostic:",
+                "question_shape": f"can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?",
+                "gap_line": "If that is fuzzy, that is usually the first readiness gap to close.",
+                "cta": f"Want the {asset}?",
+            },
+            "B": {
+                "diagnostic_opener": "One useful check:",
+                "question_shape": f"can {company} map {records} to owners, access lists, backups and incident contacts?",
+                "gap_line": "If access or backup ownership is unclear, that is usually where readiness work starts.",
+                "cta": f"Should I send the {asset}?",
+            },
+            "C": {
+                "diagnostic_opener": "Simple check:",
+                "question_shape": f"can {company} show who owns access to {records}, where backups sit and who handles incidents?",
+                "gap_line": "If that is unclear, that is usually where the cleanup starts.",
+                "cta": f"Worth sending the {asset}?",
+            },
+        }
+        slots = legacy.get(slots, legacy["A"])
+    slots = slots or {}
+    opener = slots.get("diagnostic_opener") or "Simple check:"
+    question = slots.get("question_shape") or f"can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?"
+    gap_line = slots.get("gap_line") or "If that is fuzzy, that is usually the first readiness gap to close."
+    cta = slots.get("cta") or f"Want the {asset}?"
+    return f"{opener} {question}\n\n{gap_line}\n\n{cta}"
 
 
 def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -> dict[str, str]:
@@ -2481,7 +2861,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "student, parent, staff and enrolment records handled through education/training operations.",
             "sensitive_examples": "student records, parent contacts, staff data, enrolment details and attendance or course records.",
             "systems": "student/enrolment systems, email, spreadsheets, learning tools, vendor tools, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is who has access to student, parent, staff and enrolment records, where data sits, how backups work and who responds to incidents.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for student, parent, staff and enrolment records.",
             "asset": "education data checklist",
         }
     if any(term in text for term in ("recruitment", "candidate", "payroll", "hr ", "human resource")) and not any(
@@ -2492,7 +2872,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "candidate, employee and client records handled through HR/recruitment workflows.",
             "sensitive_examples": "candidate profiles, employee records, payroll-related records, client contacts and access logs.",
             "systems": "ATS/HR systems, email, file shares, payroll or admin tools, vendor tools, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is whether candidate, employee, payroll or client records have clear access, backup, vendor and incident evidence.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for candidate, employee, payroll or client records.",
             "asset": "HR data safeguards checklist",
         }
     if entity in {"npo", "charity", "social_service"} or contains_any(text, NPO_TERMS + SOCIAL_TERMS):
@@ -2501,7 +2881,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "beneficiary, volunteer, donor and staff data handled through care and community operations.",
             "sensitive_examples": "beneficiary records, volunteer data, donor contacts, staff records and care-service notes.",
             "systems": "case records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is whether beneficiary, volunteer, donor and staff data can be mapped to owners, access lists, vendors, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for beneficiary, volunteer, donor and staff data.",
             "asset": "care-organisation checklist",
         }
     if any(term in text for term in ("accounting", "bookkeeping", "finance", "financial", "admin services", "administrative services", "tax", "payroll")):
@@ -2510,7 +2890,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "client financial, business-contact, employee and admin records handled through service operations.",
             "sensitive_examples": "client financial records, business records, payroll or tax records, contact data and access records.",
             "systems": "accounting/admin systems, email, file shares, client portals, vendor tools, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is whether client financial or business records have clear access, backup, vendor and incident evidence.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for client financial or business records.",
             "asset": "client data safeguards checklist",
         }
     if any(term in text for term in ("retail", "e-commerce", "ecommerce", "online store", "customer service", "orders", "payment", "support")):
@@ -2519,7 +2899,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "customer, order, support and payment-related records handled through customer-facing operations.",
             "sensitive_examples": "customer contact data, order history, support records, payment-related records and staff access logs.",
             "systems": "e-commerce, POS, CRM/support, email, payment-related tools, vendor tools, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is whether customer, order, support and payment-related records have clear access, backup, vendor and incident evidence.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for customer, order, support and payment-related records.",
             "asset": "customer data checklist",
         }
     if any(term in text for term in (" lab ", "laboratory", "testing", "test services")) and not has_clinical_lab_evidence(text):
@@ -2528,7 +2908,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "personal_data": "customer, employee and project records handled through lab/testing operations and vendor tools.",
             "sensitive_examples": "customer records, employee data, project records, test administration records and access logs.",
             "systems": "testing/project systems, email, file shares, vendor tools, backups and incident contacts.",
-            "problem": "PDPA is the legal responsibility; the practical question is whether customer, employee and project records have clear access, backup, vendor and incident evidence.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for customer, employee and project records.",
             "asset": "safeguards checklist",
         }
     return {
@@ -2536,7 +2916,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
         "personal_data": f"{data_type} handled through enquiries, service delivery, staff operations and vendor tools.",
         "sensitive_examples": f"{data_type}, employee data, contact records and service history.",
         "systems": "web forms, email, CRM or spreadsheets, file shares, vendor tools, backups and incident contacts.",
-        "problem": "PDPA is the legal responsibility; the practical question is whether safeguards can be shown clearly: who has access, where data sits, how backups work, how updates are managed and who responds to incidents.",
+        "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards, not writing another policy.",
         "asset": "safeguards checklist",
     }
 
@@ -2702,9 +3082,9 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
         timeline = "HIA implementation is being phased in; do not use batch labels in prospect-facing email bodies."
         asset = segment_asset(row, classification, clinic_profile)
-        cta = f"Worth sending a short {asset}?"
+        cta = f"Worth sending the {asset}?"
         problem = hia_problem_statement(row, classification, clinic_profile)
-        mechanism = "Cyber Essentials is often a useful first baseline for the cybersecurity/data-security side."
+        mechanism = "Cyber Essentials is a decent first baseline for that cyber/data side."
         profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
         if clinic_profile.get("clinic_profile_guess") == "specialist_led" and "gastroenterology and digestive care" in profile_phrase:
             signal = f"{company} appears to provide specialist-led gastroenterology and digestive care."
@@ -2723,8 +3103,8 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         timeline = "No external HIA deadline was identified; urgency comes from customer evidence and procurement reviews."
         asset = trust_context["asset"]
         cta = f"Worth sending the {asset}?"
-        problem = "The practical issue is usually proving access control, backups, patching, malware protection and incident response without rebuilding answers for every customer review."
-        mechanism = "Cyber Essentials gives a recognised baseline for that evidence."
+        problem = "The annoying part is usually rebuilding the same proof for each customer review: access, backups, patching, malware protection and incident response."
+        mechanism = "Cyber Essentials gives a simple reusable evidence baseline."
         signal = trust_context["signal"]
         email_2_diagnostic = trust_context["diagnostic"]
     elif pressure == "pdpa_safeguards":
@@ -2736,7 +3116,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "evidence checklist"
             cta = "Worth sending the evidence checklist?"
             signal = f"{company} has a data-protection / operations contact route."
-            problem = "For teams handling personal data, the harder part is often evidence: who owns each system, who has access, how vendors are managed, how backups are checked and who handles incidents. It often sits across operations, HR, IT and vendors."
+            problem = "The tricky part is usually not the policy. It is finding the proof across HR, IT, vendors and day-to-day operations."
         elif entity in {"npo", "charity", "social_service"}:
             personal_data = "beneficiary, volunteer, donor and staff data handled through care and community operations."
             sensitive_examples = "beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
@@ -2744,7 +3124,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             asset = "care-organisation checklist"
             cta = "Worth sending the care-organisation checklist?"
             signal = f"{company} appears to operate in a care/community-service setting handling beneficiary, volunteer, donor and staff data."
-            problem = "PDPA is the legal responsibility; the practical question is whether beneficiary, volunteer, donor and staff data can be mapped to owners, access lists, vendors, backups and incident contacts."
+            problem = "PDPA is the legal responsibility. The hard part is usually proving safeguards for beneficiary, volunteer, donor and staff data."
         else:
             pdpa_context = pdpa_variant_context(company, text, entity, data_type)
             personal_data = pdpa_context["personal_data"]
@@ -2758,12 +3138,12 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         regulatory = "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
         hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
         pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning reasonable protection into practical controls and evidence across assets, access, malware protection, patching, backups and incident response."
-        trust_angle = "Clear safeguard evidence also helps customers, partners, donors, insurers and internal stakeholders trust how data is handled."
+        trust_angle = "Clear safeguard evidence also helps customers, partners, donors, insurers and internal teams trust how data is handled."
         timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards before a customer, partner or incident review asks for proof."
         if classification.get("campaign_track") == "dpo_evidence":
-            mechanism = "Cyber Essentials helps turn that into a practical security baseline and evidence set."
+            mechanism = "Cyber Essentials helps turn that into a simple security baseline and evidence set."
         else:
-            mechanism = "Cyber Essentials helps turn the security-safeguards side into practical controls and evidence."
+            mechanism = "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response."
     else:
         profile = ""
         business_model = "unknown"
@@ -2794,6 +3174,26 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     )
     pricing = infer_hia_clinic_size(row, classification, clinic_profile)
     funding_level = "high" if funding_safe else "medium" if funding.funding_status == "possible_match" else "low"
+    plain_company_type = profile_phrase if pressure == "hia_regulatory" else business_model.replace("_", " ")
+    pain_line = problem
+    why_now_line = ""
+    cost_line = ""
+    proof_line = mechanism
+    cta_line = cta
+    if pressure == "hia_regulatory":
+        why_now_line = "HIA makes that worth sorting out earlier."
+        price_text = CISOAAS_HIA_PRICING["price_text"]
+        cost_line = f"Smaller clinics start around {price_text} before funding, but endpoint count decides the final number."
+        proof_line = "We handle the messy evidence work. LEARN and GOVERN software helps keep training and governance tidy after certification."
+    elif pressure == "pdpa_safeguards" and classification.get("campaign_track") == "dpo_evidence":
+        why_now_line = "Data-protection evidence usually sits across more than one team."
+        proof_line = "Cyber Essentials helps turn that into a simple security baseline and evidence set."
+    elif pressure == "pdpa_safeguards":
+        why_now_line = "PDPA makes those safeguards worth having in evidence, not just in intention."
+        proof_line = "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response."
+    elif pressure == "customer_trust":
+        why_now_line = "Customer reviews are easier when the proof is already organised."
+        proof_line = "Cyber Essentials gives a simple reusable evidence baseline."
     copy_brief = {
         "company_profile_summary": profile,
         "business_model_guess": business_model,
@@ -2823,6 +3223,13 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "pricing_claim_safe": pricing["pricing_claim_safe"],
         "pricing_claim_line": pricing["pricing_claim_line"],
         "pricing_evidence_json": pricing["pricing_evidence_json"],
+        "plain_company_type": plain_company_type,
+        "pain_line": pain_line,
+        "why_now_line": why_now_line,
+        "cost_line": cost_line,
+        "proof_line": proof_line,
+        "cta_line": cta_line,
+        "human_email_style": "short_plain_low_cta",
         "email_2_mode": "funding" if funding_safe else "value_fallback",
         "funding_followup_mode": "funding" if funding_safe else "value_fallback",
         "email_3_mode": "funding" if funding_safe else "value_fallback",
@@ -2910,18 +3317,26 @@ def generate_email_sequence(
         email2_body = f"A quick self-check: can every system holding customer, employee or partner data be mapped to an owner, access list, backup, update process and incident contact?\n\nIf not, that is usually where Cyber Essentials prep starts.\n\nWant the simple data-safeguards template?"
 
     if classification["pressure_type"] != "not_ready":
+        sentence_slots: dict[str, dict[str, str]] = {}
         base_email1_subject, base_thread_subject = subject_pair(row, classification, copy_brief)
-        email1_variant_id, email1_subject, email1_subject_options = chosen_subject_variant(row, classification, copy_brief, 1, base_email1_subject)
-        email3_subject_variant_id, diagnostic_subject, email3_subject_options = chosen_subject_variant(row, classification, copy_brief, 3, base_thread_subject)
+        _, email1_subject, email1_subject_options = chosen_subject_variant(row, classification, copy_brief, 1, base_email1_subject)
+        _, diagnostic_subject, email3_subject_options = chosen_subject_variant(row, classification, copy_brief, 3, base_thread_subject)
         noticed = trigger
         if noticed.lower().startswith("noticed "):
             noticed = noticed[8:].strip()
-        email1_body = email_1_variant_body(email1_variant_id, email1_greeting, noticed, problem, mechanism, cta)
+        email1_slots = email_1_sentence_slots(row, classification, sentence_slots)
+        problem = email1_slots["problem_line"]
+        mechanism = email1_slots["mechanism_line"]
+        copy_brief["email_problem_statement"] = problem
+        copy_brief["email_mechanism_statement"] = mechanism
+        email1_body = email_1_body_fixed(email1_greeting, noticed, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
-            email1_body = email_1_variant_body(email1_variant_id, email1_greeting, short_noticed, problem, mechanism, cta)
+            email1_body = email_1_body_fixed(email1_greeting, short_noticed, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory":
-            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_subject_variant_id)
+            records = hia_email_1_records(row, classification, copy_brief)
+            email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
+            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_slots)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
@@ -2929,42 +3344,49 @@ def generate_email_sequence(
         else:
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
         if classification["pressure_type"] != "hia_regulatory":
-            email3_variant_id = email3_subject_variant_id
-            email3_body = diagnostic_email_3_variant_body(email3_variant_id, diagnostic, cta)
-        else:
-            email3_variant_id = email3_subject_variant_id
+            email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, "", asset)
+            email3_body = diagnostic_email_3_body_fixed(diagnostic, email3_slots)
         if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
             hia_pricing_subjects = {"A": "endpoint check", "B": "CISOaaS sizing", "C": "cost check"}
-            email2_variant_id = variant_id_for(row, classification, 2, list(hia_pricing_subjects.keys()))
-            email2_subject = hia_pricing_subjects[email2_variant_id]
+            email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
+            email2_subject = hia_pricing_subjects[email2_subject_key]
             email2_subject_options = list(hia_pricing_subjects.values())
+            email2_slots = hia_email_2_sentence_slots(
+                row,
+                classification,
+                sentence_slots,
+                funding_claim_send_safe(funding, copy_brief, classification),
+            )
             email2_body = hia_pricing_email_2_body(
                 comma_greeting,
                 compact(copy_brief.get("pricing_email_2_mode")) or "endpoint_sizing_needed",
                 funding_claim_send_safe(funding, copy_brief, classification),
+                email2_slots,
             )
         elif funding_claim_send_safe(funding, copy_brief, classification):
-            email2_variant_id, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
+            subject_key, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
             funding_line = funding.funding_claim_line
-            if classification["pressure_type"] == "hia_regulatory" and email2_variant_id == "A":
+            if classification["pressure_type"] == "hia_regulatory" and subject_key == "A":
                 email2_subject = "HIA / cyber funding"
                 email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = funding_email_2_variant_body(email2_variant_id, comma_greeting, funding_line, caveat)
+            email2_body = funding_email_2_body_fixed(comma_greeting, funding_line, caveat)
         else:
-            fallback_email2 = value_fallback_email_2(row, {"email_2": {"chosen_subject": "readiness evidence"}}, asset, classification, copy_brief)["email_2"]
-            email2_variant_id = fallback_email2.get("variant_id", "A")
+            fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
+            subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
+            email2_subject = fallback_subjects[subject_key]
+            email2_subject_options = list(fallback_subjects.values())
+            email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset)
+            email2_body = value_fallback_body_fixed(comma_greeting, asset, email2_slots)
+            fallback_email2 = {"chosen_subject": email2_subject, "subject_options": email2_subject_options, "body": email2_body}
             email2_subject = fallback_email2["chosen_subject"]
             email2_subject_options = fallback_email2["subject_options"]
-            email2_body = fallback_email2["body"]
         email3_subject = diagnostic_subject
-        email4_variant_id, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
-        email4_body = close_loop_variant_body(email4_variant_id, comma_greeting, asset)
+        _, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
+        email4_slots = email_4_sentence_slots(row, classification, sentence_slots, asset)
+        email4_body = close_loop_body_fixed(comma_greeting, email4_slots["close_loop"])
     else:
-        email1_variant_id = "A"
-        email2_variant_id = "A"
-        email3_variant_id = "A"
-        email4_variant_id = "A"
+        sentence_slots = {}
         email1_subject_options = [email1_subject, "readiness checklist"]
         email2_subject_options = [email2_subject, "quick diagnostic"]
         email4_subject = "close the loop?"
@@ -2977,25 +3399,21 @@ def generate_email_sequence(
             "subject_options": email1_subject_options,
             "chosen_subject": email1_subject,
             "body": email1_body,
-            "variant_id": email1_variant_id,
         },
         "email_2": {
             "subject_options": email2_subject_options,
             "chosen_subject": email2_subject,
             "body": email2_body,
-            "variant_id": email2_variant_id,
         },
         "email_3": {
             "subject_options": email3_subject_options,
             "chosen_subject": email3_subject,
             "body": email3_body,
-            "variant_id": email3_variant_id,
         },
         "email_4": {
             "subject_options": email4_subject_options,
             "chosen_subject": email4_subject,
             "body": email4_body,
-            "variant_id": email4_variant_id,
         },
         "evidence_used": [trigger],
         "claims_avoided": [
@@ -3007,7 +3425,16 @@ def generate_email_sequence(
     }
     for key in ("email_1", "email_2", "email_3", "email_4"):
         emails[key]["word_count"] = word_count(emails[key]["body"])
-    emails["variant_metadata"] = email_sequence_variant_metadata(row, classification, copy_brief, emails)
+    emails["sentence_slot_metadata"] = email_sequence_sentence_slot_metadata(row, classification, copy_brief, sentence_slots)
+    emails["style_metadata"] = {
+        "human_email_style": compact(copy_brief.get("human_email_style")) or "short_plain_low_cta",
+        "plain_company_type": compact(copy_brief.get("plain_company_type")),
+        "pain_line": compact(copy_brief.get("pain_line")),
+        "why_now_line": compact(copy_brief.get("why_now_line")),
+        "cost_line": compact(copy_brief.get("cost_line")),
+        "proof_line": compact(copy_brief.get("proof_line")),
+        "cta_line": compact(copy_brief.get("cta_line")),
+    }
     return emails
 
 
@@ -3065,23 +3492,19 @@ def enforce_funding_claim_email(
     email2 = emails.get("email_2") or {}
     existing_body = trim_text(email2.get("body"))
     caveat_count = existing_body.lower().count("subject to programme confirmation")
-    useful_line = "The useful first step is confirming whether the route applies before spending time on readiness work."
+    useful_line = "The useful first step is to check the route before lining up readiness work."
     if claim.lower() in existing_body.lower() and funding_only_email(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
         return emails
     greeting = email_comma_greeting(row)
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    variant_id = compact(email2.get("variant_id")) or "A"
-    body = funding_email_2_variant_body(variant_id, greeting, claim, caveat)
-    if variant_id == "A" and useful_line.lower() not in body.lower():
-        body = f"{greeting}\n\n{claim}{caveat}\n\n{useful_line}\n\nShould I send the route summary?"
+    body = funding_email_2_body_fixed(greeting, claim, caveat)
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": list(email2.get("subject_options") or [subject]),
         "chosen_subject": subject,
         "body": body,
         "word_count": word_count(body),
-        "variant_id": variant_id,
     }
     return emails
 
@@ -3194,13 +3617,16 @@ def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_
     pricing_mode = compact(copy_brief.get("pricing_email_2_mode"))
     if pricing_mode in {"", "no_price_claim"}:
         return flags
-    if pricing_mode in {"endpoint_sizing_needed", "group_or_larger_sizing_needed"} and "endpoint-based" not in body_l:
+    has_endpoint_caveat = "endpoint-based" in body_l or "endpoint count" in body_l
+    if pricing_mode in {"endpoint_sizing_needed", "group_or_larger_sizing_needed"} and not has_endpoint_caveat:
         flags.append("hia_pricing_missing_endpoint_caveat")
     if price_present and not any(term in body_l for term in ("smaller clinics", "small clinics", "smaller clinic", "small clinic")):
         flags.append("hia_pricing_exact_price_without_small_clinic_context")
     if "70%" in body_l and not any(term in body_l for term in ("if the route applies", "subject to programme confirmation")):
         flags.append("hia_pricing_percentage_missing_caveat")
-    if pricing_mode == "group_or_larger_sizing_needed" and price_present and "larger setups depend on endpoint count" not in body_l:
+    if pricing_mode == "group_or_larger_sizing_needed" and price_present and not any(
+        term in body_l for term in ("larger setups depend on endpoint count", "larger setups move differently", "group clinics can move into a different tier", "endpoint count changes the price")
+    ):
         flags.append("hia_pricing_group_exact_price_claim")
     if any(term in body_l for term in ("you qualify", "you are eligible", "guaranteed funding", "all clinics qualify for funding")):
         flags.append("hia_pricing_forbidden_funding_claim")
@@ -3276,9 +3702,9 @@ def email_2_not_hia_segment_diagnostic_shape(
         return False
     body_l = compact(body).lower()
     approved_openers = (
-        "a practical diagnostic: can ",
         "simple check: can ",
-        "one question i would use: can ",
+        "one useful check: can ",
+        "a practical diagnostic: can ",
     )
     if not body_l.startswith(approved_openers):
         return True
@@ -3286,11 +3712,11 @@ def email_2_not_hia_segment_diagnostic_shape(
     expected_asset = segment_asset(row, classification, clinic_profile).lower()
     if expected_asset and expected_asset not in body_l:
         return True
-    if body_l.startswith("a practical diagnostic: can "):
+    if "show where" in body_l:
         required = ("sit today", "who owns access", "backups", "handles incidents")
         if not all(term in body_l for term in required):
             return True
-    elif body_l.startswith("simple check: can "):
+    elif "show who owns access" in body_l:
         required = ("who owns access", "where backups sit", "handles incidents")
         if not all(term in body_l for term in required):
             return True
@@ -3491,6 +3917,9 @@ def quality_gate(
     for phrase in FORBIDDEN_PHRASES:
         if phrase in blob:
             flags.append(f"forbidden_phrase:{phrase}")
+    for phrase in STYLE_BANNED_PHRASES:
+        if phrase in blob:
+            flags.append(f"style_banned_phrase:{phrase}")
 
     limits = {"email_1": 85, "email_2": 80, "email_3": 95, "email_4": 55}
     for key, limit in limits.items():
@@ -3628,6 +4057,7 @@ def severe_flags(flags: list[str]) -> list[str]:
         for flag in flags
         if flag in SEVERE_EMAIL_FLAGS
         or flag.startswith("forbidden_phrase:")
+        or flag.startswith("style_banned_phrase:")
         or flag in {"unverified_exact_percentage", "unsafe_hia_deadline_claim"}
     ]
 
