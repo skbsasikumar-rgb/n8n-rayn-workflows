@@ -1448,7 +1448,8 @@ def email_1_variant_body(variant_id: str, greeting: str, noticed: str, problem: 
     if variant_id == "B":
         return f"{greeting}\n\nNoticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
     if variant_id == "C":
-        return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+        mechanism_clause = mechanism or "Cyber Essentials can help turn that into a practical baseline."
+        return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\nThat is where {mechanism_clause}\n\n{cta}"
     return f"{greeting}\n\nNoticed {noticed}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
@@ -1457,20 +1458,20 @@ def funding_email_2_variant_body(variant_id: str, greeting: str, funding_line: s
         return (
             f"{greeting}\n\n"
             f"{funding_line}{caveat}\n\n"
-            "I would check the route first before spending time lining up the readiness work.\n\n"
+            "I would check the route first, then decide how much readiness work is worth lining up.\n\n"
             "Should I send the route summary?"
         )
     if variant_id == "C":
         return (
             f"{greeting}\n\n"
             f"{funding_line}{caveat}\n\n"
-            "The practical next move is just to confirm whether the route applies.\n\n"
+            "The simple next step is to confirm whether the route applies.\n\n"
             "Should I send the route summary?"
         )
     return (
         f"{greeting}\n\n"
         f"{funding_line}{caveat}\n\n"
-        "The useful first step is confirming whether the route applies before spending time on readiness work.\n\n"
+        "The useful first step is to check the route before spending time on readiness work.\n\n"
         "Should I send the route summary?"
     )
 
@@ -1479,22 +1480,22 @@ def value_fallback_body_variant(variant_id: str, greeting: str, asset_name: str)
     if variant_id == "B":
         return (
             f"{greeting}\n\n"
-            f"The {asset_name} is usually worth doing only after the basics are visible: access lists, backup proof, update process, malware controls and incident contacts.\n\n"
-            "If those are already mostly in place, Cyber Essentials preparation is usually more straightforward.\n\n"
+            f"The {asset_name} is more useful once the basics are visible: access lists, backup proof, update process, malware controls and incident contacts.\n\n"
+            "If those are already in decent shape, Cyber Essentials preparation is usually more straightforward.\n\n"
             f"Worth sending the {asset_name}?"
         )
     if variant_id == "C":
         return (
             f"{greeting}\n\n"
-            f"A useful first pass is to mark what evidence already exists for the {asset_name}: access, backups, updates, malware protection and incident contacts.\n\n"
-            "That keeps the readiness work grounded in what is already there.\n\n"
+            f"A useful first pass is to mark what already exists for the {asset_name}: access, backups, updates, malware protection and incident contacts.\n\n"
+            "That keeps the readiness work grounded in the current setup.\n\n"
             f"Worth sending the {asset_name}?"
         )
     return (
         f"{greeting}\n\n"
-        f"One useful way to check whether the {asset_name} is worth prioritising is to map the evidence already in place: "
+        f"Before prioritising the {asset_name}, the useful thing is to map the evidence already in place: "
         "access lists, backup proof, update process, malware controls and incident contacts.\n\n"
-        "If the gaps are small, Cyber Essentials preparation is usually more straightforward.\n\n"
+        "If the gaps are small, Cyber Essentials preparation is usually a cleaner job.\n\n"
         f"Worth sending the {asset_name}?"
     )
 
@@ -1509,10 +1510,10 @@ def diagnostic_email_3_variant_body(variant_id: str, diagnostic: str, cta: str) 
 
 def close_loop_variant_body(variant_id: str, greeting: str, asset: str) -> str:
     if variant_id == "B":
-        return f"{greeting}\n\nStill useful for me to send the {asset}, or should I leave this here?"
+        return f"{greeting}\n\nShould I send the {asset}, or leave this here?"
     if variant_id == "C":
-        return f"{greeting}\n\nLast note from me. Would the {asset} help, or should I close this off?"
-    return f"{greeting}\n\nShould I close the loop, or would the {asset} still be useful?"
+        return f"{greeting}\n\nLast note from me. Worth sending the {asset}?"
+    return f"{greeting}\n\nShould I close the loop, or send the {asset}?"
 
 
 def email_sequence_variant_metadata(
@@ -2280,9 +2281,9 @@ def hia_email_2_diagnostic(
     company = compact(row.get("company_name") or "the organisation")
     records = hia_email_1_records(row, classification, copy_brief)
     if variant_id == "B":
-        question = f"Simple check: can {company} point to who owns access to {records}, where backups sit, and who handles incidents?"
+        question = f"Simple check: can {company} show who owns access to {records}, where backups sit, and who handles incidents?"
     elif variant_id == "C":
-        question = f"One question I would use: if {records} were needed during an incident, would ownership, access and backups be clear?"
+        question = f"One question I would use: can {company} map {records} to owners, access lists, backups and incident contacts?"
     else:
         question = f"A practical diagnostic: can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?"
     follow = "If access, backup or incident ownership are unclear, that is usually where readiness work starts."
@@ -3052,7 +3053,7 @@ def email_2_not_hia_segment_diagnostic_shape(
     approved_openers = (
         "a practical diagnostic: can ",
         "simple check: can ",
-        "one question i would use: if ",
+        "one question i would use: can ",
     )
     if not body_l.startswith(approved_openers):
         return True
@@ -3069,7 +3070,7 @@ def email_2_not_hia_segment_diagnostic_shape(
         if not all(term in body_l for term in required):
             return True
     else:
-        required = ("needed during an incident", "ownership", "access", "backups")
+        required = ("map", "access", "backups", "incident contacts")
         if not all(term in body_l for term in required):
             return True
     wrong_segment_terms = {
@@ -3793,7 +3794,6 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
     }
     plan = plan_outreach(row, programmes=programmes)
     patch = build_noco_patch(row, plan)
-    openrouter_allowed = copy_brief_ready(plan.classification, plan.copy_brief) and plan.automation_decision not in {"suppressed", "auto_skipped", "retry_enrichment_once"}
     return {
         "ok": True,
         "row_id": plan.row_id,
@@ -3803,9 +3803,8 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
         "automation_decision_reason": plan.automation_decision_reason,
         "automation_blockers": plan.automation_blockers,
         "automation_advisory_flags": plan.automation_advisory_flags,
-        "use_llm": row.get("use_llm") is True or compact(row.get("use_llm")).lower() == "true",
-        "openrouter_allowed": openrouter_allowed,
-        "skip_openrouter": not openrouter_allowed,
+        "openrouter_allowed": False,
+        "skip_openrouter": True,
         "audit_report": build_audit_report(row, plan=plan),
         "patch": patch,
         "record": plan.to_dict(),

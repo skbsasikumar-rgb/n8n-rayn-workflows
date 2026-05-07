@@ -532,29 +532,6 @@ class OutreachPlannerTests(unittest.TestCase):
         for index in range(1, 5):
             self.assertFalse(patch[f"email_{index}_body"])
 
-    def test_plan_and_patch_echoes_explicit_use_llm_flag(self):
-        default = o.plan_and_patch(
-            {
-                "Id": 171,
-                "company_name": "Acme Services Pte Ltd",
-                "website_content": "Singapore clinic handling patient records and appointments.",
-                "validated_email": "info@example.com",
-                "draft_only": True,
-            }
-        )
-        explicit = o.plan_and_patch(
-            {
-                "Id": 172,
-                "company_name": "Acme Services Pte Ltd",
-                "website_content": "Singapore clinic handling patient records and appointments.",
-                "validated_email": "info@example.com",
-                "draft_only": True,
-                "use_llm": True,
-            }
-        )
-        self.assertFalse(default["use_llm"])
-        self.assertTrue(explicit["use_llm"])
-
     def test_copy_qa_mode_allows_missing_email_without_send_ready(self):
         result = o.plan_and_patch(
             {
@@ -834,8 +811,8 @@ class OutreachPlannerTests(unittest.TestCase):
         records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
         expected = {
             "A": f"A practical diagnostic: can Asian Heart & Vascular Centre show where {records} sit today, who owns access, how backups work and who handles incidents?",
-            "B": f"Simple check: can Asian Heart & Vascular Centre point to who owns access to {records}, where backups sit, and who handles incidents?",
-            "C": f"One question I would use: if {records} were needed during an incident, would ownership, access and backups be clear?",
+            "B": f"Simple check: can Asian Heart & Vascular Centre show who owns access to {records}, where backups sit, and who handles incidents?",
+            "C": f"One question I would use: can Asian Heart & Vascular Centre map {records} to owners, access lists, backups and incident contacts?",
         }
         for variant_id, opener in expected.items():
             with self.subTest(variant_id=variant_id):
@@ -851,7 +828,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "\n\nThis is subject to programme confirmation.",
         )
         self.assertIn(
-            "I would check the route first before spending time lining up the readiness work.",
+            "I would check the route first, then decide how much readiness work is worth lining up.",
             body,
         )
         self.assertNotIn("before anyone spends time", body)
@@ -1445,7 +1422,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("backups", plan.emails["email_3"]["body"])
                 self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
                 self.assertIn(f"Worth sending a short {asset}?", plan.emails["email_1"]["body"])
-                self.assertIn(f"would the {asset} still be useful", plan.emails["email_4"]["body"])
+                self.assertIn(asset, plan.emails["email_4"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_specialist_hia_subtypes_use_specific_records_and_diagnostics(self):
@@ -1636,7 +1613,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         email2 = plan.emails["email_2"]["body"]
         self.assertIn(plan.funding.funding_claim_line, email2)
-        self.assertIn("The useful first step is confirming whether the route applies before spending time on readiness work.", email2)
+        self.assertIn("The useful first step is to check the route before spending time on readiness work.", email2)
         self.assertNotIn("you qualify", email2.lower())
         self.assertNotIn("you are eligible", email2.lower())
         self.assertNotIn("guaranteed", email2.lower())

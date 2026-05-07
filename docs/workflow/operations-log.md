@@ -4,6 +4,14 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-07
 
+Deterministic cold-email copy polish:
+
+- kept the cold-email planner deterministic-only after removing the OpenRouter humaniser path; no LLM rewrite path was reintroduced.
+- tightened `services/crawl4ai/outreach_planner.py` copy variants: HIA Email 3 variants now all use direct segment-specific diagnostic questions, funding Email 2 followups are shorter/less stiff, value-fallback Email 2 avoids funding wording, Email 1 variant C has a more conversational bridge, and Email 4 close-loop notes are shorter.
+- updated HIA diagnostic guardrails so the rotated direct diagnostic variants remain accepted only when segment records, access, backups, incidents, and the expected asset are present.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py`; `jq -e . wf-cold-email-planner.json`; `python3 -m pytest tests/test_outreach_planner.py -q` (`75 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+
 Selected rerun recovery guard:
 
 - added `scripts/rayn_selected_rerun.py` so selected rows can be reset and rerun through URL discovery, public enrichment, contact search, and draft-only planner with explicit gating.
@@ -1074,3 +1082,36 @@ Cold email copy QA hardening:
 - `Collect NocoDB Patches` no longer repairs or rewrites funding Email 2 copy; the planner is the only source of truth for final email bodies and flags.
 - the cold-email fetch includes `attempt_count`, and `/outreach-plan` now returns `retry_enrichment_once` for first-pass weak/not-ready enrichment, including healthcare-looking rows that need deeper healthcare pages; after retry it returns `auto_skipped`.
 - local validation only; no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-07 15:10 +08`: added an opt-in cold-email LLM humaniser layer locally.
+- deterministic `/outreach-plan` remains the source of truth for tracks, funding/value fallback, HIA relevance, suppression, `automation_decision`, `final_send_gate_passed`, and `email_send_ready`; OpenRouter can only humanise already-approved deterministic bodies.
+- `wf-cold-email-planner.json` now requires `use_llm=true`, `use_llm_humaniser=true`, `ALLOW_COLD_EMAIL_LLM=true`, `openrouter_allowed=true`, `skip_openrouter!=true`, `automation_decision=auto_send_eligible`, `final_send_gate_passed=true`, deterministic bodies, and passing enrichment/copy scores before the OpenRouter branch.
+- `/outreach-validate-email` now revalidates humanised JSON through deterministic gates; rejected LLM output falls back to the deterministic patch with rejection metadata stored in `email_sequence_json.metadata`, and a failed deterministic fallback becomes `auto_skipped / copy_failed_after_llm_and_deterministic_fallback`.
+- added read-only preview tooling at `scripts/preview_cold_email_humaniser.py` for deterministic vs final accepted body inspection; without a rows export it prints the exact later command instead of faking a live preview.
+- validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/preview_cold_email_humaniser.py`, `jq -e . wf-cold-email-planner.json`, `python3 -m pytest tests/test_outreach_planner.py -q` (`78 passed`), `python3 -m pytest tests/test_outreach_columns.py -q` (`18 passed`), and `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- no deployment was performed, no live rows were patched, no preview was generated from live credentials, no emails were sent, and Instantly was not used.
+- `2026-05-07 15:35 +08`: ran a five-row read-only humaniser slice using NocoDB rows `273`, `275`, `276`, `278`, and `288`.
+- local planner gates were correct: rows `273`, `275`, `276`, and `288` were `auto_send_eligible` with `openrouter_allowed=true`; row `278` was `suppressed_missing_validated_email` with `openrouter_allowed=false`.
+- mock accepted humaniser JSON preserved `auto_send_eligible`, `final_send_gate_passed=true`, and blank quality flags for all four eligible rows.
+- mock bad humaniser JSON containing forbidden PDPA-compliance wording was rejected and cleanly fell back to deterministic copy, preserving `auto_send_eligible` and `final_send_gate_passed=true` with rejection metadata in `email_sequence_json.metadata`.
+- attempted real OpenRouter calls for the eligible slice returned `HTTP 401 Unauthorized`, so no real humanised copy was accepted in this test; no live rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-07 16:02 +08`: used the existing live n8n `openrouter` credential via a temporary isolated webhook workflow, not the cold-email patch workflow.
+- the temporary workflow called only OpenRouter and had no NocoDB or Instantly nodes; it was deactivated and deleted after testing.
+- the credential-backed test confirmed OpenRouter works through n8n. Initial full humaniser prompt calls for rows `273`, `275`, `276`, and `288` all returned JSON but were rejected by the deterministic validator and safely fell back to deterministic copy; row `278` stayed suppressed and did not call OpenRouter.
+- tightened the humaniser prompt to require light edits only and explicit preservation of copy-brief personalisation, problem, mechanism, CTA, funding mode, HIA diagnostic shape, and Email 4 asset reference.
+- after prompt tightening, credential-backed real LLM output was accepted for rows `275` and `288`; rows `273` and `276` were still rejected and safely fell back to deterministic copy. All final accepted/fallback patches kept blank quality/severe flags and `final_send_gate_passed=true` for eligible rows.
+- OpenRouter usage recorded by the provider for the real n8n credential tests was approximately `$0.1257` across `9` calls; no live rows were patched, no emails were sent, and Instantly was not used.
+- `2026-05-07 16:20 +08`: switched the cold-email humaniser model in `wf-cold-email-planner.json` from `x-ai/grok-4.3` to `deepseek/deepseek-v4-flash` locally and updated the workflow model test.
+- reran the same credential-backed five-row slice through a temporary isolated n8n webhook using the existing `openrouter` credential; the temporary workflow had no NocoDB or Instantly nodes and was deleted after testing.
+- DeepSeek result: row `278` stayed suppressed and skipped OpenRouter; rows `275`, `276`, and `288` accepted humanised output; row `273` still rejected on the HIA Email 3 diagnostic-shape gate and safely fell back to deterministic copy.
+- final outputs for all eligible rows kept `final_send_gate_passed=true`, blank visible quality flags, and blank severe flags.
+- DeepSeek cost for the four-row eligible slice was approximately `$0.00263`, versus approximately `$0.0603` for the comparable tightened Grok slice; no live rows were patched, no emails were sent, and Instantly was not used.
+- validation passed after the model switch: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py scripts/preview_cold_email_humaniser.py`, `jq -e . wf-cold-email-planner.json`, `python3 -m pytest tests/test_outreach_columns.py -q` (`18 passed`), and `python3 -m pytest tests/test_outreach_planner.py -q` (`78 passed`).
+- `2026-05-07 16:35 +08`: switched the cold-email humaniser model setting back from `deepseek/deepseek-v4-flash` to the previous `x-ai/grok-4.3` local workflow value after review showed little practical copy difference.
+- the humaniser remains explicit opt-in only and deterministic output remains the default path; no deployment was performed, no live rows were patched, no emails were sent, and Instantly was not used.
+- validation after switching back: `jq -e . wf-cold-email-planner.json` and `python3 -m pytest tests/test_outreach_columns.py -q` (`18 passed`).
+- `2026-05-07 16:50 +08`: removed the cold-email OpenRouter rewrite/humaniser path locally.
+- `wf-cold-email-planner.json` is deterministic-only again: `Generate Outreach Plan` now connects directly to `Collect NocoDB Patches`, and the `Prepare OpenRouter Email Draft`, `OpenRouter Email Draft`, `Merge OpenRouter Email Draft`, `Validate LLM Email Draft`, and `Copy Brief Ready?` nodes were removed.
+- `Rows To Items` no longer reads or passes `use_llm`; `/outreach-plan` now always returns `openrouter_allowed=false` and `skip_openrouter=true`.
+- removed the `/outreach-validate-email` app endpoint because the cold-email workflow no longer accepts LLM email drafts.
+- validation passed: `python3 -m py_compile services/crawl4ai/outreach_planner.py services/crawl4ai/app.py`, `jq -e . wf-cold-email-planner.json`, `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`), `python3 -m pytest tests/test_outreach_planner.py -q` (`75 passed`), and `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- no deployment was performed, no live rows were patched, no OpenRouter call was made, no emails were sent, and Instantly was not used.

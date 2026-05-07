@@ -53,7 +53,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst draftOnly = true;\nfunction truthy(value) {\n  return value === true || String(value || '').trim().toLowerCase() === 'true';\n}\nfunction triggerPayload() {\n  for (const nodeName of ['Webhook Trigger', 'Manual Trigger']) {\n    try {\n      const data = $(nodeName).first().json || {};\n      return data.body && typeof data.body === 'object' ? data.body : data;\n    } catch (_) {}\n  }\n  return {};\n}\nconst request = triggerPayload();\nconst useLlm = truthy(request.use_llm);\nconst textFields = ['company_homepage_name', 'parent_company', 'best_url', 'canonical_domain', 'industry_guess', 'website_content', 'source_urls', 'services_detected', 'locations_detected', 'leadership_or_team_signals', 'contact_info_detected', 'structured_data_detected', 'selected_contact_name', 'selected_contact_title', 'selected_contact_role', 'selected_contact_email', 'selected_contact_linkedin_url', 'validated_email', 'unsubscribe_status', 'email_source'];\nconst output = [];\nfor (const row of rows) {\n  const normalized = { ...row };\n  for (const field of textFields) normalized[field] = String(normalized[field] || '').trim();\n  normalized.unsubscribe_status = normalized.unsubscribe_status || 'active';\n  normalized.do_not_contact = normalized.do_not_contact === true || String(normalized.do_not_contact).toLowerCase() === 'true';\n  output.push({ json: { ...normalized, draft_only: draftOnly, use_llm: useLlm } });\n}\nreturn output;"
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst draftOnly = true;\nconst textFields = ['company_homepage_name', 'parent_company', 'best_url', 'canonical_domain', 'industry_guess', 'website_content', 'source_urls', 'services_detected', 'locations_detected', 'leadership_or_team_signals', 'contact_info_detected', 'structured_data_detected', 'selected_contact_name', 'selected_contact_title', 'selected_contact_role', 'selected_contact_email', 'selected_contact_linkedin_url', 'validated_email', 'unsubscribe_status', 'email_source'];\nconst output = [];\nfor (const row of rows) {\n  const normalized = { ...row };\n  for (const field of textFields) normalized[field] = String(normalized[field] || '').trim();\n  normalized.unsubscribe_status = normalized.unsubscribe_status || 'active';\n  normalized.do_not_contact = normalized.do_not_contact === true || String(normalized.do_not_contact).toLowerCase() === 'true';\n  output.push({ json: { ...normalized, draft_only: draftOnly } });\n}\nreturn output;"
       },
       "id": "rows-to-items",
       "name": "Rows To Items",
@@ -82,84 +82,6 @@
       "position": [
         840,
         100
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const output = [];\nfor (const [index, item] of items.entries()) {\n  const plan = item.json || {};\n  if (!plan.patch || !plan.record) {\n    output.push({ json: { ...plan, skip_llm: true } });\n    continue;\n  }\n  const sourceRows = $('Rows To Items').all().map((entry) => entry.json || {});\n  const patchId = String(plan.patch?.Id || plan.row_id || '').trim();\n  const sourceRow = sourceRows.find((candidate) => String(candidate.Id || '').trim() === patchId) || sourceRows[index] || {};\n  const record = plan.record || {};\n  const classification = record.classification || {};\n  const copyBrief = record.copy_brief || {};\n  const row = {\n    ...sourceRow,\n    Id: plan.patch.Id,\n    company_name: sourceRow.company_name || plan.patch.company_name || classification.company_name || '',\n    selected_contact_name: sourceRow.selected_contact_name || plan.patch.selected_contact_name || '',\n    selected_contact_title: sourceRow.selected_contact_title || plan.patch.selected_contact_title || '',\n  };\n  const system = 'You write short, evidence-based cold email drafts for RAYN Secure. Use only the copy brief. Return strict JSON only. Do not send emails. Do not invent facts.';\n  const user = {\n    company_name: row.company_name || plan.row_id || '',\n    selected_contact_name: row.selected_contact_name || '',\n    selected_contact_email: sourceRow.validated_email || sourceRow.selected_contact_email || '',\n    selected_contact_title: row.selected_contact_title || '',\n    pressure_type: classification.pressure_type,\n    clinic_profile_guess: copyBrief.clinic_profile_guess,\n    clinic_profile_phrase: copyBrief.clinic_profile_phrase,\n    clinic_structure_guess: copyBrief.clinic_structure_guess,\n    clinic_structure_confidence: copyBrief.clinic_structure_confidence,\n    primary_service_summary: copyBrief.primary_service_summary,\n    company_profile_summary: copyBrief.company_profile_summary,\n    primary_services_summary: copyBrief.primary_services_summary,\n    locations_summary: copyBrief.locations_summary,\n    team_structure_summary: copyBrief.team_structure_summary,\n    personal_data_handled_guess: copyBrief.personal_data_handled_guess,\n    sensitive_data_examples: copyBrief.sensitive_data_examples,\n    data_systems_likely: copyBrief.data_systems_likely,\n    regulatory_pressure_summary: copyBrief.regulatory_pressure_summary,\n    hia_obligation_angle: copyBrief.hia_obligation_angle,\n    pdpa_obligation_angle: copyBrief.pdpa_obligation_angle,\n    customer_trust_angle: copyBrief.customer_trust_angle,\n    deadline_or_timeline_angle: copyBrief.deadline_or_timeline_angle,\n    funding_claim_line: copyBrief.funding_route_summary || plan.patch.funding_claim_line,\n    funding_claim_safe: copyBrief.funding_claim_safe,\n    email_2_mode: copyBrief.email_2_mode || plan.patch.email_2_mode || copyBrief.email_3_mode || plan.patch.email_3_mode || 'value_fallback',\n    funding_followup_mode: copyBrief.funding_followup_mode || plan.patch.funding_followup_mode || copyBrief.email_2_mode || plan.patch.email_2_mode || copyBrief.email_3_mode || plan.patch.email_3_mode || 'value_fallback',\n    email_3_mode: copyBrief.email_3_mode || plan.patch.email_3_mode || copyBrief.email_2_mode || plan.patch.email_2_mode || 'value_fallback',\n    email_personalisation_signal: copyBrief.prospect_facing_signal || copyBrief.email_personalisation_signal,\n    email_problem_statement: copyBrief.email_problem_statement,\n    email_mechanism_statement: copyBrief.email_mechanism_statement,\n    email_asset_offer: copyBrief.email_asset_offer,\n    email_cta: copyBrief.email_cta,\n    email_angle_reason: copyBrief.email_angle_reason,\n    rules: [\n      'Use the copy brief facts only. Do not invent facts.',\n      'If selected_contact_name is present, use Hi {{first_name}},. If selected_contact_name is blank, use Hello team,. Do not invent names.',\n      'Email 1 must be exactly four short blocks after greeting: Noticed {{email_personalisation_signal}}, then email_problem_statement, then email_mechanism_statement, then email_cta.',\n      'For HIA rows, Email 1 must include clinic_profile_phrase through the personalisation signal.',\n      'Do not merge pressure text into the Noticed sentence. The Noticed sentence is only the concrete company signal.',\n      'Email 1 must feel like a researched note and must not start with generic noticed your company wording.',\n      'Do not use internal audit wording such as signals, public signals, service signals, team/practitioner signals, or record signals in final email bodies.',\n      'Email 2 is funding-only when funding_followup_mode is funding; otherwise Email 2 must use the non-funding checklist/evidence fallback angle.',\n      'Email 2 must not be a generic certification explanation.',\n      'If funding_followup_mode is funding, Email 2 is funding-only and must use funding_claim_line verbatim.',\n      'If funding_followup_mode is value_fallback, Email 2 must not mention funding and should use the checklist/evidence fallback angle.',\n      'Do not use prospect-facing HIA batch wording: Batch 1, Batch 2, Batch 3, Sep 2027, Sep 2028, Mar 2030, or HIA window.',\n      'For HIA rows, say HIA readiness is becoming more urgent for healthcare providers instead of naming batches or dates.',\n      'Funding Email 2 must include: The useful first step is confirming whether the route applies before spending time on readiness work.',\n      'Email 3 is a practical diagnostic question based on email_problem_statement and data_systems_likely. Email 4 closes the loop and references email_asset_offer.',\n      'Do not say if you are an SME or if you are an NPO.',\n      'Do not say eligible SMEs and NPOs may.',\n      'Do not claim guaranteed funding.',\n      'Do not say Cyber Essentials makes the company PDPA compliant.',\n      'Do not say Cyber Essentials completes HIA compliance.',\n      'Keep Email 1 <= 85 words, Email 2 <= 80, Email 3 <= 95, Email 4 <= 55.',\n      'Use one tiny CTA per email.',\n      'Do not include a signature, signoff, sender name, or company signature block in any email body.'\n    ],\n    return_shape: {\n      email_1: { subject_options: [], chosen_subject: '', body: '', word_count: 0 },\n      email_2: { subject_options: [], chosen_subject: '', body: '', word_count: 0 },\n      email_3: { subject_options: [], chosen_subject: '', body: '', word_count: 0 },\n      email_4: { subject_options: [], chosen_subject: '', body: '', word_count: 0 },\n      evidence_used: [],\n      claims_avoided: [],\n      quality_notes: []\n    }\n  };\n  output.push({\n    json: {\n      row: row,\n      planner_result: plan,\n      body: {\n        model: 'x-ai/grok-4.3',\n        temperature: 0.2,\n        max_tokens: 1800,\n        messages: [\n          { role: 'system', content: system },\n          { role: 'user', content: JSON.stringify(user) }\n        ],\n        response_format: { type: 'json_object' }\n      }\n    }\n  });\n}\nreturn output;"
-      },
-      "id": "prepare-openrouter-email",
-      "name": "Prepare OpenRouter Email Draft",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1300,
-        40
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://openrouter.ai/api/v1/chat/completions",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "nodeCredentialType": "httpHeaderAuth",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json.body) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "openrouter-email-draft",
-      "name": "OpenRouter Email Draft",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1580,
-        40
-      ],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "kVt6l9PuADkn7yhu",
-          "name": "openrouter"
-        }
-      },
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const output = [];\nfor (let index = 0; index < items.length; index++) {\n  const response = items[index].json || {};\n  const prepared = $('Prepare OpenRouter Email Draft').all()[index]?.json || {};\n  output.push({ json: { ...prepared, openrouter_response: response } });\n}\nreturn output;"
-      },
-      "id": "merge-openrouter-email",
-      "name": "Merge OpenRouter Email Draft",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1740,
-        40
-      ]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/outreach-validate-email') }}",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ row: $json.row, record: $json.planner_result.record, fallback_patch: $json.planner_result.patch, openrouter_response: $json.openrouter_response }) }}",
-        "options": {
-          "timeout": 120000
-        }
-      },
-      "id": "validate-llm-email-draft",
-      "name": "Validate LLM Email Draft",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1900,
-        40
       ]
     },
     {
@@ -202,40 +124,6 @@
           "id": "d5Rz1LXeEoHMrZwo",
           "name": "NocoDB Token account"
         }
-      }
-    },
-    {
-      "id": "copy-brief-ready",
-      "name": "Copy Brief Ready?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        1040,
-        100
-      ],
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 2
-          },
-          "conditions": [
-            {
-              "id": "explicit-use-llm-env-guard-and-openrouter-allowed",
-              "leftValue": "={{ (() => { const raw = $json.body !== undefined ? $json.body : $json; let payload = raw; if (typeof raw === 'string') { try { payload = JSON.parse(raw); } catch (_) { payload = {}; } } const allowLlm = String($env.ALLOW_COLD_EMAIL_LLM || '').trim().toLowerCase() === 'true'; return payload.use_llm === true && payload.openrouter_allowed === true && allowLlm && payload.skip_openrouter !== true; })() }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "true",
-                "singleValue": true
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
       }
     }
   ],
@@ -288,7 +176,7 @@
       "main": [
         [
           {
-            "node": "Copy Brief Ready?",
+            "node": "Collect NocoDB Patches",
             "type": "main",
             "index": 0
           }
@@ -300,68 +188,6 @@
         [
           {
             "node": "Patch Draft Fields",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare OpenRouter Email Draft": {
-      "main": [
-        [
-          {
-            "node": "OpenRouter Email Draft",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "OpenRouter Email Draft": {
-      "main": [
-        [
-          {
-            "node": "Merge OpenRouter Email Draft",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Validate LLM Email Draft": {
-      "main": [
-        [
-          {
-            "node": "Collect NocoDB Patches",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge OpenRouter Email Draft": {
-      "main": [
-        [
-          {
-            "node": "Validate LLM Email Draft",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Copy Brief Ready?": {
-      "main": [
-        [
-          {
-            "node": "Prepare OpenRouter Email Draft",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Collect NocoDB Patches",
             "type": "main",
             "index": 0
           }

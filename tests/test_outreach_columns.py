@@ -156,21 +156,16 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("~and(automation_decision,blank)", url_expr)
         self.assertIn("~and(email_1_subject,blank)", url_expr)
 
-    def test_cold_email_openrouter_model_is_grok(self):
+    def test_cold_email_workflow_is_deterministic_only(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
-        prepare_node = next(node for node in workflow["nodes"] if node["name"] == "Prepare OpenRouter Email Draft")
-        self.assertIn("model: 'x-ai/grok-4.3'", prepare_node["parameters"]["jsCode"])
-        self.assertNotIn("anthropic/claude-sonnet-4.6", prepare_node["parameters"]["jsCode"])
-
-    def test_cold_email_openrouter_requires_explicit_use_llm(self):
-        workflow = json.loads(WORKFLOW_PATH.read_text())
-        if_node = next(node for node in workflow["nodes"] if node["name"] == "Copy Brief Ready?")
-        left_value = if_node["parameters"]["conditions"]["conditions"][0]["leftValue"]
-        self.assertIn("payload.use_llm === true", left_value)
-        self.assertIn("payload.openrouter_allowed === true", left_value)
-        self.assertIn("$env.ALLOW_COLD_EMAIL_LLM", left_value)
-        self.assertIn("allowLlm", left_value)
-        self.assertIn("payload.skip_openrouter !== true", left_value)
+        node_names = {node["name"] for node in workflow["nodes"]}
+        self.assertNotIn("Prepare OpenRouter Email Draft", node_names)
+        self.assertNotIn("OpenRouter Email Draft", node_names)
+        self.assertNotIn("Merge OpenRouter Email Draft", node_names)
+        self.assertNotIn("Validate LLM Email Draft", node_names)
+        self.assertNotIn("Copy Brief Ready?", node_names)
+        generate_connections = workflow["connections"]["Generate Outreach Plan"]["main"][0]
+        self.assertEqual(generate_connections[0]["node"], "Collect NocoDB Patches")
 
     def test_collect_node_does_not_mutate_email_bodies(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
@@ -185,7 +180,7 @@ class OutreachColumnContractTests(unittest.TestCase):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         rows_node = next(node for node in workflow["nodes"] if node["name"] == "Rows To Items")
         js_code = rows_node["parameters"]["jsCode"]
-        self.assertIn("use_llm: useLlm", js_code)
+        self.assertNotIn("use_llm", js_code)
         self.assertNotIn("if (normalized.do_not_contact) continue", js_code)
         self.assertNotIn("blockedStatuses", js_code)
 
