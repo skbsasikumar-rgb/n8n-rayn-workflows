@@ -218,11 +218,32 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("per_row_page_concurrency: 2", prepare_code)
         self.assertIn("allow_low_limits: true", prepare_code)
         http_node = nodes["Crawl4AI Public Enrich"]
-        self.assertEqual(http_node["parameters"]["options"]["timeout"], 240000)
+        self.assertEqual(http_node["parameters"]["options"]["timeout"], 360000)
         self.assertNotIn("retryOnFail", http_node)
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         self.assertIn("isTransportTimeout", patch_code)
         self.assertIn("return []", patch_code)
+
+    def test_workflow_url_only_mode_does_not_enter_public_enrichment(self):
+        workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
+        nodes = {node["name"]: node for node in workflow["nodes"]}
+        webhook_code = nodes["Webhook To Item"]["parameters"]["jsCode"]
+        parse_code = nodes["Parse URL Pick"]["parameters"]["jsCode"]
+        continue_code = nodes["Continue URL Pick Patch"]["parameters"]["jsCode"]
+        enrichment_url = nodes["Get Enrichment Rows"]["parameters"]["url"]
+        rows_to_enrichment_code = nodes["Rows To Enrichment Items"]["parameters"]["jsCode"]
+        self.assertIn("stage_mode", webhook_code)
+        self.assertIn("stage_mode", parse_code)
+        self.assertIn("url_picked", parse_code)
+        self.assertIn("pickedUrl ? 'url_picked' : 'skipped'", parse_code)
+        self.assertNotIn("'processing') : 'skipped'", parse_code)
+        self.assertIn("status,eq,url_picked", enrichment_url)
+        self.assertNotIn("status,eq,processing", enrichment_url)
+        self.assertIn("=== 'url_picked'", rows_to_enrichment_code)
+        self.assertIn("Hard stage boundary", continue_code)
+        self.assertIn("return []", continue_code)
+        self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
+        self.assertEqual(workflow["connections"]["Continue URL Pick Patch"]["main"], [[]])
 
 
 if __name__ == "__main__":

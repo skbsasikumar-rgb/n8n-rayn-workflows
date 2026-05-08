@@ -184,7 +184,7 @@ def trigger_url_pick(row: dict[str, Any]) -> dict[str, Any]:
     code, payload = request_json(
         "POST",
         n8n_webhook("rayn-url-picker-v1"),
-        {"Id": row["Id"], "company_name": row["company_name"]},
+        {"Id": row["Id"], "company_name": row["company_name"], "stage_mode": "url_only"},
         60,
     )
     return {"Id": row["Id"], "code": code, "payload": payload}
@@ -265,6 +265,8 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
             "page_timeout_ms": args.page_timeout_ms,
             "request_delay_seconds": args.request_delay_seconds,
             "scrape_char_limit": args.scrape_char_limit,
+            "per_row_page_concurrency": args.per_row_page_concurrency,
+            "row_timeout_seconds": args.row_timeout_seconds,
             "allow_low_limits": args.allow_low_limits,
         },
         args.public_enrich_timeout,
@@ -321,7 +323,7 @@ def run_public_enrich(ids: list[int], args: argparse.Namespace) -> list[dict[str
         row
         for row in fetch_rows(ids)
         if str(row.get("url_picked") or "").strip()
-        and str(row.get("status") or "") == "processing"
+        and str(row.get("status") or "") in {"processing", "url_picked"}
         and not str(row.get("duplicate_of_id") or "").strip()
     ]
     if not rows:
@@ -416,6 +418,8 @@ def main() -> None:
     parser.add_argument("--page-timeout-ms", type=int, default=12000)
     parser.add_argument("--request-delay-seconds", type=float, default=0.1)
     parser.add_argument("--scrape-char-limit", type=int, default=40000)
+    parser.add_argument("--per-row-page-concurrency", type=int, default=1)
+    parser.add_argument("--row-timeout-seconds", type=int, default=150)
     parser.add_argument("--allow-low-limits", action="store_true")
     parser.add_argument("--public-enrich-timeout", type=int, default=420)
     parser.add_argument("--contact-concurrency", type=int, default=2)

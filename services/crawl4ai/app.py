@@ -1,7 +1,9 @@
 import asyncio
 import importlib.util
 import json
+import multiprocessing as mp
 import os
+import queue
 import re
 import time
 from pathlib import Path
@@ -1589,8 +1591,36 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
     )
 
 
-@app.post("/public-enrich")
-async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
+def public_enrich_hard_timeout_seconds(request: PublicEnrichmentRequest) -> float:
+    stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
+    default_timeout = 300 if stage == "deep_retry" else 180
+    configured = float(os.getenv("PUBLIC_ENRICH_HARD_TIMEOUT_SECONDS", str(default_timeout)))
+    if request.row_timeout_seconds:
+        configured = min(configured, float(request.row_timeout_seconds))
+    return max(30.0, configured)
+
+
+def public_enrich_timeout_response(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
+    row_id = request_data.get("Id") or request_data.get("row_id") or ""
+    error_text = f"public_enrich_timeout_after_{int(timeout_seconds)}s"
+    patch = {
+        "Id": row_id,
+        "last_stage": "enrichment_error",
+        "last_error": error_text,
+        "notes": error_text,
+    }
+    return {
+        "ok": False,
+        "row_id": row_id,
+        "error": error_text,
+        "preflight_action": "",
+        "preflight_reason": "",
+        "patch": patch,
+        "record": {},
+    }
+
+
+async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]:
     input_row = public_enrichment.InputRow(
         row_id=request.Id,
         company_name=request.company_name,
@@ -1684,8 +1714,8 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
             "ok": False,
             "row_id": request.Id,
             "error": error_text,
-            "preflight_action": "fail" if request.site_fast_path_only else "",
-            "preflight_reason": "preflight_worker_error" if request.site_fast_path_only else "",
+            "preflight_action": "",
+            "preflight_reason": "",
             "patch": patch,
             "record": {},
         }
@@ -1698,6 +1728,52 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
         "patch": patch,
         "record": public_enrichment.record_to_json(record),
     }
+
+
+def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) -> None:
+    try:
+        request = PublicEnrichmentRequest.model_validate(request_data)
+        result_queue.put({"ok": True, "result": asyncio.run(public_enrich_core(request))})
+    except Exception as exc:
+        result_queue.put({"ok": False, "error": compact_whitespace(str(exc)) or exc.__class__.__name__})
+
+
+def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
+    start_method = os.getenv("PUBLIC_ENRICH_PROCESS_START_METHOD", "spawn").strip() or "spawn"
+    ctx = mp.get_context(start_method)
+    result_queue = ctx.Queue(maxsize=1)
+    process = ctx.Process(target=public_enrich_child_main, args=(request_data, result_queue), daemon=True)
+    process.start()
+    process.join(timeout_seconds + 5.0)
+    if process.is_alive():
+        process.terminate()
+        process.join(5.0)
+        if process.is_alive():
+            process.kill()
+            process.join(2.0)
+        return public_enrich_timeout_response(request_data, timeout_seconds)
+    try:
+        payload = result_queue.get_nowait()
+    except queue.Empty:
+        return {
+            **public_enrich_timeout_response(request_data, timeout_seconds),
+            "error": "public_enrich_worker_exited_without_result",
+        }
+    if payload.get("ok"):
+        return payload["result"]
+    response = public_enrich_timeout_response(request_data, timeout_seconds)
+    response["error"] = payload.get("error") or "public_enrich_worker_failed"
+    response["patch"]["last_error"] = response["error"]
+    response["patch"]["notes"] = response["error"]
+    return response
+
+
+@app.post("/public-enrich")
+async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
+    timeout_seconds = public_enrich_hard_timeout_seconds(request)
+    request_data = request.model_dump()
+    async with scrape_semaphore:
+        return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)
 
 
 @app.post("/contact-enrich")
