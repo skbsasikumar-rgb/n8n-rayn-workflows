@@ -1688,8 +1688,68 @@ def chosen_subject_variant(
     return subject_key, subject, options[:4]
 
 
-def email_1_body_fixed(greeting: str, noticed: str, problem: str, mechanism: str, cta: str) -> str:
-    return f"{greeting} I noticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
+def observation_description(noticed: str, company: str) -> tuple[str, str]:
+    text = compact(noticed).rstrip(".")
+    company_name = compact(company)
+    if company_name and text.lower().startswith(company_name.lower()):
+        text = text[len(company_name):].strip(" ,.-")
+    patterns = [
+        (r"^appears to be\s+", "be"),
+        (r"^seems to be\s+", "be"),
+        (r"^looks like\s+", "be"),
+        (r"^looks to be\s+", "be"),
+        (r"^is listed as\s+", "be"),
+        (r"^appears to provide\s+", "provides"),
+        (r"^appears to handle\s+", "handles"),
+    ]
+    for pattern, kind in patterns:
+        if re.match(pattern, text, re.I):
+            return kind, compact(re.sub(pattern, "", text, flags=re.I))
+    return "verb", text
+
+
+def company_observation_bridge(company: str, noticed: str, bridge: str) -> str:
+    company_name = compact(company) or "the organisation"
+    kind, description = observation_description(noticed, company_name)
+    if kind == "be":
+        templates = {
+            "looks_like": "{company} looks like {description}.",
+            "seems_to_be": "{company} seems to be {description}.",
+            "listed_as": "{company} is listed as {description}.",
+            "looks_to_be": "{company} looks to be {description}.",
+        }
+        return (templates.get(bridge) or templates["looks_like"]).format(company=company_name, description=description)
+    if kind in {"provides", "handles"}:
+        return f"{company_name} {kind} {description}."
+    if description.lower().startswith(("works with ", "handles ", "provides ", "offers ", "operates ")):
+        return f"{company_name} {description}."
+    return f"{company_name} looks like {description}."
+
+
+def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[str, str], problem: str, mechanism: str, cta: str) -> str:
+    opener = slots.get("observation_opener") or "I noticed"
+    bridge = company_observation_bridge(company, noticed, slots.get("company_type_bridge") or "looks_like")
+    company_name = compact(company) or "the organisation"
+    kind, description = observation_description(noticed, company_name)
+    if opener.lower() == "looks like":
+        observation = bridge[:1].upper() + bridge[1:]
+    elif opener.lower() == "had a quick look at":
+        if kind == "be":
+            observation = f"Had a quick look at {company_name} - looks like {description}."
+        elif kind in {"provides", "handles"}:
+            observation = f"Had a quick look at {company_name} - looks like it {kind} {description}."
+        else:
+            observation = f"Had a quick look at {company_name} - looks like it {description}."
+    elif opener.lower() == "from the site, it looks like":
+        if kind == "be":
+            observation = f"From the site, it looks like {company_name} is {description}."
+        elif kind in {"provides", "handles"}:
+            observation = f"From the site, {company_name} {kind} {description}."
+        else:
+            observation = f"From the site, {company_name} {description}."
+    else:
+        observation = f"{opener} {bridge}"
+    return f"{greeting} {observation}\n\n{problem} {mechanism}\n\n{cta}"
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
@@ -1781,11 +1841,26 @@ def choose_sentence_slot(
 
 def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], metadata: dict[str, dict[str, str]]) -> dict[str, str]:
     track = email_variant_track(classification)
+    observation_opener_options = {
+        "i_noticed": "I noticed",
+        "saw_that": "Saw that",
+        "looks_like": "Looks like",
+        "had_quick_look": "Had a quick look at",
+        "from_site": "From the site, it looks like",
+    }
+    company_type_bridge_options = {
+        "looks_like": "looks_like",
+        "seems_to_be": "seems_to_be",
+        "listed_as": "listed_as",
+        "looks_to_be": "looks_to_be",
+    }
     if track == "hia_regulatory":
         problem_options = {
             "hia_messy_evidence": "With HIA coming in, the messy part is usually evidence: access, vendors, backups and incident steps.",
-            "hia_access_backup_incident": "For HIA, the messy bit is usually proving who can access what, where backups sit and what happens during an incident.",
-            "hia_incident_ownership": "For HIA, the part that usually gets messy is access, vendors, backups and incident ownership.",
+            "hia_getting_closer": "With HIA getting closer, the cleanup is usually around access, vendors, backups and incident ownership.",
+            "hia_prep_access_backup": "For HIA prep, the messy bit is usually proving who can access what, where backups sit and what happens during an incident.",
+            "hia_readiness_evidence": "For HIA readiness, the messy part is usually evidence: access, vendors, backups and incident steps.",
+            "hia_real_for_providers": "As HIA starts getting real for providers, the cleanup is usually around access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
             "decent_cyber_data_baseline": "Cyber Essentials is a decent first baseline for that cyber/data side.",
@@ -1826,6 +1901,8 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
         }
     return {
+        "observation_opener": choose_sentence_slot(row, classification, metadata, "email_1", 1, "observation_opener", observation_opener_options),
+        "company_type_bridge": choose_sentence_slot(row, classification, metadata, "email_1", 1, "company_type_bridge", company_type_bridge_options),
         "problem_line": choose_sentence_slot(row, classification, metadata, "email_1", 1, "problem_line", problem_options),
         "mechanism_line": choose_sentence_slot(row, classification, metadata, "email_1", 1, "mechanism_line", mechanism_options),
     }
@@ -1900,9 +1977,11 @@ def hia_email_2_sentence_slots(
             2,
             "rayn_value_line",
             {
-                "messy_evidence_work": "We handle the messy evidence work. Software keeps training and governance tidy after certification.",
-                "learn_govern_after": "We take on the evidence work. LEARN and GOVERN support keeps it tidy after certification.",
-                "heavy_lifting_no_scramble": "We help with the heavy lifting. Software keeps training and governance from becoming a scramble.",
+                "messy_evidence_work": "We handle the messy evidence work. The software helps keep training and governance tidy after certification.",
+                "pull_evidence_together": "We help pull the evidence together. The software keeps LEARN and GOVERN organised after that.",
+                "readiness_heavy_lifting": "We do the readiness heavy lifting, then the software helps the team stay on top of training and governance.",
+                "evidence_chase": "We take on the evidence chase. The software keeps training and governance from becoming a one-off scramble.",
+                "controls_and_proof": "We help sort the controls and proof. The software helps LEARN and GOVERN stay organised after the initial push.",
             },
         ),
         "cta": choose_sentence_slot(
@@ -2015,7 +2094,9 @@ def email_3_sentence_slots(
                 {
                     "simple_check": "Simple check:",
                     "one_useful_check": "One useful check:",
-                    "practical_diagnostic": "A practical diagnostic:",
+                    "quick_diagnostic": "Quick diagnostic:",
+                    "check_i_would_use": "The check I would use:",
+                    "one_practical_test": "One practical test:",
                 },
             ),
             "question_shape": choose_sentence_slot(
@@ -2066,12 +2147,14 @@ def email_3_sentence_slots(
             "email_3",
             3,
             "diagnostic_opener",
-            {
-                "simple_check": "Simple check:",
-                "one_useful_check": "One useful check:",
-                "practical_diagnostic": "A practical diagnostic:",
-            },
-        ),
+                {
+                    "simple_check": "Simple check:",
+                    "one_useful_check": "One useful check:",
+                    "quick_diagnostic": "Quick diagnostic:",
+                    "check_i_would_use": "The check I would use:",
+                    "one_practical_test": "One practical test:",
+                },
+            ),
         "gap_line": choose_sentence_slot(
             row,
             classification,
@@ -2115,6 +2198,9 @@ def email_4_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
                 "last_note": f"Last note from me. Worth sending the {asset}?",
                 "close_or_send": f"Should I close the loop, or send the {asset}?",
                 "still_useful": f"Still useful for me to send the {asset}?",
+                "still_worth": f"Still worth sending the {asset}?",
+                "send_or_park": f"Should I send the {asset}, or park this?",
+                "no_worries": f"No worries if not. Still worth sending the {asset}?",
             },
         )
     }
@@ -3393,10 +3479,10 @@ def generate_email_sequence(
         mechanism = email1_slots["mechanism_line"]
         copy_brief["email_problem_statement"] = problem
         copy_brief["email_mechanism_statement"] = mechanism
-        email1_body = email_1_body_fixed(email1_greeting, noticed, problem, mechanism, cta)
+        email1_body = email_1_body_fixed(email1_greeting, company, noticed, email1_slots, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
-            email1_body = email_1_body_fixed(email1_greeting, short_noticed, problem, mechanism, cta)
+            email1_body = email_1_body_fixed(email1_greeting, "your clinic", short_noticed, email1_slots, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory":
             records = hia_email_1_records(row, classification, copy_brief)
             email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
@@ -3689,7 +3775,7 @@ def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_
     if "70%" in body_l and not any(term in body_l for term in ("if the route applies", "subject to programme confirmation")):
         flags.append("hia_pricing_percentage_missing_caveat")
     if pricing_mode == "group_or_larger_sizing_needed" and price_present and not any(
-        term in body_l for term in ("larger setups depend on endpoint count", "larger setups move differently", "group clinics can move into a different tier", "endpoint count changes the price")
+        term in body_l for term in ("larger setups depend on endpoint count", "larger setups move differently", "group clinics can move into a different tier", "endpoint count changes the price", "size it before quoting", "endpoint count drives")
     ):
         flags.append("hia_pricing_group_exact_price_claim")
     if any(term in body_l for term in ("you qualify", "you are eligible", "guaranteed funding", "all clinics qualify for funding")):
@@ -3765,10 +3851,14 @@ def email_2_not_hia_segment_diagnostic_shape(
     if classification.get("pressure_type") != "hia_regulatory":
         return False
     body_l = compact(body).lower()
+    body_l = re.sub(r"^[a-z][a-z'’-]{1,40}\s+-\s+", "", body_l)
     approved_openers = (
         "simple check: can ",
         "one useful check: can ",
         "a practical diagnostic: can ",
+        "quick diagnostic: can ",
+        "the check i would use: can ",
+        "one practical test: can ",
     )
     if not body_l.startswith(approved_openers):
         return True
@@ -3858,6 +3948,9 @@ def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) 
             profile_phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
             if profile_phrase:
                 position = body_l.find(profile_phrase)
+            if position < 0 and reflects(body_l, signal):
+                company = compact(copy_brief.get("company_name")).lower()
+                position = body_l.find(company) if company else 0
         positions.append(position)
     if any(pos < 0 for pos in positions):
         return False

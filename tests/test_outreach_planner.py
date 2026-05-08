@@ -724,7 +724,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("I noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", patch["email_1_body"])
+        self.assertIn("medical/aesthetic clinic with doctor-led consultations", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -1076,7 +1076,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("I noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", plan.emails["email_1"]["body"])
+        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.emails["email_1"]["body"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertTrue("access" in plan.emails["email_1"]["body"] and "backup" in plan.emails["email_1"]["body"] and "incident" in plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access", plan.emails["email_1"]["body"])
@@ -1110,7 +1110,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertIn("Batch 1 - Sep 2027", plan.classification["hia_timeline_batch_guess"])
         self.assertTrue(body.startswith("Hello team,"))
-        self.assertIn("I noticed American International Clinic Singapore appears to be an outpatient medical clinic offering doctor-led consultations.", body)
+        self.assertIn("outpatient medical clinic offering doctor-led consultations", body)
         self.assertNotIn("family clinic", body)
         self.assertIn("HIA", body)
         self.assertTrue("access" in body and "backup" in body and "incident" in body)
@@ -1136,7 +1136,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertNotEqual(plan.classification["pressure_type"], "not_ready")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
-        self.assertIn("I noticed Amazing Hearing Group appears to be a hearing-care provider offering hearing tests, hearing aids and audiology support.", plan.emails["email_1"]["body"])
+        self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.emails["email_1"]["body"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertIn("hearing test records", plan.emails["email_3"]["body"])
         self.assertIn("appointment details", plan.emails["email_3"]["body"])
@@ -1172,7 +1172,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
         self.assertRegex(brief["email_problem_statement"], r"security proof|customer review|customers")
-        self.assertIn("I noticed Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled.", plan.emails["email_1"]["body"])
+        self.assertIn("Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
         self.assertIn("admin access", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_3"]["body"])
@@ -1221,7 +1221,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan,"))
-        self.assertIn("I noticed Amaris B. Clinic appears", plan.emails["email_1"]["body"])
+        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.emails["email_1"]["body"])
         self.assertTrue(plan.emails["email_2"]["body"].startswith("Ivan - "))
         self.assertTrue(plan.emails["email_3"]["body"].startswith("Ivan - "))
         self.assertTrue(plan.emails["email_4"]["body"].startswith("Ivan, "))
@@ -1238,7 +1238,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Paul,"))
-        self.assertIn("I noticed American International Clinic Singapore appears", plan.emails["email_1"]["body"])
+        self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.emails["email_1"]["body"])
 
     def test_blank_selected_contact_uses_team_greeting_and_keeps_company_observation(self):
         plan = o.plan_outreach(
@@ -1250,7 +1250,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("I noticed Acme Services Pte Ltd", plan.emails["email_1"]["body"])
+        self.assertIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
         self.assertFalse(plan.emails["email_2"]["body"].lower().startswith(("hi ", "hello ")))
         self.assertFalse(plan.emails["email_3"]["body"].lower().startswith(("hi ", "hello ")))
         self.assertFalse(plan.emails["email_4"]["body"].lower().startswith(("hi ", "hello ")))
@@ -1266,7 +1266,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertNotIn("Hi Amber,", plan.emails["email_1"]["body"])
-        self.assertIn("I noticed Amber Family Clinic appears", plan.emails["email_1"]["body"])
+        self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
 
     def test_strategy_evaluator_flags_bad_email_shape(self):
         plan = o.plan_outreach(
@@ -1393,7 +1393,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "International medical clinic in Singapore with doctors, outpatient appointments and patient treatment services.",
                     "services_detected": "medical clinic; doctor consultations; outpatient appointments",
                 },
-                "appears to be an outpatient medical clinic offering doctor-led consultations",
+                "outpatient medical clinic offering doctor-led consultations",
             ),
             (
                 {
@@ -1401,14 +1401,14 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": ["aesthetic clinic services", "doctor consultations"],
                     "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
                 },
-                "appears to be a medical/aesthetic clinic with doctor-led consultations",
+                "medical/aesthetic clinic with doctor-led consultations",
             ),
             (
                 {
                     "company_name": "Amazing Hearing Group",
                     "website_content": "Hearing care provider offering audiology, hearing tests, hearing aids and patient appointments.",
                 },
-                "appears to be a hearing-care provider offering hearing tests, hearing aids and audiology support",
+                "hearing-care provider offering hearing tests, hearing aids and audiology support",
             ),
             (
                 {
@@ -1417,14 +1417,14 @@ class OutreachPlannerTests(unittest.TestCase):
                     "locations_detected": "Bedok; Jurong; Novena",
                     "website_content": "Medical group with branches, multiple doctors and outpatient clinics across Singapore.",
                 },
-                "appears to be part of a wider clinic group or multi-location healthcare operation",
+                "part of a wider clinic group or multi-location healthcare operation",
             ),
             (
                 {
                     "company_name": "Solo GP Clinic",
                     "website_content": "Family clinic and GP practice led by Dr Tan at one location with outpatient consultations.",
                 },
-                "appears to be a solo GP-style clinic",
+                "solo GP-style clinic",
             ),
         ]
         for row, phrase in cases:
@@ -1432,7 +1432,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertIn(phrase, plan.emails["email_1"]["body"])
-                if "appears to provide" not in phrase:
+                if not phrase.startswith("provides "):
                     self.assertIn(phrase.replace("appears to be ", ""), plan.copy_brief["clinic_profile_phrase"])
                 self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
                 self.assert_no_final_email_batch_or_signal_language(plan)
@@ -1444,7 +1444,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "company_name": "Amber Family Clinic",
                     "website_content": "Family clinic with doctors, patient appointments, consultation and patient services.",
                 },
-                "appears to be a family clinic offering GP-style consultations",
+                "family clinic offering GP-style consultations",
                 "patient records, appointment details, consultation notes, clinic email, vendor systems and backups",
                 "clinic readiness map",
             ),
@@ -1453,7 +1453,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "company_name": "Amber Compounding Pharmacy",
                     "website_content": "Retail pharmacy and compounding pharmacy with prescriptions, dispensing, compounding and customer services.",
                 },
-                "appears to be a pharmacy / compounding provider",
+                "pharmacy / compounding provider",
                 "prescription, dispensing, compounding, customer and supplier records",
                 "pharmacy HIA checklist",
             ),
@@ -1462,7 +1462,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "company_name": "Amoy Street Dental",
                     "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software.",
                 },
-                "appears to be a dental clinic handling patient appointments and dental records",
+                "dental clinic handling patient appointments and dental records",
                 "patient records, imaging files, appointment details, dental software and backups",
                 "dental readiness map",
             ),
@@ -1471,7 +1471,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "company_name": "Andrea's Digestive, Colon, Liver and Gallbladder Clinic",
                     "website_content": "Digestive specialist clinic providing gastroenterology consultations, procedure-related records, specialist appointments and patient reports.",
                 },
-                "appears to provide specialist-led gastroenterology and digestive care",
+                "provides specialist-led gastroenterology and digestive care",
                 "consultation notes, patient reports, procedure-related records, vendor systems and backups",
                 "specialist clinic readiness map",
             ),
@@ -1654,7 +1654,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(clinical.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(clinical.classification["hia_service_type_guess"], "diagnostic")
         self.assertEqual(clinical.copy_brief["email_asset_offer"], "diagnostic readiness map")
-        self.assertIn("appears to be a diagnostic / laboratory provider handling screening or test records", clinical.emails["email_1"]["body"])
+        self.assertIn("diagnostic / laboratory provider handling screening or test records", clinical.emails["email_1"]["body"])
         self.assert_no_final_email_batch_or_signal_language(clinical)
 
         generic = o.plan_outreach(
@@ -1874,7 +1874,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": "physiotherapy appointments; rehabilitation treatment plans",
                 },
                 "allied_health",
-                "appears to be an allied-health provider offering physiotherapy or treatment support",
+                "allied-health provider offering physiotherapy or treatment support",
                 "appointment, treatment and exercise-plan records",
             ),
             (
@@ -1885,7 +1885,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "leadership_or_team_signals": "psychologist team",
                 },
                 "allied_health",
-                "appears to be a psychology / mental-health provider handling assessment and case-note records",
+                "psychology / mental-health provider handling assessment and case-note records",
                 "appointment, assessment and case-note records",
             ),
             (
@@ -1896,7 +1896,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": "patient care; palliative care; volunteer support",
                 },
                 "long_term_care",
-                "appears to be a hospice / long-term care provider handling patient, resident, family, volunteer and staff data",
+                "hospice / long-term care provider handling patient, resident, family, volunteer and staff data",
                 "patient, resident, family, volunteer and staff data",
             ),
             (
@@ -1906,7 +1906,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Digestive specialist clinic providing gastroenterology consultations, specialist appointments and patient reports.",
                 },
                 "specialist_OMS",
-                "appears to provide specialist-led gastroenterology and digestive care",
+                "provides specialist-led gastroenterology and digestive care",
                 "consultation notes, patient reports, procedure-related records",
             ),
         ]

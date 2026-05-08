@@ -6,6 +6,13 @@ Use this file to record rebuild progress and decisions.
 
 Friendly deterministic copy style:
 
+- added more deterministic sentence-slot rotation for cold-email copy: Email 1 observation opener, Email 1 company-type bridge, expanded HIA pressure lines, expanded HIA Email 2 RAYN value lines, expanded Email 3 diagnostic openers, and additional short Email 4 close-loop lines.
+- retired `appears to be` as a fixed Email 1 body phrase; generated copy now rotates human alternatives such as `looks like`, `seems to be`, `is listed as`, and `looks to be` while preserving the underlying copy brief and quality gates.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).
+- preview generated: local read-only planner preview only; no live rows were patched.
+- deployment performed: no.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
 - replaced whole-email A/B/C body variants with deterministic sentence-level rotation. The planner now keeps one fixed structure per email step and rotates approved sentence slots inside that structure.
 - fixed preview QA anomalies from the 10-row read-only test: family clinic evidence now outranks weak long-term-care wording, endocrinology records no longer get overwritten by incidental oncology/radiation text, orthopaedic/sports-medicine rows use orthopaedic record phrases, and non-person labels such as `Committee Memberships` fall back to generic greeting/contact mode.
 - deployed the current branch to Railway service `n8n-rayn-workflows` and reran the live cold-email planner workflow in draft-only mode for `30` rows (`force=true`, `use_llm=false`). The first attempt exposed stale deployed planner code on rows `293` and `301`; after deploying the correct service, the second run patched rows `273,274,275,276,277,278,279,280,282,283,284,286,287,288,289,290,291,292,293,294,295,296,297,298,299,300,301,302,303,304` at `2026-05-08 01:36:50+00:00`.
