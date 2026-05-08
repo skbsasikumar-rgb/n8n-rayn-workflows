@@ -6,6 +6,11 @@ Use this file to record rebuild progress and decisions.
 
 Friendly deterministic copy style:
 
+- vetted the 10-row live draft copy and tightened deterministic wording locally: Email 1 now uses lowercase sentence continuation after greeting commas, HIA Email 2 avoids repeated `size it`, CISOaaS small-clinic pricing lines read more naturally, conditional funding language says `reduce the outlay`, and group/unknown-size wording avoids over-specific `Group clinics` phrasing.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).
+- deployment performed: no.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
 - tightened the latest sentence rotations after live review: Email 1 now always keeps an explicit observation opener after the greeting, and active HIA pricing Email 2 variants always mention `CISOaaS`.
 - tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).
 - deployment performed: no.

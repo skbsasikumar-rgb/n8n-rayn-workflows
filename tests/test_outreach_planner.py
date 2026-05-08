@@ -288,11 +288,12 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
                 email1_first = plan.emails["email_1"]["body"].splitlines()[0]
-                self.assertRegex(email1_first, r", (?:I noticed|Saw that|Looks like|Had a quick look at|From the site,)")
+                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|from the site,)")
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
                 elif o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertIn("CISOaaS", plan.emails["email_2"]["body"])
+                    self.assertLessEqual(plan.emails["email_2"]["body"].lower().count("size it"), 1)
                 elif not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertNotIn("funding", plan.emails["email_2"]["body"].lower())
             for index in range(1, 5):

@@ -1726,6 +1726,13 @@ def company_observation_bridge(company: str, noticed: str, bridge: str) -> str:
     return f"{company_name} looks like {description}."
 
 
+def observation_after_greeting(observation: str) -> str:
+    text = compact(observation)
+    if text.startswith("I "):
+        return text
+    return text[:1].lower() + text[1:] if text else text
+
+
 def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[str, str], problem: str, mechanism: str, cta: str) -> str:
     opener = slots.get("observation_opener") or "I noticed"
     bridge = company_observation_bridge(company, noticed, slots.get("company_type_bridge") or "looks_like")
@@ -1754,7 +1761,7 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
             observation = f"From the site, {company_name} {description}."
     else:
         observation = f"{opener} {bridge}"
-    return f"{greeting} {observation}\n\n{problem} {mechanism}\n\n{cta}"
+    return f"{greeting} {observation_after_greeting(observation)}\n\n{problem} {mechanism}\n\n{cta}"
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
@@ -1775,7 +1782,7 @@ def hia_pricing_email_2_body(
     price_text = CISOAAS_HIA_PRICING["price_text"]
     cost_opener = slots.get("cost_opener") or "Straight up on cost:"
     endpoint_caveat = slots.get("endpoint_caveat") or "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside."
-    small_price = slots.get("small_clinic_price") or f"For smaller clinics, the starting package is around {price_text} before funding."
+    small_price = slots.get("small_clinic_price") or f"For smaller clinics, CISOaaS starts around {price_text} before funding."
     group_line = slots.get("group_larger_setup") or "Bigger or group setups need a quick endpoint check."
     funding_sentence = f" {slots.get('conditional_funding')}" if funding_safe and slots.get("conditional_funding") else ""
     value_line = slots.get("rayn_value_line") or "We handle the messy evidence work. The software helps keep training and governance tidy after certification."
@@ -1865,7 +1872,7 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "hia_getting_closer": "With HIA getting closer, the cleanup is usually around access, vendors, backups and incident ownership.",
             "hia_prep_access_backup": "For HIA prep, the messy bit is usually proving who can access what, where backups sit and what happens during an incident.",
             "hia_readiness_evidence": "For HIA readiness, the messy part is usually evidence: access, vendors, backups and incident steps.",
-            "hia_real_for_providers": "As HIA starts getting real for providers, the cleanup is usually around access, vendors, backups and incident ownership.",
+            "hia_real_for_providers": "As HIA gets closer for providers, the cleanup is usually around access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
             "decent_cyber_data_baseline": "Cyber Essentials is a decent first baseline for that cyber/data side.",
@@ -1944,7 +1951,7 @@ def hia_email_2_sentence_slots(
             "endpoint_caveat",
             {
                 "endpoint_based_no_guess": "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside.",
-                "endpoint_count_drives_quote": "CISOaaS pricing depends on endpoint count, so I would size it before quoting.",
+                "endpoint_count_drives_quote": "CISOaaS pricing depends on endpoint count, so I would check that before quoting.",
                 "endpoint_count_drives_price": "Endpoint count drives CISOaaS pricing, so I would not assume the tier from the outside.",
             },
         ),
@@ -1956,9 +1963,9 @@ def hia_email_2_sentence_slots(
             2,
             "small_clinic_price",
             {
-                "smaller_clinics_starting_package": f"For smaller clinics, the starting CISOaaS package is around {price_text} before funding.",
-                "smaller_clinics_usually_start": f"Smaller clinics usually start around {price_text} before funding for CISOaaS.",
-                "small_clinic_setups_starting_package": f"For small clinic CISOaaS setups, the starting package is around {price_text} before funding.",
+                "smaller_clinics_starting_package": f"For smaller clinics, CISOaaS starts around {price_text} before funding.",
+                "smaller_clinics_usually_start": f"For CISOaaS, smaller clinics start around {price_text} before funding.",
+                "small_clinic_setups_starting_package": f"Small clinic CISOaaS setups start around {price_text} before funding.",
             },
         ),
         "group_larger_setup": choose_sentence_slot(
@@ -1969,9 +1976,9 @@ def hia_email_2_sentence_slots(
             2,
             "group_larger_setup",
             {
-                "quick_endpoint_check": "Bigger or group setups need a quick endpoint check.",
-                "sized_properly": "Larger setups should be sized properly because endpoint count changes the price.",
-                "different_tier": "Group clinics can move into a different tier quickly, so I would size it first.",
+                "quick_endpoint_check": "Bigger or group setups need an endpoint check.",
+                "sized_properly": "Larger setups can move tiers as endpoint count changes.",
+                "different_tier": "Bigger or group setups can move tiers quickly, so the endpoint check matters.",
             },
         ),
         "rayn_value_line": choose_sentence_slot(
@@ -2012,9 +2019,9 @@ def hia_email_2_sentence_slots(
             2,
             "conditional_funding",
             {
-                "route_applies_70": "If the route applies, 70% support can reduce cost.",
-                "route_applies_funding": "If the route applies, funding can change the outlay.",
-                "programme_confirmation_support": "Subject to programme confirmation, support can reduce upfront cost.",
+                "route_applies_70": "If the route applies, 70% support can reduce the outlay.",
+                "route_applies_funding": "If the route applies, funding can reduce the outlay.",
+                "programme_confirmation_support": "Subject to programme confirmation, support can reduce the upfront cost.",
             },
         )
     return slots
@@ -2205,7 +2212,7 @@ def email_4_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
                 "still_useful": f"Still useful for me to send the {asset}?",
                 "still_worth": f"Still worth sending the {asset}?",
                 "send_or_park": f"Should I send the {asset}, or park this?",
-                "no_worries": f"No worries if not. Still worth sending the {asset}?",
+                "no_issue": f"No issue if not. Still worth sending the {asset}?",
             },
         )
     }
@@ -3780,7 +3787,7 @@ def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_
     if "70%" in body_l and not any(term in body_l for term in ("if the route applies", "subject to programme confirmation")):
         flags.append("hia_pricing_percentage_missing_caveat")
     if pricing_mode == "group_or_larger_sizing_needed" and price_present and not any(
-        term in body_l for term in ("larger setups depend on endpoint count", "larger setups move differently", "group clinics can move into a different tier", "endpoint count changes the price", "size it before quoting", "endpoint count drives")
+        term in body_l for term in ("larger setups depend on endpoint count", "larger setups move differently", "group clinics can move into a different tier", "bigger or group setups can move", "larger setups can move tiers", "endpoint count changes the price", "check that before quoting", "endpoint count drives")
     ):
         flags.append("hia_pricing_group_exact_price_claim")
     if any(term in body_l for term in ("you qualify", "you are eligible", "guaranteed funding", "all clinics qualify for funding")):
