@@ -1759,7 +1759,15 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
 
 def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     default_start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
-    start_method = os.getenv("PUBLIC_ENRICH_PROCESS_START_METHOD", default_start_method).strip() or default_start_method
+    fast_static_only = (
+        str(request_data.get("enrichment_stage") or "fast") != "deep_retry"
+        and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+        and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
+    )
+    if fast_static_only and "fork" in mp.get_all_start_methods():
+        start_method = "fork"
+    else:
+        start_method = os.getenv("PUBLIC_ENRICH_PROCESS_START_METHOD", default_start_method).strip() or default_start_method
     ctx = mp.get_context(start_method)
     result_queue = ctx.Queue(maxsize=1)
     process = ctx.Process(target=public_enrich_child_main, args=(request_data, result_queue), daemon=True)
