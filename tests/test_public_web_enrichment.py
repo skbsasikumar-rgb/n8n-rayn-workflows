@@ -214,8 +214,10 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 6", prepare_code)
-        self.assertIn("per_row_page_concurrency: 2", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 1", prepare_code)
+        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 8000", prepare_code)
+        self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 1", prepare_code)
+        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 300 : 45", prepare_code)
         self.assertIn("allow_low_limits: true", prepare_code)
         http_node = nodes["Crawl4AI Public Enrich"]
         self.assertEqual(http_node["parameters"]["options"]["timeout"], 360000)
@@ -223,6 +225,14 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         self.assertIn("isTransportTimeout", patch_code)
         self.assertIn("return []", patch_code)
+
+    def test_fast_public_enrichment_uses_static_first(self):
+        source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
+        self.assertIn('PUBLIC_ENRICH_FAST_STATIC_FIRST", "true"', source)
+        self.assertIn('PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false"', source)
+        self.assertIn('PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "false"', source)
+        self.assertIn("homepage_static_ms", source)
+        self.assertIn("PUBLIC_WEB_STATIC_READ_TIMEOUT_SECONDS", source)
 
     def test_workflow_url_only_mode_does_not_enter_public_enrichment(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())

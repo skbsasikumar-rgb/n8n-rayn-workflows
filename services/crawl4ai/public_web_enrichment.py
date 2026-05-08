@@ -3257,7 +3257,9 @@ def proxy_retryable_error(error_text: str) -> bool:
 
 
 def fetch_static_url(session: requests.Session, url: str) -> dict[str, Any]:
-    response = session.get(url, timeout=(10, 30), allow_redirects=True)
+    connect_timeout = float(os.getenv("PUBLIC_WEB_STATIC_CONNECT_TIMEOUT_SECONDS", "5"))
+    read_timeout = float(os.getenv("PUBLIC_WEB_STATIC_READ_TIMEOUT_SECONDS", "12"))
+    response = session.get(url, timeout=(connect_timeout, read_timeout), allow_redirects=True)
     if response.status_code >= 400:
         raise RuntimeError(f"HTTP {response.status_code}")
     return {
@@ -3518,41 +3520,20 @@ async def enrich_row(
     seen_urls: set[str] = set()
     seen_hashes: set[str] = set()
 
-    try:
-        homepage_started = time.perf_counter()
-        homepage_result = await crawl_url(crawler, best_url, page_timeout_ms, proxy_config=crawl_proxy_config)
-        timings["homepage_crawl_ms"] = elapsed_ms(homepage_started)
-    except Exception as exc:
-        crawl_error_text = compact_whitespace(exc)
+    stage = "deep_retry" if enrichment_stage == "deep_retry" else "fast"
+    fast_static_first = stage == "fast" and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+    fast_browser_fallback = os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() == "true"
+    homepage_result: dict[str, Any] | None = None
+
+    if fast_static_first:
         try:
             static_started = time.perf_counter()
             homepage_result = fetch_static_url(session, best_url)
-            timings["homepage_static_fallback_ms"] = elapsed_ms(static_started)
-            errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
-        except Exception as fallback_exc:
-            error_text = compact_whitespace(fallback_exc) or crawl_error_text
-            if proxy_retryable_error(crawl_error_text) or proxy_retryable_error(error_text):
-                homepage_result = await retry_crawl_with_proxy(
-                    crawler,
-                    best_url,
-                    page_timeout_ms,
-                    errors,
-                    proxy_retry_log,
-                    reason=f"homepage_error:{crawl_error_text or error_text}",
-                )
-                if homepage_result is None:
-                    homepage_result = retry_static_with_proxy(
-                        best_url,
-                        errors,
-                        proxy_retry_log,
-                        reason=f"homepage_error:{crawl_error_text or error_text}",
-                    )
-                if homepage_result is not None:
-                    timings["homepage_proxy_recovery_ms"] = timings.get("homepage_proxy_recovery_ms", 0.0) + elapsed_ms(homepage_started)
-                    error_text = ""
-            if not error_text:
-                pass
-            else:
+            timings["homepage_static_ms"] = elapsed_ms(static_started)
+            errors.append(f"{best_url}: fast static homepage fetch used")
+        except Exception as static_exc:
+            if not fast_browser_fallback:
+                error_text = compact_whitespace(static_exc) or "static homepage fetch failed"
                 return stamp(EnrichmentRecord(
                     row_id=row.row_id,
                     company_name=row.company_name,
@@ -3575,9 +3556,7 @@ async def enrich_row(
                     leadership_or_team_signals=[],
                     social_links=[],
                     structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
-                    enrichment_notes=compact_whitespace(
-                        f"Homepage crawl failed: {error_text} {proxy_usage_note(proxy_retry_log)}"
-                    ),
+                    enrichment_notes=f"Fast static homepage fetch failed: {error_text}",
                     confidence_score=0.05,
                     error_notes=[error_text],
                     best_url_candidate=validation.best_url_candidate,
@@ -3586,28 +3565,104 @@ async def enrich_row(
                     url_validation_status=validation.url_validation_status,
                     crawl_context={
                         "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
-                        "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
+                        "fast_static_first": True,
                     },
                 ))
+            errors.append(f"{best_url}: fast static homepage fetch failed; browser fallback used: {compact_whitespace(static_exc)}")
+
+    if homepage_result is None:
+        try:
+            homepage_started = time.perf_counter()
+            homepage_result = await crawl_url(crawler, best_url, page_timeout_ms, proxy_config=crawl_proxy_config)
+            timings["homepage_crawl_ms"] = elapsed_ms(homepage_started)
+        except Exception as exc:
+            crawl_error_text = compact_whitespace(exc)
+            try:
+                static_started = time.perf_counter()
+                homepage_result = fetch_static_url(session, best_url)
+                timings["homepage_static_fallback_ms"] = elapsed_ms(static_started)
+                errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
+            except Exception as fallback_exc:
+                error_text = compact_whitespace(fallback_exc) or crawl_error_text
+                if proxy_retryable_error(crawl_error_text) or proxy_retryable_error(error_text):
+                    homepage_result = await retry_crawl_with_proxy(
+                        crawler,
+                        best_url,
+                        page_timeout_ms,
+                        errors,
+                        proxy_retry_log,
+                        reason=f"homepage_error:{crawl_error_text or error_text}",
+                    )
+                    if homepage_result is None:
+                        homepage_result = retry_static_with_proxy(
+                            best_url,
+                            errors,
+                            proxy_retry_log,
+                            reason=f"homepage_error:{crawl_error_text or error_text}",
+                        )
+                    if homepage_result is not None:
+                        timings["homepage_proxy_recovery_ms"] = timings.get("homepage_proxy_recovery_ms", 0.0) + elapsed_ms(homepage_started)
+                        error_text = ""
+                if not error_text:
+                    pass
+                else:
+                    return stamp(EnrichmentRecord(
+                        row_id=row.row_id,
+                        company_name=row.company_name,
+                        url_picked=row.url_picked,
+                        best_url=best_url,
+                        crawl_status="crawl_failed",
+                        pages_crawled_count=0,
+                        pages_crawled_urls=[],
+                        title="",
+                        meta_description="",
+                        organization_name_detected="",
+                        organization_type_guess="Unknown",
+                        solo_or_group_guess="unknown",
+                        parent_or_affiliation_signals=[],
+                        size_signals={"pages_crawled": 0},
+                        industry_guess="Unknown",
+                        services_detected=[],
+                        locations_detected=[],
+                        contact_info_detected={"emails": [], "phones": [], "addresses": [], "contact_pages": []},
+                        leadership_or_team_signals=[],
+                        social_links=[],
+                        structured_data_detected={"has_json_ld": False, "schema_types": [], "schema_names": [], "og_site_name": "", "sitemap_urls": []},
+                        enrichment_notes=compact_whitespace(
+                            f"Homepage crawl failed: {error_text} {proxy_usage_note(proxy_retry_log)}"
+                        ),
+                        confidence_score=0.05,
+                        error_notes=[error_text],
+                        best_url_candidate=validation.best_url_candidate,
+                        http_status=validation.http_status,
+                        redirect_chain=validation.redirect_chain,
+                        url_validation_status=validation.url_validation_status,
+                        crawl_context={
+                            "robots": {"url": robots_policy.robots_url, "note": robots_policy.note},
+                            "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
+                        },
+                    ))
 
     homepage_page = extract_page_artifact(homepage_result)
     if homepage_page.challenge_hints:
         challenge_note = "challenge page detected: " + ", ".join(homepage_page.challenge_hints)
         captcha_solved = False
-        try:
-            static_started = time.perf_counter()
-            static_result = fetch_static_url(session, best_url)
-            timings["homepage_static_challenge_recovery_ms"] = elapsed_ms(static_started)
-            static_page = extract_page_artifact(static_result)
-            if static_page.text and not static_page.challenge_hints:
-                homepage_result = static_result
-                homepage_page = static_page
-                challenge_note = ""
-                captcha_solved = True
-                errors.append(f"{best_url}: static fetch recovered after challenge page")
-        except Exception as static_exc:
-            errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
-        if not captcha_solved and proxy_retry_available_for_url(best_url):
+        allow_challenge_recovery = stage != "fast" or os.getenv("PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "false").lower() == "true"
+        if allow_challenge_recovery:
+            try:
+                static_started = time.perf_counter()
+                static_result = fetch_static_url(session, best_url)
+                timings["homepage_static_challenge_recovery_ms"] = elapsed_ms(static_started)
+                static_page = extract_page_artifact(static_result)
+                if static_page.text and not static_page.challenge_hints:
+                    homepage_result = static_result
+                    homepage_page = static_page
+                    challenge_note = ""
+                    captcha_solved = True
+                    errors.append(f"{best_url}: static fetch recovered after challenge page")
+            except Exception as static_exc:
+                errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
+        if not captcha_solved and allow_challenge_recovery and proxy_retry_available_for_url(best_url):
             proxy_result = await retry_crawl_with_proxy(
                 crawler,
                 best_url,
@@ -3628,7 +3683,7 @@ async def enrich_row(
                 homepage_page = extract_page_artifact(proxy_result)
                 challenge_note = ""
                 captcha_solved = not homepage_page.challenge_hints
-        if not captcha_solved and captcha_solver.is_configured():
+        if not captcha_solved and allow_challenge_recovery and captcha_solver.is_configured():
             try:
                 from playwright.async_api import async_playwright as _ap
                 async with _ap() as playwright:
@@ -3724,7 +3779,6 @@ async def enrich_row(
     if homepage_page.content_hash:
         seen_hashes.add(homepage_page.content_hash)
 
-    stage = "deep_retry" if enrichment_stage == "deep_retry" else "fast"
     page_limit = min(max(page_limit, 1), 16 if stage == "deep_retry" else 8)
     per_row_page_concurrency = min(max(per_row_page_concurrency, 1), 2)
     sitemap_urls = fetch_sitemap_candidates(session, best_url, robots_policy, limit=max(page_limit * 6, 20))

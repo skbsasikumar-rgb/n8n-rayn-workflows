@@ -1593,7 +1593,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
 
 def public_enrich_hard_timeout_seconds(request: PublicEnrichmentRequest) -> float:
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
-    default_timeout = 300 if stage == "deep_retry" else 180
+    default_timeout = 300 if stage == "deep_retry" else 75
     configured = float(os.getenv("PUBLIC_ENRICH_HARD_TIMEOUT_SECONDS", str(default_timeout)))
     if request.row_timeout_seconds:
         configured = min(configured, float(request.row_timeout_seconds))
@@ -1638,7 +1638,7 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
 
     async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
-        default_timeout_cap = "240" if stage == "fast" else "360"
+        default_timeout_cap = "60" if stage == "fast" else "360"
         timeout_seconds = min(
             float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", default_timeout_cap)),
             max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
@@ -1685,7 +1685,7 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
                     effective_scrape_char_limit,
                 )
             except asyncio.TimeoutError as exc:
-                if effective_page_limit <= 2:
+                if stage == "fast" or effective_page_limit <= 2:
                     raise exc
                 fallback_limit = min(2, effective_page_limit)
                 fallback_timeout_ms = min(request.page_timeout_ms, 12000)
