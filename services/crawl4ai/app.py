@@ -1645,6 +1645,25 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
         )
         if request.row_timeout_seconds:
             timeout_seconds = min(timeout_seconds, float(request.row_timeout_seconds))
+        fast_static_only = (
+            stage == "fast"
+            and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+            and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
+        )
+        if fast_static_only:
+            return await asyncio.wait_for(
+                public_enrichment.enrich_row(
+                    row=input_row,
+                    crawler=None,
+                    page_limit=page_limit,
+                    page_timeout_ms=page_timeout_ms,
+                    request_delay_seconds=request_delay_seconds,
+                    scrape_char_limit=scrape_char_limit,
+                    enrichment_stage=stage,
+                    per_row_page_concurrency=request.per_row_page_concurrency,
+                ),
+                timeout=timeout_seconds,
+            )
         async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:
             return await asyncio.wait_for(
                 public_enrichment.enrich_row(
