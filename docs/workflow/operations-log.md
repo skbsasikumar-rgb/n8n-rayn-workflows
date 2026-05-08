@@ -6,6 +6,11 @@ Use this file to record rebuild progress and decisions.
 
 Friendly deterministic copy style:
 
+- tightened the latest sentence rotations after live review: Email 1 now always keeps an explicit observation opener after the greeting, and active HIA pricing Email 2 variants always mention `CISOaaS`.
+- tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).
+- deployment performed: no.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
 - added more deterministic sentence-slot rotation for cold-email copy: Email 1 observation opener, Email 1 company-type bridge, expanded HIA pressure lines, expanded HIA Email 2 RAYN value lines, expanded Email 3 diagnostic openers, and additional short Email 4 close-loop lines.
 - retired `appears to be` as a fixed Email 1 body phrase; generated copy now rotates human alternatives such as `looks like`, `seems to be`, `is listed as`, and `looks to be` while preserving the underlying copy brief and quality gates.
 - tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).

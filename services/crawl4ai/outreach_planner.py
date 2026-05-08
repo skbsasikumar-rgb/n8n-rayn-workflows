@@ -1732,7 +1732,12 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
     company_name = compact(company) or "the organisation"
     kind, description = observation_description(noticed, company_name)
     if opener.lower() == "looks like":
-        observation = bridge[:1].upper() + bridge[1:]
+        if kind == "be":
+            observation = f"Looks like {company_name} is {description}."
+        elif kind in {"provides", "handles"}:
+            observation = f"Looks like {company_name} {kind} {description}."
+        else:
+            observation = f"Looks like {company_name} {description}."
     elif opener.lower() == "had a quick look at":
         if kind == "be":
             observation = f"Had a quick look at {company_name} - looks like {description}."
@@ -1939,8 +1944,8 @@ def hia_email_2_sentence_slots(
             "endpoint_caveat",
             {
                 "endpoint_based_no_guess": "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside.",
-                "endpoint_count_drives_quote": "The final number depends on endpoint count, so I would size it before quoting.",
-                "endpoint_count_drives_price": "Endpoint count drives the pricing, so I would not assume the tier from the outside.",
+                "endpoint_count_drives_quote": "CISOaaS pricing depends on endpoint count, so I would size it before quoting.",
+                "endpoint_count_drives_price": "Endpoint count drives CISOaaS pricing, so I would not assume the tier from the outside.",
             },
         ),
         "small_clinic_price": choose_sentence_slot(
@@ -1951,9 +1956,9 @@ def hia_email_2_sentence_slots(
             2,
             "small_clinic_price",
             {
-                "smaller_clinics_starting_package": f"For smaller clinics, the starting package is around {price_text} before funding.",
-                "smaller_clinics_usually_start": f"Smaller clinics usually start around {price_text} before funding.",
-                "small_clinic_setups_starting_package": f"For small clinic setups, the starting package is around {price_text} before funding.",
+                "smaller_clinics_starting_package": f"For smaller clinics, the starting CISOaaS package is around {price_text} before funding.",
+                "smaller_clinics_usually_start": f"Smaller clinics usually start around {price_text} before funding for CISOaaS.",
+                "small_clinic_setups_starting_package": f"For small clinic CISOaaS setups, the starting package is around {price_text} before funding.",
             },
         ),
         "group_larger_setup": choose_sentence_slot(
