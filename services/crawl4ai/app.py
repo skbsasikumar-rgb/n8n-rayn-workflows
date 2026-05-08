@@ -1758,7 +1758,8 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
 
 
 def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
-    start_method = os.getenv("PUBLIC_ENRICH_PROCESS_START_METHOD", "spawn").strip() or "spawn"
+    default_start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    start_method = os.getenv("PUBLIC_ENRICH_PROCESS_START_METHOD", default_start_method).strip() or default_start_method
     ctx = mp.get_context(start_method)
     result_queue = ctx.Queue(maxsize=1)
     process = ctx.Process(target=public_enrich_child_main, args=(request_data, result_queue), daemon=True)
