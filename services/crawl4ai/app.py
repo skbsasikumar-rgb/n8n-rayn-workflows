@@ -1757,13 +1757,46 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
         result_queue.put({"ok": False, "error": compact_whitespace(str(exc)) or exc.__class__.__name__})
 
 
-def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
-    default_start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
-    fast_static_only = (
+def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
+    return (
         str(request_data.get("enrichment_stage") or "fast") != "deep_retry"
         and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
         and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
     )
+
+
+def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any]:
+    request = PublicEnrichmentRequest.model_validate(request_data)
+    input_row = public_enrichment.InputRow(
+        row_id=request.Id,
+        company_name=request.company_name,
+        url_picked=request.url_picked,
+    )
+    record = asyncio.run(
+        public_enrichment.enrich_row(
+            row=input_row,
+            crawler=None,
+            page_limit=min(max(1, request.page_limit), 1),
+            page_timeout_ms=min(request.page_timeout_ms, 8000),
+            request_delay_seconds=0,
+            scrape_char_limit=min(max(2000, request.scrape_char_limit), 50000),
+            enrichment_stage="fast",
+            per_row_page_concurrency=1,
+        )
+    )
+    patch = public_enrichment.build_noco_patch(record)
+    return {
+        "ok": record.crawl_status in {"crawled", "partial"},
+        "row_id": record.row_id,
+        "error": " | ".join(record.error_notes[:8]),
+        "patch": patch,
+        "record": public_enrichment.record_to_json(record),
+    }
+
+
+def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
+    default_start_method = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    fast_static_only = public_enrich_is_fast_static_only(request_data)
     if fast_static_only and "fork" in mp.get_all_start_methods():
         start_method = "fork"
     else:
@@ -1801,6 +1834,14 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
     timeout_seconds = public_enrich_hard_timeout_seconds(request)
     request_data = request.model_dump()
     async with scrape_semaphore:
+        if public_enrich_is_fast_static_only(request_data):
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(run_public_enrich_fast_static, request_data),
+                    timeout=timeout_seconds + 5.0,
+                )
+            except asyncio.TimeoutError:
+                return public_enrich_timeout_response(request_data, timeout_seconds)
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)
 
 
