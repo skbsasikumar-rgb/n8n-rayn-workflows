@@ -305,10 +305,13 @@ class PublicEnrichmentRequest(BaseModel):
     Id: int | str
     company_name: str = Field(min_length=1, max_length=300)
     url_picked: str = Field(default="", max_length=2000)
-    page_limit: int = Field(default=12, ge=1, le=24)
+    enrichment_stage: str = Field(default="fast", max_length=40)
+    page_limit: int = Field(default=6, ge=1, le=24)
     page_timeout_ms: int = Field(default=20000, ge=5000, le=60000)
-    request_delay_seconds: float = Field(default=0.3, ge=0.0, le=5.0)
+    request_delay_seconds: float = Field(default=0.5, ge=0.0, le=5.0)
     scrape_char_limit: int = Field(default=120000, ge=2000, le=180000)
+    per_row_page_concurrency: int = Field(default=2, ge=1, le=4)
+    row_timeout_seconds: int = Field(default=0, ge=0, le=600)
     allow_low_limits: bool = False
 
 
@@ -475,7 +478,24 @@ def build_quality(title: str, website_content: str) -> QualityPayload:
     word_count = len(re.findall(r"\b\w+\b", website_content))
     has_icp_terms = any(term in lowered for term in ICP_HINTS)
     looks_like_error_page = any(term in lowered for term in ERROR_HINTS)
-    challenge_hints = sorted({term for term in CHALLENGE_HINTS if term in lowered})
+    challenge_hints = {
+        term
+        for term in CHALLENGE_HINTS
+        if term != "cloudflare" and term in lowered
+    }
+    if "cloudflare" in lowered and any(
+        marker in lowered
+        for marker in (
+            "cf-challenge",
+            "challenge-platform",
+            "checking the site connection",
+            "complete the security check",
+            "verify you are human",
+            "robot challenge",
+        )
+    ):
+        challenge_hints.add("cloudflare")
+    challenge_hints = sorted(challenge_hints)
     return QualityPayload(
         content_chars=content_chars,
         word_count=word_count,
@@ -1585,11 +1605,16 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
         verbose=os.getenv("CRAWL4AI_VERBOSE", "false").lower() == "true",
     )
 
+    stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
+
     async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
+        default_timeout_cap = "240" if stage == "fast" else "360"
         timeout_seconds = min(
-            float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", "360")),
+            float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", default_timeout_cap)),
             max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
         )
+        if request.row_timeout_seconds:
+            timeout_seconds = min(timeout_seconds, float(request.row_timeout_seconds))
         async with public_enrichment.AsyncWebCrawler(config=browser_config) as crawler:
             return await asyncio.wait_for(
                 public_enrichment.enrich_row(
@@ -1599,6 +1624,8 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                     page_timeout_ms=page_timeout_ms,
                     request_delay_seconds=request_delay_seconds,
                     scrape_char_limit=scrape_char_limit,
+                    enrichment_stage=stage,
+                    per_row_page_concurrency=request.per_row_page_concurrency,
                 ),
                 timeout=timeout_seconds,
             )
@@ -1606,12 +1633,15 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
     try:
         async with scrape_semaphore:
             if request.allow_low_limits:
-                effective_page_limit = min(24, max(1, request.page_limit))
+                effective_page_limit = min(16 if stage == "deep_retry" else 8, max(1, request.page_limit))
                 effective_scrape_char_limit = min(180000, max(2000, request.scrape_char_limit))
             else:
                 effective_page_limit = min(
-                    24,
-                    max(request.page_limit, int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "12"))),
+                    16 if stage == "deep_retry" else 8,
+                    max(
+                        request.page_limit,
+                        int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "14" if stage == "deep_retry" else "6")),
+                    ),
                 )
                 effective_scrape_char_limit = min(
                     180000,

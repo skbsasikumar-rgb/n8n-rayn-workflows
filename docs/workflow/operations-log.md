@@ -4,6 +4,22 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-08
 
+Public enrichment staging and queue hardening:
+
+- added staged official-site enrichment in [services/crawl4ai/public_web_enrichment.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/public_web_enrichment.py): fast mode is capped to high-value pages, deep-retry mode expands the crawl budget only for weak/recoverable enrichment, and link scoring now prefers healthcare team/service/location/contact pages or non-HIA privacy/security/platform/client pages.
+- added page-level artifacts and hidden/debug evidence in `structured_data_detected.enrichment_depth`: page summaries, page types, high-value pages found, homepage content quality, pages crawled, weak-enrichment reason, and derived team/practitioner/location/privacy/security hints.
+- updated `/public-enrich` defaults in [services/crawl4ai/app.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/app.py): fast stage defaults to `page_limit=6`, `request_delay_seconds=0.5`, `per_row_page_concurrency=2`, and a bounded row timeout; deep retry can use a larger page limit without forcing every request to crawl deeply.
+- updated [wf-worker.json](/Users/sasikumar/Documents/n8n/wf-worker.json) so the public-enrich request sends staged crawl controls, disables n8n HTTP retries, uses a 240s HTTP timeout, and drops transport-timeout outputs instead of patching stale `enrichment_error` rows.
+- updated [scripts/export_outreach_audit_markdown.py](/Users/sasikumar/Documents/n8n/scripts/export_outreach_audit_markdown.py) to show enrichment depth, pages crawled, high-value page count, derived team/practitioner/location counts, privacy/security hints, services, locations, and final automation decision.
+- local no-write smoke generated: fast-stage probe for `AI Clinic`, `APAX Medical`, `Ashford Healthcare`, and `RAYN Secure`; deep-retry probe for `AI Clinic`, `APAX Medical`, and `RAYN Secure`. No NocoDB writeback was used.
+- smoke result: fast mode kept weak/challenge rows bounded, Ashford stayed `skipped_challenge_detected`, and deep retry promoted RAYN Secure to `strong` with `10` crawled pages. The smoke exposed and fixed two classifier edge cases: a single challenge subpage no longer makes an otherwise usable site `challenge_blocked`, and an empty page without challenge hints is treated as `thin_content`.
+- Ashford follow-up: direct Playwright capture showed reCAPTCHA markers and sitekey `6Ld5h8IfAAAAAI_Y7mRBtH_VShwSfmOe8E8edKNy`, but the page content was already available. Tightened Cloudflare challenge detection so the word `cloudflare` in normal page/script content no longer blocks a usable page. After the fix, row `306` no-write probe changed from `skipped_challenge_detected` to `crawled`; deep retry still had only the homepage and classified as `weak_skipped / thin_content`.
+- tests run: `python3 -m py_compile services/crawl4ai/public_web_enrichment.py services/crawl4ai/app.py scripts/export_outreach_audit_markdown.py`; `jq -e . wf-worker.json`; `python3 -m pytest tests/test_public_web_enrichment.py -q` (`9 passed`); `python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`); `python3 -m pytest tests/test_outreach_columns.py -q` (`17 passed`); `python3 -m pytest tests/test_workflow_audit_fallback.py tests/test_outreach_audit_export.py -q` (`6 passed`).
+- preview generated: local no-write public-enrichment smoke artifacts only; no live preview was generated.
+- deployment performed: no.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
+
 Full-table scratch rerun:
 
 - deployed commit `06dd43d` to Railway worker service `n8n-rayn-workflows`; deployment `0128551f-91e7-4803-bfb5-fe2b6ec6c419` reached `SUCCESS`, and `/health` returned OK.

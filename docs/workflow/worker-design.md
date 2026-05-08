@@ -56,12 +56,16 @@ The batch enrichment webhook is separate from URL discovery.
 1. Read rows with `company_name`, `status = pending`, and non-blank `url_picked`.
 2. Convert NocoDB rows directly into enrichment items.
 3. Claim each row with `status = processing`.
-4. Call the Crawl4AI public enrichment endpoint.
+4. Call the Crawl4AI public enrichment endpoint in staged mode.
 5. Write `best_url`, `homepage_root_url`, `website_content`, `website_scrape`, `company_homepage_name`, `parent_company`, `source_urls`, `notes`, `confidence`, `status`, `status_reason`, `run_id`, `processing_started_at`, `processing_finished_at`, `last_attempted_at`, `attempt_count`, `error_type`, `error_message`, `retry_eligible`, `last_stage`, and `last_error`.
 
 This branch must not call OpenSERP or OpenRouter. Existing `url_picked` values are treated as the source of truth for website scraping unless validation rejects the URL.
 
-The Crawl4AI HTTP node uses a 300s timeout. Do not lower this without reducing `page_limit` or `page_timeout_ms`, because legitimate five-page crawls can exceed 120s and otherwise get written back as false `enrichment_error` rows.
+The normal public-enrichment path uses `enrichment_stage=fast`, `page_limit=6`, `page_timeout_ms=20000`, `request_delay_seconds=0.5`, `per_row_page_concurrency=2`, `row_timeout_seconds=180`, and `allow_low_limits=true`. A recoverable weak result should be retried with `enrichment_stage=deep_retry`, `page_limit=14`, and a 300s row budget rather than running a full table through long concurrent browser calls.
+
+The Crawl4AI HTTP node is bounded at 240s and does not retry transport failures inside n8n. If the HTTP node itself times out or resets without a worker patch, the patch step drops that output instead of writing a stale `enrichment_error` over the row. The worker response remains the source of truth for crawl failures, challenge blocks, and partial crawl recovery.
+
+Public enrichment stores detailed page-depth evidence inside `structured_data_detected.enrichment_depth`: page summaries, high-value page matches, page URLs, homepage quality, derived team/practitioner/location counts, privacy/security hints, and `enrichment_depth_status`. Most of this is debug/audit data and should stay out of the main visible NocoDB view.
 
 ## Success Criteria
 

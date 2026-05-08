@@ -284,6 +284,113 @@ COMMON_FOLLOW_PATHS = (
     "/news",
     "/blog",
 )
+HIA_HIGH_VALUE_PATH_TERMS = (
+    "doctors",
+    "our-doctors",
+    "specialists",
+    "consultants",
+    "team",
+    "our-team",
+    "services",
+    "treatments",
+    "conditions",
+    "locations",
+    "clinics",
+    "contact",
+    "about",
+    "appointments",
+    "fees",
+    "pricing",
+)
+NON_HIA_HIGH_VALUE_PATH_TERMS = (
+    "about",
+    "services",
+    "contact",
+    "privacy",
+    "privacy-policy",
+    "pdpa",
+    "data-protection",
+    "security",
+    "trust",
+    "clients",
+    "case-studies",
+    "platform",
+    "partners",
+    "team",
+)
+HIA_COMMON_FOLLOW_PATHS = (
+    "/doctors",
+    "/our-doctors",
+    "/services",
+    "/specialists",
+    "/consultants",
+    "/team",
+    "/our-team",
+    "/treatments",
+    "/conditions",
+    "/locations",
+    "/clinics",
+    "/contact",
+    "/about",
+    "/about-us",
+    "/appointments",
+    "/fees",
+    "/pricing",
+)
+NON_HIA_COMMON_FOLLOW_PATHS = (
+    "/about",
+    "/about-us",
+    "/services",
+    "/contact",
+    "/privacy",
+    "/privacy-policy",
+    "/pdpa",
+    "/data-protection",
+    "/security",
+    "/trust",
+    "/clients",
+    "/case-studies",
+    "/platform",
+    "/partners",
+    "/team",
+)
+LOW_VALUE_PATH_TERMS = (
+    "login",
+    "signin",
+    "sign-in",
+    "cart",
+    "checkout",
+    "wp-admin",
+    "admin",
+    "account",
+    "cookie",
+    "terms",
+    "blog",
+    "news",
+    "article",
+    "press",
+    "media",
+    "career",
+    "job",
+)
+ASSET_PATH_EXTENSIONS = (
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".ico",
+    ".css",
+    ".js",
+    ".json",
+    ".xml",
+    ".zip",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+)
 TEAM_KEYWORDS = (
     "doctor",
     "doctors",
@@ -437,12 +544,20 @@ class PageArtifact:
     url: str
     title: str
     meta_description: str
+    page_type_guess: str = "unknown"
+    summary: str = ""
     headings: list[str] = field(default_factory=list)
     blocks: list[str] = field(default_factory=list)
+    key_lines: list[str] = field(default_factory=list)
     text: str = ""
     emails: list[str] = field(default_factory=list)
     phones: list[str] = field(default_factory=list)
     addresses: list[str] = field(default_factory=list)
+    doctor_or_team_names: list[str] = field(default_factory=list)
+    services: list[str] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
+    privacy_or_pdpa_terms: list[str] = field(default_factory=list)
+    customer_trust_terms: list[str] = field(default_factory=list)
     internal_links: list[str] = field(default_factory=list)
     internal_link_items: list[dict[str, str]] = field(default_factory=list)
     social_links: list[str] = field(default_factory=list)
@@ -453,6 +568,7 @@ class PageArtifact:
     status_code: int = 0
     content_hash: str = ""
     challenge_hints: list[str] = field(default_factory=list)
+    challenge_or_error: bool = False
 
 
 @dataclass
@@ -498,6 +614,18 @@ class EnrichmentRecord:
     raw_pages: list[dict[str, Any]] = field(default_factory=list)
     crawl_context: dict[str, Any] = field(default_factory=dict)
     timing_ms: dict[str, float] = field(default_factory=dict)
+    enrichment_depth_status: str = ""
+    weak_enrichment_reason: str = ""
+    high_value_pages_found_json: list[dict[str, Any]] = field(default_factory=list)
+    page_summaries_json: list[dict[str, Any]] = field(default_factory=list)
+    homepage_content_quality: str = ""
+    about_page_summary: str = ""
+    services_page_summary: str = ""
+    team_page_summary: str = ""
+    locations_page_summary: str = ""
+    privacy_page_summary: str = ""
+    pricing_page_summary: str = ""
+    derived_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -1351,25 +1479,71 @@ def fetch_sitemap_candidates(
     return dedupe_strings(candidate_urls, limit=limit)
 
 
-def candidate_page_score(homepage_url: str, page_url: str, anchor_text: str = "") -> int:
+def enrichment_profile_from_text(value: str) -> str:
+    lowered = value.lower()
+    if any(
+        term in lowered
+        for term in (
+            "clinic",
+            "medical",
+            "doctor",
+            "dental",
+            "dentist",
+            "pharmacy",
+            "healthcare",
+            "hospital",
+            "specialist",
+            "patient",
+            "physio",
+            "therapy",
+        )
+    ):
+        return "hia"
+    return "non_hia"
+
+
+def candidate_page_score(
+    homepage_url: str,
+    page_url: str,
+    anchor_text: str = "",
+    profile: str = "auto",
+) -> int:
     if not same_registered_domain(homepage_url, page_url):
         return -100
     if not is_html_like_url(page_url):
         return -100
 
-    path = urlsplit(page_url).path.lower()
+    parsed = urlsplit(page_url)
+    path = parsed.path.lower()
+    if parsed.query and len(parsed.query) > 24:
+        return -20
+    if any(path.endswith(extension) for extension in ASSET_PATH_EXTENSIONS):
+        return -100
+    if path.endswith(".pdf"):
+        return -20
     text = f"{path} {anchor_text.lower()}"
-    if any(term in text for term in ("login", "signin", "sign-in", "cart", "checkout", "wp-admin", "privacy", "terms", "cookie")):
+    if any(term in text for term in LOW_VALUE_PATH_TERMS):
         return -20
 
     score = 0
+    selected_profile = profile if profile in {"hia", "non_hia"} else enrichment_profile_from_text(text)
+    high_value_terms = HIA_HIGH_VALUE_PATH_TERMS if selected_profile == "hia" else NON_HIA_HIGH_VALUE_PATH_TERMS
+    for keyword in high_value_terms:
+        if keyword in text:
+            score += 6
     for keyword in HIGH_VALUE_KEYWORDS:
         if keyword in text:
-            score += 4
+            score += 3
     if "/about" in path:
         score += 3
     if any(term in text for term in ("doctor", "team", "leadership", "provider", "dentist", "consultant", "contact")):
         score += 3
+    if selected_profile == "non_hia" and any(term in text for term in ("privacy", "pdpa", "data-protection", "security", "trust", "clients", "platform")):
+        score += 5
+    if selected_profile == "hia" and path.strip("/") in {"services", "service", "treatments", "treatment", "conditions", "procedures"}:
+        score += 6
+    if "blog" in text or "news" in text:
+        score -= 7
     if path in {"", "/"}:
         score += 1
     if re.search(r"/(?:page|p)/\\d+", path):
@@ -1383,16 +1557,26 @@ def choose_candidate_pages(
     homepage_links: list[dict[str, str]],
     sitemap_urls: list[str],
     page_limit: int,
+    profile: str = "auto",
+    stage: str = "fast",
 ) -> list[str]:
     ranked: list[tuple[int, int, str]] = []
     seen_urls: set[str] = {homepage_url}
+    profile_hint = profile
+    if profile_hint == "auto":
+        profile_hint = enrichment_profile_from_text(
+            " ".join(
+                compact_whitespace(f"{link.get('href', '')} {link.get('text', '')}")
+                for link in homepage_links[:40]
+            )
+        )
 
     for link in homepage_links:
         href = compact_whitespace(link.get("href", ""))
         text = compact_whitespace(link.get("text", ""))
         if not href or href in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, href, text)
+        score = candidate_page_score(homepage_url, href, text, profile=profile_hint)
         if score <= 0:
             continue
         ranked.append((score + 8, 0, href))
@@ -1401,17 +1585,20 @@ def choose_candidate_pages(
     for sitemap_url in sitemap_urls:
         if sitemap_url in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, sitemap_url, "")
+        score = candidate_page_score(homepage_url, sitemap_url, "", profile=profile_hint)
         if score <= 0:
             continue
         ranked.append((score + 4, 1, sitemap_url))
         seen_urls.add(sitemap_url)
 
-    for path in COMMON_FOLLOW_PATHS:
+    common_paths = HIA_COMMON_FOLLOW_PATHS if profile_hint == "hia" else NON_HIA_COMMON_FOLLOW_PATHS
+    if stage == "deep_retry":
+        common_paths = (*common_paths, *COMMON_FOLLOW_PATHS)
+    for path in common_paths:
         href = urljoin(homepage_url, path)
         if href in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, href, path)
+        score = candidate_page_score(homepage_url, href, path, profile=profile_hint)
         if score <= 0:
             continue
         ranked.append((score - 12, 2, href))
@@ -1680,6 +1867,91 @@ def extract_team_lines(lines: list[str]) -> list[str]:
     return dedupe_strings(output, limit=30)
 
 
+def guess_page_type(url: str, title: str, text: str) -> str:
+    haystack = f"{url} {title} {text[:1200]}".lower()
+    path = urlsplit(url).path.lower()
+    if path in {"", "/"}:
+        return "homepage"
+    if any(term in path for term in ("price", "pricing", "fee", "fees")):
+        return "pricing"
+    if any(term in path for term in ("doctor", "specialist", "consultant", "physician", "provider")):
+        return "doctor_profile"
+    if any(term in path for term in ("team", "people", "staff", "leadership", "dentist", "therapist")):
+        return "team"
+    if any(term in path for term in ("location", "locations", "clinic", "clinics", "outlet", "branches")):
+        return "locations"
+    if "contact" in path:
+        return "contact"
+    if any(term in path for term in ("service", "services", "treatment", "condition", "procedure", "specialty")):
+        return "services"
+    if any(term in path for term in ("about", "who-we-are", "our-story")):
+        return "about"
+    if any(term in haystack for term in ("privacy policy", "personal data protection", "pdpa", "data protection notice")):
+        return "privacy_pdpa"
+    if any(term in haystack for term in ("security", "trust center", "iso 27001", "soc 2", "compliance")):
+        return "security_trust"
+    if any(term in path for term in ("blog", "news", "article", "press")):
+        return "blog"
+    return "unknown"
+
+
+def summarize_page_lines(lines: list[str], max_chars: int = 360) -> str:
+    selected: list[str] = []
+    for line in lines:
+        cleaned = compact_whitespace(line)
+        if not cleaned or is_noise_line(cleaned):
+            continue
+        selected.append(cleaned)
+        if len(" ".join(selected)) >= max_chars:
+            break
+    return limit_text(" ".join(selected), max_chars)
+
+
+def extract_key_lines(lines: list[str], limit: int = 8) -> list[str]:
+    output: list[str] = []
+    for line in lines:
+        cleaned = compact_whitespace(line)
+        lowered = cleaned.lower()
+        if len(cleaned) < 16 or is_noise_line(cleaned):
+            continue
+        if any(
+            term in lowered
+            for term in (
+                "doctor",
+                "specialist",
+                "service",
+                "treatment",
+                "location",
+                "address",
+                "privacy",
+                "pdpa",
+                "security",
+                "trust",
+                "client",
+                "platform",
+                "booking",
+                "appointment",
+            )
+        ):
+            output.append(cleaned)
+    return dedupe_strings(output, limit=limit)
+
+
+def extract_page_names(lines: list[str]) -> list[str]:
+    names: list[str] = []
+    pattern = re.compile(
+        r"\b(?:Dr\.?|Doctor|Prof\.?|Professor|Mr\.?|Ms\.?|Mrs\.?)\s+[A-Z][a-zA-Z'.-]+(?:\s+[A-Z][a-zA-Z'.-]+){0,3}\b"
+    )
+    for line in lines:
+        names.extend(match.group(0).strip() for match in pattern.finditer(line))
+    return dedupe_strings(names, limit=30)
+
+
+def extract_page_terms(text: str, terms: tuple[str, ...], limit: int = 20) -> list[str]:
+    lowered = text.lower()
+    return [term for term in terms if term in lowered][:limit]
+
+
 def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
     final_url = compact_whitespace(result_data.get("redirected_url") or result_data.get("url") or "")
     html = str(result_data.get("cleaned_html") or result_data.get("html") or "")
@@ -1716,16 +1988,30 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
     )[:300]
     challenge_hints = detect_challenge_hints(f"{title}\n{text}\n{html[:5000]}")
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
+    page_type_guess = guess_page_type(final_url, title, text)
+    key_lines = extract_key_lines(text_lines)
+    page_services = extract_key_lines([*headings, *blocks], limit=12)
+    page_locations = dedupe_strings([*addresses, *[line for line in key_lines if "location" in line.lower() or "address" in line.lower()]], limit=12)
+    privacy_terms = extract_page_terms(text, ("privacy", "pdpa", "personal data", "data protection", "dpo", "consent"))
+    customer_trust_terms = extract_page_terms(text, ("security", "trust", "soc 2", "iso 27001", "clients", "case study", "platform", "vendor", "partner"))
     return PageArtifact(
         url=final_url,
         title=title,
         meta_description=meta_description,
+        page_type_guess=page_type_guess,
+        summary=summarize_page_lines(text_lines),
         headings=headings,
         blocks=blocks,
+        key_lines=key_lines,
         text=text,
         emails=emails,
         phones=phones,
         addresses=addresses,
+        doctor_or_team_names=extract_page_names(text_lines),
+        services=page_services,
+        locations=page_locations,
+        privacy_or_pdpa_terms=privacy_terms,
+        customer_trust_terms=customer_trust_terms,
         internal_links=dedupe_strings(internal_links, limit=60),
         internal_link_items=internal_link_items[:120],
         social_links=social_links,
@@ -1736,12 +2022,30 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
         status_code=int(result_data.get("status_code") or 0),
         content_hash=content_hash,
         challenge_hints=challenge_hints,
+        challenge_or_error=bool(challenge_hints),
     )
 
 
 def detect_challenge_hints(value: str) -> list[str]:
     lowered = compact_whitespace(value).lower()
-    return sorted({hint for hint in CHALLENGE_HINTS if hint in lowered})
+    hints = {
+        hint
+        for hint in CHALLENGE_HINTS
+        if hint != "cloudflare" and hint in lowered
+    }
+    if "cloudflare" in lowered and any(
+        marker in lowered
+        for marker in (
+            "cf-challenge",
+            "challenge-platform",
+            "checking the site connection",
+            "complete the security check",
+            "verify you are human",
+            "robot challenge",
+        )
+    ):
+        hints.add("cloudflare")
+    return sorted(hints)
 
 
 def clean_name_candidate(value: str) -> str:
@@ -2689,15 +2993,114 @@ def detect_size_signals(
     affiliation_signals: list[str],
 ) -> dict[str, Any]:
     combined_text = "\n".join(page.text for page in pages).lower()
+    team_names = dedupe_strings([name for page in pages for name in page.doctor_or_team_names], limit=80)
+    page_types = [page.page_type_guess for page in pages]
     return {
         "pages_crawled": len(pages),
         "locations_detected_count": len(locations),
         "leadership_signal_count": len(leadership_signals),
         "affiliation_signal_count": len(affiliation_signals),
+        "team_count_guess": len(team_names),
+        "practitioner_count_guess": len([name for name in team_names if re.search(r"\bDr\.?|\bDoctor\b|\bProf\.?", name, re.I)]),
+        "location_count_guess": len(locations),
+        "has_multiple_locations": len(locations) > 1 or bool(re.search(r"\b(branches|locations|our clinics|outlets)\b", combined_text)),
+        "has_team_page": "team" in page_types or "doctor_profile" in page_types,
+        "has_doctor_profiles": "doctor_profile" in page_types or bool(team_names),
+        "has_privacy_policy": "privacy_pdpa" in page_types or "privacy policy" in combined_text,
+        "has_pdpa_page": "pdpa" in combined_text or "personal data protection" in combined_text,
+        "has_online_booking": bool(re.search(r"\b(book online|online booking|appointment|patient portal)\b", combined_text)),
+        "has_patient_portal": "patient portal" in combined_text,
+        "has_vendor_system_hint": bool(re.search(r"\b(portal|booking system|ecommerce|vendor|platform)\b", combined_text)),
+        "has_customer_security_hint": bool(re.search(r"\b(security|trust|iso 27001|soc 2|compliance|vendor review)\b", combined_text)),
         "doctor_mentions": len(re.findall(r"\bdr\.?\b|\bdoctor\b", combined_text)),
         "clinic_mentions": len(re.findall(r"\bclinic\b|\bclinics\b", combined_text)),
         "branch_mentions": len(re.findall(r"\bbranch\b|\bbranches\b|\blocation\b|\blocations\b", combined_text)),
     }
+
+
+def build_page_summaries(pages: list[PageArtifact]) -> list[dict[str, Any]]:
+    return [
+        {
+            "url": page.url,
+            "page_type_guess": page.page_type_guess,
+            "title": page.title,
+            "summary": page.summary,
+            "key_lines": page.key_lines[:6],
+            "emails": page.emails[:5],
+            "phones": page.phones[:5],
+            "addresses": page.addresses[:5],
+            "doctor_or_team_names": page.doctor_or_team_names[:10],
+            "services": page.services[:10],
+            "locations": page.locations[:10],
+            "privacy_or_pdpa_terms": page.privacy_or_pdpa_terms[:10],
+            "customer_trust_terms": page.customer_trust_terms[:10],
+            "challenge_or_error": page.challenge_or_error,
+        }
+        for page in pages
+    ]
+
+
+def first_summary_for_type(page_summaries: list[dict[str, Any]], page_types: tuple[str, ...]) -> str:
+    for summary in page_summaries:
+        if summary.get("page_type_guess") in page_types:
+            return compact_whitespace(str(summary.get("summary") or ""))
+    return ""
+
+
+def homepage_content_quality(page: PageArtifact | None) -> str:
+    if page is None:
+        return "missing"
+    if page.challenge_hints:
+        return "challenge"
+    text_len = len(page.text or "")
+    if text_len >= 2500:
+        return "strong"
+    if text_len >= 900:
+        return "adequate"
+    if text_len >= 250:
+        return "thin"
+    return "empty"
+
+
+def classify_enrichment_depth(
+    pages: list[PageArtifact],
+    services: list[str],
+    locations: list[str],
+    leadership_signals: list[str],
+    organization_type: str,
+    errors: list[str],
+    stage: str = "fast",
+) -> tuple[str, str]:
+    if not pages:
+        return "official_url_missing", "non_official_url"
+    if pages[0].challenge_hints or (any(page.challenge_hints for page in pages) and all(page.challenge_hints or not page.text for page in pages)):
+        return "challenge_blocked", "challenge_detected"
+    if any("robots.txt disallows" in error.lower() for error in errors):
+        return "weak_skipped", "robots_disallowed"
+    quality = homepage_content_quality(pages[0])
+    if quality in {"empty", "thin"}:
+        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "thin_content")
+    page_types = {page.page_type_guess for page in pages}
+    healthcareish = organization_type in {
+        "Medical clinic",
+        "Specialist clinic",
+        "Hospital",
+        "Healthcare group",
+        "Dental clinic",
+        "Aesthetics or wellness clinic",
+        "Care provider",
+    } or any(re.search(r"\b(clinic|medical|doctor|dental|healthcare|patient)\b", page.text, re.I) for page in pages)
+    if not services:
+        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_services_detected")
+    if healthcareish and not locations and "contact" not in page_types and "locations" not in page_types:
+        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_locations_detected")
+    if healthcareish and not leadership_signals and "team" not in page_types and "doctor_profile" not in page_types:
+        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_team_or_contact_page")
+    if len(pages) <= 1:
+        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "homepage_only")
+    if len(pages) >= 4 and services and (locations or leadership_signals):
+        return "strong", ""
+    return "adequate", ""
 
 
 def structured_data_summary(pages: list[PageArtifact], sitemap_urls: list[str]) -> dict[str, Any]:
@@ -2987,6 +3390,8 @@ async def enrich_row(
     page_timeout_ms: int,
     request_delay_seconds: float,
     scrape_char_limit: int,
+    enrichment_stage: str = "fast",
+    per_row_page_concurrency: int = 2,
 ) -> EnrichmentRecord:
     total_started = time.perf_counter()
     timings: dict[str, float] = {}
@@ -3319,9 +3724,20 @@ async def enrich_row(
     if homepage_page.content_hash:
         seen_hashes.add(homepage_page.content_hash)
 
+    stage = "deep_retry" if enrichment_stage == "deep_retry" else "fast"
+    page_limit = min(max(page_limit, 1), 16 if stage == "deep_retry" else 8)
+    per_row_page_concurrency = min(max(per_row_page_concurrency, 1), 2)
     sitemap_urls = fetch_sitemap_candidates(session, best_url, robots_policy, limit=max(page_limit * 6, 20))
     homepage_links = build_homepage_links(homepage_page)
-    candidates = choose_candidate_pages(best_url, homepage_links, sitemap_urls, page_limit=page_limit)
+    profile_hint = enrichment_profile_from_text(f"{row.company_name} {homepage_page.title} {homepage_page.text[:3000]}")
+    candidates = choose_candidate_pages(
+        best_url,
+        homepage_links,
+        sitemap_urls,
+        page_limit=page_limit,
+        profile=profile_hint,
+        stage=stage,
+    )
     queued_urls: set[str] = set(candidates)
     delay_seconds = max(request_delay_seconds, robots_policy.crawl_delay_seconds)
 
@@ -3395,11 +3811,18 @@ async def enrich_row(
         if page.content_hash:
             seen_hashes.add(page.content_hash)
         if len(crawled_pages) < page_limit:
-            discovered = choose_candidate_pages(best_url, build_homepage_links(page), [], page_limit=page_limit * 2)
+            discovered = choose_candidate_pages(
+                best_url,
+                build_homepage_links(page),
+                [],
+                page_limit=page_limit * 2,
+                profile=profile_hint,
+                stage=stage,
+            )
             for discovered_url in discovered[1:]:
                 if discovered_url in queued_urls or discovered_url in seen_urls:
                     continue
-                if candidate_page_score(best_url, discovered_url, "") <= 0:
+                if candidate_page_score(best_url, discovered_url, "", profile=profile_hint) <= 0:
                     continue
                 candidates.append(discovered_url)
                 queued_urls.add(discovered_url)
@@ -3431,6 +3854,39 @@ async def enrich_row(
     social_links = dedupe_strings([link for page in crawled_pages for link in page.social_links], limit=20)
     structured_data = structured_data_summary(crawled_pages, sitemap_urls)
     fatal_errors, ignored_errors = split_crawl_errors(best_url, errors)
+    page_summaries = build_page_summaries(crawled_pages)
+    enrichment_depth_status, weak_enrichment_reason = classify_enrichment_depth(
+        crawled_pages,
+        services,
+        locations,
+        leadership_signals,
+        organization_type,
+        fatal_errors,
+        stage=stage,
+    )
+    high_value_pages = [
+        {
+            "url": page.url,
+            "page_type_guess": page.page_type_guess,
+            "title": page.title,
+        }
+        for page in crawled_pages
+        if page.page_type_guess
+        in {"about", "services", "team", "doctor_profile", "locations", "contact", "privacy_pdpa", "security_trust", "pricing"}
+    ]
+    structured_data["enrichment_depth"] = {
+        "stage": stage,
+        "page_limit": page_limit,
+        "per_row_page_concurrency": per_row_page_concurrency,
+        "pages_crawled_count": len(crawled_pages),
+        "pages_crawled_urls": [page.url for page in crawled_pages],
+        "high_value_pages_found": high_value_pages,
+        "homepage_content_quality": homepage_content_quality(crawled_pages[0] if crawled_pages else None),
+        "enrichment_depth_status": enrichment_depth_status,
+        "weak_enrichment_reason": weak_enrichment_reason,
+        "derived_evidence": size_signals,
+        "page_summaries": page_summaries[:16],
+    }
     notes = (
         f"Crawled {len(crawled_pages)} public pages from {registered_domain(normalization.hostname)}; "
         f"found {len(locations)} location signals, {len(services)} service signals, and {len(leadership_signals)} team signals."
@@ -3482,6 +3938,7 @@ async def enrich_row(
         website_scrape=build_website_scrape(crawled_pages, max_chars=scrape_char_limit),
         raw_pages=[make_raw_page(page) for page in crawled_pages],
         crawl_context={
+            "enrichment_depth": structured_data["enrichment_depth"],
             "url_validation": {
                 "best_url_candidate": validation.best_url_candidate,
                 "best_url": validation.best_url,
@@ -3511,6 +3968,18 @@ async def enrich_row(
             },
             "proxy": proxy_context(proxy_retry_log, bool(crawl_proxy_config)),
         },
+        enrichment_depth_status=enrichment_depth_status,
+        weak_enrichment_reason=weak_enrichment_reason,
+        high_value_pages_found_json=high_value_pages,
+        page_summaries_json=page_summaries[:16],
+        homepage_content_quality=structured_data["enrichment_depth"]["homepage_content_quality"],
+        about_page_summary=first_summary_for_type(page_summaries, ("about",)),
+        services_page_summary=first_summary_for_type(page_summaries, ("services",)),
+        team_page_summary=first_summary_for_type(page_summaries, ("team", "doctor_profile")),
+        locations_page_summary=first_summary_for_type(page_summaries, ("locations", "contact")),
+        privacy_page_summary=first_summary_for_type(page_summaries, ("privacy_pdpa",)),
+        pricing_page_summary=first_summary_for_type(page_summaries, ("pricing",)),
+        derived_evidence=size_signals,
     )
     record.confidence_score = confidence_score_for_record(record)
     return stamp(record)
@@ -3549,6 +4018,12 @@ def record_to_csv_row(record: EnrichmentRecord) -> dict[str, str]:
         "crawl_status": record.crawl_status,
         "pages_crawled_count": str(record.pages_crawled_count),
         "pages_crawled_urls": json.dumps(record.pages_crawled_urls, ensure_ascii=True),
+        "enrichment_depth_status": record.enrichment_depth_status,
+        "weak_enrichment_reason": record.weak_enrichment_reason,
+        "homepage_content_quality": record.homepage_content_quality,
+        "high_value_pages_found_json": json.dumps(record.high_value_pages_found_json, ensure_ascii=True),
+        "page_summaries_json": json.dumps(record.page_summaries_json, ensure_ascii=True),
+        "derived_evidence": json.dumps(record.derived_evidence, ensure_ascii=True),
         "title": record.title,
         "meta_description": record.meta_description,
         "organization_name_detected": record.organization_name_detected,
@@ -3563,6 +4038,7 @@ def record_to_csv_row(record: EnrichmentRecord) -> dict[str, str]:
         "leadership_or_team_signals": json.dumps(record.leadership_or_team_signals, ensure_ascii=True),
         "social_links": json.dumps(record.social_links, ensure_ascii=True),
         "structured_data_detected": json.dumps(record.structured_data_detected, ensure_ascii=True),
+        "crawl_context": json.dumps(record.crawl_context, ensure_ascii=True),
         "enrichment_notes": record.enrichment_notes,
         "confidence_score": str(record.confidence_score),
         "error_notes": json.dumps(record.error_notes, ensure_ascii=True),
@@ -3622,6 +4098,12 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
         )
     if record.error_notes:
         notes_parts.append("Errors: " + " | ".join(record.error_notes[:5]))
+    if record.enrichment_depth_status:
+        notes_parts.append(
+            "Enrichment depth: "
+            + record.enrichment_depth_status
+            + (f" ({record.weak_enrichment_reason})" if record.weak_enrichment_reason else "")
+        )
     return {
         "Id": record.row_id,
         "status": terminal_status(record),
@@ -3633,6 +4115,12 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
         "website_content": record.website_scrape,
         "website_scrape": record.website_scrape,
         "source_urls": " | ".join(record.pages_crawled_urls),
+        "industry_guess": record.industry_guess,
+        "services_detected": json.dumps(record.services_detected, ensure_ascii=True),
+        "locations_detected": json.dumps(record.locations_detected, ensure_ascii=True),
+        "contact_info_detected": json.dumps(record.contact_info_detected, ensure_ascii=True),
+        "leadership_or_team_signals": json.dumps(record.leadership_or_team_signals, ensure_ascii=True),
+        "structured_data_detected": json.dumps(record.structured_data_detected, ensure_ascii=True),
         "notes": limit_text(" ".join(part for part in notes_parts if part), 4000),
         "confidence": confidence_label(record.confidence_score),
         "last_stage": record.crawl_status,
@@ -3661,6 +4149,8 @@ async def run_enrichment(args: argparse.Namespace) -> tuple[list[EnrichmentRecor
                 page_timeout_ms=args.page_timeout_ms,
                 request_delay_seconds=args.request_delay_seconds,
                 scrape_char_limit=args.scrape_char_limit,
+                enrichment_stage=args.enrichment_stage,
+                per_row_page_concurrency=args.per_row_page_concurrency,
             )
             records.append(record)
 
@@ -3681,6 +4171,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--page-timeout-ms", type=int, default=30000)
     parser.add_argument("--request-delay-seconds", type=float, default=1.0)
     parser.add_argument("--scrape-char-limit", type=int, default=60000)
+    parser.add_argument("--enrichment-stage", choices=("fast", "deep_retry"), default="fast")
+    parser.add_argument("--per-row-page-concurrency", type=int, default=2)
     parser.add_argument("--output-dir", default=".tmp/public-web-enrichment")
     parser.add_argument("--input-json", help="Read rows from JSON file, or `-` for stdin")
     parser.add_argument("--show-browser", action="store_true")

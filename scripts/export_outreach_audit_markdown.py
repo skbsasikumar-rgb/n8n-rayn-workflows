@@ -129,12 +129,29 @@ def sentence_slot_metadata(row: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def enrichment_depth_metadata(row: dict[str, Any]) -> dict[str, Any]:
+    direct = parse_json_value(row.get("enrichment_depth"))
+    if isinstance(direct, dict):
+        return direct
+    structured = parse_json_value(row.get("structured_data_detected"))
+    if isinstance(structured, dict) and isinstance(structured.get("enrichment_depth"), dict):
+        return structured["enrichment_depth"]
+    crawl_context = parse_json_value(row.get("crawl_context"))
+    if isinstance(crawl_context, dict) and isinstance(crawl_context.get("enrichment_depth"), dict):
+        return crawl_context["enrichment_depth"]
+    return {}
+
+
 def render_markdown(rows: list[dict[str, Any]], debug: bool = False) -> str:
     lines = ["# Cold Email Planner QA Report", ""]
     for row in rows:
         title = field(row, "company_name") or f"Row {field(row, 'row_id')}"
         decision = field(row, "automation_decision")
         decision_reason = field(row, "automation_decision_reason")
+        depth_meta = enrichment_depth_metadata(row)
+        derived = depth_meta.get("derived_evidence") if isinstance(depth_meta, dict) else {}
+        high_value_pages = depth_meta.get("high_value_pages_found") if isinstance(depth_meta, dict) else []
+        pages_crawled_urls = depth_meta.get("pages_crawled_urls") if isinstance(depth_meta, dict) else []
         lines.extend(
             [
                 f"## {field(row, 'row_id')} - {title}",
@@ -153,6 +170,19 @@ def render_markdown(rows: list[dict[str, Any]], debug: bool = False) -> str:
                 f"- pricing_email_2_mode: `{field(row, 'pricing_email_2_mode') or 'unknown'}`",
                 f"- pricing_claim_safe: `{field(row, 'pricing_claim_safe') or 'unknown'}`",
                 f"- pricing_claim_line: {field(row, 'pricing_claim_line') or 'none'}",
+                f"- pages_crawled_count: `{field(row, 'pages_crawled_count') or depth_meta.get('pages_crawled_count') or 'unknown'}`",
+                f"- enrichment_depth_status: `{field(row, 'enrichment_depth_status') or depth_meta.get('enrichment_depth_status') or 'unknown'}`",
+                f"- weak_enrichment_reason: `{field(row, 'weak_enrichment_reason') or depth_meta.get('weak_enrichment_reason') or 'none'}`",
+                f"- high_value_pages_found: `{len(high_value_pages) if isinstance(high_value_pages, list) else 'unknown'}`",
+                f"- team_count_guess: `{(derived or {}).get('team_count_guess', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- practitioner_count_guess: `{(derived or {}).get('practitioner_count_guess', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- location_count_guess: `{(derived or {}).get('location_count_guess', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- has_team_page: `{(derived or {}).get('has_team_page', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- has_privacy_policy: `{(derived or {}).get('has_privacy_policy', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- has_customer_security_hint: `{(derived or {}).get('has_customer_security_hint', 'unknown') if isinstance(derived, dict) else 'unknown'}`",
+                f"- pages_crawled_urls: `{', '.join(str(url) for url in pages_crawled_urls[:8]) if isinstance(pages_crawled_urls, list) and pages_crawled_urls else field(row, 'source_urls') or 'none'}`",
+                f"- services_detected: `{field(row, 'services_detected') or 'none'}`",
+                f"- locations_detected: `{field(row, 'locations_detected') or 'none'}`",
                 f"- final_send_gate_passed: `{field(row, 'final_send_gate_passed') or 'unknown'}`",
             ]
         )
