@@ -2,6 +2,24 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-08
+
+Full-table scratch rerun:
+
+- deployed commit `06dd43d` to Railway worker service `n8n-rayn-workflows`; deployment `0128551f-91e7-4803-bfb5-fe2b6ec6c419` reached `SUCCESS`, and `/health` returned OK.
+- reset all `50` lead rows from URL discovery onward and reran URL discovery. Result: `47` rows got `url_picked` initially; final enrichment state after recovery was `46 completed`, `4 skipped`.
+- the production-style `/public-enrich` worker path clogged on full-table concurrent requests and wrote stale `timeout of 600000ms exceeded` failures. Restarted the worker and recovered enrichment locally with the same deterministic public-enrichment code using low-limit one-page crawls.
+- final skipped rows: `281` Anchor Health Family Clinic, `285` Ann Arbor Dental Surgery, and `314` ASIAN AMERICAN MEDICAL GROUP had `no_official_url_found`; `306` Ashford Healthcare had `skipped_challenge_detected`.
+- contact search ran for the `46` completed rows in chunks of `10`; final contact state was `38 contact_found`, `8 contact_not_found`, and `4 pending` on rows skipped before contact.
+- contact validation provider counts: `anymail_finder_company=28`, `anymail_finder+decision_maker=12`, `anymail_finder=6`, `blank=4`.
+- draft-only planner ran for all `46` completed rows with terminal contact status. Final automation state: `auto_send_eligible=30`, `suppressed=8`, `auto_skipped=5`, `retry_enrichment_once=3`, `blank=4`.
+- final gate state: `final_send_gate_passed=true` for `30` eligible rows only; `email_send_ready=false` for all `50` rows.
+- anomaly checks passed: `eligible_with_flags=[]`, `blocked_with_bodies=[]`, `suppressed_with_bodies=[]`, `send_ready_true=[]`, `gate_true_noneligible=[]`, `eligible_gate_not_true=[]`.
+- cleaned stale `status_reason=enrichment_error` from `25` completed rows after the worker-timeout race; those rows now show `status_reason=enrichment_completed`.
+- deployment performed: yes, Railway worker service `n8n-rayn-workflows`.
+- live rows patched: yes, full-table enrichment/contact/draft fields were reset and repopulated for this scratch test.
+- no emails were sent, and Instantly was not used.
+
 ## 2026-05-07
 
 Friendly deterministic copy style:
