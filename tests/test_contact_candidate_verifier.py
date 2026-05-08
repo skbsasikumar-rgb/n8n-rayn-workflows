@@ -774,6 +774,64 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.selected_contact_source_url, "https://aiclinic.com.sg/")
         self.assertEqual(result.email_validation_evidence["company_email_identity_resolution"]["evidence_url"], "https://www.aiclinic.com.sg/ms-amy-tan/")
 
+    def test_personal_company_email_resolves_lowercase_and_middle_initial_identity(self):
+        payload = {
+            "Id": 796,
+            "company_name": "American International Clinic Singapore",
+            "company_homepage_name": "American International Clinic Singapore",
+            "canonical_domain": "aiclinic.com.sg",
+            "best_url": "https://aiclinic.com.sg/",
+            "website_content": "International clinic in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["zakowich@aiclinic.com.sg", "enquiries@aiclinic.com.sg"],
+                    "valid_emails": ["zakowich@aiclinic.com.sg", "enquiries@aiclinic.com.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        def fake_search(payload):
+            return [
+                {
+                    "provider": "serper",
+                    "query": '"zakowich@aiclinic.com.sg" OR "zakowich" "aiclinic.com.sg"',
+                    "results": [
+                        {
+                            "rank": 1,
+                            "title": "paul zakowich - Specialist in Internal Medicine ... - LinkedIn Singapore",
+                            "url": "https://sg.linkedin.com/in/paul-zakowich-0b32a752",
+                            "snippet": "Paul Zakowich is listed with American International Clinic Singapore.",
+                        },
+                        {
+                            "rank": 2,
+                            "title": "Dr Paul E. Zakowich - Singapore - Novena Medical Center",
+                            "url": "https://novenamedicalcenter.com/our-doctors/dr-paul-e-zakowich/",
+                            "snippet": "Dr Paul E. Zakowich is a Specialist in Internal Medicine connected with American International Clinic Singapore.",
+                        },
+                    ],
+                    "usable_results_count": 2,
+                }
+            ]
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", side_effect=fake_search):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.validated_email, "zakowich@aiclinic.com.sg")
+        self.assertEqual(result.selected_contact_name, "Paul Zakowich")
+        self.assertEqual(result.selected_contact_role, "Specialist")
+        self.assertEqual(result.selected_contact_seniority, "manager")
+        self.assertEqual(result.selected_contact_confidence, "Medium")
+        self.assertTrue(result.email_validation_evidence["company_email_identity_resolution"]["resolved"])
+
     def test_generic_company_email_skips_identity_resolution(self):
         payload = {
             "Id": 794,

@@ -1785,6 +1785,45 @@ def name_matches_local_token(name: str, tokens: list[str]) -> bool:
     return any(token in lowered_parts or token == compacted for token in tokens)
 
 
+def title_case_person_name(name: str) -> str:
+    parts = []
+    for part in clean_name(name).replace(".", " ").split():
+        if len(part) == 1:
+            continue
+        parts.append(part[:1].upper() + part[1:].lower())
+    return clean_name(" ".join(parts))
+
+
+def identity_names_from_evidence(evidence: str, tokens: list[str]) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(name: str) -> None:
+        cleaned = title_case_person_name(name)
+        key = cleaned.lower()
+        if cleaned and key not in seen and probable_human_name(cleaned) and name_matches_local_token(cleaned, tokens):
+            seen.add(key)
+            names.append(cleaned)
+
+    for match in NAME_RE.finditer(evidence):
+        add(match.group(1))
+
+    for token in tokens:
+        if len(token) < 4:
+            continue
+        surname = re.escape(token)
+        pattern = re.compile(
+            rf"\b(?:Dr\.?|Doctor|Mr\.?|Mrs\.?|Ms\.?|Prof\.?)?\s*"
+            rf"([A-Z][a-zA-Z'’-]+|[a-z][a-z'’-]+)"
+            rf"(?:\s+[A-Z]\.?)?\s+({surname})\b",
+            re.I,
+        )
+        for match in pattern.finditer(evidence):
+            add(f"{match.group(1)} {match.group(2)}")
+
+    return names
+
+
 def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: str) -> dict[str, Any]:
     if is_generic_company_email(email):
         return {"resolved": False, "skipped": "generic_company_email", "email": email, "attempts": []}
@@ -1835,10 +1874,7 @@ def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: 
             role, group = infer_identity_role(evidence_text)
             if not group:
                 continue
-            for match in NAME_RE.finditer(evidence_text):
-                raw_name = clean_name(match.group(1))
-                if not probable_human_name(raw_name) or not name_matches_local_token(raw_name, tokens):
-                    continue
+            for raw_name in identity_names_from_evidence(evidence_text, tokens):
                 confidence = "High" if stype == "official_domain" else "Medium"
                 source_url = url or best_url
                 if source_url and url_path_conflicts_with_identity(source_url, raw_name, email):
@@ -1855,8 +1891,6 @@ def resolve_company_email_identity(email: str, payload: dict[str, Any], domain: 
                     "source_type": stype,
                     "confidence": confidence,
                     "evidence_text": evidence_text,
-                    "name_start": match.start(1),
-                    "name_end": match.end(1),
                     "query": query,
                 }
                 break

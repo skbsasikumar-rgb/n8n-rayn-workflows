@@ -724,7 +724,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("Noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", patch["email_1_body"])
+        self.assertIn("I noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -1076,7 +1076,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("Noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Amaris B. Clinic appears to be a medical/aesthetic clinic with doctor-led consultations.", plan.emails["email_1"]["body"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertTrue("access" in plan.emails["email_1"]["body"] and "backup" in plan.emails["email_1"]["body"] and "incident" in plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access", plan.emails["email_1"]["body"])
@@ -1110,7 +1110,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertIn("Batch 1 - Sep 2027", plan.classification["hia_timeline_batch_guess"])
         self.assertTrue(body.startswith("Hello team,"))
-        self.assertIn("Noticed American International Clinic Singapore appears to be an outpatient medical clinic offering doctor-led consultations.", body)
+        self.assertIn("I noticed American International Clinic Singapore appears to be an outpatient medical clinic offering doctor-led consultations.", body)
         self.assertNotIn("family clinic", body)
         self.assertIn("HIA", body)
         self.assertTrue("access" in body and "backup" in body and "incident" in body)
@@ -1136,7 +1136,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertNotEqual(plan.classification["pressure_type"], "not_ready")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
-        self.assertIn("Noticed Amazing Hearing Group appears to be a hearing-care provider offering hearing tests, hearing aids and audiology support.", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Amazing Hearing Group appears to be a hearing-care provider offering hearing tests, hearing aids and audiology support.", plan.emails["email_1"]["body"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertIn("hearing test records", plan.emails["email_3"]["body"])
         self.assertIn("appointment details", plan.emails["email_3"]["body"])
@@ -1172,7 +1172,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
         self.assertRegex(brief["email_problem_statement"], r"security proof|customer review|customers")
-        self.assertIn("Noticed Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled.", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled.", plan.emails["email_1"]["body"])
         self.assertIn("admin access", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_3"]["body"])
@@ -1221,7 +1221,11 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan,"))
-        self.assertIn("Noticed Amaris B. Clinic appears", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Amaris B. Clinic appears", plan.emails["email_1"]["body"])
+        self.assertTrue(plan.emails["email_2"]["body"].startswith("Ivan - "))
+        self.assertTrue(plan.emails["email_3"]["body"].startswith("Ivan - "))
+        self.assertTrue(plan.emails["email_4"]["body"].startswith("Ivan, "))
+        self.assertFalse(plan.emails["email_4"]["body"].startswith("Ivan - "))
 
     def test_named_doctor_contact_uses_person_first_name(self):
         plan = o.plan_outreach(
@@ -1234,7 +1238,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Paul,"))
-        self.assertIn("Noticed American International Clinic Singapore appears", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed American International Clinic Singapore appears", plan.emails["email_1"]["body"])
 
     def test_blank_selected_contact_uses_team_greeting_and_keeps_company_observation(self):
         plan = o.plan_outreach(
@@ -1246,7 +1250,10 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("Noticed Acme Services Pte Ltd", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Acme Services Pte Ltd", plan.emails["email_1"]["body"])
+        self.assertFalse(plan.emails["email_2"]["body"].lower().startswith(("hi ", "hello ")))
+        self.assertFalse(plan.emails["email_3"]["body"].lower().startswith(("hi ", "hello ")))
+        self.assertFalse(plan.emails["email_4"]["body"].lower().startswith(("hi ", "hello ")))
 
     def test_generic_contactus_email_does_not_invent_first_name(self):
         plan = o.plan_outreach(
@@ -1259,7 +1266,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertNotIn("Hi Amber,", plan.emails["email_1"]["body"])
-        self.assertIn("Noticed Amber Family Clinic appears", plan.emails["email_1"]["body"])
+        self.assertIn("I noticed Amber Family Clinic appears", plan.emails["email_1"]["body"])
 
     def test_strategy_evaluator_flags_bad_email_shape(self):
         plan = o.plan_outreach(

@@ -585,7 +585,7 @@ def value_fallback_email_2(
     classification: dict[str, Any] | None = None,
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    greeting = email_comma_greeting(row)
+    prefix = followup_name_prefix(row, "-")
     asset_name = compact(asset) or "checklist"
     subject = "readiness evidence"
     subject_options = ["readiness evidence", "checklist"]
@@ -597,7 +597,7 @@ def value_fallback_email_2(
         subject_options = list(fallback_subjects.values())
     sentence_slots: dict[str, dict[str, str]] = {}
     slots = non_hia_email_2_sentence_slots(row, classification or {}, sentence_slots, asset_name) if classification is not None else {}
-    body = value_fallback_body_fixed(greeting, asset_name, slots)
+    body = value_fallback_body_fixed(prefix, asset_name, slots)
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": subject_options,
@@ -865,6 +865,16 @@ def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str
     if valid_person_contact_name(name):
         return f"Hi {first_name_from_contact(name)},"
     return "Hello team,"
+
+
+def followup_name_prefix(row: dict[str, Any], separator: str = "-") -> str:
+    name = compact(row.get("selected_contact_name"))
+    if not valid_person_contact_name(name):
+        return ""
+    first = first_name_from_contact(name)
+    if separator == ",":
+        return f"{first}, "
+    return f"{first} {separator} "
 
 
 def company_team_greeting(company: str | None = None) -> str:
@@ -1679,20 +1689,19 @@ def chosen_subject_variant(
 
 
 def email_1_body_fixed(greeting: str, noticed: str, problem: str, mechanism: str, cta: str) -> str:
-    return f"{greeting}\n\nNoticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
+    return f"{greeting} I noticed {noticed}\n\n{problem} {mechanism}\n\n{cta}"
 
 
-def funding_email_2_body_fixed(greeting: str, funding_line: str, caveat: str) -> str:
+def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
     return (
-        f"{greeting}\n\n"
-        f"{funding_line}{caveat}\n\n"
+        f"{prefix}{funding_line}{caveat}\n\n"
         "The useful first step is to check the route before lining up readiness work.\n\n"
         "Should I send the route summary?"
     )
 
 
 def hia_pricing_email_2_body(
-    greeting: str,
+    prefix: str,
     pricing_mode: str,
     funding_safe: bool,
     slots: dict[str, str] | None = None,
@@ -1708,24 +1717,21 @@ def hia_pricing_email_2_body(
     cta = slots.get("cta") or "Worth doing a quick endpoint check?"
     if pricing_mode == "small_clinic_starting_price":
         return (
-            f"{greeting}\n\n"
-            f"{cost_opener} {small_price}"
+            f"{prefix}{cost_opener} {small_price}"
             f"{funding_sentence}\n\n"
             f"{value_line}\n\n"
             f"{cta}"
         )
     if pricing_mode == "group_or_larger_sizing_needed":
         return (
-            f"{greeting}\n\n"
-            f"{cost_opener} {endpoint_caveat}\n\n"
+            f"{prefix}{cost_opener} {endpoint_caveat}\n\n"
             f"{small_price} {group_line}"
             f"{funding_sentence}\n\n"
             f"{value_line}\n\n"
             f"{cta}"
         )
     return (
-        f"{greeting}\n\n"
-        f"{cost_opener} {endpoint_caveat}\n\n"
+        f"{prefix}{cost_opener} {endpoint_caveat}\n\n"
         f"{small_price} {group_line}"
         f"{funding_sentence}\n\n"
         f"{value_line}\n\n"
@@ -1733,29 +1739,30 @@ def hia_pricing_email_2_body(
     )
 
 
-def value_fallback_body_fixed(greeting: str, asset_name: str, slots: dict[str, str] | None = None) -> str:
+def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str] | None = None) -> str:
     slots = slots or {}
     evidence_line = slots.get("evidence_line") or "A simple first pass is to check what evidence already exists: access lists, backups, updates, malware controls and incident contacts."
     second_line = slots.get("second_line") or "If those are already in decent shape, Cyber Essentials is usually a cleaner job."
     cta = slots.get("cta") or f"Worth sending the {asset_name}?"
     return (
-        f"{greeting}\n\n"
-        f"{evidence_line}\n\n"
+        f"{prefix}{evidence_line}\n\n"
         f"{second_line}\n\n"
         f"{cta}"
     )
 
 
-def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None = None) -> str:
+def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None = None, prefix: str = "") -> str:
     slots = slots or {}
     opener = slots.get("diagnostic_opener") or "Simple check:"
     gap_line = slots.get("gap_line") or "If any of those are unclear, that is usually where the cleanup starts."
     cta = slots.get("cta") or "Worth sending the checklist?"
-    return f"{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
+    return f"{prefix}{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
 
 
-def close_loop_body_fixed(greeting: str, close_loop_line: str) -> str:
-    return f"{greeting}\n\n{close_loop_line}"
+def close_loop_body_fixed(prefix: str, close_loop_line: str) -> str:
+    if prefix.endswith(", ") and close_loop_line:
+        close_loop_line = close_loop_line[:1].lower() + close_loop_line[1:]
+    return f"{prefix}{close_loop_line}"
 
 
 def choose_sentence_slot(
@@ -2874,6 +2881,7 @@ def hia_email_2_diagnostic(
     asset: str,
     copy_brief: dict[str, Any] | None = None,
     slots: dict[str, str] | str | None = None,
+    prefix: str = "",
 ) -> str:
     company = compact(row.get("company_name") or "the organisation")
     records = hia_email_1_records(row, classification, copy_brief)
@@ -2904,7 +2912,7 @@ def hia_email_2_diagnostic(
     question = slots.get("question_shape") or f"can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?"
     gap_line = slots.get("gap_line") or "If that is fuzzy, that is usually the first readiness gap to close."
     cta = slots.get("cta") or f"Want the {asset}?"
-    return f"{opener} {question}\n\n{gap_line}\n\n{cta}"
+    return f"{prefix}{opener} {question}\n\n{gap_line}\n\n{cta}"
 
 
 def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -> dict[str, str]:
@@ -3326,6 +3334,8 @@ def generate_email_sequence(
     greeting = email_greeting(row, company)
     email1_greeting = email_1_greeting(row, company)
     comma_greeting = email_comma_greeting(row, company)
+    followup_prefix = followup_name_prefix(row, "-")
+    close_loop_prefix = followup_name_prefix(row, ",")
     if not copy_brief_ready(classification, copy_brief):
         return empty_email_sequence()
     trigger = compact(copy_brief.get("prospect_facing_signal")) or prospect_facing_signal(
@@ -3390,7 +3400,7 @@ def generate_email_sequence(
         if classification["pressure_type"] == "hia_regulatory":
             records = hia_email_1_records(row, classification, copy_brief)
             email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
-            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_slots)
+            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_slots, followup_prefix)
         elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
             diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
         elif classification["pressure_type"] == "customer_trust":
@@ -3399,7 +3409,7 @@ def generate_email_sequence(
             diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
         if classification["pressure_type"] != "hia_regulatory":
             email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, "", asset)
-            email3_body = diagnostic_email_3_body_fixed(diagnostic, email3_slots)
+            email3_body = diagnostic_email_3_body_fixed(diagnostic, email3_slots, followup_prefix)
         if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
             hia_pricing_subjects = {"A": "endpoint check", "B": "CISOaaS sizing", "C": "cost check"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
@@ -3412,7 +3422,7 @@ def generate_email_sequence(
                 funding_claim_send_safe(funding, copy_brief, classification),
             )
             email2_body = hia_pricing_email_2_body(
-                comma_greeting,
+                followup_prefix,
                 compact(copy_brief.get("pricing_email_2_mode")) or "endpoint_sizing_needed",
                 funding_claim_send_safe(funding, copy_brief, classification),
                 email2_slots,
@@ -3424,21 +3434,21 @@ def generate_email_sequence(
                 email2_subject = "HIA / cyber funding"
                 email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = funding_email_2_body_fixed(comma_greeting, funding_line, caveat)
+            email2_body = funding_email_2_body_fixed(followup_prefix, funding_line, caveat)
         else:
             fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
             subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
             email2_subject = fallback_subjects[subject_key]
             email2_subject_options = list(fallback_subjects.values())
             email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset)
-            email2_body = value_fallback_body_fixed(comma_greeting, asset, email2_slots)
+            email2_body = value_fallback_body_fixed(followup_prefix, asset, email2_slots)
             fallback_email2 = {"chosen_subject": email2_subject, "subject_options": email2_subject_options, "body": email2_body}
             email2_subject = fallback_email2["chosen_subject"]
             email2_subject_options = fallback_email2["subject_options"]
         email3_subject = diagnostic_subject
         _, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
         email4_slots = email_4_sentence_slots(row, classification, sentence_slots, asset)
-        email4_body = close_loop_body_fixed(comma_greeting, email4_slots["close_loop"])
+        email4_body = close_loop_body_fixed(close_loop_prefix, email4_slots["close_loop"])
     else:
         sentence_slots = {}
         email1_subject_options = [email1_subject, "readiness checklist"]
@@ -3549,10 +3559,10 @@ def enforce_funding_claim_email(
     useful_line = "The useful first step is to check the route before lining up readiness work."
     if claim.lower() in existing_body.lower() and funding_only_email(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
         return emails
-    greeting = email_comma_greeting(row)
+    prefix = followup_name_prefix(row, "-")
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = funding_email_2_body_fixed(greeting, claim, caveat)
+    body = funding_email_2_body_fixed(prefix, claim, caveat)
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": list(email2.get("subject_options") or [subject]),
@@ -3858,12 +3868,15 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
     if compact(row.get("selected_contact_name")):
         return True
     company = compact(row.get("company_name")).lower()
-    allowed_prefixes = ["hi team,", "hello team,"]
+    email1_prefixes = ["hi team,", "hello team,"]
     if company:
-        allowed_prefixes.append(f"hi {company} team,")
-    for key in ("email_1", "email_2", "email_4"):
+        email1_prefixes.append(f"hi {company} team,")
+    email1 = trim_text((emails.get("email_1") or {}).get("body")).lower()
+    if email1 and not any(email1.startswith(prefix) for prefix in email1_prefixes):
+        return False
+    for key in ("email_2", "email_3", "email_4"):
         body = trim_text((emails.get(key) or {}).get("body")).lower()
-        if body and not any(body.startswith(prefix) for prefix in allowed_prefixes):
+        if body and re.match(r"^(?:hi|hello)\s+", body):
             return False
     return True
 
