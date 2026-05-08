@@ -10,8 +10,10 @@ Friendly deterministic copy style:
 - retired `appears to be` as a fixed Email 1 body phrase; generated copy now rotates human alternatives such as `looks like`, `seems to be`, `is listed as`, and `looks to be` while preserving the underlying copy brief and quality gates.
 - tests run: `python3 -m py_compile services/crawl4ai/outreach_planner.py`; `PYTHONPATH=services/crawl4ai:. python3 -m pytest tests/test_outreach_planner.py -q` (`83 passed`).
 - preview generated: local read-only planner preview only; no live rows were patched.
-- deployment performed: no.
-- live rows patched: no.
+- deployed commit `8ba66a0` to Railway service `n8n-rayn-workflows`, then ran the live cold-email planner workflow in draft-only mode for `10` rows (`force=true`, `use_llm=false`). Rows patched: `273,274,275,276,277,278,279,280,282,283` at `2026-05-08 05:43:00-05:43:01+00:00`.
+- live draft-only audit: `automation_decision={auto_send_eligible:8,suppressed:1,auto_skipped:1}`, `final_send_gate_passed={true:8,false:2}`, `email_send_ready={false:10}`. Auto-send eligible rows had email bodies and blank quality/severe flags. Suppressed/skipped rows had no email bodies. Row `280` was `auto_skipped` for `low_trigger_confidence` / `email_quality_gate_failed`; row `278` was suppressed for `suppressed_missing_validated_email`.
+- deployment performed: yes, Railway service `n8n-rayn-workflows`.
+- live rows patched: yes, draft fields only for the `10`-row live draft-only test.
 - no emails were sent, and Instantly was not used.
 - replaced whole-email A/B/C body variants with deterministic sentence-level rotation. The planner now keeps one fixed structure per email step and rotates approved sentence slots inside that structure.
 - fixed preview QA anomalies from the 10-row read-only test: family clinic evidence now outranks weak long-term-care wording, endocrinology records no longer get overwritten by incidental oncology/radiation text, orthopaedic/sports-medicine rows use orthopaedic record phrases, and non-person labels such as `Committee Memberships` fall back to generic greeting/contact mode.
