@@ -232,10 +232,30 @@ def test_url_picker_fallback_rejects_profile_slug():
     assert result["url_picked"] == ""
 
 
-def test_url_discovery_requests_twenty_serper_results():
+def test_url_discovery_requests_ten_serper_results():
     workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
     node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
-    assert "num: 20" in node["parameters"]["jsCode"]
+    assert "num: 10" in node["parameters"]["jsCode"]
+
+
+def test_url_picker_prompt_requires_blank_when_unclear():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Prepare URL Discovery Pick")
+    prompt_code = node["parameters"]["jsCode"]
+
+    assert "Return blank unless the result is clearly" in prompt_code
+    assert "Do not guess" in prompt_code
+    assert "acronym-only domains" in prompt_code
+
+
+def test_url_picker_prompt_node_compiles():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Prepare URL Discovery Pick")
+    script = f"""
+const nodeCode = {json.dumps(node["parameters"]["jsCode"])};
+new Function('$', 'node', nodeCode);
+"""
+    subprocess.check_call(["node", "-e", script])
 
 
 def test_url_pick_patch_clears_homepage_root_on_skip():
