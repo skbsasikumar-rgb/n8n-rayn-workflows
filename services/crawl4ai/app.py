@@ -1661,6 +1661,11 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
                 and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
                 and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false").lower() != "true"
             )
+            or (
+                stage == "deep_retry"
+                and os.getenv("PUBLIC_ENRICH_DEEP_STATIC_FIRST", "true").lower() != "false"
+                and os.getenv("PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY", "false").lower() != "true"
+            )
         )
         if use_static_transport:
             return await asyncio.wait_for(
@@ -1771,15 +1776,20 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
 
 
 def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
+    stage = "deep_retry" if str(request_data.get("enrichment_stage") or "fast") == "deep_retry" else "fast"
+    browser_primary_key = "PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY" if stage == "deep_retry" else "PUBLIC_ENRICH_FAST_BROWSER_PRIMARY"
+    static_first_key = "PUBLIC_ENRICH_DEEP_STATIC_FIRST" if stage == "deep_retry" else "PUBLIC_ENRICH_FAST_STATIC_FIRST"
     return (
-        str(request_data.get("enrichment_stage") or "fast") != "deep_retry"
-        and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
-        and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false").lower() != "true"
+        os.getenv(static_first_key, "true").lower() != "false"
+        and os.getenv(browser_primary_key, "false").lower() != "true"
     )
 
 
 def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any]:
     request = PublicEnrichmentRequest.model_validate(request_data)
+    stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
+    max_pages = 16 if stage == "deep_retry" else 8
+    max_chars = 160000 if stage == "deep_retry" else 120000
     input_row = public_enrichment.InputRow(
         row_id=request.Id,
         company_name=request.company_name,
@@ -1789,11 +1799,11 @@ def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any
         public_enrichment.enrich_row(
             row=input_row,
             crawler=None,
-            page_limit=min(max(1, request.page_limit), 8),
-            page_timeout_ms=min(request.page_timeout_ms, 12000),
+            page_limit=min(max(1, request.page_limit), max_pages),
+            page_timeout_ms=min(request.page_timeout_ms, 15000 if stage == "deep_retry" else 12000),
             request_delay_seconds=min(request.request_delay_seconds, 0.1),
-            scrape_char_limit=min(max(2000, request.scrape_char_limit), 120000),
-            enrichment_stage="fast",
+            scrape_char_limit=min(max(2000, request.scrape_char_limit), max_chars),
+            enrichment_stage=stage,
             per_row_page_concurrency=min(max(1, request.per_row_page_concurrency), 2),
         )
     )
