@@ -1773,9 +1773,8 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
 def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
     return (
         str(request_data.get("enrichment_stage") or "fast") != "deep_retry"
-        and int(request_data.get("page_limit") or 1) <= 1
         and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
-        and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
+        and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false").lower() != "true"
     )
 
 
@@ -1790,12 +1789,12 @@ def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any
         public_enrichment.enrich_row(
             row=input_row,
             crawler=None,
-            page_limit=min(max(1, request.page_limit), 1),
-            page_timeout_ms=min(request.page_timeout_ms, 8000),
-            request_delay_seconds=0,
-            scrape_char_limit=min(max(2000, request.scrape_char_limit), 50000),
+            page_limit=min(max(1, request.page_limit), 8),
+            page_timeout_ms=min(request.page_timeout_ms, 12000),
+            request_delay_seconds=min(request.request_delay_seconds, 0.1),
+            scrape_char_limit=min(max(2000, request.scrape_char_limit), 120000),
             enrichment_stage="fast",
-            per_row_page_concurrency=1,
+            per_row_page_concurrency=min(max(1, request.per_row_page_concurrency), 2),
         )
     )
     patch = public_enrichment.build_noco_patch(record)
