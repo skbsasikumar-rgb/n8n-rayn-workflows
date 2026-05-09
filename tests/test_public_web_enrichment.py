@@ -284,9 +284,12 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         nodes = {node["name"]: node for node in workflow["nodes"]}
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
+        rerun_helper = open("scripts/rayn_selected_rerun.py", encoding="utf-8").read()
         self.assertIn("if (depth === 'weak_retry_needed') return 'url_picked'", patch_code)
         self.assertIn("statusReason.includes('thin_content')", prepare_code)
         self.assertIn("attemptCount > 1", prepare_code)
+        self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
+        self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
 
 
 if __name__ == "__main__":

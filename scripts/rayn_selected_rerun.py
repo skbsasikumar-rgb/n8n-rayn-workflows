@@ -259,6 +259,20 @@ def weak_enrichment_reason(patch: dict[str, Any]) -> str:
 def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc).isoformat()
     attempt_count = str((int(str(row.get("attempt_count") or "0") or "0") + 1))
+    prior_reason = str(row.get("status_reason") or row.get("error_type") or "").strip().lower()
+    explicit_stage = str(row.get("enrichment_stage") or row.get("public_enrichment_stage") or "").strip()
+    prior_attempt_count = int(str(row.get("attempt_count") or "0") or "0")
+    should_deep_retry = (
+        explicit_stage == "deep_retry"
+        or "weak_retry" in prior_reason
+        or "thin_content" in prior_reason
+        or "no_services_detected" in prior_reason
+        or "no_locations_detected" in prior_reason
+        or "no_team_or_contact_page" in prior_reason
+        or "challenge_detected" in prior_reason
+        or prior_attempt_count > 0
+    )
+    enrichment_stage = "deep_retry" if should_deep_retry else "fast"
     run_id = f"selected-rerun:{int(time.time())}:{row['Id']}"
     api.noco_patch(
         [
@@ -286,12 +300,13 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
             "Id": row["Id"],
             "company_name": row["company_name"],
             "url_picked": row["url_picked"],
-            "page_limit": args.page_limit,
-            "page_timeout_ms": args.page_timeout_ms,
-            "request_delay_seconds": args.request_delay_seconds,
-            "scrape_char_limit": args.scrape_char_limit,
+            "enrichment_stage": enrichment_stage,
+            "page_limit": 14 if enrichment_stage == "deep_retry" else args.page_limit,
+            "page_timeout_ms": 20000 if enrichment_stage == "deep_retry" else args.page_timeout_ms,
+            "request_delay_seconds": 0.5 if enrichment_stage == "deep_retry" else args.request_delay_seconds,
+            "scrape_char_limit": 160000 if enrichment_stage == "deep_retry" else args.scrape_char_limit,
             "per_row_page_concurrency": args.per_row_page_concurrency,
-            "row_timeout_seconds": args.row_timeout_seconds,
+            "row_timeout_seconds": 300 if enrichment_stage == "deep_retry" else args.row_timeout_seconds,
             "allow_low_limits": args.allow_low_limits,
         },
         args.public_enrich_timeout,
