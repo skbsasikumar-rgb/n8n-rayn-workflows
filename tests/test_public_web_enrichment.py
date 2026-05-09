@@ -237,9 +237,19 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
         self.assertIn('PUBLIC_ENRICH_FAST_STATIC_FIRST", "true"', source)
         self.assertIn('PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false"', source)
-        self.assertIn('PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "false"', source)
+        self.assertIn('PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "true"', source)
         self.assertIn("homepage_static_ms", source)
         self.assertIn("PUBLIC_WEB_STATIC_READ_TIMEOUT_SECONDS", source)
+
+    def test_challenge_recovery_uses_browserless_and_2captcha_controls(self):
+        source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
+        self.assertIn("def browserless_ws_endpoint", source)
+        self.assertIn("BROWSERLESS_WS_URL", source)
+        self.assertIn("BROWSERLESS_TOKEN", source)
+        self.assertIn("PUBLIC_ENRICH_CHALLENGE_BROWSER_FALLBACK", source)
+        self.assertIn("connect_over_cdp", source)
+        self.assertIn("captcha_solver.solve_page_captcha", source)
+        self.assertIn("challenge_browser_recovery", source)
 
     def test_candidate_subpages_use_bounded_concurrency(self):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()

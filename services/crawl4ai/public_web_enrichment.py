@@ -43,6 +43,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit, urlunsp
 
 import requests
 from bs4 import BeautifulSoup
+from playwright.async_api import async_playwright
 
 logger = logging.getLogger(__name__)
 
@@ -3387,6 +3388,122 @@ def retry_static_with_proxy(
         return None
 
 
+def browserless_ws_endpoint() -> str:
+    endpoint = compact_whitespace(
+        os.getenv("BROWSERLESS_WS_URL")
+        or os.getenv("BROWSERLESS_ENDPOINT")
+        or os.getenv("BROWSERLESS_CDP_URL")
+    )
+    token = compact_whitespace(os.getenv("BROWSERLESS_TOKEN") or os.getenv("BROWSERLESS_API_TOKEN"))
+    if not endpoint and token:
+        base = compact_whitespace(os.getenv("BROWSERLESS_BASE_URL") or "wss://production-sfo.browserless.io")
+        endpoint = base.rstrip("/")
+    if endpoint and token and "token=" not in endpoint:
+        separator = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{separator}token={quote(token, safe='')}"
+    proxy_mode = compact_whitespace(os.getenv("BROWSERLESS_PROXY") or os.getenv("BROWSERLESS_PROXY_MODE")).lower()
+    if proxy_mode and "proxy=" not in endpoint:
+        separator = "&" if "?" in endpoint else "?"
+        endpoint = f"{endpoint}{separator}proxy={quote(proxy_mode, safe='')}"
+    return endpoint
+
+
+def challenge_browser_fallback_enabled(stage: str) -> bool:
+    default = "true"
+    if stage == "fast":
+        default = os.getenv("PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "true")
+    return os.getenv("PUBLIC_ENRICH_CHALLENGE_BROWSER_FALLBACK", default).lower() != "false"
+
+
+async def browser_challenge_recovery(
+    url: str,
+    stage: str,
+    page_timeout_ms: int,
+    errors: list[str],
+    proxy_retry_log: list[dict[str, Any]],
+    proxy_config: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    if not challenge_browser_fallback_enabled(stage) and not captcha_solver.is_configured():
+        return None
+    started = time.perf_counter()
+    endpoint = browserless_ws_endpoint()
+    transport = "browserless_cdp" if endpoint else "local_playwright"
+    try:
+        async with async_playwright() as playwright:
+            if endpoint:
+                browser = await playwright.chromium.connect_over_cdp(endpoint, timeout=page_timeout_ms)
+            else:
+                browser = await playwright.chromium.launch(
+                    headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
+                    args=["--disable-dev-shm-usage", "--no-sandbox"],
+                    **({"proxy": proxy_config} if proxy_config else {}),
+                )
+            try:
+                context = await browser.new_context(
+                    user_agent=USER_AGENT,
+                    ignore_https_errors=True,
+                )
+                page = await context.new_page()
+                await page.goto(url, wait_until="domcontentloaded", timeout=page_timeout_ms)
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=min(page_timeout_ms, 10000))
+                except Exception:
+                    pass
+                html = await page.content()
+                solved = False
+                if captcha_solver._detect_captcha_type(html) and captcha_solver.is_configured():
+                    solved = await captcha_solver.solve_page_captcha(page, html)
+                    if solved:
+                        await page.wait_for_timeout(3000)
+                        try:
+                            await page.wait_for_load_state("networkidle", timeout=min(page_timeout_ms, 10000))
+                        except Exception:
+                            pass
+                        html = await page.content()
+                result = {
+                    "success": True,
+                    "url": url,
+                    "redirected_url": page.url,
+                    "status_code": 200,
+                    "html": html,
+                    "cleaned_html": html,
+                    "metadata": {"transport": transport, "captcha_solved": solved},
+                }
+                artifact = extract_page_artifact(result)
+                success = bool(artifact.text and not artifact.challenge_hints)
+                proxy_retry_log.append(
+                    {
+                        "url": url,
+                        "reason": "challenge_browser_recovery",
+                        "transport": transport,
+                        "success": success,
+                        "captcha_solved": solved,
+                        "duration_ms": elapsed_ms(started),
+                        **({"challenge_hints": artifact.challenge_hints} if artifact.challenge_hints else {}),
+                    }
+                )
+                if success:
+                    errors.append(f"{url}: {transport} recovered challenge")
+                    return result
+                errors.append(f"{url}: {transport} still returned challenge page")
+                return None
+            finally:
+                await browser.close()
+    except Exception as exc:
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": "challenge_browser_recovery",
+                "transport": transport,
+                "success": False,
+                "error": compact_whitespace(exc),
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: {transport} challenge recovery failed: {compact_whitespace(exc)}")
+        return None
+
+
 def build_homepage_links(page: PageArtifact) -> list[dict[str, str]]:
     if page.internal_link_items:
         return page.internal_link_items
@@ -3655,7 +3772,7 @@ async def enrich_row(
     if homepage_page.challenge_hints:
         challenge_note = "challenge page detected: " + ", ".join(homepage_page.challenge_hints)
         captcha_solved = False
-        allow_challenge_recovery = stage != "fast" or os.getenv("PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "false").lower() == "true"
+        allow_challenge_recovery = challenge_browser_fallback_enabled(stage)
         if allow_challenge_recovery:
             try:
                 static_started = time.perf_counter()
@@ -3691,48 +3808,20 @@ async def enrich_row(
                 homepage_page = extract_page_artifact(proxy_result)
                 challenge_note = ""
                 captcha_solved = not homepage_page.challenge_hints
-        if not captcha_solved and allow_challenge_recovery and captcha_solver.is_configured():
-            try:
-                from playwright.async_api import async_playwright as _ap
-                async with _ap() as playwright:
-                    browser = await playwright.chromium.launch(
-                        headless=os.getenv("CRAWL4AI_HEADLESS", "true").lower() != "false",
-                        args=["--disable-dev-shm-usage", "--no-sandbox"],
-                        **({"proxy": crawl_proxy_config} if crawl_proxy_config else {}),
-                    )
-                    try:
-                        ctx = await browser.new_context(ignore_https_errors=True)
-                        pg = await ctx.new_page()
-                        await pg.goto(best_url, wait_until="domcontentloaded", timeout=page_timeout_ms)
-                        try:
-                            await pg.wait_for_load_state("networkidle", timeout=min(page_timeout_ms, 10000))
-                        except Exception:
-                            pass
-                        html = await pg.content()
-                        if captcha_solver._detect_captcha_type(html):
-                            solved = await captcha_solver.solve_page_captcha(pg, html)
-                            if solved:
-                                await pg.wait_for_timeout(3000)
-                                try:
-                                    await pg.wait_for_load_state("networkidle", timeout=10000)
-                                except Exception:
-                                    pass
-                                solved_html = await pg.content()
-                                homepage_result = {
-                                    "success": True,
-                                    "url": best_url,
-                                    "redirected_url": pg.url,
-                                    "status_code": 200,
-                                    "html": solved_html,
-                                    "cleaned_html": solved_html,
-                                    "metadata": {},
-                                }
-                                homepage_page = extract_page_artifact(homepage_result)
-                                captcha_solved = not homepage_page.challenge_hints
-                    finally:
-                        await browser.close()
-            except Exception as captcha_exc:
-                logger.warning("captcha solve attempt failed for %s: %s", best_url, captcha_exc)
+        if not captcha_solved and allow_challenge_recovery:
+            browser_result = await browser_challenge_recovery(
+                best_url,
+                stage,
+                page_timeout_ms,
+                errors,
+                proxy_retry_log,
+                proxy_config=crawl_proxy_config,
+            )
+            if browser_result is not None:
+                homepage_result = browser_result
+                homepage_page = extract_page_artifact(browser_result)
+                challenge_note = ""
+                captcha_solved = not homepage_page.challenge_hints
 
         if not captcha_solved:
             return stamp(EnrichmentRecord(
