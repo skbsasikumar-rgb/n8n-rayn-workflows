@@ -253,8 +253,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         source = open("services/crawl4ai/app.py", encoding="utf-8").read()
         self.assertIn("use_static_transport = (", source)
         self.assertIn('PUBLIC_ENRICH_FALLBACK_RESERVE_SECONDS", "60"', source)
-        self.assertIn("static_only=stage == \"fast\"", source)
-        self.assertIn("fallback_limit = min(4 if stage == \"fast\" else 2", source)
+        self.assertIn("fallback_limit = min(4, effective_page_limit)", source)
+        self.assertIn("static_only=True", source)
         self.assertIn('PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false"', source)
         self.assertIn("page_limit=min(max(1, request.page_limit), 8)", source)
 

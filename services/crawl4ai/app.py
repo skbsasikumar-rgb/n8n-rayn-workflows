@@ -1718,14 +1718,14 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
             except asyncio.TimeoutError as exc:
                 if effective_page_limit <= 1:
                     raise exc
-                fallback_limit = min(4 if stage == "fast" else 2, effective_page_limit)
+                fallback_limit = min(4, effective_page_limit)
                 fallback_timeout_ms = min(request.page_timeout_ms, 12000)
                 record = await run_attempt(
                     fallback_limit,
                     fallback_timeout_ms,
                     min(request.request_delay_seconds, 0.1),
                     effective_scrape_char_limit,
-                    static_only=stage == "fast",
+                    static_only=True,
                 )
                 record.crawl_status = "partial"
                 record.error_notes.append(
