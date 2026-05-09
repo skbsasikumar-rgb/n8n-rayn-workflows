@@ -1596,7 +1596,8 @@ def public_enrich_hard_timeout_seconds(request: PublicEnrichmentRequest) -> floa
     default_timeout = 300 if stage == "deep_retry" else 180
     configured = float(os.getenv("PUBLIC_ENRICH_HARD_TIMEOUT_SECONDS", str(default_timeout)))
     if request.row_timeout_seconds:
-        configured = min(configured, float(request.row_timeout_seconds))
+        fallback_reserve = float(os.getenv("PUBLIC_ENRICH_FALLBACK_RESERVE_SECONDS", "60"))
+        configured = max(configured, float(request.row_timeout_seconds) + fallback_reserve)
     return max(30.0, configured)
 
 
@@ -1637,16 +1638,25 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
 
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
 
-    async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
+    async def run_attempt(
+        page_limit: int,
+        page_timeout_ms: int,
+        request_delay_seconds: float,
+        scrape_char_limit: int,
+        *,
+        static_only: bool = False,
+    ):
         default_timeout_cap = "180" if stage == "fast" else "360"
         timeout_seconds = min(
             float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", default_timeout_cap)),
             max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
         )
         if request.row_timeout_seconds:
-            timeout_seconds = min(timeout_seconds, float(request.row_timeout_seconds))
+            fallback_reserve = 0.0 if static_only else float(os.getenv("PUBLIC_ENRICH_FALLBACK_RESERVE_SECONDS", "60"))
+            timeout_seconds = min(timeout_seconds, max(45.0, float(request.row_timeout_seconds) - fallback_reserve))
         fast_static_only = (
-            stage == "fast"
+            static_only
+            or stage == "fast"
             and page_limit <= 1
             and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
             and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
@@ -1705,15 +1715,16 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
                     effective_scrape_char_limit,
                 )
             except asyncio.TimeoutError as exc:
-                if stage == "fast" or effective_page_limit <= 2:
+                if effective_page_limit <= 1:
                     raise exc
-                fallback_limit = min(2, effective_page_limit)
+                fallback_limit = min(4 if stage == "fast" else 2, effective_page_limit)
                 fallback_timeout_ms = min(request.page_timeout_ms, 12000)
                 record = await run_attempt(
                     fallback_limit,
                     fallback_timeout_ms,
                     min(request.request_delay_seconds, 0.1),
                     effective_scrape_char_limit,
+                    static_only=stage == "fast",
                 )
                 record.crawl_status = "partial"
                 record.error_notes.append(
