@@ -3588,7 +3588,8 @@ async def enrich_row(
                 static_started = time.perf_counter()
                 homepage_result = fetch_static_url(session, best_url)
                 timings["homepage_static_fallback_ms"] = elapsed_ms(static_started)
-                errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
+                if crawler is not None:
+                    errors.append(f"{best_url}: Crawl4AI fallback used after homepage error: {crawl_error_text}")
             except Exception as fallback_exc:
                 error_text = compact_whitespace(fallback_exc) or crawl_error_text
                 if proxy_retryable_error(crawl_error_text) or proxy_retryable_error(error_text):

@@ -270,7 +270,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
         or "no_locations_detected" in prior_reason
         or "no_team_or_contact_page" in prior_reason
         or "challenge_detected" in prior_reason
-        or prior_attempt_count > 0
+        or prior_attempt_count > 1
     )
     enrichment_stage = "deep_retry" if should_deep_retry else "fast"
     run_id = f"selected-rerun:{int(time.time())}:{row['Id']}"

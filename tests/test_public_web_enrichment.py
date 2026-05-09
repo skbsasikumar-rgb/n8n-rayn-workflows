@@ -292,6 +292,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("attemptCount > 1", prepare_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
+        self.assertIn("or prior_attempt_count > 1", rerun_helper)
 
 
 if __name__ == "__main__":
