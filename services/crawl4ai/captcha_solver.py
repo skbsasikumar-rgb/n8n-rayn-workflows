@@ -39,35 +39,42 @@ def is_configured() -> bool:
     return bool(_api_key())
 
 
+def _allowed_domains() -> list[str]:
+    return [
+        item.strip().lower().strip(".")
+        for item in os.getenv("CAPTCHA_SOLVER_ALLOWED_DOMAINS", "").split(",")
+        if item.strip()
+    ]
+
+
+def _hostname_matches(hostname: str, domain: str) -> bool:
+    host = hostname.strip().lower().strip(".")
+    candidate = domain.strip().lower().strip(".")
+    return bool(host and candidate and (host == candidate or host.endswith(f".{candidate}")))
+
+
 def solver_diagnostics() -> dict[str, Any]:
     import importlib.util
 
     package_available = importlib.util.find_spec("twocaptcha") is not None
     configured = is_configured()
-    allowed_domains = [
-        item.strip().lower()
-        for item in os.getenv("CAPTCHA_SOLVER_ALLOWED_DOMAINS", "").split(",")
-        if item.strip()
-    ]
+    allowed_domains = _allowed_domains()
     return {
         "package": "2captcha-python",
         "import_name": "twocaptcha",
         "installed": package_available,
         "configured": configured,
-        "enabled": bool(configured and allowed_domains),
+        "enabled": configured,
+        "scope_mode": "scoped" if allowed_domains else "all",
         "allowed_domains": allowed_domains,
     }
 
 
 def _domain_allowed(hostname: str) -> bool:
-    allowed = [
-        item.strip().lower()
-        for item in os.getenv("CAPTCHA_SOLVER_ALLOWED_DOMAINS", "").split(",")
-        if item.strip()
-    ]
+    allowed = _allowed_domains()
     if not allowed:
         return True
-    return hostname.lower() in allowed
+    return any(_hostname_matches(hostname, domain) for domain in allowed)
 
 
 async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | None:
