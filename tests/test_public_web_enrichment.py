@@ -131,6 +131,13 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("cloudflare", hints)
         self.assertIn("checking the site connection", hints)
 
+    def test_static_session_uses_browser_like_headers(self):
+        session = p.build_requests_session("https://clinic.example/", use_proxy=False)
+        self.assertIn("Mozilla/5.0", session.headers["User-Agent"])
+        self.assertIn("text/html", session.headers["Accept"])
+        self.assertEqual(session.headers["Sec-Fetch-Mode"], "navigate")
+        self.assertEqual(session.headers["Upgrade-Insecure-Requests"], "1")
+
     def test_weak_homepage_needs_retry_then_skips_after_deep_retry(self):
         pages = [self.page("https://clinic.example/", "Welcome to clinic.", "homepage")]
         status, reason = p.classify_enrichment_depth(
@@ -214,11 +221,11 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 1", prepare_code)
-        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 8000", prepare_code)
-        self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 1", prepare_code)
-        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 300 : 45", prepare_code)
-        self.assertIn("allow_low_limits: true", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 8", prepare_code)
+        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 15000", prepare_code)
+        self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 2", prepare_code)
+        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 300 : 150", prepare_code)
+        self.assertIn("allow_low_limits: false", prepare_code)
         http_node = nodes["Crawl4AI Public Enrich"]
         self.assertEqual(http_node["parameters"]["options"]["timeout"], 360000)
         self.assertNotIn("retryOnFail", http_node)
@@ -233,6 +240,17 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn('PUBLIC_ENRICH_FAST_CHALLENGE_RECOVERY", "false"', source)
         self.assertIn("homepage_static_ms", source)
         self.assertIn("PUBLIC_WEB_STATIC_READ_TIMEOUT_SECONDS", source)
+
+    def test_candidate_subpages_use_bounded_concurrency(self):
+        source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
+        self.assertIn("async def crawl_candidate_page", source)
+        self.assertIn("len(batch) < per_row_page_concurrency", source)
+        self.assertIn("await asyncio.gather", source)
+
+    def test_fast_static_shortcut_is_homepage_only(self):
+        source = open("services/crawl4ai/app.py", encoding="utf-8").read()
+        self.assertIn("and page_limit <= 1", source)
+        self.assertIn('and int(request_data.get("page_limit") or 1) <= 1', source)
 
     def test_workflow_url_only_mode_does_not_enter_public_enrichment(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())

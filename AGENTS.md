@@ -5,6 +5,12 @@
 
 Use Context Mode for all work it can safely handle.
 
+If Context Mode MCP tools are not visible in the active tool list, call
+`tool_search` first with `context-mode ctx_batch_execute ctx_execute
+ctx_execute_file ctx_search ctx_fetch_and_index`. This repo's Codex config may
+defer MCP tools at startup, so bootstrap Context Mode before broad reads,
+searches, web fetches, or shell-heavy inspection.
+
 Default to `ctx_batch_execute` for multi-step inspection, command batches, and
 combined gather/search flows.
 

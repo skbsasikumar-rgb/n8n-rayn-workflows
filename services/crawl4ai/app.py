@@ -1593,7 +1593,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
 
 def public_enrich_hard_timeout_seconds(request: PublicEnrichmentRequest) -> float:
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
-    default_timeout = 300 if stage == "deep_retry" else 75
+    default_timeout = 300 if stage == "deep_retry" else 180
     configured = float(os.getenv("PUBLIC_ENRICH_HARD_TIMEOUT_SECONDS", str(default_timeout)))
     if request.row_timeout_seconds:
         configured = min(configured, float(request.row_timeout_seconds))
@@ -1638,7 +1638,7 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
 
     async def run_attempt(page_limit: int, page_timeout_ms: int, request_delay_seconds: float, scrape_char_limit: int):
-        default_timeout_cap = "60" if stage == "fast" else "360"
+        default_timeout_cap = "180" if stage == "fast" else "360"
         timeout_seconds = min(
             float(os.getenv("PUBLIC_ENRICH_ATTEMPT_TIMEOUT_SECONDS", default_timeout_cap)),
             max(45.0, (page_limit * (page_timeout_ms / 1000.0 + request_delay_seconds)) + 45.0),
@@ -1647,6 +1647,7 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
             timeout_seconds = min(timeout_seconds, float(request.row_timeout_seconds))
         fast_static_only = (
             stage == "fast"
+            and page_limit <= 1
             and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
             and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
         )
@@ -1760,6 +1761,7 @@ def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) ->
 def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
     return (
         str(request_data.get("enrichment_stage") or "fast") != "deep_retry"
+        and int(request_data.get("page_limit") or 1) <= 1
         and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
         and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
     )

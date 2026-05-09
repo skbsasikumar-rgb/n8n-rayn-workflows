@@ -66,7 +66,8 @@ os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", str(DEFAULT_PLAYWRIGHT_BROWSER
 
 USER_AGENT = os.environ.get(
     "PUBLIC_WEB_ENRICHMENT_USER_AGENT",
-    "RAYN Public Web Enrichment/1.0 (+https://www.raynsecure.com/)",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
 )
 HTTP_CONNECT_TIMEOUT_SECONDS = 10
 HTTP_READ_TIMEOUT_SECONDS = 45
@@ -1226,8 +1227,15 @@ def build_requests_session(target_url: str = "", use_proxy: bool | None = None) 
     session.headers.update(
         {
             "User-Agent": USER_AGENT,
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
             "Accept-Language": "en-SG,en;q=0.9",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
         }
     )
     proxy_url = configured_proxy_url()
@@ -3795,15 +3803,7 @@ async def enrich_row(
     queued_urls: set[str] = set(candidates)
     delay_seconds = max(request_delay_seconds, robots_policy.crawl_delay_seconds)
 
-    for candidate_url in candidates[1:]:
-        if len(crawled_pages) >= page_limit:
-            break
-        if candidate_url in seen_urls:
-            continue
-        if not robots_policy.allows(candidate_url):
-            errors.append(f"robots.txt disallows {candidate_url}")
-            continue
-        await asyncio.sleep(delay_seconds)
+    async def crawl_candidate_page(candidate_url: str) -> PageArtifact | None:
         try:
             candidate_started = time.perf_counter()
             candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms, proxy_config=crawl_proxy_config)
@@ -3836,7 +3836,7 @@ async def enrich_row(
                         )
                 if candidate_result is None:
                     errors.append(f"{candidate_url}: {fallback_error}")
-                    continue
+                    return None
         page = extract_page_artifact(candidate_result)
         if page.challenge_hints and proxy_retry_available_for_url(candidate_url):
             proxy_candidate_result = await retry_crawl_with_proxy(
@@ -3853,33 +3853,63 @@ async def enrich_row(
                     errors,
                     proxy_retry_log,
                     reason="candidate_challenge_detected",
-                )
+            )
             if proxy_candidate_result is not None:
                 page = extract_page_artifact(proxy_candidate_result)
-        if page.content_hash and page.content_hash in seen_hashes:
+        return page
+
+    candidate_index = 1
+    while candidate_index < len(candidates) and len(crawled_pages) < page_limit:
+        batch: list[str] = []
+        batch_seen: set[str] = set()
+        while (
+            candidate_index < len(candidates)
+            and len(batch) < per_row_page_concurrency
+            and len(crawled_pages) + len(batch) < page_limit
+        ):
+            candidate_url = candidates[candidate_index]
+            candidate_index += 1
+            if candidate_url in seen_urls or candidate_url in batch_seen:
+                continue
+            if not robots_policy.allows(candidate_url):
+                errors.append(f"robots.txt disallows {candidate_url}")
+                continue
+            batch.append(candidate_url)
+            batch_seen.add(candidate_url)
+        if not batch:
             continue
-        if not page.text:
-            continue
-        crawled_pages.append(page)
-        seen_urls.add(page.url)
-        if page.content_hash:
-            seen_hashes.add(page.content_hash)
-        if len(crawled_pages) < page_limit:
-            discovered = choose_candidate_pages(
-                best_url,
-                build_homepage_links(page),
-                [],
-                page_limit=page_limit * 2,
-                profile=profile_hint,
-                stage=stage,
-            )
-            for discovered_url in discovered[1:]:
-                if discovered_url in queued_urls or discovered_url in seen_urls:
-                    continue
-                if candidate_page_score(best_url, discovered_url, "", profile=profile_hint) <= 0:
-                    continue
-                candidates.append(discovered_url)
-                queued_urls.add(discovered_url)
+        if delay_seconds:
+            await asyncio.sleep(delay_seconds)
+        pages = await asyncio.gather(*(crawl_candidate_page(candidate_url) for candidate_url in batch))
+        for page in pages:
+            if page is None:
+                continue
+            if page.content_hash and page.content_hash in seen_hashes:
+                continue
+            if not page.text:
+                continue
+            if len(crawled_pages) >= page_limit:
+                break
+            crawled_pages.append(page)
+            seen_urls.add(page.url)
+            if page.content_hash:
+                seen_hashes.add(page.content_hash)
+            if len(crawled_pages) < page_limit:
+                discovered = choose_candidate_pages(
+                    best_url,
+                    build_homepage_links(page),
+                    [],
+                    page_limit=page_limit * 2,
+                    profile=profile_hint,
+                    stage=stage,
+                )
+                for discovered_url in discovered[1:]:
+                    if discovered_url in queued_urls or discovered_url in seen_urls:
+                        continue
+                    if candidate_page_score(best_url, discovered_url, "", profile=profile_hint) <= 0:
+                        continue
+                    candidates.append(discovered_url)
+                    queued_urls.add(discovered_url)
 
     extraction_started = time.perf_counter()
     all_text = "\n\n".join(page.text for page in crawled_pages if page.text)
