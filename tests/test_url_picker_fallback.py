@@ -232,6 +232,38 @@ def test_url_picker_fallback_rejects_profile_slug():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_fallback_rejects_third_party_company_slug():
+    result = run_parse_url_pick(
+        "Ann Arbor Dental Surgery",
+        [
+            {
+                "title": "Ann Arbor Dental Surgery",
+                "url": "https://www.tampinesmart.com/ann-arbor-dental-surgery",
+                "snippet": "Ann Arbor Dental Surgery is located at Tampines Mart.",
+            }
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_fallback_does_not_promote_listing_title_domain():
+    result = run_parse_url_pick(
+        "Ann Arbor Dental Surgery",
+        [
+            {
+                "title": "ann arbor dental surgery - Singapore - doc.sg",
+                "url": "https://doc.sg/clinic/ann-arbor-dental-surgery/",
+                "snippet": "Contact Details at Tampines Mart Singapore.",
+            }
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_discovery_requests_ten_serper_results():
     workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
     node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
