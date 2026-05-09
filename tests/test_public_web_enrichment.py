@@ -247,9 +247,13 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("BROWSERLESS_WS_URL", source)
         self.assertIn("BROWSERLESS_TOKEN", source)
         self.assertIn("PUBLIC_ENRICH_CHALLENGE_BROWSER_FALLBACK", source)
+        self.assertIn("PUBLIC_ENRICH_CHALLENGE_STEALTH", source)
+        self.assertIn("apply_browser_stealth", source)
         self.assertIn("connect_over_cdp", source)
         self.assertIn("captcha_solver.solve_page_captcha", source)
         self.assertIn("challenge_browser_recovery", source)
+        requirements = open("services/crawl4ai/requirements.txt", encoding="utf-8").read()
+        self.assertIn("playwright-stealth==2.0.3", requirements)
 
     def test_candidate_subpages_use_bounded_concurrency(self):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()

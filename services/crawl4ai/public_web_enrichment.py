@@ -45,6 +45,11 @@ import requests
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
+try:
+    from playwright_stealth import Stealth
+except ImportError:  # pragma: no cover - optional hardening dependency
+    Stealth = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -3415,6 +3420,15 @@ def challenge_browser_fallback_enabled(stage: str) -> bool:
     return os.getenv("PUBLIC_ENRICH_CHALLENGE_BROWSER_FALLBACK", default).lower() != "false"
 
 
+async def apply_browser_stealth(context: Any) -> bool:
+    if os.getenv("PUBLIC_ENRICH_CHALLENGE_STEALTH", "true").lower() == "false":
+        return False
+    if Stealth is None:
+        return False
+    await Stealth(init_scripts_only=True).apply_stealth_async(context)
+    return True
+
+
 async def browser_challenge_recovery(
     url: str,
     stage: str,
@@ -3443,6 +3457,7 @@ async def browser_challenge_recovery(
                     user_agent=USER_AGENT,
                     ignore_https_errors=True,
                 )
+                stealth_applied = await apply_browser_stealth(context)
                 page = await context.new_page()
                 await page.goto(url, wait_until="domcontentloaded", timeout=page_timeout_ms)
                 try:
@@ -3467,7 +3482,7 @@ async def browser_challenge_recovery(
                     "status_code": 200,
                     "html": html,
                     "cleaned_html": html,
-                    "metadata": {"transport": transport, "captcha_solved": solved},
+                    "metadata": {"transport": transport, "captcha_solved": solved, "stealth_applied": stealth_applied},
                 }
                 artifact = extract_page_artifact(result)
                 success = bool(artifact.text and not artifact.challenge_hints)
@@ -3478,6 +3493,7 @@ async def browser_challenge_recovery(
                         "transport": transport,
                         "success": success,
                         "captcha_solved": solved,
+                        "stealth_applied": stealth_applied,
                         "duration_ms": elapsed_ms(started),
                         **({"challenge_hints": artifact.challenge_hints} if artifact.challenge_hints else {}),
                     }
