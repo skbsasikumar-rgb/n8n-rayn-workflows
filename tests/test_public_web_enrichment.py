@@ -246,6 +246,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("async def crawl_candidate_page", source)
         self.assertIn("len(batch) < per_row_page_concurrency", source)
         self.assertIn("await asyncio.gather", source)
+        self.assertIn("if crawler is None:", source)
+        self.assertIn("candidate_static_ms", source)
 
     def test_fast_stage_defaults_to_static_transport(self):
         source = open("services/crawl4ai/app.py", encoding="utf-8").read()
@@ -276,6 +278,15 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("return []", continue_code)
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
         self.assertEqual(workflow["connections"]["Continue URL Pick Patch"]["main"], [[]])
+
+    def test_workflow_requeues_weak_fast_enrichment_for_deep_retry(self):
+        workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
+        nodes = {node["name"]: node for node in workflow["nodes"]}
+        patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
+        prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
+        self.assertIn("if (depth === 'weak_retry_needed') return 'url_picked'", patch_code)
+        self.assertIn("statusReason.includes('thin_content')", prepare_code)
+        self.assertIn("attemptCount > 1", prepare_code)
 
 
 if __name__ == "__main__":

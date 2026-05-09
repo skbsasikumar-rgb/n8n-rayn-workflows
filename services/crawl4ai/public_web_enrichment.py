@@ -3538,7 +3538,6 @@ async def enrich_row(
             static_started = time.perf_counter()
             homepage_result = fetch_static_url(session, best_url)
             timings["homepage_static_ms"] = elapsed_ms(static_started)
-            errors.append(f"{best_url}: fast static homepage fetch used")
         except Exception as static_exc:
             if not fast_browser_fallback:
                 error_text = compact_whitespace(static_exc) or "static homepage fetch failed"
@@ -3805,16 +3804,22 @@ async def enrich_row(
 
     async def crawl_candidate_page(candidate_url: str) -> PageArtifact | None:
         try:
-            candidate_started = time.perf_counter()
-            candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms, proxy_config=crawl_proxy_config)
-            timings["candidate_crawls_ms"] = timings.get("candidate_crawls_ms", 0.0) + elapsed_ms(candidate_started)
+            if crawler is None:
+                static_started = time.perf_counter()
+                candidate_result = fetch_static_url(session, candidate_url)
+                timings["candidate_static_ms"] = timings.get("candidate_static_ms", 0.0) + elapsed_ms(static_started)
+            else:
+                candidate_started = time.perf_counter()
+                candidate_result = await crawl_url(crawler, candidate_url, page_timeout_ms, proxy_config=crawl_proxy_config)
+                timings["candidate_crawls_ms"] = timings.get("candidate_crawls_ms", 0.0) + elapsed_ms(candidate_started)
         except Exception as exc:
             crawl_error_text = compact_whitespace(exc)
             try:
                 static_started = time.perf_counter()
                 candidate_result = fetch_static_url(session, candidate_url)
                 timings["candidate_static_fallback_ms"] = timings.get("candidate_static_fallback_ms", 0.0) + elapsed_ms(static_started)
-                errors.append(f"{candidate_url}: Crawl4AI fallback used after page error: {crawl_error_text}")
+                if crawler is not None:
+                    errors.append(f"{candidate_url}: Crawl4AI fallback used after page error: {crawl_error_text}")
             except Exception as fallback_exc:
                 candidate_result = None
                 fallback_error = compact_whitespace(fallback_exc) or crawl_error_text

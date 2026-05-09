@@ -207,6 +207,9 @@ def wait_url_pick(ids: list[int], timeout_seconds: int) -> list[dict[str, Any]]:
 
 def terminal_status(patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
+    depth = enrichment_depth_status(patch)
+    if depth == "weak_retry_needed":
+        return "url_picked"
     if stage == "crawled":
         return "completed"
     if stage == "partial":
@@ -222,6 +225,9 @@ def terminal_status(patch: dict[str, Any]) -> str:
 
 def status_reason(status: str, patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
+    depth = enrichment_depth_status(patch)
+    if depth == "weak_retry_needed":
+        return weak_enrichment_reason(patch) or "weak_retry_needed"
     if status == "completed":
         return "enrichment_completed_with_subpage_warnings" if stage == "partial" else "enrichment_completed"
     if status == "needs_review":
@@ -229,6 +235,25 @@ def status_reason(status: str, patch: dict[str, Any]) -> str:
     if status == "skipped":
         return stage or "skipped"
     return stage or "failed"
+
+
+def enrichment_depth(patch: dict[str, Any]) -> dict[str, Any]:
+    raw = patch.get("structured_data_detected")
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        parsed = {}
+    if isinstance(parsed, dict) and isinstance(parsed.get("enrichment_depth"), dict):
+        return parsed["enrichment_depth"]
+    return {}
+
+
+def enrichment_depth_status(patch: dict[str, Any]) -> str:
+    return str(patch.get("enrichment_depth_status") or enrichment_depth(patch).get("enrichment_depth_status") or "").strip()
+
+
+def weak_enrichment_reason(patch: dict[str, Any]) -> str:
+    return str(patch.get("weak_enrichment_reason") or enrichment_depth(patch).get("weak_enrichment_reason") or "").strip()
 
 
 def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
