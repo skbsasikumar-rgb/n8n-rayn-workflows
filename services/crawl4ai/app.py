@@ -1654,14 +1654,15 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
         if request.row_timeout_seconds:
             fallback_reserve = 0.0 if static_only else float(os.getenv("PUBLIC_ENRICH_FALLBACK_RESERVE_SECONDS", "60"))
             timeout_seconds = min(timeout_seconds, max(45.0, float(request.row_timeout_seconds) - fallback_reserve))
-        fast_static_only = (
+        use_static_transport = (
             static_only
-            or stage == "fast"
-            and page_limit <= 1
-            and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
-            and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() != "true"
+            or (
+                stage == "fast"
+                and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+                and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false").lower() != "true"
+            )
         )
-        if fast_static_only:
+        if use_static_transport:
             return await asyncio.wait_for(
                 public_enrichment.enrich_row(
                     row=input_row,
