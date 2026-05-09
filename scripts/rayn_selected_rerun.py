@@ -34,6 +34,7 @@ PLANNER_FIELDS = (
     "automation_decision,automation_decision_reason,final_send_gate_passed,email_send_ready,"
     "email_1_body,email_2_body,email_3_body,email_2_mode,email_3_mode"
 )
+NOCO_LONG_TEXT_LIMIT = 95_000
 TERMINAL_CONTACT_STATUSES = {"contact_found", "contact_not_found", "failed", "skipped"}
 
 
@@ -256,6 +257,61 @@ def weak_enrichment_reason(patch: dict[str, Any]) -> str:
     return str(patch.get("weak_enrichment_reason") or enrichment_depth(patch).get("weak_enrichment_reason") or "").strip()
 
 
+def limit_long_text(value: Any, limit: int = NOCO_LONG_TEXT_LIMIT) -> str:
+    if value is None:
+        text = ""
+    elif isinstance(value, str):
+        text = value
+    elif isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=True)
+    else:
+        text = str(value)
+    if len(text) <= limit:
+        return text
+    marker = f"\n[truncated_for_nocodb_longtext original_length={len(text)}]"
+    return text[: max(0, limit - len(marker))] + marker
+
+
+def compact_structured_data(value: Any, limit: int = NOCO_LONG_TEXT_LIMIT) -> str:
+    text = limit_long_text(value, 10**9)
+    if len(text) <= limit:
+        return text
+    parsed: Any = None
+    try:
+        parsed = json.loads(value) if isinstance(value, str) else value
+    except Exception:
+        parsed = None
+    if isinstance(parsed, dict):
+        compact = {
+            "has_json_ld": bool(parsed.get("has_json_ld")),
+            "schema_types": parsed.get("schema_types")[:20] if isinstance(parsed.get("schema_types"), list) else [],
+            "schema_names": parsed.get("schema_names")[:20] if isinstance(parsed.get("schema_names"), list) else [],
+            "og_site_name": str(parsed.get("og_site_name") or ""),
+            "sitemap_urls": parsed.get("sitemap_urls")[:20] if isinstance(parsed.get("sitemap_urls"), list) else [],
+            "truncated_for_nocodb_longtext": True,
+            "original_length": len(text),
+        }
+    else:
+        compact = {
+            "truncated_for_nocodb_longtext": True,
+            "original_length": len(text),
+            "preview": text[:4000],
+        }
+    compact_text = json.dumps(compact, ensure_ascii=True)
+    if len(compact_text) <= limit:
+        return compact_text
+    return json.dumps({"truncated_for_nocodb_longtext": True, "original_length": len(text)}, ensure_ascii=True)
+
+
+def cap_noco_long_text_fields(patch: dict[str, Any]) -> dict[str, Any]:
+    patch["structured_data_detected"] = compact_structured_data(patch.get("structured_data_detected", ""))
+    patch["website_content"] = limit_long_text(patch.get("website_content", ""))
+    patch["website_scrape"] = limit_long_text(patch.get("website_scrape", ""))
+    patch["notes"] = limit_long_text(patch.get("notes", ""), 4000)
+    patch["last_error"] = limit_long_text(patch.get("last_error", ""), 4000)
+    return patch
+
+
 def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc).isoformat()
     attempt_count = str((int(str(row.get("attempt_count") or "0") or "0") + 1))
@@ -332,6 +388,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
                 "retry_eligible": "true" if final_status == "failed" else "false",
             }
         )
+        cap_noco_long_text_fields(patch)
         api.noco_patch([patch])
         return {"Id": row["Id"], "status": final_status, "reason": patch["status_reason"]}
     error_text = str((payload or {}).get("error") or (payload or {}).get("message") or f"public_enrich_http_{code}")[:500]

@@ -232,6 +232,9 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         self.assertIn("isTransportTimeout", patch_code)
         self.assertIn("return []", patch_code)
+        self.assertIn("NOCO_LONG_TEXT_LIMIT = 95000", patch_code)
+        self.assertIn("compactStructuredData", patch_code)
+        self.assertIn("capNocoLongTextFields(patch)", patch_code)
 
     def test_fast_public_enrichment_uses_static_first(self):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
@@ -307,6 +310,28 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
         self.assertIn("or prior_attempt_count > 1", rerun_helper)
+        self.assertIn("NOCO_LONG_TEXT_LIMIT = 95_000", rerun_helper)
+        self.assertIn("cap_noco_long_text_fields(patch)", rerun_helper)
+
+    def test_selected_rerun_caps_oversized_nocodb_longtext_fields(self):
+        from scripts import rayn_selected_rerun as rerun
+
+        patch = {
+            "structured_data_detected": json.dumps({"has_json_ld": True, "schema_types": ["MedicalClinic"], "sitemap_urls": ["x" * 6000] * 30}),
+            "website_content": "a" * 120000,
+            "website_scrape": "b" * 120000,
+            "notes": "c" * 8000,
+            "last_error": "d" * 8000,
+        }
+        rerun.cap_noco_long_text_fields(patch)
+
+        self.assertLessEqual(len(patch["structured_data_detected"]), rerun.NOCO_LONG_TEXT_LIMIT)
+        self.assertLessEqual(len(patch["website_content"]), rerun.NOCO_LONG_TEXT_LIMIT)
+        self.assertLessEqual(len(patch["website_scrape"]), rerun.NOCO_LONG_TEXT_LIMIT)
+        self.assertLessEqual(len(patch["notes"]), 4000)
+        self.assertLessEqual(len(patch["last_error"]), 4000)
+        structured = json.loads(patch["structured_data_detected"])
+        self.assertTrue(structured["truncated_for_nocodb_longtext"])
 
 
 if __name__ == "__main__":
