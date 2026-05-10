@@ -2089,11 +2089,6 @@ def detect_challenge_hints(value: str) -> list[str]:
             "complete the security check",
             "challenge-form",
             "robot challenge",
-            "g-recaptcha",
-            "grecaptcha",
-            "hcaptcha",
-            "cf-turnstile",
-            "turnstile",
         )
     ):
         hints.add("captcha")

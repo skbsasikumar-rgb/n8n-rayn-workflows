@@ -155,9 +155,38 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(artifact.challenge_hints, [])
         self.assertFalse(artifact.challenge_or_error)
 
+    def test_recaptcha_widget_on_content_page_is_not_challenge(self):
+        html = """
+        <html><head><title>Home - Clinic Example</title></head><body>
+        <nav>
+          <a href="/about-us">About Us</a>
+          <a href="/services">Services</a>
+          <a href="/contact-us">Contact Us</a>
+        </nav>
+        <h1>Clinic Example</h1>
+        <p>Our doctors provide endocrinology, diabetes, thyroid, screening, and nutrition services in Singapore.</p>
+        <p>Book an appointment through our contact form below.</p>
+        <form><div class="g-recaptcha" data-sitekey="site-key"></div></form>
+        <script src="https://www.google.com/recaptcha/api.js"></script>
+        </body></html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://clinic.example/",
+                "redirected_url": "https://clinic.example/",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "Home - Clinic Example"},
+                "status_code": 200,
+            }
+        )
+        self.assertEqual(artifact.challenge_hints, [])
+        self.assertFalse(artifact.challenge_or_error)
+
     def test_recaptcha_gate_on_thin_page_still_counts_as_challenge(self):
         html = """
         <html><head><title>Security Check</title></head><body>
+        <p>Complete the security check and verify you are human.</p>
         <div class=\"g-recaptcha\" data-sitekey=\"site-key\"></div>
         <script>if (typeof grecaptcha !== 'undefined') { grecaptcha.render('captcha'); }</script>
         </body></html>

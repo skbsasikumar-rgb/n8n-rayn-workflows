@@ -9,8 +9,10 @@ Captcha fallback hardening:
 - fixed [services/crawl4ai/captcha_solver.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/captcha_solver.py) so `CAPSOLVER_API_KEY` is a real active solver configuration instead of diagnostics-only metadata.
 - added CapSolver reCAPTCHA v2 support using the documented `createTask` / `getTaskResult` API path; no CapSolver SDK dependency was added.
 - kept provider order environment-driven through `CAPTCHA_SOLVER_PROVIDER_ORDER`, with 2captcha still available as fallback and CapMonster reported as configured-but-unsupported until a real implementation is added.
+- fixed the challenge classifier so normal pages with embedded reCAPTCHA contact-form widgets are still scraped; only weak captcha/security-check pages remain `skipped_challenge_detected`.
 - set Railway production variables on `n8n-rayn-workflows`: `CAPSOLVER_API_KEY` and `CAPTCHA_SOLVER_PROVIDER_ORDER=capsolver,2captcha,capmonster`; secret value intentionally not logged.
-- validation passed: `python3 -m pytest tests/test_captcha_solver.py -q` (`5 passed`) and `python3 -m pytest tests/test_public_web_enrichment.py tests/test_captcha_solver.py -q` (`34 passed`).
+- focused live check before classifier fix: rows `293` and `306` still skipped with zero `website_content` because both sites had usable page HTML plus embedded reCAPTCHA widgets.
+- validation passed: `python3 -m pytest tests/test_captcha_solver.py -q` (`5 passed`) and `python3 -m pytest tests/test_public_web_enrichment.py tests/test_captcha_solver.py -q` (`35 passed`).
 - deployment performed: pending commit/push.
 - live rows patched: no.
 - no emails were sent, and Instantly was not used.
