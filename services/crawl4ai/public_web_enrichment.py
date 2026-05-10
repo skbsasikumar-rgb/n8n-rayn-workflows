@@ -3929,6 +3929,23 @@ async def enrich_row(
             except Exception as static_exc:
                 errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
         if not captcha_solved and allow_challenge_recovery and proxy_retry_available_for_url(best_url):
+            browser_result = None
+            if browserless_ws_endpoint():
+                browser_result = await browser_challenge_recovery(
+                    best_url,
+                    stage,
+                    page_timeout_ms,
+                    errors,
+                    proxy_retry_log,
+                    proxy_config=None,
+                    reason="homepage_challenge_browserless_recovery",
+                )
+            if browser_result is not None:
+                homepage_result = browser_result
+                homepage_page = extract_page_artifact(browser_result)
+                challenge_note = ""
+                captcha_solved = not homepage_page.challenge_hints
+        if not captcha_solved and allow_challenge_recovery and proxy_retry_available_for_url(best_url):
             proxy_result = await retry_crawl_with_proxy(
                 crawler,
                 best_url,

@@ -10,6 +10,7 @@ Captcha fallback hardening:
 - added CapSolver reCAPTCHA v2 support using the documented `createTask` / `getTaskResult` API path; no CapSolver SDK dependency was added.
 - kept provider order environment-driven through `CAPTCHA_SOLVER_PROVIDER_ORDER`, with 2captcha still available as fallback and CapMonster reported as configured-but-unsupported until a real implementation is added.
 - fixed the challenge classifier so normal pages with embedded reCAPTCHA contact-form widgets are still scraped; only weak captcha/security-check pages remain `skipped_challenge_detected`.
+- fixed challenge recovery ordering so Browserless CDP is tried on challenge pages before forcing local Playwright through the residential proxy; proxy crawl/static recovery remains as fallback.
 - set Railway production variables on `n8n-rayn-workflows`: `CAPSOLVER_API_KEY` and `CAPTCHA_SOLVER_PROVIDER_ORDER=capsolver,2captcha,capmonster`; secret value intentionally not logged.
 - focused live check before classifier fix: rows `293` and `306` still skipped with zero `website_content` because both sites had usable page HTML plus embedded reCAPTCHA widgets.
 - validation passed: `python3 -m pytest tests/test_captcha_solver.py -q` (`5 passed`) and `python3 -m pytest tests/test_public_web_enrichment.py tests/test_captcha_solver.py -q` (`35 passed`).
