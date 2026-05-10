@@ -213,9 +213,6 @@ def wait_url_pick(ids: list[int], timeout_seconds: int) -> list[dict[str, Any]]:
 
 def terminal_status(patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
-    depth = enrichment_depth_status(patch)
-    if depth == "weak_retry_needed":
-        return "url_picked"
     if stage == "crawled":
         return "completed"
     if stage == "partial":
@@ -231,10 +228,10 @@ def terminal_status(patch: dict[str, Any]) -> str:
 
 def status_reason(status: str, patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
-    depth = enrichment_depth_status(patch)
-    if depth == "weak_retry_needed":
-        return weak_enrichment_reason(patch) or "weak_retry_needed"
     if status == "completed":
+        weak_reason = weak_enrichment_reason(patch)
+        if weak_reason:
+            return f"enrichment_completed_{weak_reason}"
         return "enrichment_completed_with_subpage_warnings" if stage == "partial" else "enrichment_completed"
     if status == "needs_review":
         return "partial_crawl" if stage == "partial" else "ambiguous_enrichment"

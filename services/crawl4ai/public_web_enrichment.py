@@ -3217,26 +3217,28 @@ def classify_enrichment_depth(
         or has_contact_or_location_link
         or has_team_or_doctor_link
     )
+    quality_reasons: list[str] = []
     sparse_healthcare_site = healthcareish and quality == "adequate" and has_structure_signals
     if quality in {"empty", "thin"}:
+        quality_reasons.append("thin_content")
         if stage == "deep_retry" and healthcareish and has_supporting_pages and has_structure_signals:
             quality = "adequate"
             sparse_healthcare_site = True
         else:
-            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "thin_content")
+            quality = "adequate"
     if not services:
         if not sparse_healthcare_site:
-            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_services_detected")
+            quality_reasons.append("no_services_detected")
     if healthcareish and not locations and "contact" not in page_types and "locations" not in page_types and not has_contact_or_location_link:
-        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_locations_detected")
+        quality_reasons.append("no_locations_detected")
     if healthcareish and not leadership_signals and "team" not in page_types and "doctor_profile" not in page_types and not has_team_or_doctor_link and not has_contact_or_location_link:
-        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_team_or_contact_page")
+        quality_reasons.append("no_team_or_contact_page")
     if len(pages) <= 1:
         if not sparse_healthcare_site:
-            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "homepage_only")
+            quality_reasons.append("homepage_only")
     if len(pages) >= 4 and services and (locations or leadership_signals):
         return "strong", ""
-    return "adequate", ""
+    return "adequate", quality_reasons[0] if quality_reasons else ""
 
 
 def structured_data_summary(pages: list[PageArtifact], sitemap_urls: list[str]) -> dict[str, Any]:

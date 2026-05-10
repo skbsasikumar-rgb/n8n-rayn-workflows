@@ -222,7 +222,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(session.headers["Sec-Fetch-Mode"], "navigate")
         self.assertEqual(session.headers["Upgrade-Insecure-Requests"], "1")
 
-    def test_weak_homepage_needs_retry_then_skips_after_deep_retry(self):
+    def test_sparse_homepage_completes_with_quality_reason(self):
         pages = [self.page("https://clinic.example/", "Welcome to clinic.", "homepage")]
         status, reason = p.classify_enrichment_depth(
             pages,
@@ -233,7 +233,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
             errors=[],
             stage="fast",
         )
-        self.assertEqual(status, "weak_retry_needed")
+        self.assertEqual(status, "adequate")
         self.assertEqual(reason, "thin_content")
         status, reason = p.classify_enrichment_depth(
             pages,
@@ -244,7 +244,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
             errors=[],
             stage="deep_retry",
         )
-        self.assertEqual(status, "weak_skipped")
+        self.assertEqual(status, "adequate")
         self.assertEqual(reason, "thin_content")
 
     def test_empty_page_without_challenge_is_thin_not_challenge_blocked(self):
@@ -258,7 +258,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
             errors=[],
             stage="deep_retry",
         )
-        self.assertEqual(status, "weak_skipped")
+        self.assertEqual(status, "adequate")
         self.assertEqual(reason, "thin_content")
 
     def test_deep_retry_thin_homepage_with_team_pages_can_pass(self):
@@ -292,7 +292,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
             stage="deep_retry",
         )
         self.assertEqual(status, "adequate")
-        self.assertEqual(reason, "")
+        self.assertEqual(reason, "thin_content")
 
     def test_single_page_specialty_clinic_without_services_can_pass(self):
         homepage = self.page(
@@ -487,13 +487,14 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
         self.assertEqual(workflow["connections"]["Continue URL Pick Patch"]["main"], [[]])
 
-    def test_workflow_requeues_weak_fast_enrichment_for_deep_retry(self):
+    def test_workflow_keeps_sparse_successes_completed(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
         nodes = {node["name"]: node for node in workflow["nodes"]}
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         rerun_helper = open("scripts/rayn_selected_rerun.py", encoding="utf-8").read()
-        self.assertIn("if (depth === 'weak_retry_needed') return 'url_picked'", patch_code)
+        self.assertNotIn("if (depth === 'weak_retry_needed') return 'url_picked'", patch_code)
+        self.assertIn("enrichment_completed_${weakReason}", patch_code)
         self.assertIn("statusReason.includes('thin_content')", prepare_code)
         self.assertIn("attemptCount > 1", prepare_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
