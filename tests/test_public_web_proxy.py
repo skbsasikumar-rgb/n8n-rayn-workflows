@@ -4,7 +4,9 @@ import types
 import unittest
 from unittest.mock import patch
 
-if "bs4" not in sys.modules:
+try:
+    import bs4  # noqa: F401
+except ImportError:
     bs4 = types.ModuleType("bs4")
     bs4.BeautifulSoup = object
     sys.modules["bs4"] = bs4
@@ -77,6 +79,23 @@ class PublicWebProxyTests(unittest.TestCase):
                 p.proxy_config_for_url("https://andental.sg/", force=True),
                 {"server": "http://proxy.example:8080"},
             )
+            session = p.build_requests_session("https://andental.sg/")
+            self.assertFalse(session.proxies)
+
+    def test_proxy_off_mode_disables_all_proxy_use(self):
+        with patch.dict(
+            os.environ,
+            {
+                "PUBLIC_WEB_ENRICHMENT_PROXY_URL": "http://proxy.example:8080",
+                "PUBLIC_WEB_ENRICHMENT_PROXY_MODE": "off",
+            },
+            clear=False,
+        ):
+            self.assertEqual(p.proxy_mode(), "off")
+            self.assertEqual(p.configured_proxy_url(), "")
+            self.assertFalse(p.proxy_applies_to_url("https://andental.sg/"))
+            self.assertFalse(p.proxy_retry_available_for_url("https://andental.sg/"))
+            self.assertIsNone(p.proxy_config_for_url("https://andental.sg/", force=True))
             session = p.build_requests_session("https://andental.sg/")
             self.assertFalse(session.proxies)
 

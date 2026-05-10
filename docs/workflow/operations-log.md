@@ -4,6 +4,15 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-10
 
+Proxy-off scrape trial setup:
+
+- added explicit `PUBLIC_WEB_ENRICHMENT_PROXY_MODE=off` support in [services/crawl4ai/public_web_enrichment.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/public_web_enrichment.py), making configured proxy credentials inert for initial crawls, proxy retries, local Playwright proxy config, and CapSolver Cloudflare cookie recovery.
+- fixed [tests/test_public_web_proxy.py](/Users/sasikumar/Documents/n8n/tests/test_public_web_proxy.py) so it imports real `bs4` when available and does not poison later enrichment tests with a fake module.
+- validation passed: `python3 -m pytest tests/test_public_web_proxy.py tests/test_public_web_enrichment.py tests/test_captcha_solver.py -q` (`44 passed`) and Python compile for captcha/public-enrichment/app modules.
+- Railway production variable target: `PUBLIC_WEB_ENRICHMENT_PROXY_MODE=off`; proxy credential remains stored but unused.
+- row tests intentionally not run; this is staged for the next new 50-row dataset.
+- no emails were sent, and Instantly was not used.
+
 Cloudflare challenge cookie bridge:
 
 - added CapSolver `AntiCloudflareTask` support in [services/crawl4ai/captcha_solver.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/captcha_solver.py), returning clearance cookies and the solver user-agent without adding another SDK dependency.

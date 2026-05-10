@@ -715,11 +715,15 @@ def normalize_proxy_url(raw_proxy: str) -> str:
 
 
 def configured_proxy_url() -> str:
+    if proxy_mode() == "off":
+        return ""
     return normalize_proxy_url(os.getenv("PUBLIC_WEB_ENRICHMENT_PROXY_URL", ""))
 
 
 def proxy_mode() -> str:
     raw = compact_whitespace(os.getenv("PUBLIC_WEB_ENRICHMENT_PROXY_MODE", "")).lower()
+    if raw in {"off", "disabled", "none", "false", "0", "no"}:
+        return "off"
     if raw in {"always", "scoped", "fallback"}:
         return raw
     return "fallback"
