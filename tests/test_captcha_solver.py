@@ -121,6 +121,55 @@ class CaptchaSolverTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["task"]["type"], "ReCaptchaV2TaskProxyLess")
         self.assertEqual(calls[0][1]["task"]["websiteKey"], "site-key")
 
+    def test_cloudflare_solver_uses_capsolver_proxy_format(self):
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            body = json.loads(request.data.decode("utf-8"))
+            calls.append(body)
+            if request.full_url.endswith("/createTask"):
+                return FakeResponse({"errorId": 0, "taskId": "cf-task"})
+            return FakeResponse(
+                {
+                    "errorId": 0,
+                    "status": "ready",
+                    "solution": {
+                        "cookies": {"cf_clearance": "clearance-token"},
+                        "userAgent": "Mozilla/5.0 Chrome/141 Safari/537.36",
+                    },
+                }
+            )
+
+        with patch.dict(os.environ, {"CAPSOLVER_API_KEY": "capsolver-key"}, clear=False):
+            with patch.object(captcha_solver, "urlopen", side_effect=fake_urlopen), patch.object(
+                captcha_solver, "SOLVER_POLL_INTERVAL", 0.01
+            ):
+                solution = asyncio.run(
+                    captcha_solver.solve_cloudflare_challenge(
+                        "https://example.com/",
+                        html="<title>Just a moment...</title>",
+                        proxy_url="http://user:pass@127.0.0.1:8080",
+                        user_agent="Mozilla/5.0 Chrome/141 Safari/537.36",
+                    )
+                )
+
+        self.assertEqual(solution["cookies"]["cf_clearance"], "clearance-token")
+        self.assertEqual(calls[0]["task"]["type"], "AntiCloudflareTask")
+        self.assertEqual(calls[0]["task"]["proxy"], "127.0.0.1:8080:user:pass")
+
     def test_provider_diagnostics_include_capsolver_and_capmonster(self):
         with patch.dict(
             os.environ,

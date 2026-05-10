@@ -8,7 +8,7 @@ import re
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote, urlsplit
 from urllib.request import Request, urlopen
 
 from playwright.async_api import Browser, Page, Playwright, async_playwright
@@ -79,7 +79,7 @@ def _provider_supported(provider: str, captcha_type: str = "recaptcha") -> bool:
     if provider == "2captcha":
         return captcha_type in {"recaptcha", "hcaptcha"}
     if provider == "capsolver":
-        return captcha_type == "recaptcha"
+        return captcha_type in {"recaptcha", "cloudflare"}
     return False
 
 
@@ -249,6 +249,71 @@ async def _solve_recaptcha_v2_with_capsolver(sitekey: str, page_url: str) -> str
         logger.error("capsolver recaptcha solve timed out after %ss", SOLVER_RECAPTCHA_TIMEOUT_SECONDS)
     except Exception as exc:
         logger.error("capsolver recaptcha solve failed: %s", exc)
+    return None
+
+
+def _capsolver_proxy_value(proxy_url: str) -> str:
+    parsed = urlsplit(proxy_url)
+    if not parsed.hostname or not parsed.port:
+        return ""
+    host_port = f"{parsed.hostname}:{parsed.port}"
+    if parsed.username and parsed.password:
+        return f"{host_port}:{unquote(parsed.username)}:{unquote(parsed.password)}"
+    return host_port
+
+
+async def solve_cloudflare_challenge(
+    page_url: str,
+    html: str = "",
+    proxy_url: str = "",
+    user_agent: str = USER_AGENT,
+) -> dict[str, Any] | None:
+    api_key = _capsolver_api_key()
+    proxy_value = _capsolver_proxy_value(proxy_url)
+    if not api_key or not proxy_value:
+        return None
+
+    try:
+        task: dict[str, Any] = {
+            "type": "AntiCloudflareTask",
+            "websiteURL": page_url,
+            "proxy": proxy_value,
+            "userAgent": user_agent,
+        }
+        if html:
+            task["html"] = html[:180000]
+        created = await asyncio.to_thread(
+            _capsolver_post,
+            "createTask",
+            {"clientKey": api_key, "task": task},
+        )
+        task_id = created.get("taskId")
+        if not task_id:
+            logger.error("capsolver cloudflare task missing taskId")
+            return None
+
+        deadline = time.monotonic() + SOLVER_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(max(1.0, SOLVER_POLL_INTERVAL))
+            result = await asyncio.to_thread(
+                _capsolver_post,
+                "getTaskResult",
+                {"clientKey": api_key, "taskId": task_id},
+            )
+            status = result.get("status")
+            if status == "ready":
+                solution = result.get("solution")
+                if isinstance(solution, dict) and solution.get("cookies"):
+                    return solution
+                logger.error("capsolver cloudflare ready response missing cookies")
+                return None
+            if status == "failed":
+                logger.error("capsolver cloudflare task failed: %s", result)
+                return None
+
+        logger.error("capsolver cloudflare solve timed out after %ss", SOLVER_TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.error("capsolver cloudflare solve failed: %s", exc)
     return None
 
 

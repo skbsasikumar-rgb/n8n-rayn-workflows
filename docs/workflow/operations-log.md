@@ -4,6 +4,16 @@ Use this file to record rebuild progress and decisions.
 
 ## 2026-05-10
 
+Cloudflare challenge cookie bridge:
+
+- added CapSolver `AntiCloudflareTask` support in [services/crawl4ai/captcha_solver.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/captcha_solver.py), returning clearance cookies and the solver user-agent without adding another SDK dependency.
+- added challenge recovery in [services/crawl4ai/public_web_enrichment.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/public_web_enrichment.py): when a challenge page is hit and a sticky proxy is available, solve with CapSolver, then retry static crawling through the same proxy while passing the returned `cf_clearance` cookie and user-agent.
+- Scrapy was reviewed as a crawler engine option; not added yet because the immediate missing piece was cookie reuse, and the existing worker already has bounded crawling, page scoring, writeback, and diagnostics.
+- validation passed: `python3 -m pytest tests/test_captcha_solver.py tests/test_public_web_enrichment.py -q` (`36 passed`) and Python compile for captcha/public-enrichment/app modules.
+- deployment performed: pending commit/push.
+- live rows patched: no.
+- no emails were sent, and Instantly was not used.
+
 Captcha fallback hardening:
 
 - fixed [services/crawl4ai/captcha_solver.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/captcha_solver.py) so `CAPSOLVER_API_KEY` is a real active solver configuration instead of diagnostics-only metadata.

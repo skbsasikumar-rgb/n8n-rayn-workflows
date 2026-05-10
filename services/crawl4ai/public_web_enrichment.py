@@ -3514,6 +3514,86 @@ def retry_static_with_proxy(
         return None
 
 
+async def retry_static_with_cloudflare_clearance(
+    url: str,
+    challenge_html: str,
+    errors: list[str],
+    proxy_retry_log: list[dict[str, Any]],
+    reason: str,
+) -> dict[str, Any] | None:
+    proxy_url = configured_proxy_url()
+    if not proxy_url or not proxy_retry_available_for_url(url):
+        return None
+    started = time.perf_counter()
+    try:
+        solution = await captcha_solver.solve_cloudflare_challenge(
+            page_url=url,
+            html=challenge_html,
+            proxy_url=proxy_url,
+            user_agent=USER_AGENT,
+        )
+        if not solution:
+            proxy_retry_log.append(
+                {
+                    "url": url,
+                    "reason": reason,
+                    "transport": "capsolver_cloudflare_static_proxy",
+                    "success": False,
+                    "error": "no_solution",
+                    "duration_ms": elapsed_ms(started),
+                }
+            )
+            errors.append(f"{url}: capsolver cloudflare solve returned no cookie solution")
+            return None
+
+        session = build_requests_session(url, use_proxy=True)
+        solution_user_agent = compact_whitespace(solution.get("userAgent") or "")
+        if solution_user_agent:
+            session.headers["User-Agent"] = solution_user_agent
+        cookies = solution.get("cookies") if isinstance(solution.get("cookies"), dict) else {}
+        for name, value in cookies.items():
+            session.cookies.set(str(name), str(value), domain=normalized_hostname(urlsplit(url).hostname or ""))
+        result = fetch_static_url(session, url)
+        page = extract_page_artifact(result)
+        if page.challenge_hints:
+            proxy_retry_log.append(
+                {
+                    "url": url,
+                    "reason": reason,
+                    "transport": "capsolver_cloudflare_static_proxy",
+                    "success": False,
+                    "challenge_hints": page.challenge_hints,
+                    "duration_ms": elapsed_ms(started),
+                }
+            )
+            errors.append(f"{url}: capsolver cloudflare cookie still returned challenge page")
+            return None
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "capsolver_cloudflare_static_proxy",
+                "success": True,
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: capsolver cloudflare cookie recovered static crawl")
+        return result
+    except Exception as exc:
+        proxy_retry_log.append(
+            {
+                "url": url,
+                "reason": reason,
+                "transport": "capsolver_cloudflare_static_proxy",
+                "success": False,
+                "error": compact_whitespace(exc),
+                "duration_ms": elapsed_ms(started),
+            }
+        )
+        errors.append(f"{url}: capsolver cloudflare static retry failed: {compact_whitespace(exc)}")
+        return None
+
+
 def browserless_ws_endpoint() -> str:
     endpoint = compact_whitespace(
         os.getenv("BROWSERLESS_WS_URL")
@@ -3928,6 +4008,19 @@ async def enrich_row(
                     errors.append(f"{best_url}: static fetch recovered after challenge page")
             except Exception as static_exc:
                 errors.append(f"{best_url}: static challenge recovery failed: {compact_whitespace(static_exc)}")
+        if not captcha_solved and allow_challenge_recovery and proxy_retry_available_for_url(best_url):
+            cloudflare_result = await retry_static_with_cloudflare_clearance(
+                best_url,
+                str(homepage_result.get("html") or homepage_result.get("cleaned_html") or ""),
+                errors,
+                proxy_retry_log,
+                reason="homepage_challenge_cloudflare_cookie_recovery",
+            )
+            if cloudflare_result is not None:
+                homepage_result = cloudflare_result
+                homepage_page = extract_page_artifact(cloudflare_result)
+                challenge_note = ""
+                captcha_solved = not homepage_page.challenge_hints
         if not captcha_solved and allow_challenge_recovery and proxy_retry_available_for_url(best_url):
             browser_result = None
             if browserless_ws_endpoint():
