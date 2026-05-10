@@ -101,6 +101,40 @@ def test_url_picker_fallback_keeps_unclear_results_skipped():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_accepts_official_hosted_page_when_llm_selects_it():
+    result = run_parse_url_pick_with_content(
+        "Appletree Medical",
+        [
+            {
+                "title": "Appletree Medical - Family medicine and Occupational Health",
+                "url": "https://appletreemedicalsingapore.wordpress.com/",
+                "snippet": "Contact us at Blk 416 Ang Mo Kio Avenue 10 Singapore.",
+            }
+        ],
+        '{"url":"https://appletreemedicalsingapore.wordpress.com/","reason":"official hosted page with Singapore contact details"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://appletreemedicalsingapore.wordpress.com/"
+
+
+def test_url_picker_accepts_close_official_name_variant_when_llm_selects_it():
+    result = run_parse_url_pick_with_content(
+        "Arise",
+        [
+            {
+                "title": "Arise Services Pte Ltd: Home",
+                "url": "https://arise.com.sg/",
+                "snippet": "Preferred provider for food hygiene and first aid courses in Singapore.",
+            }
+        ],
+        '{"url":"https://arise.com.sg/","reason":"official site uses close legal name variant"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://arise.com.sg/"
+
+
 def test_url_picker_rejects_weak_llm_acronym_pick():
     result = run_parse_url_pick_with_content(
         "ASIAN AMERICAN MEDICAL GROUP",
@@ -295,7 +329,8 @@ def test_url_picker_prompt_requires_blank_when_unclear():
 
     assert "Return blank unless the result is clearly" in prompt_code
     assert "Do not guess" in prompt_code
-    assert "acronym-only domains" in prompt_code
+    assert "Accept close official-name variants" in prompt_code
+    assert "Accept a hosted official site such as WordPress" in prompt_code
 
 
 def test_url_picker_prompt_node_compiles():

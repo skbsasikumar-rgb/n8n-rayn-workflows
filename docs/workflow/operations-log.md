@@ -1226,3 +1226,23 @@ Cold email copy QA hardening:
 - after the rerun all `10` rows were `status=completed`; `8` rows completed with `status_reason=enrichment_completed_thin_content`, and `2` rows (`282`, `291`) completed with `status_reason=enrichment_completed`.
 - downstream effect after the same rerun: `contact_search_status={contact_found:8,contact_not_found:2}` and `automation_decision={auto_send_eligible:8,suppressed:2}`. No rows remained blocked at `url_picked`.
 - contact details from the proof run: validated emails were found for `276,277,279,280,282,283,284,291`; `289` and `290` completed enrichment but stayed `suppressed_missing_validated_email`, which is the expected downstream gate rather than a crawl-stage failure.
+- `2026-05-10 14:18 +08`: ran a full safe all-stage rerun across the current 50-row working set `273-322` after the Stage 2 crawl-success-first fix.
+- the rerun reset all stages from scratch, triggered URL picking for all `50` rows, then ran public enrichment, contact enrichment in `9` bounded batches (`batch_size=5`), and the draft-only planner workflow.
+- post-URL-pick result: `42` rows had official URLs and `8` were skipped immediately for `no_official_url_found` (`281,285,292,296,304,306,314,320`).
+- post-public-enrichment result: `41 completed`, `1 skipped_challenge_detected` (`293` / `arden.com.sg`), and no rows remained stuck at `url_picked`. The Stage 2 fix held for sparse sites: thin-content rows now completed with reasons such as `enrichment_completed_thin_content`.
+- final live state across the full 50 rows: `status={completed:41,skipped:9}`, `contact_search_status={contact_found:34,contact_not_found:7,pending:9}`, `automation_decision={auto_send_eligible:32,suppressed:7,auto_skipped:2,blank:9}`.
+- final skipped rows were `281,285,292,293,296,304,306,314,320`. `293` was the only challenge/captcha skip; the other `8` were URL-pick skips with no official URL selected.
+- final suppressed rows were `278,289,290,294,298,303,311`; these completed enrichment but had `contact_not_found` / `suppressed_missing_validated_email`.
+- final auto-skipped rows were `288` and `305`.
+- key positive outcome: the prior Stage 2 blocker is fixed. Rows that previously stalled at `url_picked / thin_content` now completed, flowed into contact search, and reached planner gating normally.
+- key new regression exposed by the full reset: the simplified URL picker is now stricter than the prior live state and lost URLs for `292,296,304,306,320` in addition to the known hard misses `281,285,314`. Next fix should target URL-pick recall on legitimate official domains without reintroducing bad fallback guesses.
+- `2026-05-10 14:55 +08`: fixed URL-picker recall with a small prompt-only change, keeping the LLM as the source of truth and not restoring deterministic fallback guessing.
+- updated the URL picker prompt to accept close official-name variants when title/snippet confirms the same entity, and to accept hosted official pages such as WordPress only when company name, Singapore context, and contact/address/service evidence are present.
+- kept deterministic parser guards unchanged: directories, reviews, profiles, social media, maps, job boards, news/articles, stock pages, PDFs, webmail, and third-party slug/profile pages are still rejected.
+- local URL-picker regression tests passed: `python3 -m pytest tests/test_url_picker_fallback.py -q` (`20 passed`).
+- updated live n8n workflow `BQEa6M2pKYmuEYMV` from `wf-worker.json`; new workflow version `40229bdf-1c5b-496a-a63b-c94ec9ca6f94`.
+- reran URL-only for the five full-reset misses `292,296,304,306,320`; all five recovered to `status=url_picked`.
+- picked URLs from the proof: `292=https://appletreemedicalsingapore.wordpress.com/`, `296=https://arise.com.sg/`, `304=https://www.caregivers.com.sg/`, `306=https://ashfordmedical.com.sg/`, `320=https://www.assureclinic.sg/`.
+- finished the recovered rows through enrichment/contact/planner to avoid leaving live data half-reset: `292,296,304,320` completed; `306` reached `skipped_challenge_detected` on the Ashford site.
+- final 50-row state after URL recall recovery: `status={completed:45,skipped:5}`, `contact_search_status={contact_found:37,contact_not_found:8,pending:5}`, `automation_decision={auto_send_eligible:35,suppressed:8,auto_skipped:2,blank:5}`. Remaining skipped rows: `281,285,293,306,314`.
+- downstream note: URL recall is fixed, but the proof exposed separate non-URL issues that should not be mixed into this fix: `292` selected a WordPress system email (`comment-reply@wordpress.com`) during contact search, and `296` is non-healthcare but planner copy still treated it as healthcare/HIA.
