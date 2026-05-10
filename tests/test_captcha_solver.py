@@ -2,6 +2,7 @@ import os
 import sys
 import types
 import unittest
+import json
 from unittest.mock import patch
 import asyncio
 
@@ -71,6 +72,55 @@ class CaptchaSolverTests(unittest.TestCase):
             {"defaultTimeout": 77, "recaptchaTimeout": 88, "pollingInterval": 6},
         )
 
+    def test_recaptcha_solver_uses_capsolver_when_configured(self):
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            body = json.loads(request.data.decode("utf-8"))
+            calls.append((request.full_url, body, timeout))
+            if request.full_url.endswith("/createTask"):
+                return FakeResponse({"errorId": 0, "taskId": "task-1"})
+            return FakeResponse(
+                {
+                    "errorId": 0,
+                    "status": "ready",
+                    "solution": {"gRecaptchaResponse": "capsolver-token"},
+                }
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "TWOCAPTCHA_API_KEY": "",
+                "CAPSOLVER_API_KEY": "capsolver-key",
+                "CAPTCHA_SOLVER_PROVIDER_ORDER": "capsolver,2captcha",
+            },
+            clear=False,
+        ):
+            with patch.object(captcha_solver, "urlopen", side_effect=fake_urlopen), patch.object(
+                captcha_solver, "SOLVER_POLL_INTERVAL", 0.01
+            ), patch.object(captcha_solver, "SOLVER_RECAPTCHA_TIMEOUT_SECONDS", 3):
+                token = asyncio.run(
+                    captcha_solver._solve_recaptcha_v2(None, "site-key", "https://example.com/")
+                )
+
+        self.assertEqual(token, "capsolver-token")
+        self.assertEqual(calls[0][1]["task"]["type"], "ReCaptchaV2TaskProxyLess")
+        self.assertEqual(calls[0][1]["task"]["websiteKey"], "site-key")
+
     def test_provider_diagnostics_include_capsolver_and_capmonster(self):
         with patch.dict(
             os.environ,
@@ -84,10 +134,13 @@ class CaptchaSolverTests(unittest.TestCase):
         ):
             diagnostics = captcha_solver.solver_diagnostics()
         self.assertEqual(diagnostics["provider_order"], ["capsolver", "capmonster", "2captcha"])
+        self.assertTrue(diagnostics["enabled"])
+        self.assertEqual(diagnostics["active_providers"], ["capsolver"])
         self.assertTrue(diagnostics["providers"]["capsolver"]["configured"])
         self.assertTrue(diagnostics["providers"]["capmonster"]["configured"])
-        self.assertFalse(diagnostics["providers"]["capsolver"]["selected"])
-        self.assertFalse(diagnostics["enabled"])
+        self.assertTrue(diagnostics["providers"]["capsolver"]["selected"])
+        self.assertFalse(diagnostics["providers"]["capmonster"]["supported"])
+        self.assertFalse(diagnostics["providers"]["capmonster"]["selected"])
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -8,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote_plus
+from urllib.request import Request, urlopen
 
 from playwright.async_api import Browser, Page, Playwright, async_playwright
 
@@ -63,8 +65,53 @@ def _provider_order() -> list[str]:
     return ordered
 
 
+def _provider_configured(provider: str) -> bool:
+    if provider == "2captcha":
+        return bool(_api_key())
+    if provider == "capsolver":
+        return bool(_capsolver_api_key())
+    if provider == "capmonster":
+        return bool(_capmonster_api_key())
+    return False
+
+
+def _provider_supported(provider: str, captcha_type: str = "recaptcha") -> bool:
+    if provider == "2captcha":
+        return captcha_type in {"recaptcha", "hcaptcha"}
+    if provider == "capsolver":
+        return captcha_type == "recaptcha"
+    return False
+
+
+def _active_providers(captcha_type: str = "recaptcha") -> list[str]:
+    return [
+        provider
+        for provider in _provider_order()
+        if _provider_configured(provider) and _provider_supported(provider, captcha_type)
+    ]
+
+
 def is_configured() -> bool:
-    return bool(_api_key())
+    return bool(_active_providers())
+
+
+def _capsolver_post(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8")
+    request = Request(
+        f"https://api.capsolver.com/{endpoint}",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        raw = response.read().decode("utf-8", errors="replace")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"capsolver returned unexpected response: {type(data).__name__}")
+    if data.get("errorId"):
+        error = data.get("errorDescription") or data.get("errorCode") or data
+        raise RuntimeError(f"capsolver error: {error}")
+    return data
 
 
 def _allowed_domains() -> list[str]:
@@ -90,13 +137,15 @@ def solver_diagnostics() -> dict[str, Any]:
             "import_name": "twocaptcha",
             "installed": importlib.util.find_spec("twocaptcha") is not None,
             "configured": bool(_api_key()),
-            "selected": True,
+            "supported": True,
+            "selected": False,
         },
         "capsolver": {
-            "package": "capsolver",
-            "import_name": "capsolver",
-            "installed": importlib.util.find_spec("capsolver") is not None,
+            "package": "builtin-http",
+            "import_name": None,
+            "installed": True,
             "configured": bool(_capsolver_api_key()),
+            "supported": True,
             "selected": False,
         },
         "capmonster": {
@@ -104,12 +153,16 @@ def solver_diagnostics() -> dict[str, Any]:
             "import_name": "capmonstercloudclient",
             "installed": importlib.util.find_spec("capmonstercloudclient") is not None,
             "configured": bool(_capmonster_api_key()),
+            "supported": False,
             "selected": False,
         },
     }
     configured = is_configured()
     allowed_domains = _allowed_domains()
     provider_order = _provider_order()
+    active_providers = _active_providers()
+    for provider in active_providers:
+        providers[provider]["selected"] = True
     return {
         "package": "2captcha-python",
         "import_name": "twocaptcha",
@@ -119,6 +172,7 @@ def solver_diagnostics() -> dict[str, Any]:
         "scope_mode": "scoped" if allowed_domains else "all",
         "allowed_domains": allowed_domains,
         "provider_order": provider_order,
+        "active_providers": active_providers,
         "providers": providers,
     }
 
@@ -130,7 +184,7 @@ def _domain_allowed(hostname: str) -> bool:
     return any(_hostname_matches(hostname, domain) for domain in allowed)
 
 
-async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | None:
+async def _solve_recaptcha_v2_with_2captcha(sitekey: str, page_url: str) -> str | None:
     from twocaptcha import TwoCaptcha
 
     solver = TwoCaptcha(
@@ -149,7 +203,72 @@ async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | 
     return None
 
 
-async def _solve_hcaptcha(page: Page, sitekey: str, page_url: str) -> str | None:
+async def _solve_recaptcha_v2_with_capsolver(sitekey: str, page_url: str) -> str | None:
+    api_key = _capsolver_api_key()
+    if not api_key:
+        return None
+
+    try:
+        created = await asyncio.to_thread(
+            _capsolver_post,
+            "createTask",
+            {
+                "clientKey": api_key,
+                "task": {
+                    "type": "ReCaptchaV2TaskProxyLess",
+                    "websiteURL": page_url,
+                    "websiteKey": sitekey,
+                },
+            },
+        )
+        task_id = created.get("taskId")
+        if not task_id:
+            logger.error("capsolver recaptcha task missing taskId")
+            return None
+
+        deadline = time.monotonic() + SOLVER_RECAPTCHA_TIMEOUT_SECONDS
+        while time.monotonic() < deadline:
+            await asyncio.sleep(max(1.0, SOLVER_POLL_INTERVAL))
+            result = await asyncio.to_thread(
+                _capsolver_post,
+                "getTaskResult",
+                {"clientKey": api_key, "taskId": task_id},
+            )
+            status = result.get("status")
+            if status == "ready":
+                solution = result.get("solution") if isinstance(result.get("solution"), dict) else {}
+                token = solution.get("gRecaptchaResponse")
+                if token:
+                    return str(token)
+                logger.error("capsolver recaptcha ready response missing token")
+                return None
+            if status == "failed":
+                logger.error("capsolver recaptcha task failed: %s", result)
+                return None
+
+        logger.error("capsolver recaptcha solve timed out after %ss", SOLVER_RECAPTCHA_TIMEOUT_SECONDS)
+    except Exception as exc:
+        logger.error("capsolver recaptcha solve failed: %s", exc)
+    return None
+
+
+async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | None:
+    for provider in _active_providers("recaptcha"):
+        if provider == "capsolver":
+            token = await _solve_recaptcha_v2_with_capsolver(sitekey, page_url)
+        elif provider == "2captcha":
+            token = await _solve_recaptcha_v2_with_2captcha(sitekey, page_url)
+        else:
+            token = None
+
+        if token:
+            logger.info("recaptcha solved with %s", provider)
+            return token
+        logger.warning("recaptcha solver provider failed: %s", provider)
+    return None
+
+
+async def _solve_hcaptcha_with_2captcha(sitekey: str, page_url: str) -> str | None:
     from twocaptcha import TwoCaptcha
 
     solver = TwoCaptcha(
@@ -165,6 +284,20 @@ async def _solve_hcaptcha(page: Page, sitekey: str, page_url: str) -> str | None
             return token
     except Exception as exc:
         logger.error("hcaptcha solve failed: %s", exc)
+    return None
+
+
+async def _solve_hcaptcha(page: Page, sitekey: str, page_url: str) -> str | None:
+    for provider in _active_providers("hcaptcha"):
+        if provider == "2captcha":
+            token = await _solve_hcaptcha_with_2captcha(sitekey, page_url)
+        else:
+            token = None
+
+        if token:
+            logger.info("hcaptcha solved with %s", provider)
+            return token
+        logger.warning("hcaptcha solver provider failed: %s", provider)
     return None
 
 
