@@ -13,9 +13,11 @@ Captcha fallback hardening:
 - fixed challenge recovery ordering so Browserless CDP is tried on challenge pages before forcing local Playwright through the residential proxy; proxy crawl/static recovery remains as fallback.
 - set Railway production variables on `n8n-rayn-workflows`: `CAPSOLVER_API_KEY` and `CAPTCHA_SOLVER_PROVIDER_ORDER=capsolver,2captcha,capmonster`; secret value intentionally not logged.
 - focused live check before classifier fix: rows `293` and `306` still skipped with zero `website_content` because both sites had usable page HTML plus embedded reCAPTCHA widgets.
+- focused live writeback after fixes: row `306` recovered to `completed / enrichment_completed_thin_content` with homepage contact details; row `293` remains `skipped_challenge_detected` after Browserless and proxy fallback attempts.
+- current 50-row scrape stats after writeback: `46 completed`, `4 skipped`; completed page-count distribution is `{1:16, 2:2, 3:3, 4:3, 5:2, 7:3, 8:17}`.
 - validation passed: `python3 -m pytest tests/test_captcha_solver.py -q` (`5 passed`) and `python3 -m pytest tests/test_public_web_enrichment.py tests/test_captcha_solver.py -q` (`35 passed`).
-- deployment performed: pending commit/push.
-- live rows patched: no.
+- deployment performed: yes, Railway worker service `n8n-rayn-workflows`.
+- live rows patched: yes, rows `293` and `306` were reset from URL discovery onward; contact and planner were skipped.
 - no emails were sent, and Instantly was not used.
 
 ## 2026-05-08
