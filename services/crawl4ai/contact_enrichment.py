@@ -3032,6 +3032,25 @@ def try_company_email_fallback(
         selected_seniority = compact(identity.get("seniority"), 80) if identity_usable else ""
         selected_source_url = compact(identity.get("source_url"), 1000) if identity_usable else compact(payload.get("best_url"), 1000) or f"https://{domain}/"
         selected_confidence = compact(identity.get("confidence"), 80) if identity_usable else ""
+        if not identity_usable and not is_generic_company_email(accepted_email):
+            inferred_name = infer_name_from_email_local_part(accepted_email)
+            if inferred_name:
+                selected_name = inferred_name
+                selected_role = "Company Contact"
+                selected_seniority = "team"
+                selected_confidence = "Low"
+                identity = {
+                    **identity,
+                    "partially_proved": True,
+                    "name": selected_name,
+                    "role": selected_role,
+                    "role_bucket": "generic_team",
+                    "seniority": selected_seniority,
+                    "confidence": selected_confidence,
+                    "source_url": selected_source_url,
+                    "reason": "email_local_part_inferred_without_public_role_evidence",
+                }
+                evidence["company_email_identity_resolution"] = identity
         for candidate in company_email_candidates:
             if compact(candidate.get("email"), 320).lower() == accepted_email:
                 if identity_usable:

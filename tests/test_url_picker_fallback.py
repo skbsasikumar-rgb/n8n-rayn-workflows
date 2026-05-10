@@ -156,6 +156,54 @@ def test_url_picker_rejects_weak_llm_acronym_pick():
     assert "rejected" in evidence["reason"]
 
 
+def test_url_picker_accepts_bridgepoint_core_domain_without_branch_tokens():
+    result = run_parse_url_pick_with_content(
+        "Bridgepoint Health (Jalan Bukit Merah Clinic)",
+        [
+            {
+                "rank": 1,
+                "title": "Bridgepoint Health",
+                "url": "https://bridgepointhealth.sg/",
+                "snippet": "Ang is an accredited Family Physician and Clinic Lead at Bridgepoint Health.",
+            },
+            {
+                "rank": 2,
+                "title": "Bridgepoint Health (@bridgepointhealthsg) - Facebook",
+                "url": "https://www.facebook.com/bridgepointhealthsg/",
+                "snippet": "BH Jalan Bukit Merah clinic is at Tiong Bahru Orchid.",
+            },
+        ],
+        '{"url":"https://bridgepointhealth.sg/","reason":"official Bridgepoint Health site"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://bridgepointhealth.sg/"
+
+
+def test_url_picker_accepts_spaced_initial_company_when_official_result_says_so():
+    result = run_parse_url_pick_with_content(
+        "P J Clinic",
+        [
+            {
+                "rank": 1,
+                "title": "Dr Tan Poh Kiang | PJ Clinic | Singapore",
+                "url": "https://www.pjclinic.org/",
+                "snippet": "Official website of PJ Clinic · Blk 11 Jalan Bukit Merah.",
+            },
+            {
+                "rank": 2,
+                "title": "Appointments - PJ Clinic",
+                "url": "https://www.pjclinic.org/appointments",
+                "snippet": "Our clinic address and email.",
+            },
+        ],
+        '{"url":"https://www.pjclinic.org/","reason":"official website of PJ Clinic"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://www.pjclinic.org/"
+
+
 def test_url_picker_fallback_rejects_news_article():
     result = run_parse_url_pick(
         "ASIAN AMERICAN MEDICAL GROUP",
@@ -331,6 +379,7 @@ def test_url_picker_prompt_requires_blank_when_unclear():
     assert "Do not guess" in prompt_code
     assert "Accept close official-name variants" in prompt_code
     assert "Accept a hosted official site such as WordPress" in prompt_code
+    assert "Prefer a normal company-owned domain over hosted landing pages" in prompt_code
 
 
 def test_url_picker_prompt_node_compiles():

@@ -968,8 +968,15 @@ def canonical_root_url(raw_url: str) -> NormalizationResult:
     if parsed.port and parsed.port != default_port_for_scheme(parsed.scheme):
         netloc = f"{host}:{parsed.port}"
 
+    path = parsed.path or "/"
+    if not path.startswith("/"):
+        path = "/" + path
+    normalized_url = urlunsplit((parsed.scheme, netloc, path, "", "")).rstrip("/")
+    if path == "/":
+        normalized_url += "/"
+
     return NormalizationResult(
-        best_url=f"{parsed.scheme}://{netloc}/",
+        best_url=normalized_url,
         hostname=host,
         registered_domain=registered_domain(host),
     )
@@ -988,7 +995,10 @@ def canonical_homepage_url(raw_url: str) -> str:
     path = parsed.path or "/"
     if not path.startswith("/"):
         path = "/" + path
-    return urlunsplit((parsed.scheme, netloc, path, "", "")).rstrip("/") + "/"
+    normalized_url = urlunsplit((parsed.scheme, netloc, path, "", "")).rstrip("/")
+    if path == "/":
+        normalized_url += "/"
+    return normalized_url
 
 
 def url_with_scheme(raw_url: str, scheme: str) -> str:
@@ -1536,6 +1546,7 @@ def candidate_page_score(
     page_url: str,
     anchor_text: str = "",
     profile: str = "auto",
+    link_source: str = "",
 ) -> int:
     if not same_registered_domain(homepage_url, page_url):
         return -100
@@ -1550,11 +1561,18 @@ def candidate_page_score(
         return -100
     if path.endswith(".pdf"):
         return -20
+    source = compact_whitespace(link_source).lower()
     text = f"{path} {anchor_text.lower()}"
     if any(term in text for term in LOW_VALUE_PATH_TERMS):
         return -20
 
     score = 0
+    if source in {"header", "nav", "menu"}:
+        score += 8
+    elif source == "footer":
+        score += 2
+    elif source:
+        score += 1
     selected_profile = profile if profile in {"hia", "non_hia"} else enrichment_profile_from_text(text)
     high_value_terms = HIA_HIGH_VALUE_PATH_TERMS if selected_profile == "hia" else NON_HIA_HIGH_VALUE_PATH_TERMS
     for keyword in high_value_terms:
@@ -1575,6 +1593,8 @@ def candidate_page_score(
         score -= 7
     if path in {"", "/"}:
         score += 1
+    if source in {"header", "nav", "menu"} and path.count("/") <= 2:
+        score += 2
     if re.search(r"/(?:page|p)/\\d+", path):
         score -= 5
     score -= max(path.count("/") - 2, 0)
@@ -1603,9 +1623,10 @@ def choose_candidate_pages(
     for link in homepage_links:
         href = compact_whitespace(link.get("href", ""))
         text = compact_whitespace(link.get("text", ""))
+        source = compact_whitespace(link.get("source", ""))
         if not href or href in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, href, text, profile=profile_hint)
+        score = candidate_page_score(homepage_url, href, text, profile=profile_hint, link_source=source)
         if score <= 0:
             continue
         ranked.append((score + 8, 0, href))
@@ -1614,7 +1635,7 @@ def choose_candidate_pages(
     for sitemap_url in sitemap_urls:
         if sitemap_url in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, sitemap_url, "", profile=profile_hint)
+        score = candidate_page_score(homepage_url, sitemap_url, "", profile=profile_hint, link_source="sitemap")
         if score <= 0:
             continue
         ranked.append((score + 4, 1, sitemap_url))
@@ -1627,7 +1648,7 @@ def choose_candidate_pages(
         href = urljoin(homepage_url, path)
         if href in seen_urls:
             continue
-        score = candidate_page_score(homepage_url, href, path, profile=profile_hint)
+        score = candidate_page_score(homepage_url, href, path, profile=profile_hint, link_source="fallback")
         if score <= 0:
             continue
         ranked.append((score - 12, 2, href))
@@ -1853,12 +1874,24 @@ def extract_addresses(lines: list[str]) -> list[str]:
 
 
 def extract_anchor_links(soup: BeautifulSoup, page_url: str) -> list[dict[str, str]]:
+    def link_source(anchor: Any) -> str:
+        for parent in getattr(anchor, "parents", []):
+            name = str(getattr(parent, "name", "") or "").lower()
+            role = str(parent.attrs.get("role", "") if getattr(parent, "attrs", None) else "").lower()
+            classes = " ".join(parent.attrs.get("class", []) if isinstance(parent.attrs.get("class", []), list) else [str(parent.attrs.get("class", ""))]) if getattr(parent, "attrs", None) else ""
+            marker = f"{name} {role} {classes}".lower()
+            if name in {"header", "nav"} or role in {"navigation", "menubar"} or any(term in marker for term in ("navbar", "menu", "main-menu", "site-header")):
+                return "nav"
+            if name == "footer" or role == "contentinfo" or "footer" in marker:
+                return "footer"
+        return "body"
+
     output: list[dict[str, str]] = []
     for anchor in soup.find_all("a", href=True):
         href = make_absolute_url(page_url, anchor.get("href", ""))
         if not href:
             continue
-        output.append({"href": href, "text": compact_whitespace(anchor.get_text(" ", strip=True))})
+        output.append({"href": href, "text": compact_whitespace(anchor.get_text(" ", strip=True)), "source": link_source(anchor)})
     return output
 
 
@@ -1997,7 +2030,7 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
     headings = extract_headings(soup)
     blocks = extract_text_blocks(soup)
     internal_link_items = [
-        {"href": link["href"], "text": link.get("text", "")}
+        {"href": link["href"], "text": link.get("text", ""), "source": link.get("source", "")}
         for link in anchor_links
         if link.get("href") and same_registered_domain(final_url, link["href"])
     ]
@@ -4152,7 +4185,7 @@ async def enrich_row(
     if homepage_page.content_hash:
         seen_hashes.add(homepage_page.content_hash)
 
-    page_limit = min(max(page_limit, 1), 16 if stage == "deep_retry" else 8)
+    page_limit = min(max(page_limit, 1), 18 if stage == "deep_retry" else 14)
     per_row_page_concurrency = min(max(per_row_page_concurrency, 1), 2)
     sitemap_urls = fetch_sitemap_candidates(session, best_url, robots_policy, limit=max(page_limit * 6, 20))
     homepage_links = build_homepage_links(homepage_page)

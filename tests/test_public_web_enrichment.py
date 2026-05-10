@@ -55,6 +55,53 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertNotIn("https://facebook.com/clinic", selected)
         self.assertNotIn("https://clinic.example/blog/latest-news", selected)
 
+    def test_nav_first_crawl_keeps_non_standard_header_links(self):
+        homepage = "https://company.example/"
+        links = [
+            {"href": "https://company.example/our-story", "text": "Our Story", "source": "nav"},
+            {"href": "https://company.example/what-we-do", "text": "What We Do", "source": "nav"},
+            {"href": "https://company.example/programmes", "text": "Programmes", "source": "nav"},
+            {"href": "https://company.example/login", "text": "Client Login", "source": "nav"},
+            {"href": "https://company.example/news/latest", "text": "Latest News", "source": "nav"},
+        ]
+        selected = p.choose_candidate_pages(homepage, links, [], page_limit=5, profile="non_hia")
+        self.assertEqual(selected[0], homepage)
+        self.assertIn("https://company.example/our-story", selected)
+        self.assertIn("https://company.example/what-we-do", selected)
+        self.assertIn("https://company.example/programmes", selected)
+        self.assertNotIn("https://company.example/login", selected)
+        self.assertNotIn("https://company.example/news/latest", selected)
+
+    def test_extract_page_artifact_marks_header_dropdown_links_as_nav(self):
+        html = """
+        <html><head><title>Example</title></head><body>
+          <header>
+            <nav>
+              <ul>
+                <li><a href="/our-story">Our Story</a></li>
+                <li><button>Services</button><div><a href="/what-we-do">What We Do</a></div></li>
+              </ul>
+            </nav>
+          </header>
+          <footer><a href="/privacy">Privacy</a></footer>
+          <main><h1>Example</h1><p>Primary healthcare advisory and support.</p></main>
+        </body></html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://company.example/",
+                "redirected_url": "https://company.example/",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "Example"},
+                "status_code": 200,
+            }
+        )
+        link_sources = {item["href"]: item.get("source") for item in artifact.internal_link_items}
+        self.assertEqual(link_sources["https://company.example/our-story"], "nav")
+        self.assertEqual(link_sources["https://company.example/what-we-do"], "nav")
+        self.assertEqual(link_sources["https://company.example/privacy"], "footer")
+
     def test_non_hia_link_scoring_prefers_privacy_security_platform(self):
         homepage = "https://platform.example/"
         links = [
@@ -208,6 +255,11 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         result = p.canonical_root_url("https://gmail.com")
         self.assertEqual(result.best_url, "")
         self.assertIn("clearly not an organization website", result.reason)
+
+    def test_canonical_root_url_preserves_valid_landing_page_path(self):
+        result = p.canonical_root_url("https://cavenaghmedical.page/hsg")
+        self.assertEqual(result.best_url, "https://cavenaghmedical.page/hsg")
+        self.assertEqual(result.registered_domain, "cavenaghmedical.page")
 
     def test_page_artifact_uses_meta_description_and_nav_links_when_text_is_empty(self):
         html = """
@@ -420,7 +472,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 8", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 18 : 14", prepare_code)
         self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 15000", prepare_code)
         self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 2", prepare_code)
         self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 300 : 150", prepare_code)

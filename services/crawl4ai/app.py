@@ -1699,11 +1699,11 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
     try:
         async with scrape_semaphore:
             if request.allow_low_limits:
-                effective_page_limit = min(16 if stage == "deep_retry" else 8, max(1, request.page_limit))
+                effective_page_limit = min(18 if stage == "deep_retry" else 14, max(1, request.page_limit))
                 effective_scrape_char_limit = min(180000, max(2000, request.scrape_char_limit))
             else:
                 effective_page_limit = min(
-                    16 if stage == "deep_retry" else 8,
+                    18 if stage == "deep_retry" else 14,
                     max(
                         request.page_limit,
                         int(os.getenv("PUBLIC_ENRICH_MIN_PAGE_LIMIT", "14" if stage == "deep_retry" else "6")),
@@ -1788,7 +1788,7 @@ def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
 def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any]:
     request = PublicEnrichmentRequest.model_validate(request_data)
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
-    max_pages = 16 if stage == "deep_retry" else 8
+    max_pages = 18 if stage == "deep_retry" else 14
     max_chars = 160000 if stage == "deep_retry" else 120000
     input_row = public_enrichment.InputRow(
         row_id=request.Id,

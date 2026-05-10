@@ -477,6 +477,41 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.validated_email, "hello@examplecare.sg")
         self.assertEqual(result.email_validation_provider, "anymail_finder_company")
 
+    def test_company_email_fallback_infers_person_name_from_specific_email(self):
+        payload = {
+            "Id": 458,
+            "company_name": "Dr Panda Medical Centre @ Sin Ming",
+            "company_homepage_name": "Dr Panda Medical Centre",
+            "canonical_domain": "drpanda.one",
+            "best_url": "https://www.drpanda.one/",
+            "website_content": "Dr Panda Medical Centre is open daily in Singapore.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["joycetan@drpanda.one"],
+                    "valid_emails": ["joycetan@drpanda.one"],
+                }],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", return_value=[]):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
+        self.assertEqual(result.validated_email, "joycetan@drpanda.one")
+        self.assertEqual(result.selected_contact_name, "Joyce Tan")
+        self.assertEqual(result.selected_contact_role, "Company Contact")
+        self.assertEqual(result.selected_contact_seniority, "team")
+        self.assertEqual(result.selected_contact_confidence, "Low")
+
     def test_company_email_fallback_runs_after_decision_maker_miss(self):
         payload = {
             "Id": 457,
