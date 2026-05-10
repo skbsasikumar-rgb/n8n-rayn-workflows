@@ -261,6 +261,17 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(result.best_url, "https://cavenaghmedical.page/hsg")
         self.assertEqual(result.registered_domain, "cavenaghmedical.page")
 
+    def test_validation_variants_try_deep_path_before_same_domain_root(self):
+        self.assertEqual(
+            p.validation_variants("https://clinic.example/locations/bishan"),
+            [
+                "https://clinic.example/locations/bishan",
+                "http://clinic.example/locations/bishan",
+                "https://clinic.example/",
+                "http://clinic.example/",
+            ],
+        )
+
     def test_page_artifact_uses_meta_description_and_nav_links_when_text_is_empty(self):
         html = """
         <html>

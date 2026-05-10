@@ -204,6 +204,32 @@ def test_url_picker_accepts_spaced_initial_company_when_official_result_says_so(
     assert result["url_picked"] == "https://www.pjclinic.org/"
 
 
+def test_url_picker_uses_serper_fallback_when_llm_returns_blank_but_official_result_exists():
+    result = run_parse_url_pick_with_content(
+        "The Clinic Group @ Marina One",
+        [
+            {
+                "rank": 1,
+                "title": "The Clinic Group @ Marina One - Singapore - Healthway Medical",
+                "url": "https://healthwaymedical.com/clinics/the-clinic-group-marina-one",
+                "snippet": "The Clinic Group @ Marina One is a family clinic.",
+            },
+            {
+                "rank": 2,
+                "title": "The Clinic Group: Affordable Checkup Clinic in Singapore",
+                "url": "https://theclinicgroup.com.sg/",
+                "snippet": "Get Directions; The Clinic Group @ Marina One. 5 Straits View, #B2-54, Marina One.",
+            },
+        ],
+        '{"url":"","reason":"none clear"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://theclinicgroup.com.sg/"
+    evidence = json.loads(result["search_evidence_json"])
+    assert evidence["fallback_url"] == "https://theclinicgroup.com.sg/"
+
+
 def test_url_picker_fallback_rejects_news_article():
     result = run_parse_url_pick(
         "ASIAN AMERICAN MEDICAL GROUP",

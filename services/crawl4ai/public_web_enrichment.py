@@ -1012,7 +1012,12 @@ def validation_variants(best_url_candidate: str) -> list[str]:
         return []
     https_url = url_with_scheme(best_url_candidate, "https")
     http_url = url_with_scheme(best_url_candidate, "http")
-    return dedupe_strings([https_url, http_url], limit=2)
+    variants = [https_url, http_url]
+    path = parsed.path or "/"
+    if path != "/":
+        root_url = urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
+        variants.extend([url_with_scheme(root_url, "https"), url_with_scheme(root_url, "http")])
+    return dedupe_strings(variants, limit=4)
 
 
 def summarize_request_error(exc: Exception) -> str:
