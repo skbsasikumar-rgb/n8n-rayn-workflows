@@ -35,7 +35,7 @@ console.log(JSON.stringify(result.json));
 
 
 def test_url_picker_fallback_picks_root_homepage():
-    result = run_parse_url_pick(
+    result = run_parse_url_pick_with_content(
         "Amaris B. Clinic",
         [
             {
@@ -49,6 +49,7 @@ def test_url_picker_fallback_picks_root_homepage():
                 "snippet": "Review listing.",
             },
         ],
+        '{"url":"https://www.amaris-b.com/","reason":"official website"}',
     )
 
     assert result["status"] == "url_picked"
@@ -57,7 +58,7 @@ def test_url_picker_fallback_picks_root_homepage():
 
 
 def test_url_picker_fallback_picks_acronym_domain_from_snippet():
-    result = run_parse_url_pick(
+    result = run_parse_url_pick_with_content(
         "ASIAN AMERICAN MEDICAL GROUP",
         [
             {
@@ -71,6 +72,7 @@ def test_url_picker_fallback_picks_acronym_domain_from_snippet():
                 "snippet": "Company profile.",
             },
         ],
+        '{"url":"https://www.aamg.co","reason":"official website found in result snippet"}',
     )
 
     assert result["status"] == "url_picked"
@@ -240,6 +242,22 @@ def test_url_picker_fallback_rejects_third_party_company_slug():
                 "title": "Ann Arbor Dental Surgery",
                 "url": "https://www.tampinesmart.com/ann-arbor-dental-surgery",
                 "snippet": "Ann Arbor Dental Surgery is located at Tampines Mart.",
+            }
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_fallback_rejects_public_webmail_domain():
+    result = run_parse_url_pick(
+        "Anchor Health Family Clinic",
+        [
+            {
+                "title": "Anchor Health Family Clinic",
+                "url": "https://gmail.com",
+                "snippet": "Contact Anchor Health Family Clinic at anchorhealth@gmail.com",
             }
         ],
     )

@@ -151,6 +151,17 @@ NON_ORG_HOST_SUFFIXES = (
     "maps.apple.com",
     "google.com",
     "google.com.sg",
+    "gmail.com",
+    "googlemail.com",
+    "mail.google.com",
+    "outlook.com",
+    "outlook.live.com",
+    "hotmail.com",
+    "live.com",
+    "yahoo.com",
+    "proton.me",
+    "protonmail.com",
+    "icloud.com",
 )
 VALID_FINAL_STATUSES = {200, 202, 203}
 REDIRECT_STATUSES = {301, 302, 307, 308}
@@ -1981,26 +1992,50 @@ def extract_page_artifact(result_data: dict[str, Any]) -> PageArtifact:
     prune_noise_nodes(soup)
     headings = extract_headings(soup)
     blocks = extract_text_blocks(soup)
-    text_lines = dedupe_strings([*headings, *blocks, footer_text], limit=120)
-    text = limit_text("\n".join(text_lines), 20000)
-    emails = extract_emails("\n".join(text_lines))
-    phones = extract_phones("\n".join(text_lines))
-    addresses = extract_addresses([*blocks, footer_text])
-    internal_links = [
-        link["href"]
-        for link in anchor_links
-        if link.get("href") and same_registered_domain(final_url, link["href"])
-    ]
     internal_link_items = [
         {"href": link["href"], "text": link.get("text", "")}
         for link in anchor_links
         if link.get("href") and same_registered_domain(final_url, link["href"])
     ]
+    internal_links = [item["href"] for item in internal_link_items]
+    text_lines = dedupe_strings([*headings, *blocks, footer_text], limit=120)
+    fallback_lines: list[str] = []
+    if meta_description:
+        fallback_lines.append(meta_description)
+    og_description = compact_whitespace(open_graph.get("og:description", ""))
+    if og_description:
+        fallback_lines.append(og_description)
+    fallback_lines.extend(
+        text
+        for text in (
+            compact_whitespace(item.get("text", ""))
+            for item in internal_link_items
+        )
+        if text and text.lower() not in {"skip to content", "home", "learn more"}
+    )
+    if len("\n".join(text_lines)) < 250:
+        text_lines = dedupe_strings([*text_lines, *fallback_lines], limit=120)
+        if not blocks:
+            blocks = dedupe_strings(fallback_lines, limit=40)
+    text = limit_text("\n".join(text_lines), 20000)
+    emails = extract_emails("\n".join(text_lines))
+    phones = extract_phones("\n".join(text_lines))
+    addresses = extract_addresses([*blocks, footer_text])
     title = compact_whitespace(
         result_data.get("metadata", {}).get("title")
         or (soup.title.get_text(" ", strip=True) if soup.title else "")
     )[:300]
     challenge_hints = detect_challenge_hints(f"{title}\n{text}\n{html[:5000]}")
+    captcha_type = None
+    try:
+        captcha_type = captcha_solver._detect_captcha_type(html)
+    except Exception:
+        captcha_type = None
+    if captcha_type and len(text) < 500 and len(internal_link_items) < 5:
+        if "captcha" not in challenge_hints:
+            challenge_hints.append("captcha")
+    elif challenge_hints == ["captcha"] and len(text) >= 900 and len(internal_link_items) >= 5:
+        challenge_hints = []
     content_hash = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
     page_type_guess = guess_page_type(final_url, title, text)
     key_lines = extract_key_lines(text_lines)
@@ -2045,8 +2080,23 @@ def detect_challenge_hints(value: str) -> list[str]:
     hints = {
         hint
         for hint in CHALLENGE_HINTS
-        if hint != "cloudflare" and hint in lowered
+        if hint not in {"captcha", "cloudflare"} and hint in lowered
     }
+    if "captcha" in lowered and any(
+        marker in lowered
+        for marker in (
+            "verify you are human",
+            "complete the security check",
+            "challenge-form",
+            "robot challenge",
+            "g-recaptcha",
+            "grecaptcha",
+            "hcaptcha",
+            "cf-turnstile",
+            "turnstile",
+        )
+    ):
+        hints.add("captcha")
     if "cloudflare" in lowered and any(
         marker in lowered
         for marker in (
@@ -3067,11 +3117,33 @@ def homepage_content_quality(page: PageArtifact | None) -> str:
     if page.challenge_hints:
         return "challenge"
     text_len = len(page.text or "")
+    non_generic_link_texts = [
+        compact_whitespace(item.get("text", ""))
+        for item in page.internal_link_items[:20]
+        if compact_whitespace(item.get("text", "")).lower() not in {"", "skip to content", "home", "learn more"}
+    ]
+    if text_len < 250 and page.meta_description and len(dedupe_strings(non_generic_link_texts, limit=20)) >= 2:
+        return "adequate"
+    if text_len <= 0:
+        supplemental = dedupe_strings(
+            [
+                compact_whitespace(page.meta_description),
+                compact_whitespace(page.open_graph.get("og:description", "")),
+                *[
+                    compact_whitespace(item.get("text", ""))
+                    for item in page.internal_link_items[:20]
+                ],
+            ],
+            limit=40,
+        )
+        text_len = len("\n".join(item for item in supplemental if item))
     if text_len >= 2500:
         return "strong"
     if text_len >= 900:
         return "adequate"
     if text_len >= 250:
+        return "thin"
+    if text_len > 0:
         return "thin"
     return "empty"
 
@@ -3092,9 +3164,40 @@ def classify_enrichment_depth(
     if any("robots.txt disallows" in error.lower() for error in errors):
         return "weak_skipped", "robots_disallowed"
     quality = homepage_content_quality(pages[0])
-    if quality in {"empty", "thin"}:
-        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "thin_content")
     page_types = {page.page_type_guess for page in pages}
+    combined_text = "\n".join(page.text for page in pages)
+    homepage_link_text = " ".join(
+        compact_whitespace(item.get("text", "")).lower()
+        for item in pages[0].internal_link_items[:40]
+    )
+    homepage_link_paths = " ".join(
+        urlsplit(item.get("href", "")).path.lower()
+        for item in pages[0].internal_link_items[:40]
+        if item.get("href")
+    )
+    has_contact_or_location_link = any(
+        term in f"{homepage_link_text} {homepage_link_paths}"
+        for term in ("contact", "location", "clinic", "our-clinics")
+    )
+    has_team_or_doctor_link = any(
+        term in f"{homepage_link_text} {homepage_link_paths}"
+        for term in ("team", "doctor", "specialist", "consultant", "provider")
+    )
+    supporting_page_types = {"about", "contact", "locations", "team", "doctor_profile", "services", "privacy_pdpa"}
+    supporting_text_len = sum(len(page.text or "") for page in pages[1:])
+    has_supporting_pages = len(pages) >= 2 and (
+        supporting_text_len >= 400
+        or any(page.page_type_guess in supporting_page_types for page in pages[1:])
+        or has_contact_or_location_link
+        or has_team_or_doctor_link
+    )
+    medicalish = bool(
+        re.search(
+            r"\b(clinic|medical|doctor|dental|healthcare|patient|pharmacy|compounding|physio|physiotherapy|rehab|therapy|oncology|radiation|vascular|cardio|cardiology|urology|hearing|spine|neuro)\b",
+            combined_text,
+            re.I,
+        )
+    )
     healthcareish = organization_type in {
         "Medical clinic",
         "Specialist clinic",
@@ -3103,15 +3206,34 @@ def classify_enrichment_depth(
         "Dental clinic",
         "Aesthetics or wellness clinic",
         "Care provider",
-    } or any(re.search(r"\b(clinic|medical|doctor|dental|healthcare|patient)\b", page.text, re.I) for page in pages)
+    } or medicalish
+    has_structure_signals = bool(
+        locations
+        or leadership_signals
+        or "contact" in page_types
+        or "locations" in page_types
+        or "team" in page_types
+        or "doctor_profile" in page_types
+        or has_contact_or_location_link
+        or has_team_or_doctor_link
+    )
+    sparse_healthcare_site = healthcareish and quality == "adequate" and has_structure_signals
+    if quality in {"empty", "thin"}:
+        if stage == "deep_retry" and healthcareish and has_supporting_pages and has_structure_signals:
+            quality = "adequate"
+            sparse_healthcare_site = True
+        else:
+            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "thin_content")
     if not services:
-        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_services_detected")
-    if healthcareish and not locations and "contact" not in page_types and "locations" not in page_types:
+        if not sparse_healthcare_site:
+            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_services_detected")
+    if healthcareish and not locations and "contact" not in page_types and "locations" not in page_types and not has_contact_or_location_link:
         return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_locations_detected")
-    if healthcareish and not leadership_signals and "team" not in page_types and "doctor_profile" not in page_types:
+    if healthcareish and not leadership_signals and "team" not in page_types and "doctor_profile" not in page_types and not has_team_or_doctor_link and not has_contact_or_location_link:
         return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "no_team_or_contact_page")
     if len(pages) <= 1:
-        return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "homepage_only")
+        if not sparse_healthcare_site:
+            return ("weak_skipped" if stage == "deep_retry" else "weak_retry_needed", "homepage_only")
     if len(pages) >= 4 and services and (locations or leadership_signals):
         return "strong", ""
     return "adequate", ""
@@ -3295,6 +3417,8 @@ async def retry_crawl_with_proxy(
     proxy_retry_log: list[dict[str, Any]],
     reason: str,
 ) -> dict[str, Any] | None:
+    if crawler is None:
+        return None
     proxy_config = proxy_config_for_url(url, force=True)
     if not proxy_config:
         return None
@@ -3436,15 +3560,17 @@ async def browser_challenge_recovery(
     errors: list[str],
     proxy_retry_log: list[dict[str, Any]],
     proxy_config: dict[str, str] | None = None,
+    reason: str = "challenge_browser_recovery",
 ) -> dict[str, Any] | None:
     if not challenge_browser_fallback_enabled(stage) and not captcha_solver.is_configured():
         return None
     started = time.perf_counter()
     endpoint = browserless_ws_endpoint()
-    transport = "browserless_cdp" if endpoint else "local_playwright"
+    use_browserless_cdp = bool(endpoint) and not proxy_config
+    transport = "browserless_cdp" if use_browserless_cdp else "local_playwright"
     try:
         async with async_playwright() as playwright:
-            if endpoint:
+            if use_browserless_cdp:
                 browser = await playwright.chromium.connect_over_cdp(endpoint, timeout=page_timeout_ms)
             else:
                 browser = await playwright.chromium.launch(
@@ -3489,7 +3615,7 @@ async def browser_challenge_recovery(
                 proxy_retry_log.append(
                     {
                         "url": url,
-                        "reason": "challenge_browser_recovery",
+                        "reason": reason,
                         "transport": transport,
                         "success": success,
                         "captcha_solved": solved,
@@ -3499,9 +3625,11 @@ async def browser_challenge_recovery(
                     }
                 )
                 if success:
-                    errors.append(f"{url}: {transport} recovered challenge")
+                    action = "recovered challenge" if "challenge" in reason else "recovered homepage content"
+                    errors.append(f"{url}: {transport} {action}")
                     return result
-                errors.append(f"{url}: {transport} still returned challenge page")
+                failure = "still returned challenge page" if "challenge" in reason else "browser recovery returned weak page"
+                errors.append(f"{url}: {transport} {failure}")
                 return None
             finally:
                 await browser.close()
@@ -3509,7 +3637,7 @@ async def browser_challenge_recovery(
         proxy_retry_log.append(
             {
                 "url": url,
-                "reason": "challenge_browser_recovery",
+                "reason": reason,
                 "transport": transport,
                 "success": False,
                 "error": compact_whitespace(exc),
@@ -3825,13 +3953,15 @@ async def enrich_row(
                 challenge_note = ""
                 captcha_solved = not homepage_page.challenge_hints
         if not captcha_solved and allow_challenge_recovery:
+            challenge_proxy_config = proxy_config_for_url(best_url, force=True) or crawl_proxy_config
             browser_result = await browser_challenge_recovery(
                 best_url,
                 stage,
                 page_timeout_ms,
                 errors,
                 proxy_retry_log,
-                proxy_config=crawl_proxy_config,
+                proxy_config=challenge_proxy_config,
+                reason="homepage_challenge_browser_recovery",
             )
             if browser_result is not None:
                 homepage_result = browser_result
@@ -3887,6 +4017,25 @@ async def enrich_row(
             robots_policy = fetch_robots_policy(session, best_url)
             timings["robots_ms"] = timings.get("robots_ms", 0.0) + elapsed_ms(robots_started)
 
+    quality = homepage_content_quality(homepage_page)
+    if stage == "deep_retry" and quality in {"empty", "thin"}:
+        homepage_proxy_config = proxy_config_for_url(best_url, force=True) or crawl_proxy_config
+        browser_result = await browser_challenge_recovery(
+            best_url,
+            stage,
+            page_timeout_ms,
+            errors,
+            proxy_retry_log,
+            proxy_config=homepage_proxy_config,
+            reason="homepage_browser_recovery",
+        )
+        if browser_result is not None:
+            browser_page = extract_page_artifact(browser_result)
+            browser_quality = homepage_content_quality(browser_page)
+            if browser_quality != "challenge" and len(browser_page.text or "") > len(homepage_page.text or ""):
+                homepage_result = browser_result
+                homepage_page = browser_page
+
     crawled_pages.append(homepage_page)
     seen_urls.add(homepage_page.url)
     if homepage_page.content_hash:
@@ -3905,6 +4054,14 @@ async def enrich_row(
         profile=profile_hint,
         stage=stage,
     )
+    browser_candidate_recovery_urls = {
+        candidate_url
+        for candidate_url in candidates[1:5]
+        if any(
+            term in urlsplit(candidate_url).path.lower()
+            for term in ("about", "our-story", "service", "contact", "team", "doctor", "location")
+        )
+    }
     queued_urls: set[str] = set(candidates)
     delay_seconds = max(request_delay_seconds, robots_policy.crawl_delay_seconds)
 
@@ -3967,6 +4124,28 @@ async def enrich_row(
             )
             if proxy_candidate_result is not None:
                 page = extract_page_artifact(proxy_candidate_result)
+        should_browser_recover = (
+            stage == "deep_retry"
+            and candidate_url in browser_candidate_recovery_urls
+            and (page.challenge_hints or not page.text or int(page.status_code or 0) >= 400)
+        )
+        if should_browser_recover:
+            candidate_proxy_config = proxy_config_for_url(candidate_url, force=True) or crawl_proxy_config
+            browser_candidate_result = await browser_challenge_recovery(
+                candidate_url,
+                stage,
+                page_timeout_ms,
+                errors,
+                proxy_retry_log,
+                proxy_config=candidate_proxy_config,
+                reason="candidate_browser_recovery",
+            )
+            if browser_candidate_result is not None:
+                browser_page = extract_page_artifact(browser_candidate_result)
+                if not browser_page.challenge_hints and (
+                    len(browser_page.text or "") > len(page.text or "") or int(page.status_code or 0) >= 400
+                ):
+                    page = browser_page
         return page
 
     candidate_index = 1
@@ -4274,6 +4453,36 @@ def terminal_status(record: EnrichmentRecord) -> str:
     return "completed"
 
 
+NOCO_LONG_TEXT_LIMIT = 95_000
+
+
+def limit_noco_long_text(value: Any, limit: int = NOCO_LONG_TEXT_LIMIT) -> str:
+    text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=True)
+    if len(text) <= limit:
+        return text
+    marker = f"\n[truncated_for_nocodb_longtext original_length={len(text)}]"
+    return text[: max(0, limit - len(marker))] + marker
+
+
+def compact_structured_data_for_nocodb(value: dict[str, Any], limit: int = NOCO_LONG_TEXT_LIMIT) -> str:
+    text = json.dumps(value, ensure_ascii=True)
+    if len(text) <= limit:
+        return text
+    compact = {
+        "has_json_ld": bool(value.get("has_json_ld")),
+        "schema_types": value.get("schema_types", [])[:20] if isinstance(value.get("schema_types"), list) else [],
+        "schema_names": value.get("schema_names", [])[:20] if isinstance(value.get("schema_names"), list) else [],
+        "og_site_name": compact_whitespace(value.get("og_site_name", "")),
+        "sitemap_urls": value.get("sitemap_urls", [])[:20] if isinstance(value.get("sitemap_urls"), list) else [],
+        "truncated_for_nocodb_longtext": True,
+        "original_length": len(text),
+    }
+    compact_text = json.dumps(compact, ensure_ascii=True)
+    if len(compact_text) <= limit:
+        return compact_text
+    return json.dumps({"truncated_for_nocodb_longtext": True, "original_length": len(text)}, ensure_ascii=True)
+
+
 def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
     notes_parts = [record.enrichment_notes]
     if record.url_validation_status:
@@ -4307,19 +4516,19 @@ def build_noco_patch(record: EnrichmentRecord) -> dict[str, Any]:
         "company_homepage_name": record.company_homepage_name,
         "operating_company_root_name": record.company_homepage_name,
         "parent_company": record.parent_company,
-        "website_content": record.website_scrape,
-        "website_scrape": record.website_scrape,
+        "website_content": limit_noco_long_text(record.website_scrape),
+        "website_scrape": limit_noco_long_text(record.website_scrape),
         "source_urls": " | ".join(record.pages_crawled_urls),
         "industry_guess": record.industry_guess,
         "services_detected": json.dumps(record.services_detected, ensure_ascii=True),
         "locations_detected": json.dumps(record.locations_detected, ensure_ascii=True),
         "contact_info_detected": json.dumps(record.contact_info_detected, ensure_ascii=True),
         "leadership_or_team_signals": json.dumps(record.leadership_or_team_signals, ensure_ascii=True),
-        "structured_data_detected": json.dumps(record.structured_data_detected, ensure_ascii=True),
+        "structured_data_detected": compact_structured_data_for_nocodb(record.structured_data_detected),
         "notes": limit_text(" ".join(part for part in notes_parts if part), 4000),
         "confidence": confidence_label(record.confidence_score),
         "last_stage": record.crawl_status,
-        "last_error": " | ".join(record.error_notes[:8]),
+        "last_error": limit_noco_long_text(" | ".join(record.error_notes[:8]), 4000),
     }
 
 

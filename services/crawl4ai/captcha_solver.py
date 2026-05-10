@@ -20,6 +20,9 @@ else:
     DEFAULT_PLAYWRIGHT_BROWSERS = ORIGINAL_HOME / ".cache" / "ms-playwright"
 
 SOLVER_TIMEOUT_SECONDS = int(os.environ.get("CAPTCHA_SOLVER_TIMEOUT_SECONDS", "120"))
+SOLVER_RECAPTCHA_TIMEOUT_SECONDS = int(
+    os.environ.get("CAPTCHA_SOLVER_RECAPTCHA_TIMEOUT_SECONDS", str(SOLVER_TIMEOUT_SECONDS))
+)
 SOLVER_POLL_INTERVAL = float(os.environ.get("CAPTCHA_SOLVER_POLL_INTERVAL", "5.0"))
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -33,6 +36,31 @@ def _api_key() -> str:
         os.getenv("TWOCAPTCHA_API_KEY", "").strip()
         or os.getenv("TWO_CAPTCHA_API_KEY", "").strip()
     )
+
+
+def _capsolver_api_key() -> str:
+    return os.getenv("CAPSOLVER_API_KEY", "").strip()
+
+
+def _capmonster_api_key() -> str:
+    return (
+        os.getenv("CAPMONSTER_API_KEY", "").strip()
+        or os.getenv("CAPMONSTER_CLOUD_API_KEY", "").strip()
+    )
+
+
+def _provider_order() -> list[str]:
+    raw = os.getenv("CAPTCHA_SOLVER_PROVIDER_ORDER", "2captcha,capsolver,capmonster")
+    allowed = {"2captcha", "capsolver", "capmonster"}
+    ordered = [
+        item.strip().lower()
+        for item in raw.split(",")
+        if item.strip().lower() in allowed
+    ]
+    for fallback in ("2captcha", "capsolver", "capmonster"):
+        if fallback not in ordered:
+            ordered.append(fallback)
+    return ordered
 
 
 def is_configured() -> bool:
@@ -56,17 +84,42 @@ def _hostname_matches(hostname: str, domain: str) -> bool:
 def solver_diagnostics() -> dict[str, Any]:
     import importlib.util
 
-    package_available = importlib.util.find_spec("twocaptcha") is not None
+    providers = {
+        "2captcha": {
+            "package": "2captcha-python",
+            "import_name": "twocaptcha",
+            "installed": importlib.util.find_spec("twocaptcha") is not None,
+            "configured": bool(_api_key()),
+            "selected": True,
+        },
+        "capsolver": {
+            "package": "capsolver",
+            "import_name": "capsolver",
+            "installed": importlib.util.find_spec("capsolver") is not None,
+            "configured": bool(_capsolver_api_key()),
+            "selected": False,
+        },
+        "capmonster": {
+            "package": "capmonstercloudclient",
+            "import_name": "capmonstercloudclient",
+            "installed": importlib.util.find_spec("capmonstercloudclient") is not None,
+            "configured": bool(_capmonster_api_key()),
+            "selected": False,
+        },
+    }
     configured = is_configured()
     allowed_domains = _allowed_domains()
+    provider_order = _provider_order()
     return {
         "package": "2captcha-python",
         "import_name": "twocaptcha",
-        "installed": package_available,
+        "installed": providers["2captcha"]["installed"],
         "configured": configured,
         "enabled": configured,
         "scope_mode": "scoped" if allowed_domains else "all",
         "allowed_domains": allowed_domains,
+        "provider_order": provider_order,
+        "providers": providers,
     }
 
 
@@ -80,7 +133,12 @@ def _domain_allowed(hostname: str) -> bool:
 async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | None:
     from twocaptcha import TwoCaptcha
 
-    solver = TwoCaptcha(_api_key())
+    solver = TwoCaptcha(
+        _api_key(),
+        defaultTimeout=SOLVER_TIMEOUT_SECONDS,
+        recaptchaTimeout=SOLVER_RECAPTCHA_TIMEOUT_SECONDS,
+        pollingInterval=max(5, int(round(SOLVER_POLL_INTERVAL))),
+    )
     try:
         result = solver.recaptcha(sitekey=sitekey, url=page_url)
         token = result.get("code") if isinstance(result, dict) else str(result)
@@ -94,7 +152,12 @@ async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | 
 async def _solve_hcaptcha(page: Page, sitekey: str, page_url: str) -> str | None:
     from twocaptcha import TwoCaptcha
 
-    solver = TwoCaptcha(_api_key())
+    solver = TwoCaptcha(
+        _api_key(),
+        defaultTimeout=SOLVER_TIMEOUT_SECONDS,
+        recaptchaTimeout=SOLVER_RECAPTCHA_TIMEOUT_SECONDS,
+        pollingInterval=max(5, int(round(SOLVER_POLL_INTERVAL))),
+    )
     try:
         result = solver.hcaptcha(sitekey=sitekey, url=page_url)
         token = result.get("code") if isinstance(result, dict) else str(result)

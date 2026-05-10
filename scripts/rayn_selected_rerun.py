@@ -69,6 +69,11 @@ def fetch_rows(ids: list[int], fields: str = URL_FIELDS) -> list[dict[str, Any]]
     return rows
 
 
+def chunked_ids(values: list[int], size: int) -> list[list[int]]:
+    step = max(1, size)
+    return [values[index : index + step] for index in range(0, len(values), step)]
+
+
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "count": len(rows),
@@ -443,22 +448,38 @@ def run_contact(ids: list[int], args: argparse.Namespace) -> dict[str, Any]:
     ]
     if not contact_ids:
         return {"rows_selected": 0, "results": []}
-    code, payload = request_json(
-        "POST",
-        worker_url("/contact-enrich-batch"),
-        {
-            "ids": contact_ids,
-            "limit": min(10, max(1, len(contact_ids))),
-            "concurrency": args.contact_concurrency,
-            "validate_email": True,
-            "reset_provider_health": args.reset_provider_health,
-            "dry_run": False,
-        },
-        args.contact_timeout,
-    )
-    if code != 200:
-        raise SystemExit(f"contact-enrich-batch failed: HTTP {code} {payload}")
-    return payload
+    batch_size = min(max(1, args.contact_batch_size), len(contact_ids))
+    batches = []
+    status_counts: Counter[str] = Counter()
+    rows_processed = 0
+    for batch_ids in chunked_ids(contact_ids, batch_size):
+        code, payload = request_json(
+            "POST",
+            worker_url("/contact-enrich-batch"),
+            {
+                "ids": batch_ids,
+                "limit": len(batch_ids),
+                "concurrency": args.contact_concurrency,
+                "validate_email": True,
+                "reset_provider_health": args.reset_provider_health,
+                "dry_run": False,
+            },
+            args.contact_timeout,
+        )
+        if code != 200:
+            raise SystemExit(f"contact-enrich-batch failed: HTTP {code} {payload}")
+        batches.append(payload)
+        rows_processed += int(payload.get("rows_processed") or payload.get("rows_selected") or 0)
+        for status, count in (payload.get("status_counts") or {}).items():
+            status_counts[str(status)] += int(count)
+    return {
+        "rows_selected": len(contact_ids),
+        "rows_processed": rows_processed,
+        "batch_size": batch_size,
+        "batch_count": len(batches),
+        "status_counts": dict(status_counts),
+        "batches": batches,
+    }
 
 
 def run_planner(ids: list[int], args: argparse.Namespace) -> dict[str, Any]:
@@ -520,6 +541,7 @@ def main() -> None:
     parser.add_argument("--allow-low-limits", action="store_true")
     parser.add_argument("--public-enrich-timeout", type=int, default=420)
     parser.add_argument("--contact-concurrency", type=int, default=2)
+    parser.add_argument("--contact-batch-size", type=int, default=5)
     parser.add_argument("--contact-timeout", type=int, default=1800)
     parser.add_argument("--reset-provider-health", action="store_true")
     parser.add_argument("--planner-timeout", type=int, default=300)

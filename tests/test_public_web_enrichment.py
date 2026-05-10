@@ -21,6 +21,7 @@ if "captcha_solver" not in sys.modules:
     captcha_solver = types.ModuleType("captcha_solver")
     captcha_solver.solver_diagnostics = lambda: {}
     captcha_solver.solve_challenge = lambda *args, **kwargs: False
+    captcha_solver._detect_captcha_type = lambda html: None
     sys.modules["captcha_solver"] = captcha_solver
 
 from services.crawl4ai import public_web_enrichment as p
@@ -126,6 +127,89 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(artifact.challenge_hints, [])
         self.assertFalse(artifact.challenge_or_error)
 
+    def test_bare_captcha_feature_flag_is_not_challenge(self):
+        html = """
+        <html><head><title>Amazing Hearing</title></head><body>
+        <nav>
+          <a href="/about-us">About Us</a>
+          <a href="/services">Services</a>
+          <a href="/contact-us">Contact Us</a>
+          <a href="/locations">Locations</a>
+          <a href="/hearing-aids">Hearing Aids</a>
+        </nav>
+        <h1>Amazing Hearing</h1>
+        <p>We provide hearing aid services across Singapore with multiple clinic locations and hearing care support.</p>
+        <script>window.__WIX_FEATURES__=[\"captcha\",\"clickHandlerRegistrar\",\"businessLogger\"];</script>
+        </body></html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://www.amazinghearing.com/",
+                "redirected_url": "https://www.amazinghearing.com/",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "Amazing Hearing"},
+                "status_code": 200,
+            }
+        )
+        self.assertEqual(artifact.challenge_hints, [])
+        self.assertFalse(artifact.challenge_or_error)
+
+    def test_recaptcha_gate_on_thin_page_still_counts_as_challenge(self):
+        html = """
+        <html><head><title>Security Check</title></head><body>
+        <div class=\"g-recaptcha\" data-sitekey=\"site-key\"></div>
+        <script>if (typeof grecaptcha !== 'undefined') { grecaptcha.render('captcha'); }</script>
+        </body></html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://clinic.example/",
+                "redirected_url": "https://clinic.example/",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "Security Check"},
+                "status_code": 200,
+            }
+        )
+        self.assertIn("captcha", artifact.challenge_hints)
+        self.assertTrue(artifact.challenge_or_error)
+
+    def test_canonical_root_url_rejects_public_webmail_host(self):
+        result = p.canonical_root_url("https://gmail.com")
+        self.assertEqual(result.best_url, "")
+        self.assertIn("clearly not an organization website", result.reason)
+
+    def test_page_artifact_uses_meta_description_and_nav_links_when_text_is_empty(self):
+        html = """
+        <html>
+        <head>
+          <title>AspenHealth</title>
+          <meta name="description" content="AspenHealth is a management consulting firm focused on primary healthcare advisory, training, talent recruitment, pharmacy management and strategic resourcing.">
+        </head>
+        <body>
+          <nav>
+            <a href="/our-story">Our Story</a>
+            <a href="/services">Services</a>
+            <a href="/contact-us">Contact Us</a>
+          </nav>
+        </body>
+        </html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://aspenhealth.sg/",
+                "redirected_url": "https://aspenhealth.sg/",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "AspenHealth"},
+                "status_code": 200,
+            }
+        )
+        self.assertIn("primary healthcare advisory", artifact.text)
+        self.assertIn("Services", artifact.text)
+        self.assertEqual(p.homepage_content_quality(artifact), "adequate")
+
     def test_cloudflare_challenge_markers_still_detect(self):
         hints = p.detect_challenge_hints("Cloudflare checking the site connection verify you are human")
         self.assertIn("cloudflare", hints)
@@ -177,6 +261,65 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(status, "weak_skipped")
         self.assertEqual(reason, "thin_content")
 
+    def test_deep_retry_thin_homepage_with_team_pages_can_pass(self):
+        homepage = self.page(
+            "https://amber-pharmacy.example/",
+            "Compounding pharmacy Singapore",
+            "homepage",
+            title="Amber Compounding Pharmacy",
+        )
+        homepage.internal_link_items = [
+            {"href": "https://amber-pharmacy.example/meet-our-team", "text": "Meet Our Team"},
+            {"href": "https://amber-pharmacy.example/contact", "text": "Contact Us"},
+        ]
+        team = self.page(
+            "https://amber-pharmacy.example/meet-our-team",
+            "Our pharmacy team supports compounding and patient care in Singapore. " * 12,
+            "team",
+        )
+        profile = self.page(
+            "https://amber-pharmacy.example/team/cher-kai-wen",
+            "Cher Kai Wen is part of the compounding pharmacy team in Singapore. " * 10,
+            "doctor_profile",
+        )
+        status, reason = p.classify_enrichment_depth(
+            [homepage, team, profile],
+            services=[],
+            locations=["Singapore"],
+            leadership_signals=["Cher Kai Wen"],
+            organization_type="Unknown",
+            errors=[],
+            stage="deep_retry",
+        )
+        self.assertEqual(status, "adequate")
+        self.assertEqual(reason, "")
+
+    def test_single_page_specialty_clinic_without_services_can_pass(self):
+        homepage = self.page(
+            "https://aaro.example/",
+            "Radiation oncology clinic Singapore at Mount Elizabeth Novena.",
+            "homepage",
+            title="Asian Alliance Radiation & Oncology",
+        )
+        homepage.meta_description = (
+            "Radiation oncology and specialist cancer care in Singapore with appointments at Mount Elizabeth Novena."
+        )
+        homepage.internal_link_items = [
+            {"href": "https://aaro.example/contact", "text": "Contact Us"},
+            {"href": "https://aaro.example/location", "text": "Our Location"},
+        ]
+        status, reason = p.classify_enrichment_depth(
+            [homepage],
+            services=[],
+            locations=["Mount Elizabeth Novena"],
+            leadership_signals=[],
+            organization_type="Unknown",
+            errors=[],
+            stage="deep_retry",
+        )
+        self.assertEqual(status, "adequate")
+        self.assertEqual(reason, "")
+
     def test_strong_multi_page_hia_depth(self):
         pages = [
             self.page("https://clinic.example/", "clinic medical doctor patient services " * 80, "homepage"),
@@ -215,6 +358,33 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(status, "adequate")
         self.assertEqual(reason, "")
 
+    def test_contact_links_count_for_deep_retry_sufficiency(self):
+        homepage = self.page(
+            "https://aspenhealth.sg/",
+            (
+                "AspenHealth is a management consulting firm focused on primary healthcare advisory "
+                "and pharmacy management. " * 12
+            ),
+            "homepage",
+            title="AspenHealth",
+        )
+        homepage.internal_link_items = [
+            {"href": "https://aspenhealth.sg/services", "text": "Services"},
+            {"href": "https://aspenhealth.sg/contact-us", "text": "Contact Us"},
+        ]
+        privacy = self.page("https://aspenhealth.sg/privacy-policy", "privacy policy personal data protection", "privacy_pdpa")
+        status, reason = p.classify_enrichment_depth(
+            [homepage, privacy],
+            services=["primary healthcare advisory"],
+            locations=[],
+            leadership_signals=[],
+            organization_type="Unknown",
+            errors=[],
+            stage="deep_retry",
+        )
+        self.assertEqual(status, "adequate")
+        self.assertEqual(reason, "")
+
     def test_workflow_public_enrich_controls_are_bounded(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
         nodes = {node["name"]: node for node in workflow["nodes"]}
@@ -247,8 +417,14 @@ class PublicWebEnrichmentTests(unittest.TestCase):
     def test_challenge_recovery_uses_browserless_and_2captcha_controls(self):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
         self.assertIn("def browserless_ws_endpoint", source)
+        self.assertIn('if crawler is None:', source)
         self.assertIn("BROWSERLESS_WS_URL", source)
         self.assertIn("BROWSERLESS_TOKEN", source)
+        self.assertIn("BROWSERLESS_PROXY", source)
+        self.assertIn('use_browserless_cdp = bool(endpoint) and not proxy_config', source)
+        self.assertIn("proxy_config_for_url(best_url, force=True)", source)
+        self.assertIn('reason: str = "challenge_browser_recovery"', source)
+        self.assertIn('reason="homepage_challenge_browser_recovery"', source)
         self.assertIn("PUBLIC_ENRICH_CHALLENGE_BROWSER_FALLBACK", source)
         self.assertIn("PUBLIC_ENRICH_CHALLENGE_STEALTH", source)
         self.assertIn("apply_browser_stealth", source)
@@ -257,6 +433,19 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("challenge_browser_recovery", source)
         requirements = open("services/crawl4ai/requirements.txt", encoding="utf-8").read()
         self.assertIn("playwright-stealth==2.0.3", requirements)
+
+    def test_deep_retry_browser_recovery_targets_empty_homepages(self):
+        source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
+        self.assertIn('if stage == "deep_retry" and quality in {"empty", "thin"}', source)
+        self.assertIn('reason="homepage_browser_recovery"', source)
+        self.assertIn('len(browser_page.text or "") > len(homepage_page.text or "")', source)
+
+    def test_deep_retry_browser_recovery_targets_high_value_candidate_pages(self):
+        source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
+        self.assertIn("browser_candidate_recovery_urls = {", source)
+        self.assertIn('for candidate_url in candidates[1:5]', source)
+        self.assertIn('reason="candidate_browser_recovery"', source)
+        self.assertIn('candidate_url in browser_candidate_recovery_urls', source)
 
     def test_candidate_subpages_use_bounded_concurrency(self):
         source = open("services/crawl4ai/public_web_enrichment.py", encoding="utf-8").read()
@@ -273,7 +462,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("fallback_limit = min(4, effective_page_limit)", source)
         self.assertIn("static_only=True", source)
         self.assertIn('PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false"', source)
-        self.assertIn('PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY" if stage == "deep_retry"', source)
+        self.assertIn('PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY", "false"', source)
         self.assertIn('PUBLIC_ENRICH_DEEP_STATIC_FIRST"', source)
         self.assertIn("page_limit=min(max(1, request.page_limit), max_pages)", source)
 
@@ -329,6 +518,59 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertLessEqual(len(patch["website_content"]), rerun.NOCO_LONG_TEXT_LIMIT)
         self.assertLessEqual(len(patch["website_scrape"]), rerun.NOCO_LONG_TEXT_LIMIT)
         self.assertLessEqual(len(patch["notes"]), 4000)
+        self.assertLessEqual(len(patch["last_error"]), 4000)
+        structured = json.loads(patch["structured_data_detected"])
+        self.assertTrue(structured["truncated_for_nocodb_longtext"])
+
+    def test_public_enrichment_patch_caps_oversized_nocodb_longtext_fields(self):
+        record = p.EnrichmentRecord(
+            row_id="999",
+            company_name="Long Text Clinic",
+            url_picked="https://clinic.example/",
+            best_url="https://clinic.example/",
+            crawl_status="crawled",
+            pages_crawled_count=1,
+            pages_crawled_urls=["https://clinic.example/"],
+            title="Long Text Clinic",
+            meta_description="",
+            organization_name_detected="Long Text Clinic",
+            organization_type_guess="Medical clinic",
+            solo_or_group_guess="solo",
+            parent_or_affiliation_signals=[],
+            size_signals={},
+            industry_guess="healthcare",
+            services_detected=[],
+            locations_detected=[],
+            contact_info_detected={},
+            leadership_or_team_signals=[],
+            social_links=[],
+            structured_data_detected={"has_json_ld": True, "schema_types": ["MedicalClinic"], "sitemap_urls": ["x" * 6000] * 30},
+            enrichment_notes="",
+            confidence_score=0.8,
+            error_notes=["e" * 8000],
+            best_url_candidate="https://clinic.example/",
+            http_status=200,
+            redirect_chain=[],
+            url_validation_status="ok",
+            company_homepage_name="Long Text Clinic",
+            company_homepage_name_evidence=[],
+            parent_company="",
+            parent_company_relationship="",
+            parent_company_evidence=[],
+            parent_company_confidence="",
+            affiliations_detected=[],
+            rejected_parent_candidates=[],
+            parent_company_candidates_json=[],
+            website_scrape="a" * 120000,
+            enrichment_depth_status="",
+            weak_enrichment_reason="",
+            homepage_content_quality="",
+        )
+        patch = p.build_noco_patch(record)
+
+        self.assertLessEqual(len(patch["website_content"]), p.NOCO_LONG_TEXT_LIMIT)
+        self.assertLessEqual(len(patch["website_scrape"]), p.NOCO_LONG_TEXT_LIMIT)
+        self.assertLessEqual(len(patch["structured_data_detected"]), p.NOCO_LONG_TEXT_LIMIT)
         self.assertLessEqual(len(patch["last_error"]), 4000)
         structured = json.loads(patch["structured_data_detected"])
         self.assertTrue(structured["truncated_for_nocodb_longtext"])
