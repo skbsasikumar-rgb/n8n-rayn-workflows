@@ -1800,7 +1800,7 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
             observation = f"From the site, {company_name} {description}."
     else:
         observation = f"{opener} {bridge}"
-    return f"{greeting} {observation_after_greeting(observation)}\n\n{problem} {mechanism}\n\n{cta}"
+    return f"{greeting} {observation_after_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
@@ -1907,16 +1907,16 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
     }
     if track == "hia_regulatory":
         problem_options = {
-            "hia_messy_evidence": "With HIA coming in, the messy part is usually evidence: access, vendors, backups and incident steps.",
-            "hia_getting_closer": "With HIA getting closer, the cleanup is usually around access, vendors, backups and incident ownership.",
-            "hia_prep_access_backup": "For HIA prep, the messy bit is usually proving who can access what, where backups sit and what happens during an incident.",
-            "hia_readiness_evidence": "For HIA readiness, the messy part is usually evidence: access, vendors, backups and incident steps.",
-            "hia_real_for_providers": "As HIA gets closer for providers, the cleanup is usually around access, vendors, backups and incident ownership.",
+            "hia_messy_evidence": "With HIA starting from 2027, the practical issue is evidence: who can access health information, which vendors touch it, how backups work and who owns incident steps.",
+            "hia_getting_closer": "With HIA starting from 2027, the cyber/data-security side gets harder to leave informal: access, vendors, backups and incident ownership need evidence.",
+            "hia_prep_access_backup": "With HIA starting from 2027, the messy bit is usually proving who can access health information, where backups sit, which vendors touch it and what happens during an incident.",
+            "hia_readiness_evidence": "With HIA starting from 2027, the messy part is usually evidence: health information access, vendors, backups and incident steps.",
+            "hia_real_for_providers": "With HIA starting from 2027 for healthcare providers, the cleanup is usually around health information access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
-            "decent_cyber_data_baseline": "Cyber Essentials is a decent first baseline for that cyber/data side.",
-            "practical_cyber_data_baseline": "Cyber Essentials is a practical first baseline for the cyber/data side.",
-            "controls_evidence_baseline": "Cyber Essentials gives a simple baseline for the controls and evidence.",
+            "decent_cyber_data_baseline": "We help map that into a Cyber Essentials route for the HIA cyber/data-security side.",
+            "practical_cyber_data_baseline": "We help turn that into a practical Cyber Essentials baseline for the HIA cyber/data-security side.",
+            "controls_evidence_baseline": "We help build a Cyber Essentials evidence map for the controls expected on the HIA cyber/data-security side.",
         }
     elif track == "dpo_evidence":
         problem_options = {
@@ -1925,9 +1925,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "intent_vs_proof": "The issue is usually not intent. It is finding the proof.",
         }
         mechanism_options = {
-            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
-            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+            "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
         }
     elif track == "customer_trust":
         problem_options = {
@@ -1936,9 +1936,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "reusable_security_evidence": "The useful thing is having reusable security evidence before customers ask.",
         }
         mechanism_options = {
-            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
-            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+            "simple_security_baseline": "We help turn that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
         }
     else:
         problem_options = {
@@ -1947,9 +1947,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how personal data is actually protected day to day.",
         }
         mechanism_options = {
-            "simple_security_baseline": "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "Cyber Essentials helps turn that into a practical evidence set.",
-            "security_safeguards_baseline": "Cyber Essentials is a useful baseline for the security-safeguards side.",
+            "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
         }
     return {
         "observation_opener": choose_sentence_slot(row, classification, metadata, "email_1", 1, "observation_opener", observation_opener_options),
@@ -3435,6 +3435,8 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "email_personalisation_signal": signal,
         "email_personalisation_quote": compact(row.get("company_homepage_name") or row.get("website_content"))[:220],
         "email_personalisation_source_url": source_url,
+        "email_hook": problem,
+        "email_hook_source": "website_content",
         "email_problem_statement": problem,
         "email_mechanism_statement": mechanism,
         "email_asset_offer": asset,
@@ -3528,6 +3530,7 @@ def generate_email_sequence(
         email1_slots = email_1_sentence_slots(row, classification, sentence_slots)
         problem = email1_slots["problem_line"]
         mechanism = email1_slots["mechanism_line"]
+        copy_brief["email_hook"] = problem
         copy_brief["email_problem_statement"] = problem
         copy_brief["email_mechanism_statement"] = mechanism
         email1_body = email_1_body_fixed(email1_greeting, company, noticed, email1_slots, problem, mechanism, cta)

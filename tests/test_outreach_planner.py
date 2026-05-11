@@ -53,6 +53,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertTrue(plan.classification["hia_relevant"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
+        self.assertIn("2027", plan.emails["email_1"]["body"])
+        self.assertIn("We help", plan.emails["email_1"]["body"])
+        self.assertEqual(plan.copy_brief["email_hook"], plan.copy_brief["email_problem_statement"])
 
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
         plan = o.plan_outreach(
@@ -82,6 +85,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
         self.assertIn("hard part is usually proving safeguards", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
+        self.assertIn("We help", plan.emails["email_1"]["body"])
         self.assertNotIn("Cyber Essentials makes", plan.emails["email_1"]["body"])
 
     def test_entity_type_keeps_social_service_separate_from_hia_pressure(self):
