@@ -1834,6 +1834,54 @@ def observation_after_greeting(observation: str) -> str:
     return text[:1].lower() + text[1:] if text else text
 
 
+def build_email_1_chain(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    observation: str,
+    problem: str,
+    mechanism: str,
+    cta: str,
+) -> dict[str, Any]:
+    source = compact(copy_brief.get("email_hook_source")) or "website_content"
+    search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
+    source_url = compact(copy_brief.get("email_personalisation_source_url") or first_source_url(row))
+    confidence = "medium"
+    if source == "serper" and search_context.get("used"):
+        confidence = "medium"
+    elif classification.get("outreach_trigger_confidence") in {"medium", "high"}:
+        confidence = str(classification.get("outreach_trigger_confidence"))
+    elif email_context_website_weak(row, copy_brief, classification):
+        confidence = "low"
+    context = {
+        "operational_complexity": compact(copy_brief.get("data_flow_complexity") or "unknown"),
+        "data_pressure": compact(copy_brief.get("personal_data_handled_guess") or classification.get("data_type_signal") or "unknown"),
+        "evidence_gap": compact(copy_brief.get("data_systems_likely") or copy_brief.get("data_risk_reason")),
+        "why_now": compact(copy_brief.get("deadline_or_timeline_angle") or copy_brief.get("regulatory_pressure_summary")),
+        "specific_hook": compact(problem),
+        "source": source,
+        "confidence": confidence,
+    }
+    first_sentence_context = {
+        "observation": compact(observation),
+        "source": source,
+        "source_url": source_url,
+        "confidence": confidence,
+        "safe_to_use": bool(compact(observation)) and source in {"website_content", "serper"},
+    }
+    return {
+        "observation": compact(observation),
+        "pressure_bridge": compact(problem),
+        "mechanism": compact(mechanism),
+        "cta": compact(cta),
+        "source": source,
+        "source_url": source_url,
+        "confidence": confidence,
+        "first_sentence_context": first_sentence_context,
+        "email_hook_context": context,
+    }
+
+
 def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[str, str], problem: str, mechanism: str, cta: str) -> str:
     opener = slots.get("observation_opener") or "I noticed"
     bridge = company_observation_bridge(company, noticed, slots.get("company_type_bridge") or "looks_like")
@@ -2391,6 +2439,138 @@ def first_source_url(row: dict[str, Any]) -> str:
         if url.startswith("http"):
             return url
     return compact(row.get("best_url") or row.get("url_picked"))
+
+
+def email_context_website_weak(row: dict[str, Any], copy_brief: dict[str, Any], classification: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") == "not_ready":
+        return False
+    website_text = compact(row.get("website_content") or row.get("website_scrape") or row.get("crawl_text"))
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    generic_markers = (
+        "public services described on its website",
+        "unknown organisation",
+        "appears to be a unknown",
+        "appears to handle unknown",
+        "data-protection / operations contact route",
+    )
+    if len(website_text) < 450:
+        return True
+    if not signal or any(marker in signal.lower() for marker in generic_markers):
+        return True
+    if classification.get("outreach_trigger_confidence") == "low" and len(website_text) < 900:
+        return True
+    return False
+
+
+def serper_context_enabled() -> bool:
+    flag = os.getenv("OUTREACH_SERPER_CONTEXT_ENABLED", "true").strip().lower()
+    return flag not in {"0", "false", "no", "off"} and bool(os.getenv("SERPER_API_KEY", "").strip())
+
+
+def serper_company_context_query(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    company = compact(row.get("company_name") or row.get("company_homepage_name"))
+    site = compact(row.get("best_url") or row.get("url_picked"))
+    pressure = compact(classification.get("pressure_type"))
+    terms = {
+        "hia_regulatory": "Singapore healthcare clinic services locations",
+        "pdpa_safeguards": "Singapore services personal data operations",
+        "customer_trust": "Singapore company services clients security",
+    }.get(pressure, "Singapore company services")
+    domain_hint = ""
+    if site:
+        domain_hint = re.sub(r"^https?://(www\.)?", "", site, flags=re.I).split("/")[0]
+    return compact(f'"{company}" {domain_hint} {terms}')
+
+
+def fetch_serper_company_context(row: dict[str, Any], classification: dict[str, Any], limit: int = 5) -> dict[str, Any]:
+    if not serper_context_enabled():
+        return {"source": "serper", "used": False, "reason": "serper_disabled_or_key_missing", "evidence": []}
+    query = serper_company_context_query(row, classification)
+    try:
+        response = requests.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": os.getenv("SERPER_API_KEY", "").strip(), "Content-Type": "application/json"},
+            json={"q": query, "num": limit},
+            timeout=max(4, int(os.getenv("OUTREACH_SERPER_TIMEOUT_SECONDS", "8"))),
+        )
+        payload: Any = response.json()
+        if response.status_code >= 400:
+            return {
+                "source": "serper",
+                "used": False,
+                "reason": compact(payload.get("message") if isinstance(payload, dict) else "") or f"HTTP {response.status_code}",
+                "query": query,
+                "evidence": [],
+            }
+    except requests.Timeout:
+        return {"source": "serper", "used": False, "reason": "timeout", "query": query, "evidence": []}
+    except (requests.RequestException, ValueError) as exc:
+        return {"source": "serper", "used": False, "reason": compact(str(exc), 180), "query": query, "evidence": []}
+
+    organic = payload.get("organic") if isinstance(payload, dict) else []
+    evidence: list[dict[str, str]] = []
+    for item in organic if isinstance(organic, list) else []:
+        if not isinstance(item, dict):
+            continue
+        title = compact(item.get("title"))
+        link = compact(item.get("link"))
+        snippet = compact(item.get("snippet"))
+        if not title and not snippet:
+            continue
+        evidence.append({"title": title[:140], "link": link[:220], "snippet": snippet[:260]})
+        if len(evidence) >= limit:
+            break
+    return {"source": "serper", "used": bool(evidence), "reason": "ok" if evidence else "no_results", "query": query, "evidence": evidence}
+
+
+def serper_context_observation(row: dict[str, Any], classification: dict[str, Any], search_context: dict[str, Any]) -> str:
+    company = compact(row.get("company_name") or row.get("company_homepage_name") or "the organisation")
+    evidence = search_context.get("evidence") if isinstance(search_context, dict) else []
+    text = " ".join(
+        compact(f"{item.get('title', '')} {item.get('snippet', '')}")
+        for item in evidence
+        if isinstance(item, dict)
+    ).lower()
+    if not text:
+        return ""
+    if classification.get("pressure_type") == "hia_regulatory":
+        if any(term in text for term in ("group", "locations", "branches", "outlets", "islandwide")):
+            return f"{company} operates a multi-location or group healthcare operation."
+        if any(term in text for term in ("medical clinic", "gp clinic", "general practitioner", "doctor")):
+            return f"{company} provides GP or medical-clinic services."
+        if any(term in text for term in ("specialist", "cardiology", "surgery", "dental", "dermatology", "oncology", "orthopaedic")):
+            return f"{company} provides specialist healthcare services."
+        if any(term in text for term in ("health screening", "diagnostic", "laboratory", "imaging")):
+            return f"{company} handles screening or diagnostic healthcare workflows."
+        if "health" in text or "clinic" in text or "patient" in text:
+            return f"{company} operates in a healthcare setting."
+    if classification.get("pressure_type") == "customer_trust":
+        if any(term in text for term in ("saas", "software", "platform", "managed service", "outsourcing", "enterprise")):
+            return f"{company} works in a B2B service or platform setting."
+    if classification.get("pressure_type") == "pdpa_safeguards":
+        if any(term in text for term in ("education", "students", "training", "courses")):
+            return f"{company} handles education or training operations."
+        if any(term in text for term in ("charity", "social service", "beneficiary", "care", "community")):
+            return f"{company} operates care or community-service operations."
+    return ""
+
+
+def apply_company_context_search(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
+    if not email_context_website_weak(row, copy_brief, classification):
+        copy_brief["company_context_search"] = {"source": "website_content", "used": False, "reason": "website_context_strong", "evidence": []}
+        return copy_brief
+    search_context = fetch_serper_company_context(row, classification)
+    copy_brief["company_context_search"] = search_context
+    observation = serper_context_observation(row, classification, search_context)
+    if observation:
+        copy_brief["prospect_facing_signal"] = observation
+        copy_brief["email_personalisation_signal"] = observation
+        copy_brief["email_hook_source"] = "serper"
+        copy_brief["email_personalisation_source_url"] = next(
+            (item.get("link", "") for item in search_context.get("evidence", []) if isinstance(item, dict) and item.get("link")),
+            compact(copy_brief.get("email_personalisation_source_url")),
+        )
+    return copy_brief
 
 
 def concrete_service_cues(row: dict[str, Any], text: str) -> list[str]:
@@ -3612,6 +3792,14 @@ def generate_email_sequence(
         email1_slots = email_1_sentence_slots(row, classification, sentence_slots)
         problem = email1_slots["problem_line"]
         mechanism = email1_slots["mechanism_line"]
+        email1_chain = build_email_1_chain(row, classification, copy_brief, noticed, problem, mechanism, cta)
+        noticed = email1_chain["observation"]
+        problem = email1_chain["pressure_bridge"]
+        mechanism = email1_chain["mechanism"]
+        cta = email1_chain["cta"]
+        copy_brief["email_1_chain"] = email1_chain
+        copy_brief["first_sentence_context"] = email1_chain["first_sentence_context"]
+        copy_brief["email_hook_context"] = email1_chain["email_hook_context"]
         copy_brief["email_hook"] = problem
         copy_brief["email_problem_statement"] = problem
         copy_brief["email_mechanism_statement"] = mechanism
@@ -3701,7 +3889,9 @@ def generate_email_sequence(
             "chosen_subject": email4_subject,
             "body": email4_body,
         },
-        "evidence_used": [trigger],
+        "context_email_1": copy_brief.get("email_1_chain", {}),
+        "company_context_search": copy_brief.get("company_context_search", {}),
+        "evidence_used": [compact(copy_brief.get("first_sentence_context", {}).get("observation") if isinstance(copy_brief.get("first_sentence_context"), dict) else trigger)],
         "claims_avoided": [
             "No guaranteed funding.",
             "No claim that Cyber Essentials equals PDPA compliance.",
@@ -4450,6 +4640,7 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     classification = classify_row(row)
     funding = match_programmes({**row, **classification}, programmes=programmes)
     copy_brief = build_copy_brief(row, classification, funding)
+    copy_brief = apply_company_context_search(row, classification, copy_brief)
     mode = email_3_mode_for(funding, copy_brief, classification)
     copy_brief["email_2_mode"] = mode
     copy_brief["funding_followup_mode"] = mode

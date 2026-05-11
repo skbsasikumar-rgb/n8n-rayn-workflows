@@ -87,6 +87,69 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.classification["hia_service_type_guess"], "dental")
         self.assertNotIn("dental clinic", plan.emails["email_1"]["body"].lower())
 
+    def test_strong_website_context_does_not_call_serper(self):
+        original = o.fetch_serper_company_context
+
+        def fail_fetch(row, classification, limit=5):
+            raise AssertionError("serper should not be called for strong website context")
+
+        o.fetch_serper_company_context = fail_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 103,
+                    "company_name": "Strong Clinic Group",
+                    "best_url": "https://strongclinic.example/",
+                    "website_content": (
+                        "Strong Clinic Group operates Singapore medical clinics with GP consultations, health screening, "
+                        "vaccinations, patient appointment booking, referrals, clinic operations, doctors, nurses, patient "
+                        "records, staff access, vendor systems and incident-response workflows. "
+                    )
+                    * 4,
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original
+        self.assertEqual(plan.copy_brief["company_context_search"]["reason"], "website_context_strong")
+        self.assertEqual(plan.emails["context_email_1"]["source"], "website_content")
+
+    def test_weak_website_context_uses_serper_evidence_for_email_1_chain(self):
+        original = o.fetch_serper_company_context
+
+        def fake_fetch(row, classification, limit=5):
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": '"Thin Clinic" Singapore healthcare clinic services locations',
+                "evidence": [
+                    {
+                        "title": "Thin Clinic Group - Singapore Medical Clinic Locations",
+                        "link": "https://thinclinic.example/",
+                        "snippet": "Thin Clinic Group operates medical clinic locations in Singapore with GP services and health screening.",
+                    }
+                ],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 104,
+                    "company_name": "Thin Clinic",
+                    "best_url": "https://thinclinic.example/",
+                    "website_content": "Medical clinic in Singapore.",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original
+        self.assertEqual(plan.copy_brief["email_hook_source"], "serper")
+        self.assertIn("multi-location or group healthcare operation", plan.copy_brief["first_sentence_context"]["observation"])
+        self.assertEqual(plan.emails["context_email_1"]["pressure_bridge"], plan.copy_brief["email_problem_statement"])
+        self.assertIn("HIA starting from 2027", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
+        self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
+
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
         plan = o.plan_outreach(
             {
