@@ -742,8 +742,8 @@ def infer_hia_clinic_size(row: dict[str, Any], classification: dict[str, Any], c
     if group_evidence:
         size_guess = "multi_location_provider" if explicit_location_count >= 2 or "our clinics" in text or "islandwide" in text else "group_clinic"
         size_confidence = "high" if explicit_location_count >= 2 or parent else "medium"
-        endpoint_band = "11_20" if larger_team_evidence else "unknown"
-        endpoint_confidence = "medium" if endpoint_band != "unknown" else "low"
+        endpoint_band = "11_20" if larger_team_evidence or explicit_location_count >= 2 else "6_10"
+        endpoint_confidence = "medium"
     elif larger_team_evidence:
         size_guess = "group_clinic"
         size_confidence = "medium"
@@ -1998,7 +1998,7 @@ def hia_pricing_email_2_body(
     if pricing_mode == "group_or_larger_sizing_needed":
         return (
             f"{prefix}{cost_opener} {endpoint_caveat}\n\n"
-            f"{small_price} {group_line}"
+            f"{group_line}"
             f"{funding_sentence}\n\n"
             f"{value_line}\n\n"
             f"{cta}"
@@ -3092,6 +3092,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     ):
         guess = "hospice_long_term_care"
         add_evidence("hospice or long-term care terms")
+    elif service_type == "long_term_care":
+        guess = "hospice_long_term_care"
+        add_evidence("long-term care service type")
     elif has_aesthetic and service_type not in {"GP_OMS", "allied_health", "diagnostic"}:
         guess = "aesthetic_medical"
         add_evidence("medical/aesthetic terms")

@@ -1894,8 +1894,24 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue("endpoint-based" in email2 or "endpoint count" in email2)
         self.assertTrue("group" in email2.lower() or "larger setups" in email2.lower())
         self.assertTrue("endpoint" in email2.lower() or "tier" in email2.lower())
+        self.assertNotIn("S$4,300 before funding", email2)
         self.assertNotIn("larger setups start", email2.lower())
         self.assertTrue(plan.final_send_gate_passed)
+
+    def test_long_term_care_uses_specific_clinic_profile(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Example Care Services",
+                "website_content": "Long-term care provider supporting residents, caregivers, family contacts, patient records and care operations.",
+                "validated_email": "team@example.com",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "long_term_care")
+        self.assertRegex(plan.copy_brief["clinic_profile_phrase"], r"(long-term care|home-care|caregiver) provider")
+        self.assertNotEqual(plan.copy_brief["clinic_profile_phrase"], "a healthcare provider")
+        self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
     def test_hia_funding_unsafe_keeps_pricing_but_omits_70_percent(self):
         plan = o.plan_outreach(
