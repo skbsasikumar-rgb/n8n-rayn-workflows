@@ -255,6 +255,42 @@ def test_url_picker_rejects_company_directory_result():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_rejects_doc_sg_directory_result():
+    result = run_parse_url_pick_with_content(
+        "The Medical Centre Clinic (Hong Leong)",
+        [
+            {
+                "rank": 1,
+                "title": "the medical centre clinic (hong leong) - Singapore - doc.sg",
+                "url": "https://doc.sg/clinic/the-medical-centre-clinic-hong-leong/",
+                "snippet": "Directory profile for The Medical Centre Clinic Hong Leong.",
+            }
+        ],
+        '{"url":"https://doc.sg/clinic/the-medical-centre-clinic-hong-leong/","reason":"has clinic name"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_contact_page_landing_result():
+    result = run_parse_url_pick_with_content(
+        "Toh Yi Family Clinic",
+        [
+            {
+                "rank": 1,
+                "title": "Toh Yi Family Clinic",
+                "url": "https://sg64366-toh-yi-family-clinic.contact.page/",
+                "snippet": "Landing page for Toh Yi Family Clinic.",
+            }
+        ],
+        '{"url":"https://sg64366-toh-yi-family-clinic.contact.page/","reason":"has clinic name"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_picker_rejects_path_only_identity_on_third_party_listing():
     result = run_parse_url_pick(
         "Mao Medical Centre & Surgery",
@@ -570,6 +606,21 @@ def test_url_discovery_requests_ten_serper_results():
     workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
     node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
     assert "num: 10" in node["parameters"]["jsCode"]
+
+
+def test_url_discovery_query_strips_parenthetical_branch_noise():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
+    script = f"""
+const nodeCode = {json.dumps(node["parameters"]["jsCode"])};
+const $json = {{ company_name: "Bridgepoint Health (Jalan Bukit Merah Clinic)" }};
+const result = new Function('$json', nodeCode)($json);
+console.log(JSON.stringify(result.json));
+"""
+    output = subprocess.check_output(["node", "-e", script], text=True)
+    result = json.loads(output)
+
+    assert result["serper_query"] == "Bridgepoint Health Singapore"
 
 
 def test_url_picker_prompt_requires_blank_when_unclear():
