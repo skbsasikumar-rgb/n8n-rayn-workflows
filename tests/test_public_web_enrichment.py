@@ -588,12 +588,25 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertNotIn("if (depth === 'weak_retry_needed') return 'url_picked'", patch_code)
         self.assertIn("enrichment_completed_${weakReason}", patch_code)
         self.assertIn("statusReason.includes('thin_content')", prepare_code)
+        self.assertIn("row.homepage_root_url || row.best_url || row.url_picked", prepare_code)
+        self.assertIn("matched_url: matchedUrl", prepare_code)
         self.assertIn("attemptCount > 1", prepare_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
         self.assertIn("or prior_attempt_count > 1", rerun_helper)
+        self.assertIn("or url_only_content", rerun_helper)
+        self.assertIn('str(row.get("status") or "") == "completed"', rerun_helper)
+        self.assertIn("website_content,website_scrape", rerun_helper)
+        self.assertIn("homepage_root_url,canonical_domain", rerun_helper)
         self.assertIn("NOCO_LONG_TEXT_LIMIT = 95_000", rerun_helper)
         self.assertIn("cap_noco_long_text_fields(patch)", rerun_helper)
+
+    def test_selected_rerun_detects_url_only_content_for_deep_retry(self):
+        from scripts import rayn_selected_rerun as rerun
+
+        self.assertTrue(rerun.content_is_url_only("https://www.advantagemedical.sg/", "https://www.advantagemedical.sg/"))
+        self.assertFalse(rerun.content_is_url_only("# Advantage Medical\nUseful clinic content.", "https://www.advantagemedical.sg/"))
+        self.assertFalse(rerun.content_is_url_only("https://unrelated.example/", "https://www.advantagemedical.sg/"))
 
     def test_selected_rerun_caps_oversized_nocodb_longtext_fields(self):
         from scripts import rayn_selected_rerun as rerun

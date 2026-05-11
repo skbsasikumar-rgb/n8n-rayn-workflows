@@ -85,12 +85,13 @@ if(!ordered.length){
 }
 return ordered.map((candidate,index)=>{
   const bestUrl=normalizeCandidateUrl(candidate.url || candidate.homepage_root || '');
+  const homepageRoot=normalizeRoot(bestUrl);
   const pathname=pathnameFromUrl(bestUrl);
   const pathDepth=pathname.split('/').filter(Boolean).length;
   const utilityPathHint=Boolean(candidate.utility_path_hint) || /\/(?:author|tag|category|blog|news|article|articles|faq|faqs|guide|policy|privacy|terms|career|careers|events?|latest-events|lasting-power-of-attorney|get-document|documents?|downloads?)\b/i.test(pathname);
   return {json:{
     best_url:bestUrl,
-    homepage_root:normalizeRoot(bestUrl),
+    homepage_root:homepageRoot,
     canonical_domain:String(candidate.canonical_domain||canonicalDomain(bestUrl)||''),
     title:String(candidate.title||''),
     snippet:String(candidate.snippet||''),

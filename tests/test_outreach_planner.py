@@ -84,6 +84,51 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertNotIn("Cyber Essentials makes", plan.emails["email_1"]["body"])
 
+    def test_entity_type_keeps_social_service_separate_from_hia_pressure(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 301,
+                "company_name": "Community Care Foundation",
+                "website_content": (
+                    "Singapore charity IPC and social service agency supporting beneficiaries, "
+                    "volunteers and community care programmes."
+                ),
+            }
+        )
+        self.assertEqual(plan.classification["entity_type_guess"], "charity")
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+
+    def test_long_term_care_can_be_social_entity_but_hia_pressure(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 302,
+                "company_name": "Example Mission Nursing Home",
+                "website_content": (
+                    "Singapore mission society running a nursing home with resident care, "
+                    "patient care at home and palliative services."
+                ),
+            }
+        )
+        self.assertEqual(plan.classification["entity_type_guess"], "social_service")
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "long_term_care")
+
+    def test_generic_healthcare_marketplace_does_not_become_hia(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 303,
+                "company_name": "Health Vendor Platform Pte Ltd",
+                "website_content": (
+                    "Singapore software platform for healthcare suppliers, enterprise clients, "
+                    "procurement teams, customer accounts and vendor reviews."
+                ),
+            }
+        )
+        self.assertEqual(plan.classification["entity_type_guess"], "private_company")
+        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertFalse(plan.classification["hia_relevant"])
+
     def test_pdpa_industry_variants(self):
         cases = [
             (

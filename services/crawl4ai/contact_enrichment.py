@@ -550,6 +550,38 @@ def domain_from_url(value: str) -> str:
     return urlparse(raw).netloc.lower().removeprefix("www.")
 
 
+PUBLIC_EMAIL_DOMAINS = {
+    "gmail.com",
+    "googlemail.com",
+    "hotmail.com",
+    "icloud.com",
+    "live.com",
+    "me.com",
+    "outlook.com",
+    "yahoo.com",
+    "yahoo.com.sg",
+}
+
+
+def email_domain_allowed_for_anymail_result(email: str, requested_domain: str, result: dict[str, Any]) -> bool:
+    email_domain = compact(email.partition("@")[2], 320).lower().removeprefix("www.")
+    requested_domain = compact(requested_domain, 320).lower().removeprefix("www.")
+    if not email_domain or not requested_domain:
+        return False
+    if email_domain == requested_domain:
+        return True
+    if email_domain in PUBLIC_EMAIL_DOMAINS or "." not in email_domain:
+        return False
+    input_payload = result.get("input") if isinstance(result.get("input"), dict) else {}
+    input_domain = compact(input_payload.get("domain"), 320).lower().removeprefix("www.")
+    # Anymail can return a validated organisation alias domain for the requested company.
+    # Accept only provider-validated non-public domains tied to this exact request or
+    # to a person-level decision-maker response from the provider.
+    if input_domain == requested_domain:
+        return True
+    return bool(compact(result.get("person_full_name")) or compact(result.get("decision_maker_category")))
+
+
 def normalize_company(value: str) -> str:
     text = compact(value).lower()
     text = re.sub(r"\b(?:pte\.?\s*ltd\.?|ltd\.?|llp|llc|inc\.?|clinic|medical|dental|surgery|centre|center|singapore)\b", " ", text)
@@ -1394,7 +1426,7 @@ def result_email(result: dict[str, Any]) -> str:
 def anymail_decision(result: dict[str, Any], domain: str) -> tuple[str, str]:
     status = compact(result.get("email_status"), 80).lower()
     email = compact(result.get("valid_email") or result.get("email"), 320).lower()
-    if status == "valid" and email_syntax_valid(email) and email.partition("@")[2] == domain:
+    if status == "valid" and email_syntax_valid(email) and email_domain_allowed_for_anymail_result(email, domain, result):
         return "sendable", email
     return "rejected", ""
 
@@ -1662,7 +1694,8 @@ def normalize_company_email_list(values: Any, domain: str) -> list[str]:
         email = compact(value, 320).lower()
         if not email or email in seen or not email_syntax_valid(email):
             continue
-        if email.partition("@")[2].removeprefix("www.") != normalized_domain:
+        result = {"email_status": "valid", "input": {"domain": normalized_domain}}
+        if not email_domain_allowed_for_anymail_result(email, normalized_domain, result):
             continue
         seen.add(email)
         output.append(email)

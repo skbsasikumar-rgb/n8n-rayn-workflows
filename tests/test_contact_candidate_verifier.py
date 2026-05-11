@@ -400,6 +400,53 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_validation_provider, "anymail_finder+decision_maker")
         self.assertEqual(result.email_validation_evidence["decision_maker_fallback"]["categories"], ["ceo", "it", "operations", "hr", "marketing"])
 
+    def test_decision_maker_fallback_accepts_provider_validated_alias_domain(self):
+        payload = {
+            "Id": 313,
+            "company_name": "Sree Narayana Mission",
+            "company_homepage_name": "Sree Narayana Mission",
+            "canonical_domain": "sreenarayanamission.org",
+            "best_url": "https://sreenarayanamission.org/",
+            "website_content": "Our Management Team Chief Executive Officer S. Devendran.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["ceo"],
+                "results": [
+                    {
+                        "decision_maker_category": "ceo",
+                        "email": "devendran@snm.org.sg",
+                        "email_status": "valid",
+                        "person_full_name": "S. Devendran",
+                        "person_job_title": "Chief Executive Officer",
+                        "valid_email": "devendran@snm.org.sg",
+                    }
+                ],
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_decision_maker_email_found")
+        self.assertEqual(result.validated_email, "devendran@snm.org.sg")
+        self.assertEqual(result.selected_contact_name, "S Devendran")
+
     def test_company_email_fallback_runs_after_person_lookup_miss(self):
         payload = {
             "Id": 123,

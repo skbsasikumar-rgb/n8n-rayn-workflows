@@ -180,6 +180,60 @@ def test_url_picker_accepts_bridgepoint_core_domain_without_branch_tokens():
     assert result["url_picked"] == "https://bridgepointhealth.sg/"
 
 
+def test_url_picker_keeps_best_matching_subpage_but_sets_root_for_scrape():
+    result = run_parse_url_pick_with_content(
+        "P J Clinic",
+        [
+            {
+                "rank": 1,
+                "title": "Appointments - PJ Clinic",
+                "url": "https://www.pjclinic.org/appointments",
+                "snippet": "Official website of PJ Clinic. Book appointments for the Jalan Bukit Merah clinic.",
+            },
+            {
+                "rank": 2,
+                "title": "PJ Clinic",
+                "url": "https://www.pjclinic.org/",
+                "snippet": "Official website of PJ Clinic.",
+            },
+        ],
+        '{"url":"https://www.pjclinic.org/appointments","reason":"best matching official subpage"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://www.pjclinic.org/appointments"
+    assert result["homepage_root_url"] == "https://www.pjclinic.org/"
+    evidence = json.loads(result["search_evidence_json"])
+    assert evidence["operating_root_url"] == "https://www.pjclinic.org/"
+
+
+def test_url_picker_prefers_normal_official_domain_over_hosted_landing_page():
+    result = run_parse_url_pick_with_content(
+        "Cavenagh Medical Clinic and Home Care",
+        [
+            {
+                "rank": 1,
+                "title": "Healthier SG with Cavenagh Medical",
+                "url": "https://cavenaghmedical.page/hsg",
+                "snippet": "Specializing in tailored healthcare and complex home care.",
+            },
+            {
+                "rank": 3,
+                "title": "Cavenagh Medical Clinic and Home Care | LinkedIn",
+                "url": "https://sg.linkedin.com/company/cavenaghmedical",
+                "snippet": "A modern primary care clinic that also supports home-based medical services. https://cavenaghmedical.com/",
+            },
+        ],
+        '{"url":"https://cavenaghmedical.page/hsg","reason":"hosted official page"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://cavenaghmedical.com/"
+    assert result["homepage_root_url"] == "https://cavenaghmedical.com/"
+    evidence = json.loads(result["search_evidence_json"])
+    assert evidence["normalized_from_hosted_url"] == "https://cavenaghmedical.page/hsg"
+
+
 def test_url_picker_accepts_spaced_initial_company_when_official_result_says_so():
     result = run_parse_url_pick_with_content(
         "P J Clinic",
@@ -423,5 +477,5 @@ def test_url_pick_patch_clears_homepage_root_on_skip():
     parse_node = next(entry for entry in workflow["nodes"] if entry["name"] == "Parse URL Pick")
     patch_node = next(entry for entry in workflow["nodes"] if entry["name"] == "Patch URL Picked")
 
-    assert "homepage_root_url: pickedUrl" in parse_node["parameters"]["jsCode"]
+    assert "homepage_root_url: operatingRootUrl" in parse_node["parameters"]["jsCode"]
     assert "homepage_root_url: $json.homepage_root_url" in patch_node["parameters"]["jsonBody"]

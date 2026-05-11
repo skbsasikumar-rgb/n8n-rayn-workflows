@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -26,8 +27,9 @@ from scripts import rayn_api_tools as api
 
 URL_FIELDS = (
     "Id,company_name,status,status_reason,last_stage,last_error,url_picked,best_url,"
-    "canonical_domain,duplicate_of_id,contact_search_status,automation_decision,"
-    "attempt_count,processing_started_at,processing_finished_at,last_attempted_at"
+    "homepage_root_url,canonical_domain,duplicate_of_id,contact_search_status,automation_decision,"
+    "attempt_count,processing_started_at,processing_finished_at,last_attempted_at,"
+    "website_content,website_scrape"
 )
 PLANNER_FIELDS = (
     "Id,company_name,status,best_url,contact_search_status,validated_email,"
@@ -102,6 +104,7 @@ def reset_patch_for_row(row_id: int, reason: str) -> dict[str, Any]:
         {
             "Id": row_id,
             "url_picked": "",
+            "homepage_root_url": "",
             "best_url": "",
             "canonical_domain": "",
             "duplicate_of_id": "",
@@ -314,12 +317,29 @@ def cap_noco_long_text_fields(patch: dict[str, Any]) -> dict[str, Any]:
     return patch
 
 
+def content_is_url_only(value: object, *urls: object) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    normalized_text = text.rstrip("/")
+    if not re.match(r"^https?://[^\s]+/?$", text, re.IGNORECASE):
+        return False
+    for url in urls:
+        normalized_url = str(url or "").strip().rstrip("/")
+        if normalized_url and normalized_text == normalized_url:
+            return True
+    return False
+
+
 def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc).isoformat()
     attempt_count = str((int(str(row.get("attempt_count") or "0") or "0") + 1))
     prior_reason = str(row.get("status_reason") or row.get("error_type") or "").strip().lower()
     explicit_stage = str(row.get("enrichment_stage") or row.get("public_enrichment_stage") or "").strip()
     prior_attempt_count = int(str(row.get("attempt_count") or "0") or "0")
+    url_only_content = content_is_url_only(row.get("website_content"), row.get("best_url"), row.get("url_picked")) or content_is_url_only(
+        row.get("website_scrape"), row.get("best_url"), row.get("url_picked")
+    )
     should_deep_retry = (
         explicit_stage == "deep_retry"
         or "weak_retry" in prior_reason
@@ -328,6 +348,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
         or "no_locations_detected" in prior_reason
         or "no_team_or_contact_page" in prior_reason
         or "challenge_detected" in prior_reason
+        or url_only_content
         or prior_attempt_count > 1
     )
     enrichment_stage = "deep_retry" if should_deep_retry else "fast"
@@ -357,7 +378,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
         {
             "Id": row["Id"],
             "company_name": row["company_name"],
-            "url_picked": row["url_picked"],
+            "url_picked": row.get("homepage_root_url") or row["url_picked"],
             "enrichment_stage": enrichment_stage,
             "page_limit": 14 if enrichment_stage == "deep_retry" else args.page_limit,
             "page_timeout_ms": 20000 if enrichment_stage == "deep_retry" else args.page_timeout_ms,
@@ -422,7 +443,16 @@ def run_public_enrich(ids: list[int], args: argparse.Namespace) -> list[dict[str
         row
         for row in fetch_rows(ids)
         if str(row.get("url_picked") or "").strip()
-        and str(row.get("status") or "") in {"processing", "url_picked"}
+        and (
+            str(row.get("status") or "") in {"processing", "url_picked"}
+            or (
+                str(row.get("status") or "") == "completed"
+                and (
+                    content_is_url_only(row.get("website_content"), row.get("best_url"), row.get("url_picked"))
+                    or content_is_url_only(row.get("website_scrape"), row.get("best_url"), row.get("url_picked"))
+                )
+            )
+        )
         and not str(row.get("duplicate_of_id") or "").strip()
     ]
     if not rows:

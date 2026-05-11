@@ -928,6 +928,14 @@ def contains_any(text: str, terms: tuple[str, ...]) -> bool:
     return any(term in text for term in terms)
 
 
+def evidence_count(text: str, terms: tuple[str, ...]) -> int:
+    return sum(1 for term in terms if term in text)
+
+
+def has_clinic_word(text: str) -> bool:
+    return bool(re.search(r"\bclinics?\b", text))
+
+
 def confidence_from_score(score: int) -> str:
     if score >= 75:
         return "high"
@@ -938,34 +946,17 @@ def confidence_from_score(score: int) -> str:
 
 def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
     company = compact(row.get("company_name"))
-    if "clinic" in company.lower() or company.lower().endswith("clinic"):
-        return {
-            "entity_type_guess": "clinic",
-            "entity_type_confidence": "high",
-            "sme_likelihood": "possible",
-            "npo_likelihood": "unlikely",
-            "charity_or_social_service_likelihood": "unlikely",
-        }
-    if ("clinic" in text or "dental" in text) and not contains_any(text, NPO_TERMS):
-        return {
-            "entity_type_guess": "clinic",
-            "entity_type_confidence": "high",
-            "sme_likelihood": "possible",
-            "npo_likelihood": "unlikely",
-            "charity_or_social_service_likelihood": "unlikely",
-        }
-    if contains_any(text, HEALTHCARE_TERMS) and not contains_any(text, NPO_TERMS):
-        return {
-            "entity_type_guess": "healthcare_provider",
-            "entity_type_confidence": "medium",
-            "sme_likelihood": "possible",
-            "npo_likelihood": "unlikely",
-            "charity_or_social_service_likelihood": "unlikely",
-        }
-    if "sree narayana mission" in text or contains_any(text, NPO_TERMS + SOCIAL_TERMS):
+    company_l = company.lower()
+    npo_score = evidence_count(text, NPO_TERMS)
+    social_score = evidence_count(text, SOCIAL_TERMS)
+    healthcare_score = evidence_count(text, HEALTHCARE_TERMS)
+    clinical_name = any(term in company_l for term in ("clinic", "medical", "dental", "hospital", "pharmacy", "hearing", "physio"))
+
+    # Entity type describes the organisation model. Keep it separate from pressure_type.
+    if "sree narayana mission" in text or npo_score >= 2 or (npo_score >= 1 and social_score >= 1):
         if "charity" in text or "ipc" in text:
             entity = "charity"
-        elif contains_any(text, SOCIAL_TERMS):
+        elif social_score >= 1:
             entity = "social_service"
         else:
             entity = "npo"
@@ -975,6 +966,30 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
             "sme_likelihood": "unlikely",
             "npo_likelihood": "likely",
             "charity_or_social_service_likelihood": "likely",
+        }
+    if "clinic" in company_l or company_l.endswith("clinic"):
+        return {
+            "entity_type_guess": "clinic",
+            "entity_type_confidence": "high",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
+        }
+    if (has_clinic_word(text) or "dental" in text) and not contains_any(text, NPO_TERMS):
+        return {
+            "entity_type_guess": "clinic",
+            "entity_type_confidence": "high",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
+        }
+    if (clinical_name or healthcare_score >= 2) and not contains_any(text, NPO_TERMS):
+        return {
+            "entity_type_guess": "healthcare_provider",
+            "entity_type_confidence": "medium",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
         }
     if "pte ltd" in text or "private limited" in text or ".com.sg" in text:
         return {
@@ -991,6 +1006,23 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
         "npo_likelihood": "unknown",
         "charity_or_social_service_likelihood": "unknown",
     }
+
+
+def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> bool:
+    company = compact(row.get("company_name")).lower()
+    if service in HIA_BATCH_BY_SERVICE:
+        return True
+    if service == "allied_health" and any(term in text for term in ("clinical psychologist", "psychologist", "physiotherapy", "patient", "assessment", "case-note", "case note")):
+        return True
+    if service == "hearing_care" and has_hearing_care_evidence(text):
+        return True
+    if any(term in company for term in ("clinic", "medical", "dental", "hospital", "pharmacy", "hearing", "physio")):
+        return True
+    if any(term in text for term in ("patient", "doctor", "appointment", "consultation", "treatment", "outpatient")):
+        return True
+    if has_hearing_care_evidence(text) or has_clinical_lab_evidence(text):
+        return True
+    return False
 
 
 def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
@@ -1047,12 +1079,19 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "GP_OMS"
     else:
         service = "unknown"
+    concrete_hia_evidence = has_concrete_hia_evidence(row, text, service) or bool(batch_override)
     if service in HIA_BATCH_BY_SERVICE or batch_override:
         score = max(score + 24, 45)
+    if not concrete_hia_evidence:
+        score = min(score, 36)
+        service = "unknown"
+        batch_override = ""
     score = min(score, 100)
     confidence = confidence_from_score(score)
     batch = batch_override or HIA_BATCH_BY_SERVICE.get(service, "unknown")
-    hia_relevant = score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36) or (service == "hearing_care" and has_hearing_care_evidence(text))
+    hia_relevant = concrete_hia_evidence and (
+        score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36) or (service == "hearing_care" and has_hearing_care_evidence(text))
+    )
     return {
         "hia_relevant": hia_relevant,
         "hia_relevance_score": score,
