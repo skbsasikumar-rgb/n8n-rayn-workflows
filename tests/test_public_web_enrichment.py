@@ -102,6 +102,36 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(link_sources["https://company.example/what-we-do"], "nav")
         self.assertEqual(link_sources["https://company.example/privacy"], "footer")
 
+    def test_extract_page_artifact_keeps_content_when_body_theme_classes_include_noise_terms(self):
+        html = """
+        <html>
+          <head><title>Our Services</title></head>
+          <body class="et_pb_footer_columns4 et_header_style_left et_no_sidebar">
+            <div id="main-content">
+              <article class="page">
+                <div class="entry-content">
+                  <p>At Muhammadiyah Health & Day Care Centre we provide compassionate elderly care and rehabilitation support.</p>
+                  <p>Our dedicated nursing team provides essential medical and personal care tailored to each client's needs.</p>
+                </div>
+              </article>
+            </div>
+          </body>
+        </html>
+        """
+        artifact = p.extract_page_artifact(
+            {
+                "url": "https://mhcc.example/our-services",
+                "redirected_url": "https://mhcc.example/our-services",
+                "html": html,
+                "cleaned_html": html,
+                "metadata": {"title": "Our Services"},
+                "status_code": 200,
+            }
+        )
+        self.assertIn("compassionate elderly care", artifact.text)
+        self.assertIn("dedicated nursing team", artifact.text)
+        self.assertGreaterEqual(len(artifact.blocks), 2)
+
     def test_non_hia_link_scoring_prefers_privacy_security_platform(self):
         homepage = "https://platform.example/"
         links = [
@@ -129,6 +159,19 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertEqual(selected[0], "https://clinic.example/")
         self.assertIn("https://clinic.example/doctors", selected)
         self.assertIn("https://clinic.example/services", selected)
+        self.assertIn("https://clinic.example/our-services", selected)
+
+    def test_fast_hia_fallback_includes_dropdown_service_hubs(self):
+        selected = p.choose_candidate_pages(
+            "https://clinic.example/",
+            [],
+            [],
+            page_limit=8,
+            profile="hia",
+            stage="fast",
+        )
+
+        self.assertIn("https://clinic.example/our-services", selected)
 
     def test_page_artifact_extracts_type_names_and_terms(self):
         html = """

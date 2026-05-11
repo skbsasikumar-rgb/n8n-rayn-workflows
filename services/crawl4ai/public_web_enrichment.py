@@ -340,6 +340,8 @@ HIA_COMMON_FOLLOW_PATHS = (
     "/doctors",
     "/our-doctors",
     "/services",
+    "/our-services",
+    "/our-service",
     "/specialists",
     "/consultants",
     "/team",
@@ -359,6 +361,8 @@ NON_HIA_COMMON_FOLLOW_PATHS = (
     "/about",
     "/about-us",
     "/services",
+    "/our-services",
+    "/our-service",
     "/contact",
     "/privacy",
     "/privacy-policy",
@@ -1592,7 +1596,16 @@ def candidate_page_score(
         score += 3
     if selected_profile == "non_hia" and any(term in text for term in ("privacy", "pdpa", "data-protection", "security", "trust", "clients", "platform")):
         score += 5
-    if selected_profile == "hia" and path.strip("/") in {"services", "service", "treatments", "treatment", "conditions", "procedures"}:
+    if selected_profile == "hia" and path.strip("/") in {
+        "services",
+        "our-services",
+        "service",
+        "our-service",
+        "treatments",
+        "treatment",
+        "conditions",
+        "procedures",
+    }:
         score += 6
     if "blog" in text or "news" in text:
         score -= 7
@@ -1665,6 +1678,32 @@ def choose_candidate_pages(
     return dedupe_strings(selected, limit=page_limit)
 
 
+def service_hub_fallback_urls(homepage_url: str, profile: str = "auto") -> list[str]:
+    selected_profile = profile if profile in {"hia", "non_hia"} else "hia"
+    if selected_profile != "hia":
+        return []
+    return dedupe_strings(
+        [
+            urljoin(homepage_url, "/our-services/"),
+            urljoin(homepage_url, "/services/"),
+            urljoin(homepage_url, "/our-service/"),
+            urljoin(homepage_url, "/service/"),
+        ],
+        limit=8,
+    )
+
+
+def promote_service_hub_candidates(homepage_url: str, candidates: list[str], profile: str = "auto") -> list[str]:
+    if not candidates:
+        candidates = [homepage_url]
+    promoted = [candidates[0]]
+    for href in service_hub_fallback_urls(homepage_url, profile):
+        if href not in promoted and href not in candidates:
+            promoted.append(href)
+    promoted.extend(candidates[1:])
+    return dedupe_strings(promoted, limit=len(candidates) + 4)
+
+
 def prune_noise_nodes(soup: BeautifulSoup) -> None:
     for tag in soup(["script", "style", "noscript", "svg", "canvas", "iframe", "template"]):
         tag.decompose()
@@ -1688,6 +1727,9 @@ def prune_noise_nodes(soup: BeautifulSoup) -> None:
             class_value = " ".join(compact_whitespace(item) for item in class_value if item is not None)
         else:
             class_value = compact_whitespace(class_value)
+
+        if node.name in {"html", "body", "main", "article"}:
+            continue
 
         attrs = " ".join(
             compact_whitespace(value)
@@ -4195,13 +4237,17 @@ async def enrich_row(
     sitemap_urls = fetch_sitemap_candidates(session, best_url, robots_policy, limit=max(page_limit * 6, 20))
     homepage_links = build_homepage_links(homepage_page)
     profile_hint = enrichment_profile_from_text(f"{row.company_name} {homepage_page.title} {homepage_page.text[:3000]}")
-    candidates = choose_candidate_pages(
+    candidates = promote_service_hub_candidates(
         best_url,
-        homepage_links,
-        sitemap_urls,
-        page_limit=page_limit,
-        profile=profile_hint,
-        stage=stage,
+        choose_candidate_pages(
+            best_url,
+            homepage_links,
+            sitemap_urls,
+            page_limit=page_limit,
+            profile=profile_hint,
+            stage=stage,
+        ),
+        profile_hint,
     )
     browser_candidate_recovery_urls = {
         candidate_url
@@ -4334,13 +4380,17 @@ async def enrich_row(
             if page.content_hash:
                 seen_hashes.add(page.content_hash)
             if len(crawled_pages) < page_limit:
-                discovered = choose_candidate_pages(
+                discovered = promote_service_hub_candidates(
                     best_url,
-                    build_homepage_links(page),
-                    [],
-                    page_limit=page_limit * 2,
-                    profile=profile_hint,
-                    stage=stage,
+                    choose_candidate_pages(
+                        best_url,
+                        build_homepage_links(page),
+                        [],
+                        page_limit=page_limit * 2,
+                        profile=profile_hint,
+                        stage=stage,
+                    ),
+                    profile_hint,
                 )
                 for discovered_url in discovered[1:]:
                     if discovered_url in queued_urls or discovered_url in seen_urls:
