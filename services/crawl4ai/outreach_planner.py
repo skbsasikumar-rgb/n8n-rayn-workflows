@@ -903,7 +903,6 @@ def lower_blob(row: dict[str, Any]) -> str:
     parts = [
         row.get("company_name", ""),
         row.get("company_homepage_name", ""),
-        row.get("industry_guess", ""),
         row.get("website_content", ""),
         row.get("services_detected", ""),
         row.get("locations_detected", ""),
@@ -1042,8 +1041,71 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         score += 18
     if has_strong_diagnostic_lab_evidence(text):
         service = "diagnostic"
-    elif "dental" in text or "dentist" in text:
+    primary_text = " ".join(
+        compact(value)
+        for value in (
+            row.get("company_name"),
+            row.get("company_homepage_name"),
+            compact(row.get("website_content"))[:1800],
+            compact(row.get("services_detected"))[:900],
+        )
+        if value
+    ).lower()
+    primary_gp = has_family_clinic_evidence(row, primary_text) or any(
+        term in primary_text for term in ("gp clinic", "gp clinics", "general practitioner", "health screening", "medical check-up", "medical checkup")
+    )
+    primary_dental = any(term in company for term in ("dental", "dentist", "orthodont", "braces")) or (
+        any(term in primary_text for term in ("dental", "dentist", "orthodont", "braces")) and not primary_gp
+    )
+    primary_allied = any(
+        term in primary_text
+        for term in ("physio", "physiotherapy", "podiatry", "podiatrist", "psychology", "psychologist", "mental health", "counselling", "counseling", "therapy")
+    )
+    primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
+        term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
+    )
+    primary_specialist = contains_any(primary_text, SPECIFIC_SPECIALIST_SERVICE_TERMS) or any(
+        term in primary_text
+        for term in (
+            "thoracic surgeon",
+            "lung surgery",
+            "cardiology",
+            "gastroenterology",
+            "ophthalmology",
+            "dermatology",
+            "rheumatology",
+            "oncology",
+            "orthopaedic",
+            "endocrinology",
+        )
+    )
+    specialist_name_evidence = any(
+        term in " ".join((company, compact(row.get("company_homepage_name")).lower()))
+        for term in (
+            "cardiology",
+            "gastroenterology",
+            "endocrinology",
+            "rheumatology",
+            "oncology",
+            "dermatology",
+            "orthopaedic",
+            "ophthalmology",
+            "thoracic",
+            "lung",
+            "surgery",
+            "surgeon",
+        )
+    )
+    if primary_dental:
         service = "dental"
+    elif primary_diagnostic:
+        service = "diagnostic"
+    elif primary_specialist and specialist_name_evidence:
+        service = "specialist_OMS"
+    elif primary_allied:
+        service = "allied_health"
+    elif primary_gp:
+        service = "GP_OMS"
     elif "ambulatory surgical" in text or "day surgery" in text:
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
@@ -1063,7 +1125,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "long_term_care"
     elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
         service = "GP_OMS"
-    elif contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS):
+    elif primary_specialist:
         service = "specialist_OMS"
     elif "physio" in text or "physiotherapy" in text or "psychology" in text or "psychologist" in text or "mental health" in text or "therapy" in text:
         service = "allied_health"
@@ -2607,6 +2669,8 @@ def specialist_subtype(text: str) -> str:
         return "endocrinology"
     if any(term in text for term in ("rheumatology", "rheumatologist", "arthritis", "lupus")):
         return "rheumatology"
+    if any(term in text[:700] for term in ("surgery", "surgeon", "surgical", "thoracic")):
+        return "surgery"
     if any(term in text for term in ("oncology", "radiation")):
         return "oncology"
     if has_cardiology_subtype(text):
@@ -2686,6 +2750,16 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
         if value
     )
     source_l = source_terms.lower()
+    primary_source_l = " ".join(
+        compact(value)
+        for value in (
+            company,
+            row.get("company_homepage_name"),
+            compact(row.get("website_content"))[:1800],
+            compact(row.get("services_detected"))[:900],
+        )
+        if value
+    ).lower()
     evidence: list[str] = []
 
     def add_evidence(label: str) -> None:
@@ -2711,8 +2785,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
         structure = "single_site_or_unknown"
 
     has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "injectable"))
-    has_specialist = has_cardiology_subtype(source_l) or any(
-        term in source_l
+    primary_aesthetic = "aesthetic" in company.lower() or any(term in primary_source_l[:700] for term in ("aesthetic", "medical aesthetics", "injectable"))
+    has_specialist = has_cardiology_subtype(primary_source_l) or any(
+        term in primary_source_l
         for term in (
             "gastroenterology",
             "oncology",
@@ -2743,10 +2818,12 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     has_diagnostic = any(term in source_l for term in ("diagnostic", "screening", "laboratory", " lab ", "radiology", "nuclear medicine", "test reports"))
     has_strong_lab = any(term in source_l for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "radiology", "nuclear medicine", "test reports", "lab test"))
 
-    if service_type == "diagnostic" and has_strong_lab:
+    if service_type == "diagnostic":
         guess = "diagnostic_lab"
         add_evidence("diagnostic, screening or lab terms")
-    elif service_type == "dental" or any(term in source_l for term in ("dental", "dentist", "orthodont")):
+    elif service_type == "dental" or (
+        any(term in primary_source_l for term in ("dental", "dentist", "orthodont", "braces")) and not has_gp
+    ):
         guess = "dental"
         add_evidence("dental terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
@@ -2755,7 +2832,7 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
         guess = "hearing_care"
         add_evidence("hearing-care terms")
-    elif has_aesthetic:
+    elif primary_aesthetic:
         guess = "aesthetic_medical"
         add_evidence("medical/aesthetic terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
@@ -2767,20 +2844,25 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "GP_OMS" and has_gp:
         guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
         add_evidence("GP/outpatient evidence")
-    elif home_care_subtype(source_l):
-        guess = "home_care"
-        add_evidence("home-care or caregiver terms")
-    elif service_type == "long_term_care" or contains_any(source_l, LONG_TERM_CARE_TERMS):
-        guess = "hospice_long_term_care"
-        add_evidence("hospice or long-term care terms")
     elif service_type == "allied_health" and any(term in source_l for term in ("psychology", "psychologist", "counselling", "counseling", "mental health", "case-note")):
         guess = "mental_health"
         add_evidence("psychology or mental-health terms")
     elif service_type == "allied_health" or (
-        service_type != "specialist_OMS" and any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support"))
+        service_type != "specialist_OMS" and any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support", "podiatry", "podiatrist"))
     ):
         guess = "allied_health"
         add_evidence("allied-health or physiotherapy terms")
+    elif home_care_subtype(primary_source_l):
+        guess = "home_care"
+        add_evidence("home-care or caregiver terms")
+    elif service_type == "long_term_care" and any(
+        term in primary_source_l for term in ("home care", "caregiver", "hospice", "palliative", "nursing home", "senior care", "long-term care")
+    ):
+        guess = "hospice_long_term_care"
+        add_evidence("hospice or long-term care terms")
+    elif has_aesthetic and service_type not in {"GP_OMS", "allied_health", "diagnostic"}:
+        guess = "aesthetic_medical"
+        add_evidence("medical/aesthetic terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
         guess = "solo_gp"
         add_evidence("solo GP/outpatient evidence")

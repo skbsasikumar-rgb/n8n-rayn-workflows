@@ -57,6 +57,36 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("We help", plan.emails["email_1"]["body"])
         self.assertEqual(plan.copy_brief["email_hook"], plan.copy_brief["email_problem_statement"])
 
+    def test_stale_industry_guess_does_not_override_website_content(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 101,
+                "company_name": "Minmed Group Pte Ltd",
+                "best_url": "https://minmed.sg/",
+                "industry_guess": "Dental care",
+                "website_content": "Health screening and GP clinics in Singapore with medical check-ups, vaccinations, GP consultations and Healthier SG.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertNotEqual(plan.classification["hia_service_type_guess"], "dental")
+        self.assertNotIn("dental clinic", plan.emails["email_1"]["body"].lower())
+
+    def test_secondary_site_links_do_not_force_dental_profile(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 102,
+                "company_name": "My Health Partners",
+                "best_url": "https://www.myhealthpartners.com.sg/",
+                "website_content": (
+                    "Welcome to My Health Partners Medical Clinic. Vaccination, Health Screening and Consultation. "
+                    "Our pages also include an older dental clinic department link."
+                ),
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertNotEqual(plan.classification["hia_service_type_guess"], "dental")
+        self.assertNotIn("dental clinic", plan.emails["email_1"]["body"].lower())
+
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
         plan = o.plan_outreach(
             {
