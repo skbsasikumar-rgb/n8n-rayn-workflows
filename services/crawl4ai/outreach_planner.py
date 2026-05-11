@@ -4070,6 +4070,16 @@ def generic_personalisation_signal(signal: str) -> bool:
     )
     concrete_terms = (
         "clinic service",
+        "clinic group",
+        "group healthcare",
+        "multi-location",
+        "medical-clinic",
+        "outpatient",
+        "surgical clinic",
+        "dental clinic",
+        "home-care",
+        "caregiver",
+        "long-term care",
         "team",
         "practitioner",
         "doctor",
@@ -4107,7 +4117,26 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
     phrase = compact(copy_brief.get("clinic_profile_phrase"))
     if not phrase:
         return True
-    return not reflects(body, phrase)
+    if reflects(body, phrase):
+        return False
+    body_l = compact(body).lower()
+    profile_guess = compact(copy_brief.get("clinic_profile_guess")).lower()
+    equivalents = {
+        "solo_gp": ("gp", "family clinic", "medical-clinic", "medical clinic", "doctor-led", "outpatient"),
+        "family_gp": ("gp", "family clinic", "medical-clinic", "medical clinic", "doctor-led", "outpatient"),
+        "multi_doctor_gp": ("multi-doctor", "doctor", "medical-clinic", "medical clinic", "outpatient", "clinic"),
+        "clinic_group": ("clinic group", "multi-location", "group healthcare", "our clinics", "clinic"),
+        "hospice_long_term_care": ("long-term care", "hospice", "resident", "caregiver", "care provider"),
+        "home_care": ("home-care", "caregiver", "care provider", "patient"),
+        "specialist_led": ("specialist", "surgical clinic", "surgery", "clinic"),
+        "dental": ("dental", "braces", "orthodont"),
+        "pharmacy": ("pharmacy", "compounding"),
+        "diagnostic_lab": ("diagnostic", "laboratory", "screening"),
+        "allied_health": ("allied-health", "physiotherapy", "treatment support"),
+        "mental_health": ("psychology", "mental-health", "assessment"),
+        "hearing_care": ("hearing-care", "hearing test", "audiology"),
+    }
+    return not any(term in body_l for term in equivalents.get(profile_guess, ()))
 
 
 def hia_record_terms(records: str) -> list[str]:

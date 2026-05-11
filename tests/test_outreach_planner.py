@@ -1913,6 +1913,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.copy_brief["clinic_profile_phrase"], "a healthcare provider")
         self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
+    def test_serper_group_healthcare_signal_is_not_generic_for_hia(self):
+        signal = "Example Clinic operates a multi-location or group healthcare operation."
+        self.assertFalse(o.generic_personalisation_signal(signal))
+
     def test_hia_funding_unsafe_keeps_pricing_but_omits_70_percent(self):
         plan = o.plan_outreach(
             {
