@@ -19,7 +19,10 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     dns = None  # type: ignore[assignment]
 
-import captcha_solver
+try:
+    from . import captcha_solver
+except ImportError:  # pragma: no cover - service runtime imports modules from cwd
+    import captcha_solver  # type: ignore[no-redef]
 
 HONORIFICS_RE = re.compile(r"^(?:dr|doctor|mr|mrs|ms|miss|mdm|prof|professor|assoc\.?\s*prof|a/?prof)\.?\s+", re.I)
 NAME_TOKEN_RE = r"[A-Z][a-zA-Z'’-]+"
