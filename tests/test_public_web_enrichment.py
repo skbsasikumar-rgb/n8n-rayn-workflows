@@ -628,6 +628,32 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         structured = json.loads(patch["structured_data_detected"])
         self.assertTrue(structured["truncated_for_nocodb_longtext"])
 
+    def test_selected_rerun_consolidates_same_run_duplicate_domains(self):
+        from scripts import rayn_selected_rerun as rerun
+
+        original_fetch_rows = rerun.fetch_rows
+        original_patch = rerun.api.noco_patch
+        patches = []
+        rows = [
+            {"Id": 305, "status": "url_picked", "canonical_domain": "theclinicgroup.com.sg"},
+            {"Id": 309, "status": "url_picked", "canonical_domain": "theclinicgroup.com.sg"},
+            {"Id": 310, "status": "url_picked", "canonical_domain": "onegeorgeclinic.sg"},
+        ]
+        try:
+            rerun.fetch_rows = lambda ids: rows
+            rerun.api.noco_patch = lambda payload: patches.extend(payload)
+
+            result = rerun.consolidate_duplicate_canonical_rows([305, 309, 310], dry_run=False)
+        finally:
+            rerun.fetch_rows = original_fetch_rows
+            rerun.api.noco_patch = original_patch
+
+        self.assertEqual(result["duplicates_skipped"], 1)
+        self.assertEqual(result["duplicate_ids"], [309])
+        self.assertEqual(patches[0]["duplicate_of_id"], 305)
+        self.assertEqual(patches[0]["status"], "skipped")
+        self.assertEqual(patches[0]["status_reason"], "duplicate_canonical_domain")
+
     def test_public_enrichment_patch_caps_oversized_nocodb_longtext_fields(self):
         record = p.EnrichmentRecord(
             row_id="999",

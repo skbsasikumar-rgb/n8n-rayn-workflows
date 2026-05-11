@@ -156,6 +156,105 @@ def test_url_picker_rejects_weak_llm_acronym_pick():
     assert "rejected" in evidence["reason"]
 
 
+def test_url_picker_falls_back_when_llm_selects_directory_listing():
+    result = run_parse_url_pick_with_content(
+        "HL Family Clinic & Surgery",
+        [
+            {
+                "rank": 1,
+                "title": "HL Family Clinic & Surgery - Yelp",
+                "url": "https://www.yelp.com/biz/hl-family-clinic-and-surgery-singapore-2",
+                "snippet": "Directory listing for HL Family Clinic & Surgery.",
+            },
+            {
+                "rank": 2,
+                "title": "HL Family Clinic & Surgery",
+                "url": "https://hlfamilyclinic.com.sg/",
+                "snippet": "Official website of HL Family Clinic & Surgery in Singapore.",
+            },
+        ],
+        '{"url":"https://www.yelp.com/biz/hl-family-clinic-and-surgery-singapore-2","reason":"top result"}',
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://hlfamilyclinic.com.sg/"
+    evidence = json.loads(result["search_evidence_json"])
+    assert evidence["llm_picked_url"].startswith("https://www.yelp.com/")
+    assert evidence["fallback_url"] == "https://hlfamilyclinic.com.sg/"
+
+
+def test_url_picker_rejects_shortener_even_when_llm_selects_it():
+    result = run_parse_url_pick_with_content(
+        "Toh Yi Family Clinic",
+        [
+            {
+                "rank": 1,
+                "title": "Toh Yi Family Clinic",
+                "url": "https://bit.ly/tohyi",
+                "snippet": "Short link for Toh Yi Family Clinic.",
+            }
+        ],
+        '{"url":"https://bit.ly/tohyi","reason":"top result"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_nlb_directory_result():
+    result = run_parse_url_pick_with_content(
+        "Bishan Grace Clinic",
+        [
+            {
+                "rank": 1,
+                "title": "Bishan Grace Clinic - Singapore Infopedia",
+                "url": "https://eresources.nlb.gov.sg/webarchives/details/www.bishangraceclinic.example",
+                "snippet": "Archived directory information for Bishan Grace Clinic.",
+            }
+        ],
+        '{"url":"https://eresources.nlb.gov.sg/webarchives/details/www.bishangraceclinic.example","reason":"has clinic name"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_practo_directory_result():
+    result = run_parse_url_pick_with_content(
+        "HL Family Clinic & Surgery",
+        [
+            {
+                "rank": 1,
+                "title": "HL Family Clinic & Surgery - Practo",
+                "url": "https://www.practo.com/singapore/clinic/hl-family-clinic-and-surgery",
+                "snippet": "Practo listing for HL Family Clinic & Surgery.",
+            }
+        ],
+        '{"url":"https://www.practo.com/singapore/clinic/hl-family-clinic-and-surgery","reason":"has clinic name"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_company_directory_result():
+    result = run_parse_url_pick_with_content(
+        "HL Family Clinic & Surgery",
+        [
+            {
+                "rank": 1,
+                "title": "HL Family Clinic & Surgery Pte Ltd",
+                "url": "https://sg.ltddir.com/companies/hl-family-clinic-surgery-pte-ltd/",
+                "snippet": "Company directory listing for HL Family Clinic & Surgery Pte Ltd.",
+            }
+        ],
+        '{"url":"https://sg.ltddir.com/companies/hl-family-clinic-surgery-pte-ltd/","reason":"has company name"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_picker_accepts_bridgepoint_core_domain_without_branch_tokens():
     result = run_parse_url_pick_with_content(
         "Bridgepoint Health (Jalan Bukit Merah Clinic)",
@@ -479,3 +578,12 @@ def test_url_pick_patch_clears_homepage_root_on_skip():
 
     assert "homepage_root_url: operatingRootUrl" in parse_node["parameters"]["jsCode"]
     assert "homepage_root_url: $json.homepage_root_url" in patch_node["parameters"]["jsonBody"]
+
+
+def test_dedupe_never_skips_lower_id_for_higher_id_match():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Apply Dedupe Result")
+    code = node["parameters"]["jsCode"]
+
+    assert "Number(row.Id) < Number(picked.Id)" in code
+    assert "Number(row.Id) !== Number(picked.Id)" not in code

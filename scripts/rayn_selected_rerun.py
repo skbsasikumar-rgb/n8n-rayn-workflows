@@ -89,6 +89,51 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def consolidate_duplicate_canonical_rows(ids: list[int], dry_run: bool) -> dict[str, Any]:
+    rows = fetch_rows(ids)
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        if str(row.get("status") or "") != "url_picked":
+            continue
+        canonical = str(row.get("canonical_domain") or "").strip()
+        if canonical:
+            groups.setdefault(canonical, []).append(row)
+
+    patches: list[dict[str, Any]] = []
+    for canonical, group in groups.items():
+        if len(group) < 2:
+            continue
+        ordered = sorted(group, key=lambda item: int(item["Id"]))
+        keeper = ordered[0]
+        for duplicate in ordered[1:]:
+            error_message = f"Duplicate canonical_domain {canonical} of row {keeper['Id']}"
+            patches.append(
+                {
+                    "Id": duplicate["Id"],
+                    "duplicate_of_id": keeper["Id"],
+                    "status": "skipped",
+                    "last_stage": "dedupe",
+                    "last_error": error_message,
+                    "status_reason": "duplicate_canonical_domain",
+                    "processing_finished_at": datetime.now(timezone.utc).isoformat(),
+                    "error_type": "duplicate",
+                    "error_message": error_message,
+                    "retry_eligible": "false",
+                }
+            )
+
+    if patches and not dry_run:
+        for start in range(0, len(patches), 25):
+            api.noco_patch(patches[start : start + 25])
+
+    return {
+        "rows_checked": len(rows),
+        "duplicates_skipped": len(patches),
+        "duplicate_ids": [patch["Id"] for patch in patches],
+        "dry_run": dry_run,
+    }
+
+
 def reset_patch_for_row(row_id: int, reason: str) -> dict[str, Any]:
     cleared: dict[str, Any] = {}
     for column in outreach_columns.OUTREACH_COLUMNS:
@@ -586,9 +631,12 @@ def main() -> None:
         return
 
     if not args.skip_url:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(ids))) as pool:
-            outputs["url_trigger"] = list(pool.map(trigger_url_pick, fetch_rows(ids)))
+        # URL picking mutates canonical_domain. Keep it serialized so duplicate
+        # checks cannot race, then consolidate same-run duplicates before scrape.
+        outputs["url_trigger"] = [trigger_url_pick(row) for row in fetch_rows(ids)]
         outputs["after_url_pick"] = summarize(wait_url_pick(ids, args.url_wait_seconds))
+        outputs["dedupe_after_url_pick"] = consolidate_duplicate_canonical_rows(ids, args.dry_run)
+        outputs["after_url_dedupe"] = summarize(fetch_rows(ids))
 
     if not args.skip_enrich:
         outputs["public_enrich"] = run_public_enrich(ids, args)
