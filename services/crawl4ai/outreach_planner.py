@@ -2614,7 +2614,13 @@ def apply_company_context_search(row: dict[str, Any], classification: dict[str, 
     search_context = fetch_serper_company_context(row, classification)
     copy_brief["company_context_search"] = search_context
     observation = serper_context_observation(row, classification, search_context)
-    if observation:
+    local_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    should_override = bool(observation) and (
+        not generic_personalisation_signal(observation)
+        or generic_personalisation_signal(local_signal)
+        or not local_signal
+    )
+    if should_override:
         copy_brief["prospect_facing_signal"] = observation
         copy_brief["email_personalisation_signal"] = observation
         copy_brief["email_hook_source"] = "serper"
@@ -4065,6 +4071,7 @@ def generic_personalisation_signal(signal: str) -> bool:
         "organisation appears to handle personal data",
         "organisation appears to",
         "healthcare provider",
+        "healthcare setting",
         "private company",
         "handles customer data",
     )

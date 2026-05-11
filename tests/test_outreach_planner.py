@@ -1917,6 +1917,36 @@ class OutreachPlannerTests(unittest.TestCase):
         signal = "Example Clinic operates a multi-location or group healthcare operation."
         self.assertFalse(o.generic_personalisation_signal(signal))
 
+    def test_serper_generic_healthcare_signal_does_not_replace_specific_local_signal(self):
+        original = o.fetch_serper_company_context
+
+        def fake_fetch(row, classification, limit=5):
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": "example",
+                "evidence": [{"title": "Example Health", "link": "https://example.test", "snippet": "Example Health is a healthcare provider."}],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 611,
+                    "company_name": "Example Home Care",
+                    "best_url": "https://example.test",
+                    "website_content": "Home care and caregiver provider supporting patients, family contacts and care records.",
+                    "validated_email": "team@example.com",
+                },
+                programmes=[verified_program()],
+            )
+        finally:
+            o.fetch_serper_company_context = original
+        self.assertIn("home-care", plan.copy_brief["prospect_facing_signal"])
+        self.assertNotIn("healthcare setting", plan.copy_brief["prospect_facing_signal"].lower())
+        self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
+
     def test_hia_funding_unsafe_keeps_pricing_but_omits_70_percent(self):
         plan = o.plan_outreach(
             {
