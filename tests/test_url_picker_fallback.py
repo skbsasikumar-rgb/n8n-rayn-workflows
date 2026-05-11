@@ -255,6 +255,29 @@ def test_url_picker_rejects_company_directory_result():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_rejects_path_only_identity_on_third_party_listing():
+    result = run_parse_url_pick(
+        "Mao Medical Centre & Surgery",
+        [
+            {
+                "rank": 1,
+                "title": "Mao Medical Centre & Surgery Pte. Ltd. - ThreeBestRated.sg",
+                "url": "https://threebestrated.sg/hospitals/mao-medical-centre-and-surgery-pte.-ltd.-bukit-merah-211116734",
+                "snippet": "Mao Medical Centre & Surgery Pte. Ltd. · Bukit Merah · 62781910.",
+            },
+            {
+                "rank": 2,
+                "title": "Mao Medical Centre & Surgery - Practo",
+                "url": "https://www.practo.com/singapore/clinic/mao-medical-centre-surgery-outram",
+                "snippet": "Address and timings for Mao Medical Centre & Surgery.",
+            },
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_picker_accepts_bridgepoint_core_domain_without_branch_tokens():
     result = run_parse_url_pick_with_content(
         "Bridgepoint Health (Jalan Bukit Merah Clinic)",
