@@ -414,6 +414,58 @@ def compact(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+LOCATION_HINTS = {
+    "ang mo kio",
+    "bedok",
+    "bishan",
+    "bukit batok",
+    "bukit merah",
+    "bukit timah",
+    "changi",
+    "choa chu kang",
+    "clementi",
+    "geylang",
+    "hougang",
+    "jurong",
+    "kallang",
+    "marine parade",
+    "novena",
+    "orchard",
+    "pasir ris",
+    "punggol",
+    "queenstown",
+    "raffles",
+    "sengkang",
+    "serangoon",
+    "sin ming",
+    "tampines",
+    "toa payoh",
+    "woodlands",
+    "yishun",
+}
+
+
+def email_display_company_name(row: dict[str, Any] | str) -> str:
+    raw = row if isinstance(row, str) else row.get("company_name") or row.get("company_homepage_name")
+    name = compact(raw)
+    if not name:
+        return "your organisation"
+    name = re.sub(r"\b(?:pte\.?\s*ltd\.?|private\s+limited|limited|ltd\.?|llp|llc|inc\.?)\b\.?", "", name, flags=re.I)
+    name = re.sub(r"\s+", " ", name).strip(" ,-")
+
+    def strip_location_parentheses(match: re.Match[str]) -> str:
+        inner = compact(match.group(1)).lower()
+        if inner in LOCATION_HINTS or (len(inner.split()) <= 3 and not re.search(r"\b(?:group|clinic|medical|health|care)\b", inner)):
+            return " "
+        return match.group(0)
+
+    name = re.sub(r"\(([^)]{2,40})\)", strip_location_parentheses, name)
+    name = re.sub(r"\s+@\s+[A-Za-z][A-Za-z .'-]{1,40}$", "", name)
+    name = re.sub(r"\s+-\s+[A-Za-z][A-Za-z .'-]{1,40}$", "", name)
+    name = re.sub(r"\s+", " ", name).strip(" ,-")
+    return name or compact(raw) or "your organisation"
+
+
 TRAILING_SIGNATURE_RE = re.compile(
     r"(?:\n\s*){2,}(?:best|regards|thanks|thank you),?\s*(?:\n\s*(?:sk|sasikumar))?\s*(?:\n\s*rayn secure)?\s*$",
     re.IGNORECASE,
@@ -2524,7 +2576,7 @@ def fetch_serper_company_context(row: dict[str, Any], classification: dict[str, 
 
 
 def serper_context_observation(row: dict[str, Any], classification: dict[str, Any], search_context: dict[str, Any]) -> str:
-    company = compact(row.get("company_name") or row.get("company_homepage_name") or "the organisation")
+    company = email_display_company_name(row)
     evidence = search_context.get("evidence") if isinstance(search_context, dict) else []
     text = " ".join(
         compact(f"{item.get('title', '')} {item.get('snippet', '')}")
@@ -3731,7 +3783,7 @@ def generate_email_sequence(
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     copy_brief = copy_brief or build_copy_brief(row, classification, funding)
-    company = compact(row.get("company_name") or "your organisation")
+    company = email_display_company_name(row)
     greeting = email_greeting(row, company)
     email1_greeting = email_1_greeting(row, company)
     comma_greeting = email_comma_greeting(row, company)
@@ -3742,6 +3794,9 @@ def generate_email_sequence(
     trigger = compact(copy_brief.get("prospect_facing_signal")) or prospect_facing_signal(
         copy_brief["email_personalisation_signal"], row, classification, copy_brief
     )
+    raw_company = compact(row.get("company_name"))
+    if raw_company and company != raw_company:
+        trigger = re.sub(re.escape(raw_company), company, trigger)
     asset = compact(copy_brief["email_asset_offer"]) or "checklist"
     cta = compact(copy_brief["email_cta"])
     problem = compact(copy_brief["email_problem_statement"])

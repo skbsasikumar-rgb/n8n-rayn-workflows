@@ -150,6 +150,26 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
 
+    def test_email_display_company_name_strips_legal_suffix_and_location(self):
+        self.assertEqual(
+            o.email_display_company_name({"company_name": "Mission (Hougang) Medical Clinic Pte Ltd"}),
+            "Mission Medical Clinic",
+        )
+        self.assertEqual(
+            o.email_display_company_name({"company_name": "Dr Panda Medical Centre @ Sin Ming"}),
+            "Dr Panda Medical Centre",
+        )
+        plan = o.plan_outreach(
+            {
+                "Id": 105,
+                "company_name": "Mission (Hougang) Medical Clinic Pte Ltd",
+                "best_url": "https://mission.example/",
+                "website_content": "Singapore medical clinic providing doctor consultations, appointment booking and patient treatment services.",
+            }
+        )
+        self.assertIn("Mission Medical Clinic", plan.emails["email_1"]["body"])
+        self.assertNotIn("Mission (Hougang) Medical Clinic Pte Ltd", plan.emails["email_1"]["body"])
+
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
         plan = o.plan_outreach(
             {
@@ -1319,7 +1339,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
         self.assertRegex(brief["email_problem_statement"], r"security proof|customer review|customers")
-        self.assertIn("Vendor Platform Pte Ltd works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
+        self.assertIn("Vendor Platform works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
         self.assertIn("admin access", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_3"]["body"])
@@ -1397,7 +1417,8 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
+        self.assertIn("Acme Services", plan.emails["email_1"]["body"])
+        self.assertNotIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
         self.assertFalse(plan.emails["email_2"]["body"].lower().startswith(("hi ", "hello ")))
         self.assertFalse(plan.emails["email_3"]["body"].lower().startswith(("hi ", "hello ")))
         self.assertFalse(plan.emails["email_4"]["body"].lower().startswith(("hi ", "hello ")))
