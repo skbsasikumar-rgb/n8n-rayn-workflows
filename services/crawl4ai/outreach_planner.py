@@ -2509,6 +2509,17 @@ def tiny_cta(asset: str) -> str:
     return "Worth sending the checklist?"
 
 
+def hia_email_1_cta(row: dict[str, Any], classification: dict[str, Any], asset: str) -> str:
+    options = {
+        "would_it_help": "Would it help if I sent the HIA readiness map?",
+        "want_map": "Want me to send the HIA readiness map?",
+        "should_send": "Should I send the HIA readiness map?",
+        "useful_send": "Useful if I sent the HIA readiness map?",
+    }
+    _, sentence = sentence_slot_choice(row, classification, 1, "hia_email_1_cta", options)
+    return sentence
+
+
 def listish_items(value: Any, limit: int = 6) -> list[str]:
     if value is None:
         return []
@@ -3683,7 +3694,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         trust_angle = "Patients and partners expect clear evidence that clinic systems and health information access are controlled."
         timeline = "HIA implementation is being phased in; do not use batch labels in prospect-facing email bodies."
         asset = segment_asset(row, classification, clinic_profile)
-        cta = f"Worth sending the {asset}?"
+        cta = hia_email_1_cta(row, classification, asset)
         problem = hia_problem_statement(row, classification, clinic_profile)
         mechanism = "Cyber Essentials is a decent first baseline for that cyber/data side."
         profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
