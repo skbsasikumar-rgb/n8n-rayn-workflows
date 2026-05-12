@@ -544,7 +544,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
                 email1_first = plan.emails["email_1"]["body"].splitlines()[0]
-                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at)")
+                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|for )")
                 self.assertNotIn("from the site", email1_first.lower())
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
@@ -1442,7 +1442,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Customers may ask", brief["customer_trust_angle"])
         self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
         self.assertRegex(brief["email_problem_statement"], r"security proof|customer review|customers")
-        self.assertIn("Vendor Platform works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
+        self.assertIn("works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
         self.assertIn("admin access", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("common customer security question", plan.emails["email_3"]["body"])

@@ -197,6 +197,8 @@ Rules:
 - Rewrite Email 1 only.
 - Keep the same greeting.
 - Keep the approved company hook, problem, mechanism, and CTA.
+- Prefer a question hook when the approved context is concrete.
+- Link paragraph 2 back to paragraph 1 with phrases like "that data", "that trail", or "that proof".
 - For HIA, mention HIA before Cyber Essentials. Ideally start paragraph 2 with the approved problem.
 - Mention Cyber Essentials only as a path, baseline, evidence map, or route. Do not say it equals HIA or PDPA compliance.
 - Use "We", not "RAYN".
@@ -1945,6 +1947,83 @@ def observation_after_greeting(observation: str) -> str:
     return text[:1].lower() + text[1:] if text else text
 
 
+def short_record_list(records: str, limit: int = 4) -> str:
+    parts = [compact(part) for part in re.split(r",| and ", records) if compact(part)]
+    return sentence_join(parts[:limit]) if parts else "records and systems"
+
+
+def hia_record_spread_list(records: str) -> str:
+    parts = [compact(part) for part in re.split(r",| and ", records) if compact(part)]
+    filtered = [part for part in parts if part.lower() not in {"patient records", "records"}]
+    return sentence_join((filtered or parts)[:4]) if (filtered or parts) else "clinic systems"
+
+
+def email_1_hook_context_strength(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    if search_context.get("used") and not generic_personalisation_signal(signal):
+        return "strong"
+    if email_context_website_weak(row, copy_brief, classification):
+        return "weak"
+    if generic_personalisation_signal(signal):
+        return "weak"
+    return "strong"
+
+
+def email_1_signal_description(copy_brief: dict[str, Any], fallback: str = "") -> str:
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    signal = re.sub(r"^[^.]{1,120}\s+(appears to be|appears to provide|appears to handle|works with|has)\s+", r"\1 ", signal, flags=re.I)
+    kind, description = observation_description(signal, "the organisation")
+    if kind == "provides":
+        return compact(f"a provider that provides {description}")
+    if kind == "handles":
+        return compact(f"an organisation handling {description}")
+    if description.lower().startswith("works with "):
+        return compact(f"a company that {description}")
+    if description.lower().startswith("has "):
+        return compact(description[4:])
+    return compact(description) or compact(fallback)
+
+
+def email_1_question_hook(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], company: str) -> str:
+    pressure = compact(classification.get("pressure_type"))
+    track = email_variant_track(classification)
+    company_name = compact(company) or "your organisation"
+    if pressure == "hia_regulatory":
+        records = hia_record_spread_list(hia_email_1_records(row, classification, copy_brief))
+        profile = email_1_signal_description(copy_brief, compact(copy_brief.get("clinic_profile_phrase")) or "healthcare provider")
+        return f"For {profile} like {company_name}, are patient records spread across {records}?"
+    if track == "customer_trust":
+        profile = email_1_signal_description(copy_brief, "a business with customer security reviews")
+        return f"For {profile} like {company_name}, do customer security reviews keep asking for the same proof around access, backups, updates and incidents?"
+    systems = compact(copy_brief.get("data_systems_likely"))
+    system_list = short_record_list(systems, 4) if systems else "email, shared folders, vendor tools and backups"
+    data_label = "personal data"
+    if track == "dpo_evidence":
+        data_label = "employee, vendor and operations data"
+    return f"Is {data_label} at {company_name} spread across {system_list}?"
+
+
+def email_1_careful_hook(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], company: str) -> str:
+    company_name = compact(company) or "your organisation"
+    pressure = compact(classification.get("pressure_type"))
+    if pressure == "hia_regulatory":
+        profile = email_1_signal_description(copy_brief, compact(copy_brief.get("clinic_profile_phrase")) or "healthcare provider")
+        return f"For {profile} like {company_name}, patient data may sit in more than one place."
+    if email_variant_track(classification) == "customer_trust":
+        profile = email_1_signal_description(copy_brief, "a business with customer security reviews")
+        return f"For {profile} like {company_name}, the practical issue may be keeping security proof ready before customers ask."
+    profile = email_1_signal_description(copy_brief, "an organisation handling personal data")
+    return f"For {profile} like {company_name}, the practical issue may be where personal data sits and who can show the proof."
+
+
+def email_1_first_sentence_override(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], company: str) -> tuple[str, str]:
+    strength = email_1_hook_context_strength(row, classification, copy_brief)
+    if strength == "strong":
+        return email_1_question_hook(row, classification, copy_brief, company), "question_strong_context"
+    return email_1_careful_hook(row, classification, copy_brief, company), "careful_weak_context"
+
+
 def build_email_1_chain(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -1998,7 +2077,9 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
     bridge = company_observation_bridge(company, noticed, slots.get("company_type_bridge") or "looks_like")
     company_name = compact(company) or "the organisation"
     kind, description = observation_description(noticed, company_name)
-    if opener.lower() == "looks like":
+    if compact(slots.get("first_sentence_override")):
+        observation = compact(slots.get("first_sentence_override"))
+    elif opener.lower() == "looks like":
         if kind == "be":
             observation = f"Looks like {company_name} is {description}."
         elif kind in {"provides", "handles"}:
@@ -2131,11 +2212,11 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
     }
     if track == "hia_regulatory":
         problem_options = {
-            "hia_messy_evidence": "With HIA starting from 2027, the practical issue is evidence: who can access health information, which vendors touch it, how backups work and who owns incident steps.",
-            "hia_getting_closer": "With HIA starting from 2027, the cyber/data-security side gets harder to leave informal: access, vendors, backups and incident ownership need evidence.",
-            "hia_prep_access_backup": "With HIA starting from 2027, the messy bit is usually proving who can access health information, where backups sit, which vendors touch it and what happens during an incident.",
-            "hia_readiness_evidence": "With HIA starting from 2027, the messy part is usually evidence: health information access, vendors, backups and incident steps.",
-            "hia_real_for_providers": "With HIA starting from 2027 for healthcare providers, the cleanup is usually around health information access, vendors, backups and incident ownership.",
+            "hia_messy_evidence": "With HIA starting from 2027, the practical issue is proving the trail around that data: who can access it, which vendors touch it, how backups work and who owns incident steps.",
+            "hia_getting_closer": "With HIA starting from 2027, that data trail gets harder to leave informal: access, vendors, backups and incident ownership need evidence.",
+            "hia_prep_access_backup": "With HIA starting from 2027, the messy bit is proving who can access that data, where backups sit, which vendors touch it and what happens during an incident.",
+            "hia_readiness_evidence": "With HIA starting from 2027, the messy part is usually evidence around that data: access, vendors, backups and incident steps.",
+            "hia_real_for_providers": "With HIA starting from 2027 for healthcare providers, the cleanup is usually around that data trail: access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
             "decent_cyber_data_baseline": "We help map that into a Cyber Essentials route for the HIA cyber/data-security side.",
@@ -2144,9 +2225,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
         }
     elif track == "dpo_evidence":
         problem_options = {
-            "proof_across_ops": "The tricky part is usually finding the proof across HR, IT, vendors and operations.",
-            "evidence_different_places": "The evidence usually sits in different places, which makes it painful to pull together.",
-            "intent_vs_proof": "The issue is usually not intent. It is finding the proof.",
+            "proof_across_ops": "The tricky part is usually finding the proof for that data across HR, IT, vendors and operations.",
+            "evidence_different_places": "That evidence usually sits in different places, which makes it painful to pull together.",
+            "intent_vs_proof": "The issue is usually not intent. It is proving the trail around that data.",
         }
         mechanism_options = {
             "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
@@ -2155,9 +2236,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
         }
     elif track == "customer_trust":
         problem_options = {
-            "rebuilding_security_proof": "The annoying part is usually rebuilding the same security proof for each customer review.",
+            "rebuilding_security_proof": "The annoying part is usually rebuilding that proof for each customer review.",
             "customer_same_proof": "Customers tend to ask for the same proof around access, backups, updates and incidents.",
-            "reusable_security_evidence": "The useful thing is having reusable security evidence before customers ask.",
+            "reusable_security_evidence": "The useful thing is having that proof ready before customers ask.",
         }
         mechanism_options = {
             "simple_security_baseline": "We help turn that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
@@ -2166,9 +2247,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
         }
     else:
         problem_options = {
-            "safeguards_not_policy": "PDPA is the legal responsibility. The hard part is usually proving safeguards, not writing another policy.",
-            "pdpa_evidence_not_policy": "PDPA is the legal responsibility. The useful bit is having evidence for the safeguards, not just a policy.",
-            "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how personal data is actually protected day to day.",
+            "safeguards_not_policy": "PDPA is the legal responsibility. The hard part is usually proving safeguards around that data, not writing another policy.",
+            "pdpa_evidence_not_policy": "PDPA is the legal responsibility. The useful bit is having evidence for those safeguards, not just a policy.",
+            "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how that data is protected day to day.",
         }
         mechanism_options = {
             "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
@@ -3957,6 +4038,9 @@ def generate_email_sequence(
         copy_brief["email_hook"] = problem
         copy_brief["email_problem_statement"] = problem
         copy_brief["email_mechanism_statement"] = mechanism
+        hook_override, hook_style = email_1_first_sentence_override(row, classification, copy_brief, company)
+        email1_slots["first_sentence_override"] = hook_override
+        copy_brief["email_1_hook_style"] = hook_style
         email1_body = email_1_body_fixed(email1_greeting, company, noticed, email1_slots, problem, mechanism, cta)
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
@@ -4304,6 +4388,16 @@ def reflects(text: str, phrase: str) -> bool:
     return bool(words) and sum(1 for word in words[:8] if word in text_l) >= min(3, len(words))
 
 
+def email_1_reflects_signal(body: str, signal: str, copy_brief: dict[str, Any]) -> bool:
+    if reflects(body, signal):
+        return True
+    if compact(copy_brief.get("email_1_hook_style")) in {"question_strong_context", "careful_weak_context"}:
+        first = compact(body.split("\n\n", 1)[0])
+        first = re.sub(r"^(hi [^,]{1,60},|hello team,)\s*", "", first, flags=re.I)
+        return bool((first and "?" in first) or first.lower().startswith(("looks like", "for ")))
+    return False
+
+
 def generic_personalisation_signal(signal: str) -> bool:
     signal_l = compact(signal).lower()
     if not signal_l:
@@ -4612,9 +4706,8 @@ def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) 
             profile_phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
             if profile_phrase:
                 position = body_l.find(profile_phrase)
-            if position < 0 and reflects(body_l, signal):
-                company = compact(copy_brief.get("company_name")).lower()
-                position = body_l.find(company) if company else 0
+            if position < 0 and email_1_reflects_signal(body, signal, copy_brief):
+                position = 0
         positions.append(position)
     if any(pos < 0 for pos in positions):
         return False
@@ -4654,7 +4747,7 @@ def evaluate_email_strategy(
     email4 = emails["email_4"]["body"]
     signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
 
-    if not signal or not reflects(email1, signal):
+    if not signal or not email_1_reflects_signal(email1, signal, copy_brief):
         flags.append("email_1_missing_specific_signal")
     if not compact(copy_brief.get("email_problem_statement")) or not reflects(email1, copy_brief["email_problem_statement"]):
         flags.append("email_1_missing_problem_statement")
@@ -4784,7 +4877,7 @@ def quality_gate(
                 flags.append(f"missing_copy_brief:{field}")
         email1_body = emails["email_1"]["body"]
         prospect_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
-        if prospect_signal and not reflects(email1_body, prospect_signal):
+        if prospect_signal and not email_1_reflects_signal(email1_body, prospect_signal, copy_brief):
             flags.append("email_1_missing_specific_signal")
         if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")):
             flags.append("generic_personalisation_signal")
