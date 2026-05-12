@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from unittest.mock import patch
 
@@ -150,6 +151,90 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("HIA starting from 2027", plan.emails["context_email_1"]["pressure_bridge"])
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
+
+    def test_thin_not_ready_row_uses_serper_before_classification(self):
+        original_fetch = o.fetch_serper_company_context
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+
+        def fake_fetch(row, classification, limit=5):
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": '"Mirxes" Singapore healthcare clinic services locations',
+                "evidence": [
+                    {
+                        "title": "MiRXES cancer early detection tests",
+                        "link": "https://www.mirxes.com/",
+                        "snippet": "MiRXES provides cancer early detection, diagnostic testing and clinical laboratory services for healthcare providers.",
+                    }
+                ],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 106,
+                    "company_name": "Mirxes",
+                    "best_url": "https://www.mirxes.com/",
+                    "website_content": "# Mirxes - Home A NEW DAWN - In Disease Early Interception.",
+                    "validated_email": "info@mirxes.example",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original_fetch
+            if original_key is None:
+                os.environ.pop("SERPER_API_KEY", None)
+            else:
+                os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "diagnostic")
+        self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
+
+    def test_thin_social_service_row_uses_serper_for_pdpa_track(self):
+        original_fetch = o.fetch_serper_company_context
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+
+        def fake_fetch(row, classification, limit=5):
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": '"Montfort Care" Singapore services personal data operations',
+                "evidence": [
+                    {
+                        "title": "Montfort Care community services",
+                        "link": "https://montfortcare.org.sg/",
+                        "snippet": "Montfort Care is a social service agency supporting individuals, families, beneficiaries and community programmes.",
+                    }
+                ],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 107,
+                    "company_name": "Montfort Care",
+                    "best_url": "https://montfortcare.org.sg/",
+                    "website_content": "Montfort Care is a network of community-based services.",
+                    "validated_email": "hello@montfort.example",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original_fetch
+            if original_key is None:
+                os.environ.pop("SERPER_API_KEY", None)
+            else:
+                os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertIn("PDPA", plan.emails["email_1"]["body"])
 
     def test_email_display_company_name_strips_legal_suffix_and_location(self):
         self.assertEqual(
@@ -1145,6 +1230,20 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("oncology", first_sentence.lower())
         self.assertNotIn("eye care", first_sentence.lower())
         self.assertNotIn("pharmacy / compounding provider", first_sentence.lower())
+
+    def test_ivf_fertility_clinic_is_hia_specialist_service(self):
+        row = {
+            "company_name": "Monash IVF Singapore",
+            "website_content": "Monash IVF Singapore is a fertility specialist clinic and treatment centre offering IVF, fertility treatments, appointments and patient consultations.",
+            "validated_email": "team@example.com",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        patch = o.plan_and_patch(row, programmes=[verified_program()])["patch"]
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertIn("fertility", plan.copy_brief["clinic_profile_phrase"].lower())
+        self.assertNotIn("no_hia_service_evidence", patch["automation_blockers_json"])
 
     def test_family_clinic_evidence_overrides_weak_long_term_care_terms(self):
         row = {

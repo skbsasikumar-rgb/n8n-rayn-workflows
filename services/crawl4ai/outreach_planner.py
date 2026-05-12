@@ -273,6 +273,8 @@ HEALTHCARE_TERMS = (
     "patient",
     "health screening",
     "treatment",
+    "fertility",
+    "ivf",
 )
 AMBIGUOUS_HIA_TERMS = (
     "aesthetic",
@@ -309,6 +311,10 @@ SPECIALIST_SERVICE_TERMS = (
     "cancer centre",
     "cancer center",
     "cancer care",
+    "fertility",
+    "ivf",
+    "assisted reproduction",
+    "reproductive medicine",
     "oncology",
     "radiation",
     "endocrinology",
@@ -403,6 +409,13 @@ PERSONAL_DATA_TERMS = (
     "contact form",
     "newsletter",
     "registration",
+    "course",
+    "courses",
+    "class",
+    "classes",
+    "parenting",
+    "parents",
+    "families",
     "payment",
 )
 SENSITIVE_TERMS = ("patient", "health", "medical", "resident", "beneficiary", "student", "financial")
@@ -1018,6 +1031,7 @@ def lower_blob(row: dict[str, Any]) -> str:
         row.get("contact_info_detected", ""),
         row.get("structured_data_detected", ""),
         row.get("notes", ""),
+        row.get("_serper_context_text", ""),
         row.get("selected_contact_title", ""),
         row.get("selected_contact_role", ""),
     ]
@@ -1155,6 +1169,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             row.get("company_name"),
             row.get("company_homepage_name"),
             compact(row.get("website_content"))[:1800],
+            compact(row.get("_serper_context_text"))[:1200],
             compact(row.get("services_detected"))[:900],
         )
         if value
@@ -1185,6 +1200,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "cancer centre",
             "cancer center",
             "cancer care",
+            "fertility",
+            "ivf",
+            "assisted reproduction",
+            "reproductive medicine",
             "oncology",
             "orthopaedic",
             "endocrinology",
@@ -1203,6 +1222,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "cancer centre",
             "cancer center",
             "cancer",
+            "fertility",
+            "ivf",
+            "reproductive",
             "oncology",
             "dermatology",
             "orthopaedic",
@@ -1230,8 +1252,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
     elif "assisted reproduction" in text or "ivf" in text or ("fertility" in text and not has_family_clinic_evidence(row, text)):
-        service = "unknown"
-        batch_override = "Batch 3 - Mar 2030"
+        service = "specialist_OMS"
     elif any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
         service = "specialist_OMS"
     elif any(term in text for term in ("national neuroscience institute", "neuroscience institute", "neurology", "neurosurgery", "neuroscience")):
@@ -1587,6 +1608,8 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     trigger_confidence = "medium" if entity["entity_type_confidence"] in {"medium", "high"} else "low"
     if hia["hia_confidence"] == "high":
         trigger_confidence = "high"
+    elif pressure_type in {"pdpa_safeguards", "customer_trust"} and personal_intensity in {"medium", "high"}:
+        trigger_confidence = "medium"
 
     certification_score = 82 if recommended_first_cert == "Cyber Essentials" and pressure_type != "not_ready" else 40
     return {
@@ -2751,6 +2774,64 @@ def fetch_serper_company_context(row: dict[str, Any], classification: dict[str, 
     return {"source": "serper", "used": bool(evidence), "reason": "ok" if evidence else "no_results", "query": query, "evidence": evidence}
 
 
+def preclassification_serper_pressure(row: dict[str, Any]) -> str:
+    text = lower_blob(row)
+    company = compact(row.get("company_name")).lower()
+    if contains_any(
+        f"{company} {text}",
+        (
+            "clinic",
+            "medical",
+            "health",
+            "healthcare",
+            "patient",
+            "diagnostic",
+            "screening",
+            "disease",
+            "ivf",
+            "fertility",
+            "kidney",
+            "renal",
+            "prenatal",
+            "postnatal",
+            "lactation",
+        ),
+    ):
+        return "hia_regulatory"
+    if contains_any(f"{company} {text}", (*NPO_TERMS, *SOCIAL_TERMS, "classes", "courses", "families", "parents")):
+        return "pdpa_safeguards"
+    return "pdpa_safeguards"
+
+
+def serper_context_text(search_context: dict[str, Any]) -> str:
+    evidence = search_context.get("evidence") if isinstance(search_context, dict) else []
+    parts: list[str] = []
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict):
+            continue
+        line = compact(f"{item.get('title', '')} {item.get('snippet', '')}")
+        if line:
+            parts.append(line)
+    return " ".join(parts)
+
+
+def add_preclassification_company_context(row: dict[str, Any]) -> dict[str, Any]:
+    website_text = compact(row.get("website_content") or row.get("website_scrape") or row.get("crawl_text"))
+    if len(website_text) >= 450 or not serper_context_enabled():
+        return row
+    provisional = {"pressure_type": preclassification_serper_pressure(row)}
+    search_context = fetch_serper_company_context(row, provisional)
+    if not search_context.get("used"):
+        return row
+    context_text = serper_context_text(search_context)
+    if not context_text:
+        return row
+    augmented = dict(row)
+    augmented["_preclassification_company_context"] = search_context
+    augmented["_serper_context_text"] = context_text
+    return augmented
+
+
 def serper_context_observation(row: dict[str, Any], classification: dict[str, Any], search_context: dict[str, Any]) -> str:
     company = email_display_company_name(row)
     evidence = search_context.get("evidence") if isinstance(search_context, dict) else []
@@ -2766,7 +2847,7 @@ def serper_context_observation(row: dict[str, Any], classification: dict[str, An
             return f"{company} operates a multi-location or group healthcare operation."
         if any(term in text for term in ("medical clinic", "gp clinic", "general practitioner", "doctor")):
             return f"{company} provides GP or medical-clinic services."
-        if any(term in text for term in ("specialist", "cardiology", "surgery", "dental", "dermatology", "oncology", "orthopaedic")):
+        if any(term in text for term in ("specialist", "cardiology", "surgery", "dental", "dermatology", "oncology", "orthopaedic", "fertility", "ivf")):
             return f"{company} provides specialist healthcare services."
         if any(term in text for term in ("health screening", "diagnostic", "laboratory", "imaging")):
             return f"{company} handles screening or diagnostic healthcare workflows."
@@ -2787,7 +2868,11 @@ def apply_company_context_search(row: dict[str, Any], classification: dict[str, 
     if not email_context_website_weak(row, copy_brief, classification):
         copy_brief["company_context_search"] = {"source": "website_content", "used": False, "reason": "website_context_strong", "evidence": []}
         return copy_brief
-    search_context = fetch_serper_company_context(row, classification)
+    preclassification_context = row.get("_preclassification_company_context")
+    if isinstance(preclassification_context, dict) and preclassification_context.get("used"):
+        search_context = preclassification_context
+    else:
+        search_context = fetch_serper_company_context(row, classification)
     copy_brief["company_context_search"] = search_context
     observation = serper_context_observation(row, classification, search_context)
     local_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
@@ -2961,8 +3046,10 @@ def prospect_facing_signal(signal: str, row: dict[str, Any], classification: dic
         return "your website lists psychology / mental-health services and assessment support."
     if service_type == "diagnostic" or "screening/diagnostic" in signal_l:
         return "your website lists laboratory / diagnostic services."
-    if service_type == "specialist_oms" and specialist_subtype(text) == "cardiology":
-        return "your website lists heart/cardiology consultations and specialist-led care."
+        if service_type == "specialist_oms" and specialist_subtype(text) == "cardiology":
+            return "your website lists heart/cardiology consultations and specialist-led care."
+    if service_type == "specialist_oms" and specialist_subtype(text) == "fertility":
+        return "your website lists fertility / IVF specialist consultations and treatment services."
     if service_type == "specialist_oms" and specialist_subtype(text) == "pain":
         return "your website lists pain management consultations and procedure-related care."
     if service_type == "specialist_oms" and specialist_subtype(text) == "surgery":
@@ -3062,6 +3149,7 @@ def email_contains_hia_batch_wording(body: str) -> bool:
 SPECIALIST_SERVICE_SUMMARIES = (
     (("heart clinic", "heart centre", "heart center", "heart & vascular", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram"), "heart/cardiology care"),
     (("pain management", "spine pain", "pain clinic", "anaesthesia", "injections"), "pain management care"),
+    (("fertility", "ivf", "assisted reproduction", "reproductive medicine"), "fertility / IVF care"),
     (("cancer centre", "cancer center", "cancer care", "oncology", "radiation"), "oncology / radiation care"),
     (("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic"), "eye care"),
     (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
@@ -3079,6 +3167,8 @@ SPECIALIST_SERVICE_SUMMARIES = (
 def specialist_subtype(text: str) -> str:
     if any(term in text for term in ("neuroscience", "neurology", "neurosurgery")):
         return "neuroscience"
+    if any(term in text for term in ("fertility", "ivf", "assisted reproduction", "reproductive medicine")):
+        return "fertility"
     if any(term in text for term in ("digestive", "gastroenterology")):
         return "gastroenterology"
     if any(term in text for term in ("endocrinology", "endocrinologist", "diabetes", "thyroid")):
@@ -3381,6 +3471,7 @@ def prospect_facing_profile_phrase(
         subtype = specialist_subtype(lower_blob(row))
         subtype_phrases = {
             "cardiology": "a specialist-led heart/cardiology clinic",
+            "fertility": "a fertility / IVF specialist clinic",
             "pain": "a specialist-led pain management clinic",
             "surgery": "a specialist-led surgical clinic",
             "dermatology": "a specialist-led dermatology clinic",
@@ -3426,6 +3517,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
         subtype = specialist_subtype(text)
         if subtype == "cardiology":
             return "consultation notes, cardiac test reports, referrals, appointment details and vendor systems"
+        if subtype == "fertility":
+            return "fertility treatment records, appointment details, lab/report data, consent forms and vendor systems"
         if subtype == "pain":
             return "assessment notes, treatment plans, procedure-related records, appointment details and vendor systems"
         if subtype == "surgery":
@@ -3784,6 +3877,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         elif service_type == "specialist_OMS":
             subtype_systems = {
                 "cardiology": "consultation notes, cardiac test reports, referrals, appointment details, vendor systems, backups and incident-reporting steps.",
+                "fertility": "fertility treatment records, appointment details, lab/report data, consent forms, vendor systems, backups and incident-reporting steps.",
                 "pain": "assessment notes, treatment plans, procedure-related records, appointment details, vendor systems, backups and incident-reporting steps.",
                 "surgery": "consultation notes, consent forms, procedure records, follow-up notes, vendor systems, backups and incident-reporting steps.",
                 "dermatology": "skin consultation notes, treatment records, appointment details, clinical images where used, vendor systems, backups and incident-reporting steps.",
@@ -4489,11 +4583,13 @@ def clinic_profile_too_generic(copy_brief: dict[str, Any]) -> bool:
 
 def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> bool:
     phrase = compact(copy_brief.get("clinic_profile_phrase"))
+    body_l = compact(body).lower()
+    if re.search(r"\bfor\s+.{4,120}\s+like\s+.{2,80},\s+are patient records spread across\b", body_l):
+        return False
     if not phrase:
         return True
     if reflects(body, phrase):
         return False
-    body_l = compact(body).lower()
     profile_guess = compact(copy_brief.get("clinic_profile_guess")).lower()
     equivalents = {
         "solo_gp": ("gp", "family clinic", "medical-clinic", "medical clinic", "doctor-led", "outpatient"),
@@ -5097,6 +5193,7 @@ def infer_decision_maker_role(row: dict[str, Any]) -> str:
 
 
 def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> OutreachPlan:
+    row = add_preclassification_company_context(row)
     classification = classify_row(row)
     funding = match_programmes({**row, **classification}, programmes=programmes)
     copy_brief = build_copy_brief(row, classification, funding)
