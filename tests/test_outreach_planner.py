@@ -1,5 +1,6 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from services.crawl4ai.funding_programs import FundingMatch, FundingProgram
 from services.crawl4ai import outreach_planner as o
@@ -372,6 +373,99 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("variant_metadata", patch)
         for index in range(1, 5):
             self.assertNotIn(f"email_{index}_variant_id", patch)
+
+    def test_email_1_llm_rewrite_can_replace_deterministic_copy_when_qa_passes(self):
+        captured = {}
+
+        def fake_rewrite(payload):
+            captured.update(payload)
+            return {
+                "subject": payload["deterministic_subject"],
+                "body": (
+                    "Hi Ivan, saw that Example Medical Clinic is a family clinic offering GP-style consultations.\n\n"
+                    f"{payload['approved_problem']}\n\n"
+                    f"{payload['approved_mechanism']}\n\n"
+                    f"{payload['approved_cta']}"
+                ),
+                "notes": ["kept approved facts"],
+            }
+
+        with patch.object(o, "email_1_llm_rewrite_enabled", return_value=True), patch.object(o, "call_email_1_rewrite_llm", side_effect=fake_rewrite):
+            plan = o.plan_outreach(
+                {
+                    "Id": 901,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
+        self.assertIn("llm_email_1_rewrite_used", plan.quality_flags)
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan, saw that"))
+        self.assertIn("approved_problem", captured)
+
+    def test_email_1_llm_rewrite_rejects_one_paragraph_output(self):
+        def one_paragraph(payload):
+            return {
+                "subject": payload["deterministic_subject"],
+                "body": (
+                    "Hi Ivan, saw that Example Medical Clinic is a family clinic offering GP-style consultations. "
+                    f"{payload['approved_problem']} {payload['approved_mechanism']} {payload['approved_cta']}"
+                ),
+                "notes": [],
+            }
+
+        with patch.object(o, "email_1_llm_rewrite_enabled", return_value=True), patch.object(o, "call_email_1_rewrite_llm", side_effect=one_paragraph):
+            plan = o.plan_outreach(
+                {
+                    "Id": 903,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertFalse(plan.emails["llm_email_1_rewrite"]["used"])
+        self.assertIn("llm_email_1_rewrite_paragraph_shape", plan.emails["llm_email_1_rewrite"]["flags"])
+
+    def test_email_1_llm_rewrite_falls_back_when_qa_rejects(self):
+        def bad_rewrite(_payload):
+            return {
+                "subject": "growth",
+                "body": "Hi Ivan, we can unlock potential and transform your security.",
+                "notes": [],
+            }
+
+        with patch.object(o, "email_1_llm_rewrite_enabled", return_value=True), patch.object(o, "call_email_1_rewrite_llm", side_effect=bad_rewrite):
+            plan = o.plan_outreach(
+                {
+                    "Id": 902,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertFalse(plan.emails["llm_email_1_rewrite"]["used"])
+        self.assertIn("qa_rejected", plan.emails["llm_email_1_rewrite"]["reason"])
+        self.assertNotIn("unlock potential", plan.emails["email_1"]["body"].lower())
+        self.assertTrue(any(flag.startswith("llm_email_1_rewrite_rejected:") for flag in plan.quality_flags))
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):

@@ -367,6 +367,11 @@ class OutreachPlanRequest(BaseModel):
     unsubscribe_status: Any = "active"
     draft_only: bool = False
     copy_qa_mode: bool = False
+    use_llm_humaniser: bool = False
+    use_llm_humanizer: bool = False
+    use_llm_email_1: bool = False
+    openrouter_allowed: bool = False
+    skip_openrouter: bool = True
     hia_llm_review: Any = Field(default_factory=dict)
 
 
