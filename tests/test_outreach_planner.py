@@ -450,7 +450,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
                 email1_first = plan.emails["email_1"]["body"].splitlines()[0]
-                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|from the site,)")
+                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at)")
+                self.assertNotIn("from the site", email1_first.lower())
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
                 elif o.hia_pricing_active(plan.classification, plan.copy_brief):
@@ -1056,6 +1057,14 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertNotIn("before anyone spends time", body)
 
+    def test_email_2_named_followup_lowercases_after_dash(self):
+        funding = o.funding_email_2_body_fixed("Samuel - ", "Based on the company profile, the Cyber Essentials support route appears worth checking.", "")
+        fallback = o.value_fallback_body_fixed("Samuel - ", "safeguards checklist")
+        pricing = o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False)
+        self.assertTrue(funding.startswith("Samuel - based"))
+        self.assertTrue(fallback.startswith("Samuel - a simple first pass"))
+        self.assertTrue(pricing.startswith("Samuel - straight up"))
+
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
             {
@@ -1624,6 +1633,15 @@ class OutreachPlannerTests(unittest.TestCase):
                 "pharmacy / compounding provider",
                 "prescription, dispensing, compounding, customer and supplier records",
                 "pharmacy HIA checklist",
+            ),
+            (
+                {
+                    "company_name": "National Neuroscience Institute",
+                    "website_content": "National Neuroscience Institute provides neurology, neurosurgery and neuroscience care. Patient appointments, specialist reports, pharmacy support and clinical records are handled across services.",
+                },
+                "specialist-led neuroscience provider",
+                "consultation notes, patient reports, treatment records, vendor systems and backups",
+                "specialist clinic readiness map",
             ),
             (
                 {

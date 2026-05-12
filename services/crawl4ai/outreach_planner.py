@@ -929,6 +929,13 @@ def followup_name_prefix(row: dict[str, Any], separator: str = "-") -> str:
     return f"{first} {separator} "
 
 
+def followup_sentence(prefix: str, sentence: str) -> str:
+    text = compact(sentence)
+    if prefix.endswith("- ") and text:
+        text = text[:1].lower() + text[1:]
+    return f"{prefix}{text}"
+
+
 def company_team_greeting(company: str | None = None) -> str:
     company_name = compact(company)
     if company_name and company_name != "your organisation":
@@ -1129,6 +1136,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "oncology",
             "orthopaedic",
             "endocrinology",
+            "neurology",
+            "neurosurgery",
+            "neuroscience",
         )
     )
     specialist_name_evidence = any(
@@ -1146,6 +1156,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "lung",
             "surgery",
             "surgeon",
+            "neurology",
+            "neurosurgery",
+            "neuroscience",
         )
     )
     if primary_dental:
@@ -1164,6 +1177,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "assisted reproduction" in text or "ivf" in text or ("fertility" in text and not has_family_clinic_evidence(row, text)):
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
+    elif any(term in text for term in ("national neuroscience institute", "neuroscience institute", "neurology", "neurosurgery", "neuroscience")):
+        service = "specialist_OMS"
     elif "pharmacy" in text:
         service = "retail_pharmacy"
     elif has_hearing_care_evidence(text) or "audiology" in text:
@@ -1955,19 +1970,20 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
             observation = f"Had a quick look at {company_name} - looks like it {description}."
     elif opener.lower() == "from the site, it looks like":
         if kind == "be":
-            observation = f"From the site, it looks like {company_name} is {description}."
+            observation = f"Looks like {company_name} is {description}."
         elif kind in {"provides", "handles"}:
-            observation = f"From the site, {company_name} {kind} {description}."
+            observation = f"Looks like {company_name} {kind} {description}."
         else:
-            observation = f"From the site, {company_name} {description}."
+            observation = f"Looks like {company_name} {description}."
     else:
         observation = f"{opener} {bridge}"
     return f"{greeting} {observation_after_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
+    first_line = followup_sentence(prefix, f"{funding_line}{caveat}")
     return (
-        f"{prefix}{funding_line}{caveat}\n\n"
+        f"{first_line}\n\n"
         "The useful first step is to check the route before lining up readiness work.\n\n"
         "Should I send the route summary?"
     )
@@ -1989,22 +2005,24 @@ def hia_pricing_email_2_body(
     value_line = slots.get("rayn_value_line") or "We handle the messy evidence work. The software helps keep training and governance tidy after certification."
     cta = slots.get("cta") or "Worth doing a quick endpoint check?"
     if pricing_mode == "small_clinic_starting_price":
+        first_line = followup_sentence(prefix, f"{cost_opener} {small_price}{funding_sentence}")
         return (
-            f"{prefix}{cost_opener} {small_price}"
-            f"{funding_sentence}\n\n"
+            f"{first_line}\n\n"
             f"{value_line}\n\n"
             f"{cta}"
         )
     if pricing_mode == "group_or_larger_sizing_needed":
+        first_line = followup_sentence(prefix, f"{cost_opener} {endpoint_caveat}")
         return (
-            f"{prefix}{cost_opener} {endpoint_caveat}\n\n"
+            f"{first_line}\n\n"
             f"{group_line}"
             f"{funding_sentence}\n\n"
             f"{value_line}\n\n"
             f"{cta}"
         )
+    first_line = followup_sentence(prefix, f"{cost_opener} {endpoint_caveat}")
     return (
-        f"{prefix}{cost_opener} {endpoint_caveat}\n\n"
+        f"{first_line}\n\n"
         f"{small_price} {group_line}"
         f"{funding_sentence}\n\n"
         f"{value_line}\n\n"
@@ -2017,8 +2035,9 @@ def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str
     evidence_line = slots.get("evidence_line") or "A simple first pass is to check what evidence already exists: access lists, backups, updates, malware controls and incident contacts."
     second_line = slots.get("second_line") or "If those are already in decent shape, Cyber Essentials is usually a cleaner job."
     cta = slots.get("cta") or f"Worth sending the {asset_name}?"
+    first_line = followup_sentence(prefix, evidence_line)
     return (
-        f"{prefix}{evidence_line}\n\n"
+        f"{first_line}\n\n"
         f"{second_line}\n\n"
         f"{cta}"
     )
@@ -2059,7 +2078,6 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
         "saw_that": "Saw that",
         "looks_like": "Looks like",
         "had_quick_look": "Had a quick look at",
-        "from_site": "From the site, it looks like",
     }
     company_type_bridge_options = {
         "looks_like": "looks_like",
@@ -2901,6 +2919,8 @@ SPECIALIST_SERVICE_SUMMARIES = (
 
 
 def specialist_subtype(text: str) -> str:
+    if any(term in text for term in ("neuroscience", "neurology", "neurosurgery")):
+        return "neuroscience"
     if any(term in text for term in ("digestive", "gastroenterology")):
         return "gastroenterology"
     if any(term in text for term in ("endocrinology", "endocrinologist", "diabetes", "thyroid")):
@@ -3055,6 +3075,17 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     has_gp = any(term in source_l for term in ("family clinic", "family medicine", "general practitioner", " gp ", "outpatient", "doctor-led", "medical clinic"))
     has_diagnostic = any(term in source_l for term in ("diagnostic", "screening", "laboratory", " lab ", "radiology", "nuclear medicine", "test reports"))
     has_strong_lab = any(term in source_l for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "radiology", "nuclear medicine", "test reports", "lab test"))
+    has_neuro_institute = any(
+        term in source_l
+        for term in (
+            "national neuroscience institute",
+            "neuroscience institute",
+            "neuroscience",
+            "neurology",
+            "neurosurgery",
+            "brain, spine and nerve",
+        )
+    )
 
     if service_type == "diagnostic":
         guess = "diagnostic_lab"
@@ -3064,6 +3095,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     ):
         guess = "dental"
         add_evidence("dental terms")
+    elif has_neuro_institute:
+        guess = "specialist_led"
+        add_evidence("neuroscience or neurology specialist terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
         guess = "pharmacy"
         add_evidence("pharmacy or compounding terms")
@@ -3189,6 +3223,7 @@ def prospect_facing_profile_phrase(
             "rheumatology": "a specialist-led rheumatology clinic",
             "endocrinology": "a specialist-led endocrinology clinic",
             "orthopaedic": "a specialist-led orthopaedic / sports medicine clinic",
+            "neuroscience": "a specialist-led neuroscience provider",
         }
         if subtype in subtype_phrases:
             return subtype_phrases[subtype]
