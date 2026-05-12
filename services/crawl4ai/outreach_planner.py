@@ -306,6 +306,9 @@ HIA_BATCH_BY_SERVICE = {
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
 SPECIALIST_SERVICE_TERMS = (
+    "cancer centre",
+    "cancer center",
+    "cancer care",
     "oncology",
     "radiation",
     "endocrinology",
@@ -1179,6 +1182,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "ophthalmology",
             "dermatology",
             "rheumatology",
+            "cancer centre",
+            "cancer center",
+            "cancer care",
             "oncology",
             "orthopaedic",
             "endocrinology",
@@ -1194,6 +1200,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "gastroenterology",
             "endocrinology",
             "rheumatology",
+            "cancer centre",
+            "cancer center",
+            "cancer",
             "oncology",
             "dermatology",
             "orthopaedic",
@@ -1223,6 +1232,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "assisted reproduction" in text or "ivf" in text or ("fertility" in text and not has_family_clinic_evidence(row, text)):
         service = "unknown"
         batch_override = "Batch 3 - Mar 2030"
+    elif any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
+        service = "specialist_OMS"
     elif any(term in text for term in ("national neuroscience institute", "neuroscience institute", "neurology", "neurosurgery", "neuroscience")):
         service = "specialist_OMS"
     elif "pharmacy" in text:
@@ -1972,12 +1983,23 @@ def email_1_hook_context_strength(row: dict[str, Any], classification: dict[str,
 
 def email_1_signal_description(copy_brief: dict[str, Any], fallback: str = "") -> str:
     signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
-    signal = re.sub(r"^[^.]{1,120}\s+(appears to be|appears to provide|appears to handle|works with|has)\s+", r"\1 ", signal, flags=re.I)
+    signal = re.sub(
+        r"^[^.]{1,120}\s+(appears to be|appears to provide|appears to handle|operates|handles|provides|works with|has)\s+",
+        r"\1 ",
+        signal,
+        flags=re.I,
+    )
     kind, description = observation_description(signal, "the organisation")
     if kind == "provides":
         return compact(f"a provider that provides {description}")
     if kind == "handles":
         return compact(f"an organisation handling {description}")
+    if description.lower().startswith("operates "):
+        return compact(description[9:])
+    if description.lower().startswith("handles "):
+        return compact(f"an organisation handling {description[8:]}")
+    if description.lower().startswith("provides "):
+        return compact(f"a provider that provides {description[9:]}")
     if description.lower().startswith("works with "):
         return compact(f"a company that {description}")
     if description.lower().startswith("has "):
@@ -3040,10 +3062,10 @@ def email_contains_hia_batch_wording(body: str) -> bool:
 SPECIALIST_SERVICE_SUMMARIES = (
     (("heart clinic", "heart centre", "heart center", "heart & vascular", "cardiology", "cardiac", "cardiovascular", "ecg", "echocardiogram"), "heart/cardiology care"),
     (("pain management", "spine pain", "pain clinic", "anaesthesia", "injections"), "pain management care"),
+    (("cancer centre", "cancer center", "cancer care", "oncology", "radiation"), "oncology / radiation care"),
     (("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic"), "eye care"),
     (("digestive", "gastroenterology", "colon", "liver", "gallbladder"), "gastroenterology / digestive care"),
     (("rheumatology", "rheumatologist", "arthritis", "lupus"), "rheumatology care"),
-    (("oncology", "radiation"), "oncology / radiation care"),
     (("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser"), "dermatology care"),
     (("endocrinology", "diabetes", "thyroid"), "endocrinology care"),
     (("orthopaedic", "orthopedic", "sports"), "orthopaedic / sports medicine"),
@@ -3065,7 +3087,7 @@ def specialist_subtype(text: str) -> str:
         return "rheumatology"
     if any(term in text[:700] for term in ("surgery", "surgeon", "surgical", "thoracic")):
         return "surgery"
-    if any(term in text for term in ("oncology", "radiation")):
+    if any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
         return "oncology"
     if has_cardiology_subtype(text):
         return "cardiology"
@@ -3180,10 +3202,14 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
 
     has_aesthetic = any(term in source_l for term in ("aesthetic", "medical aesthetics", "injectable"))
     primary_aesthetic = "aesthetic" in company.lower() or any(term in primary_source_l[:700] for term in ("aesthetic", "medical aesthetics", "injectable"))
+    has_cancer_centre = any(term in source_l for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation"))
     has_specialist = has_cardiology_subtype(primary_source_l) or any(
         term in primary_source_l
         for term in (
             "gastroenterology",
+            "cancer centre",
+            "cancer center",
+            "cancer care",
             "oncology",
             "dermatology",
             "dermatologist",
@@ -3234,6 +3260,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif has_neuro_institute:
         guess = "specialist_led"
         add_evidence("neuroscience or neurology specialist terms")
+    elif has_cancer_centre:
+        guess = "specialist_led"
+        add_evidence("cancer, oncology or radiation specialist terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
         guess = "pharmacy"
         add_evidence("pharmacy or compounding terms")

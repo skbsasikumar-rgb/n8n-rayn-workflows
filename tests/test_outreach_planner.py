@@ -993,6 +993,26 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("llm_email_strategy_rejected:email_1_too_generic", patch["email_quality_flags"])
         self.assertNotIn("email_2_not_funding_only", patch["email_quality_flags"])
 
+    def test_hia_question_hook_strips_company_prefixed_operates_signal(self):
+        row = {
+            "company_name": "Mother and Child Singapore",
+            "website_content": "Women's and children's clinic in Singapore with patient appointments and consultations.",
+        }
+        classification = {
+            "pressure_type": "hia_regulatory",
+            "regulatory_driver": "HIA",
+            "hia_relevant": True,
+            "hia_service_type_guess": "GP_OMS",
+        }
+        copy_brief = {
+            "prospect_facing_signal": "Mother and Child Singapore operates a multi-location or group healthcare operation",
+            "clinic_profile_phrase": "multi-location or group healthcare operation",
+        }
+        first_sentence = o.email_1_question_hook(row, classification, copy_brief, row["company_name"])
+
+        self.assertIn("For a multi-location or group healthcare operation like Mother and Child Singapore", first_sentence)
+        self.assertNotIn("for Mother and Child Singapore operates", first_sentence.lower())
+
     def test_hia_email_3_wrong_segment_shape_falls_back_to_deterministic_strategy(self):
         row = {
             "Id": 48,
@@ -1110,6 +1130,21 @@ class OutreachPlannerTests(unittest.TestCase):
         ortho_records = o.hia_email_1_records(orthopaedic, ortho_plan.classification, ortho_plan.copy_brief)
         self.assertIn("orthopaedic consultation notes", ortho_records)
         self.assertIn(ortho_records, ortho_plan.emails["email_3"]["body"])
+
+    def test_cancer_centre_stays_specialist_when_pharmacy_terms_appear(self):
+        row = {
+            "company_name": "National Cancer Centre Singapore",
+            "website_content": "National Cancer Centre Singapore provides cancer care, oncology consultations and radiation treatment. The site also mentions pharmacy support, dispensing and eye clinic referrals.",
+            "validated_email": "team@example.com",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        first_sentence = plan.emails["email_1"]["body"].split("\n\n", 1)[0]
+
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(plan.copy_brief["clinic_profile_guess"], "specialist_led")
+        self.assertIn("oncology", first_sentence.lower())
+        self.assertNotIn("eye care", first_sentence.lower())
+        self.assertNotIn("pharmacy / compounding provider", first_sentence.lower())
 
     def test_family_clinic_evidence_overrides_weak_long_term_care_terms(self):
         row = {
