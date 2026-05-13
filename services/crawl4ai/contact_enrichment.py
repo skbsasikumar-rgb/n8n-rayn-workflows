@@ -3155,6 +3155,59 @@ def decision_maker_followup(
     return None, result.email_candidates or email_candidates, result.email_validation_evidence or email_validation_evidence
 
 
+def remember_early_domain_fallback(
+    payload: dict[str, Any],
+    email_candidates: list[dict[str, Any]],
+    email_validation_evidence: dict[str, Any],
+) -> None:
+    payload["_early_domain_fallback_checked"] = True
+    payload["_early_domain_fallback_email_candidates"] = email_candidates
+    payload["_early_domain_fallback_evidence"] = email_validation_evidence
+
+
+def reuse_early_domain_fallback_result(
+    payload: dict[str, Any],
+    contact_candidates: list[dict[str, Any]],
+    contact_search_evidence: dict[str, Any],
+    email_candidates: list[dict[str, Any]],
+    email_validation_evidence: dict[str, Any],
+    fallback_reason: str,
+    first_attempted_candidate: ContactCandidate | None = None,
+) -> ContactResult | None:
+    if not payload.get("_early_domain_fallback_checked"):
+        return None
+    early_candidates = payload.get("_early_domain_fallback_email_candidates")
+    early_evidence = payload.get("_early_domain_fallback_evidence")
+    merged_email_candidates = [
+        *(email_candidates if isinstance(email_candidates, list) else []),
+        *(early_candidates if isinstance(early_candidates, list) else []),
+    ]
+    merged_evidence = {
+        **(early_evidence if isinstance(early_evidence, dict) else {}),
+        **email_validation_evidence,
+        "final_domain_fallback_skipped": True,
+        "final_domain_fallback_skip_reason": "early_anymail_decision_maker_company_already_checked",
+    }
+    selected = first_attempted_candidate
+    return ContactResult(
+        row_id=payload.get("Id"),
+        contact_search_status="contact_not_found",
+        contact_search_reason=fallback_reason,
+        contact_candidates=contact_candidates,
+        contact_search_evidence=contact_search_evidence,
+        email_candidates=merged_email_candidates,
+        selected_contact_name=selected.name if selected else "",
+        selected_contact_role=selected.role if selected else "",
+        selected_contact_seniority=selected.seniority if selected else "",
+        selected_contact_source_url=selected.source_url if selected else "",
+        selected_contact_linkedin_url=selected.source_url if selected and "linkedin.com" in selected.source_url.lower() else "",
+        selected_contact_confidence=selected.confidence if selected else "",
+        email_validation_status="no_deliverable_email",
+        email_validation_provider="anymail_finder",
+        email_validation_evidence=merged_evidence,
+    )
+
+
 def merge_candidate_dicts(candidates: list[dict[str, Any]], extra: dict[str, Any]) -> list[dict[str, Any]]:
     normalized_extra = normalize_person_name(extra.get("name", ""))
     if not normalized_extra:
@@ -3300,6 +3353,14 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         )
         if early_company and early_company.contact_search_status == "contact_found":
             return early_company
+        if early_company and early_company.contact_search_status == "contact_not_found":
+            remember_early_domain_fallback(
+                payload,
+                early_company.email_candidates or fallback_email_candidates,
+                early_company.email_validation_evidence or fallback_evidence,
+            )
+        else:
+            remember_early_domain_fallback(payload, fallback_email_candidates, fallback_evidence)
     if not payload.get("site_fast_path_only") and not isinstance(payload.get("search_attempts"), list):
         payload["search_attempts"] = []
     if not payload.get("site_fast_path_only") and not payload.get("search_attempts"):
@@ -3376,6 +3437,16 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 "skipped": "no_verified_candidates",
                 "reason": "candidate verifier accepted no fallback candidates",
             }
+            reused_domain_fallback = reuse_early_domain_fallback_result(
+                payload,
+                candidate_dicts,
+                search_evidence,
+                [],
+                fallback_evidence,
+                "no_validated_person_found",
+            )
+            if reused_domain_fallback:
+                return reused_domain_fallback
             decision_maker_result = try_decision_maker_fallback(
                 row_id=row_id,
                 payload=payload,
@@ -3459,6 +3530,16 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             "skipped": "no_verified_candidates",
             "reason": "no candidates passed verifier/human filters",
         }
+        reused_domain_fallback = reuse_early_domain_fallback_result(
+            payload,
+            candidate_dicts,
+            search_evidence,
+            [],
+            fallback_evidence,
+            "no_validated_person_found",
+        )
+        if reused_domain_fallback:
+            return reused_domain_fallback
         decision_maker_result = try_decision_maker_fallback(
             row_id=row_id,
             payload=payload,
@@ -3631,6 +3712,16 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
             "status": "skipped_no_email_candidate",
             "skipped": "no_probable_human_candidate_for_email_lookup",
         }
+        reused_domain_fallback = reuse_early_domain_fallback_result(
+            payload,
+            candidate_dicts,
+            search_evidence,
+            aggregated_email_candidates,
+            fallback_evidence,
+            "no_probable_human_candidate_for_email_lookup",
+        )
+        if reused_domain_fallback:
+            return reused_domain_fallback
         decision_maker_result = try_decision_maker_fallback(
             row_id=row_id,
             payload=payload,
@@ -3685,6 +3776,17 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         )
 
     fallback_reason = "candidates_found_but_no_sendable_email" if validated_candidate_attempted else "no_deliverable_person_specific_email_found"
+    reused_domain_fallback = reuse_early_domain_fallback_result(
+        payload,
+        candidate_dicts,
+        search_evidence,
+        aggregated_email_candidates,
+        validation_evidence,
+        fallback_reason,
+        first_attempted_candidate=first_attempted_candidate,
+    )
+    if reused_domain_fallback:
+        return reused_domain_fallback
     decision_maker_result = try_decision_maker_fallback(
         row_id=row_id,
         payload=payload,

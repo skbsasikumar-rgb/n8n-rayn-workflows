@@ -1028,6 +1028,52 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.email_candidates[-1]["provider"], "anymail_finder_company")
         self.assertEqual(result.email_candidates[-1]["status"], "no_deliverable_email")
 
+    def test_early_anymail_fallback_is_reused_after_search_miss(self):
+        payload = {
+            "Id": 793,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "",
+            "site_fast_path_only": False,
+        }
+        calls = {"decision_maker": 0, "company": 0}
+
+        def fake_decision_maker(domain, company_name=""):
+            calls["decision_maker"] += 1
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["ceo", "it", "operations", "hr", "marketing"],
+                "credits_charged": 0,
+                "results": [],
+            }
+
+        def fake_company(domain, company_name=""):
+            calls["company"] += 1
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{"credits_charged": 0, "email_status": "not_found", "emails": [], "valid_emails": []}],
+                "email_type": "any",
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_decision_maker", side_effect=fake_decision_maker), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", return_value=[]):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(calls, {"decision_maker": 1, "company": 1})
+        self.assertEqual(result.contact_search_status, "contact_not_found")
+        self.assertEqual(result.contact_search_reason, "no_validated_person_found")
+        self.assertTrue(result.email_validation_evidence["final_domain_fallback_skipped"])
+        self.assertEqual(
+            result.email_validation_evidence["final_domain_fallback_skip_reason"],
+            "early_anymail_decision_maker_company_already_checked",
+        )
+
     def test_decision_maker_linkedin_requires_matching_profile_slug(self):
         candidate = c.decision_maker_candidate_from_result(
             {
