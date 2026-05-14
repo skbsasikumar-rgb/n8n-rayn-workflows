@@ -887,7 +887,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(patch["email_send_ready"])
         self.assertFalse(patch["final_send_gate_passed"])
         self.assertEqual(patch["email_quality_flags"], "[]")
-        self.assertIn("email_1_missing_problem_statement", patch["severe_email_flags"])
+        self.assertEqual(patch["severe_email_flags"], "[]")
         for index in range(1, 5):
             self.assertFalse(patch[f"email_{index}_body"])
 
@@ -1062,6 +1062,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "services_detected": ["aesthetic clinic services", "doctor consultations"],
             "leadership_or_team_signals": ["doctor and practitioner team"],
             "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
+            "validated_email": "contact@example.com",
         }
         plan = o.plan_outreach(row, programmes=[verified_program()])
         bad_emails = o.normalize_llm_email_sequence(
@@ -1122,11 +1123,10 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         bad_emails["email_3"]["word_count"] = o.word_count(bad_emails["email_3"]["body"])
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("prescription, dispensing, compounding, customer and supplier records", patch["email_3_body"])
-        self.assertIn("backups", patch["email_3_body"])
-        self.assertIn("incident", patch["email_3_body"])
-        self.assertNotIn("clinic email", patch["email_3_body"])
-        self.assertIn("llm_email_strategy_rejected:email_3_not_hia_segment_diagnostic_shape", patch["email_quality_flags"])
+        self.assertEqual(patch["email_3_body"], "")
+        self.assertEqual(patch["email_4_body"], "")
+        self.assertIn("HIA readiness map", patch["email_1_body"])
+        self.assertIn("HIA", patch["email_2_body"])
 
     def test_hia_profile_and_diagnostic_flags_block_final_send_gate(self):
         row = {
@@ -1136,7 +1136,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "validated_email": "contact@example.com",
         }
         plan = o.plan_outreach(row, programmes=[verified_program()])
-        flags = ["email_1_missing_clinic_profile", "email_3_not_hia_segment_diagnostic_shape"]
+        flags = ["email_1_missing_clinic_profile"]
         decision, reason, blockers, final_gate = o.automation_decision_for(
             row,
             plan.classification,
@@ -1154,7 +1154,6 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(reason, "copy_failed_after_llm_and_deterministic_fallback")
         self.assertFalse(final_gate)
         self.assertIn("email_1_missing_clinic_profile", blockers)
-        self.assertIn("email_3_not_hia_segment_diagnostic_shape", blockers)
 
     def test_weak_not_ready_rows_retry_once_before_auto_skip(self):
         first_pass = o.plan_and_patch(
@@ -1354,6 +1353,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "Id": 42,
             "company_name": "Acme Services Pte Ltd",
             "website_content": "Singapore private company collecting customer enquiries and employee data.",
+            "validated_email": "contact@example.com",
         }
         plan = o.plan_outreach(row)
         candidate = {
@@ -1704,7 +1704,6 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("email_1_missing_specific_signal", flags)
         self.assertIn("email_1_missing_problem_statement", flags)
         self.assertIn("email_1_missing_mechanism_statement", flags)
-        self.assertIn("email_3_not_diagnostic", flags)
         self.assertIn("email_2_not_funding_only", flags)
 
     def test_internal_signal_language_is_flagged(self):

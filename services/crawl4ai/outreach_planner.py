@@ -4580,7 +4580,7 @@ def generate_email_sequence(
         ],
         "quality_notes": [],
     }
-    for key in ("email_1", "email_2", "email_3", "email_4"):
+    for key in ALL_EMAIL_KEYS:
         emails[key]["word_count"] = word_count(emails[key]["body"])
     emails["sentence_slot_metadata"] = email_sequence_sentence_slot_metadata(row, classification, copy_brief, sentence_slots)
     emails["style_metadata"] = {
@@ -5178,6 +5178,23 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
     return True
 
 
+ACTIVE_EMAIL_KEYS = ("email_1", "email_2")
+ALL_EMAIL_KEYS = ("email_1", "email_2", "email_3", "email_4")
+DISABLED_FOLLOWUP_EMAIL = {"subject_options": [], "chosen_subject": "", "body": "", "word_count": 0}
+
+
+def active_email_body_blob(emails: dict[str, Any]) -> str:
+    return "\n".join((emails.get(key) or {}).get("body", "") for key in ACTIVE_EMAIL_KEYS)
+
+
+def suppress_followup_emails(emails: dict[str, Any]) -> dict[str, Any]:
+    emails = {**emails}
+    emails["email_3"] = dict(DISABLED_FOLLOWUP_EMAIL)
+    emails["email_4"] = dict(DISABLED_FOLLOWUP_EMAIL)
+    emails["sequence_metadata"] = {"sequence_length": 2, "disabled_emails": ["email_3", "email_4"]}
+    return emails
+
+
 def evaluate_email_strategy(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -5190,8 +5207,6 @@ def evaluate_email_strategy(
         return flags
     email1 = emails["email_1"]["body"]
     email2 = emails["email_2"]["body"]
-    email3 = emails["email_3"]["body"]
-    email4 = emails["email_4"]["body"]
     signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
 
     if not signal or not email_1_reflects_signal(email1, signal, copy_brief):
@@ -5204,9 +5219,10 @@ def evaluate_email_strategy(
         flags.append("email_1_missing_tiny_cta")
     if email_contains_internal_signal_language(email1):
         flags.append("email_1_contains_internal_signal_language")
-    if email_contains_internal_signal_language("\n".join((email1, email2, email3, email4))):
+    active_blob = active_email_body_blob(emails)
+    if email_contains_internal_signal_language(active_blob):
         flags.append("email_contains_internal_signal_language")
-    if email_contains_hia_batch_wording("\n".join((email1, email2, email3, email4))):
+    if email_contains_hia_batch_wording(active_blob):
         flags.append("email_contains_hia_batch_wording")
     if classification.get("pressure_type") == "hia_regulatory":
         if not compact(copy_brief.get("clinic_profile_phrase")):
@@ -5217,14 +5233,6 @@ def evaluate_email_strategy(
             flags.append("email_1_missing_clinic_profile")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
-    if not email_3_is_diagnostic(email3, copy_brief, classification):
-        flags.append("email_3_not_diagnostic")
-    if email_2_generic_hia_diagnostic(email3, classification):
-        flags.append("email_3_generic_hia_diagnostic")
-    if email_3_missing_hia_segment_terms(email3, row, classification):
-        flags.append("email_3_missing_hia_segment_terms")
-    if email_3_not_hia_segment_diagnostic_shape(email3, row, classification):
-        flags.append("email_3_not_hia_segment_diagnostic_shape")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
         flags.append("asset_offer_too_generic_for_segment")
     if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -5238,8 +5246,6 @@ def evaluate_email_strategy(
     elif not hia_pricing and funding.funding_claim_line and funding.funding_claim_line in email2 and not funding_only_email(email2, funding.funding_claim_line):
         flags.append("email_2_not_funding_only")
     flags.extend(pricing_email_quality_flags(email2, classification, copy_brief))
-    if email4 and compact(copy_brief.get("email_asset_offer")) and not reflects(email4, copy_brief["email_asset_offer"]):
-        flags.append("email_4_missing_asset_offer")
     if not generic_inbox_greeting_ok(row, emails):
         flags.append("generic_inbox_wrong_greeting")
     return flags
@@ -5275,7 +5281,7 @@ def quality_gate(
             reason=str(funding.get("reason") or ""),
         )
     flags: list[str] = []
-    blob = "\n".join(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")).lower()
+    blob = active_email_body_blob(emails).lower()
     has_copy_brief = copy_brief is not None
     copy_brief = copy_brief or {}
     for phrase in FORBIDDEN_PHRASES:
@@ -5285,7 +5291,7 @@ def quality_gate(
         if phrase in blob:
             flags.append(f"style_banned_phrase:{phrase}")
 
-    limits = {"email_1": 85, "email_2": 105, "email_3": 95, "email_4": 55}
+    limits = {"email_1": 85, "email_2": 105}
     for key, limit in limits.items():
         if emails[key]["word_count"] > limit:
             flags.append(f"{key}_too_long")
@@ -5316,7 +5322,7 @@ def quality_gate(
         flags.append("low_trigger_confidence")
     if funding_followup_mode == "funding" and classification.get("pressure_type") != "not_ready" and funding.funding_status != "verified_match":
         flags.append("funding_not_verified")
-    if classification.get("pressure_type") == "not_ready" and any(emails[key]["body"] for key in ("email_1", "email_2", "email_3", "email_4")):
+    if classification.get("pressure_type") == "not_ready" and any(emails[key]["body"] for key in ALL_EMAIL_KEYS):
         flags.append("not_ready_has_email_body")
     if has_copy_brief and classification.get("pressure_type") != "not_ready":
         for field in ("email_personalisation_signal", "email_problem_statement", "email_mechanism_statement", "email_cta"):
@@ -5348,15 +5354,6 @@ def quality_gate(
         email1_start = email1_body.strip().lower()
         if email1_start.startswith(("i came across your company", "noticed your company", "i noticed your company")):
             flags.append("email_1_too_generic")
-        email3_body = emails["email_3"]["body"].lower()
-        if "cyber essentials is" in email3_body and "?" not in email3_body:
-            flags.append("email_3_not_diagnostic")
-        if email_2_generic_hia_diagnostic(emails["email_3"]["body"], classification):
-            flags.append("email_3_generic_hia_diagnostic")
-        if email_3_missing_hia_segment_terms(emails["email_3"]["body"], row, classification):
-            flags.append("email_3_missing_hia_segment_terms")
-        if email_3_not_hia_segment_diagnostic_shape(emails["email_3"]["body"], row, classification):
-            flags.append("email_3_not_hia_segment_diagnostic_shape")
         if asset_offer_too_generic_for_segment(row, classification, copy_brief):
             flags.append("asset_offer_too_generic_for_segment")
         if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
@@ -5395,11 +5392,7 @@ SEVERE_EMAIL_FLAGS = {
     "email_contains_internal_signal_language",
     "email_contains_hia_batch_wording",
     "email_1_too_generic",
-    "email_3_not_diagnostic",
-    "email_3_generic_hia_diagnostic",
     "email_1_missing_clinic_profile",
-    "email_3_missing_hia_segment_terms",
-    "email_3_not_hia_segment_diagnostic_shape",
     "email_2_missing_funding_claim_line",
     "email_2_not_funding_only",
     "hia_pricing_missing_endpoint_caveat",
@@ -5476,7 +5469,7 @@ def automation_decision_for(
         return "auto_skipped", "copy_brief_not_safe", blockers or ["weak_copy_brief"], False
     if blockers:
         return "auto_skipped", "copy_failed_after_llm_and_deterministic_fallback", blockers, False
-    if any(not compact((emails.get(f"email_{index}") or {}).get("body")) for index in range(1, 5)):
+    if any(not compact((emails.get(key) or {}).get("body")) for key in ACTIVE_EMAIL_KEYS):
         return "auto_skipped", "missing_email_body", ["missing_email_body"], False
     if score < 7:
         return "auto_skipped", "email_quality_gate_failed", flags or ["email_quality_gate_failed"], False
@@ -5607,11 +5600,15 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     f = plan.funding
     b = plan.copy_brief
     e = plan.emails
+    patch_emails = suppress_followup_emails(e)
     visible_quality_flags = plan.quality_flags
-    if plan.automation_decision in {"suppressed", "auto_skipped", "retry_enrichment_once"} and not any(
-        compact(e.get(f"email_{index}", {}).get("body")) for index in range(1, 5)
+    visible_severe_flags = plan.severe_email_flags
+    if (
+        plan.automation_decision == "suppressed"
+        and plan.automation_decision_reason == "suppressed_missing_validated_email"
     ):
         visible_quality_flags = []
+        visible_severe_flags = []
     patch = {
         "Id": row.get("Id") or row.get("id"),
         "entity_type_guess": c["entity_type_guess"],
@@ -5708,15 +5705,15 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_angle_reason": b["email_angle_reason"],
         "decision_maker_role_guess": infer_decision_maker_role(row),
         "outreach_variant": choose_variant(c),
-        "email_1_subject": e["email_1"]["chosen_subject"],
-        "email_1_body": e["email_1"]["body"],
-        "email_2_subject": e["email_2"]["chosen_subject"],
-        "email_2_body": e["email_2"]["body"],
-        "email_3_subject": e["email_3"]["chosen_subject"],
-        "email_3_body": e["email_3"]["body"],
-        "email_4_subject": e["email_4"]["chosen_subject"],
-        "email_4_body": e["email_4"]["body"],
-        "email_sequence_json": json_dumps(e),
+        "email_1_subject": patch_emails["email_1"]["chosen_subject"],
+        "email_1_body": patch_emails["email_1"]["body"],
+        "email_2_subject": patch_emails["email_2"]["chosen_subject"],
+        "email_2_body": patch_emails["email_2"]["body"],
+        "email_3_subject": patch_emails["email_3"]["chosen_subject"],
+        "email_3_body": patch_emails["email_3"]["body"],
+        "email_4_subject": patch_emails["email_4"]["chosen_subject"],
+        "email_4_body": patch_emails["email_4"]["body"],
+        "email_sequence_json": json_dumps(patch_emails),
         "email_quality_score": plan.quality_score,
         "email_quality_flags": json_dumps(visible_quality_flags),
         "email_send_ready": plan.email_send_ready,
@@ -5734,7 +5731,7 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "enrichment_quality_flags": json_dumps(plan.enrichment_quality_flags),
         "copy_brief_quality_score": plan.copy_brief_quality_score,
         "copy_brief_quality_flags": json_dumps(plan.copy_brief_quality_flags),
-        "severe_email_flags": json_dumps(plan.severe_email_flags),
+        "severe_email_flags": json_dumps(visible_severe_flags),
         "final_send_gate_passed": plan.final_send_gate_passed,
     }
     return patch
@@ -5744,9 +5741,9 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
     if plan is not None:
         classification = plan.classification
         funding = plan.funding
-        emails = plan.emails
+        emails = suppress_followup_emails(plan.emails)
         flags = plan.quality_flags
-        email_blob = "\n".join((emails.get(f"email_{index}") or {}).get("body", "") for index in range(1, 5))
+        email_blob = active_email_body_blob(emails)
         return {
             "row_id": plan.row_id,
             "company_name": compact(row.get("company_name")),
@@ -5803,7 +5800,7 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         flags = json.loads(flags_raw) if isinstance(flags_raw, str) else flags_raw
     except json.JSONDecodeError:
         flags = [str(flags_raw)]
-    email_blob = "\n".join(str(patch.get(f"email_{index}_body", "")) for index in range(1, 5))
+    email_blob = "\n".join(str(patch.get(f"{key}_body", "")) for key in ACTIVE_EMAIL_KEYS)
     return {
         "row_id": patch.get("Id") or row.get("Id") or row.get("id"),
         "company_name": compact(row.get("company_name") or patch.get("company_name")),
@@ -5928,10 +5925,6 @@ def patch_with_email_sequence(
         "clinic_profile_missing_for_hia",
         "clinic_profile_too_generic",
         "email_1_missing_clinic_profile",
-        "email_3_not_diagnostic",
-        "email_3_generic_hia_diagnostic",
-        "email_3_missing_hia_segment_terms",
-        "email_3_not_hia_segment_diagnostic_shape",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",
         "lab_classification_ambiguous",
