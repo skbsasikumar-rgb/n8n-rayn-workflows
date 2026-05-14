@@ -1875,6 +1875,15 @@ class OutreachPlannerTests(unittest.TestCase):
             ),
             (
                 {
+                    "company_name": "National Heart Centre Singapore",
+                    "website_content": "National Heart Centre Singapore provides specialist cardiac care, cardiology consultations, cardiac test reports, pharmacy support and clinical records across services.",
+                },
+                "specialist-led heart/cardiology clinic",
+                "consultation notes, cardiac test reports, referrals, appointment details",
+                "specialist clinic readiness map",
+            ),
+            (
+                {
                     "company_name": "Amoy Street Dental",
                     "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software.",
                 },
@@ -1900,6 +1909,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
                     self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
                 self.assertIn(observation, plan.emails["email_1"]["body"])
+                if "pharmacy" not in observation:
+                    self.assertNotIn("pharmacy / compounding provider", plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic.replace(" and backups", ""), plan.emails["email_3"]["body"])
                 self.assertIn("backups", plan.emails["email_3"]["body"])
                 self.assertEqual(plan.copy_brief["email_asset_offer"], asset)

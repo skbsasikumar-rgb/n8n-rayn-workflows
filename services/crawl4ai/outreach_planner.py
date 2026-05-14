@@ -1349,7 +1349,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     )
     if primary_dental:
         service = "dental"
-    elif primary_diagnostic:
+    elif primary_diagnostic and not primary_specialist:
         service = "diagnostic"
     elif primary_hospital:
         service = "hospital"
@@ -3641,6 +3641,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif has_cancer_centre:
         guess = "specialist_led"
         add_evidence("cancer, oncology or radiation specialist terms")
+    elif service_type == "specialist_OMS" or (has_specialist and not has_gp):
+        guess = "specialist_led"
+        add_evidence("specialist-led care terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
         guess = "pharmacy"
         add_evidence("pharmacy or compounding terms")
@@ -3696,9 +3699,6 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "GP_OMS" and has_gp:
         guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
         add_evidence("GP/outpatient evidence")
-    elif service_type == "specialist_OMS" or has_specialist:
-        guess = "specialist_led"
-        add_evidence("specialist-led care terms")
     elif structure == "solo_gp" and (
         service_type == "GP_OMS"
         or has_gp
