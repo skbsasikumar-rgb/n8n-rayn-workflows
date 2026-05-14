@@ -2522,6 +2522,32 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(classification["hia_relevant"])
         self.assertEqual(classification["hia_official_service_type"], "")
 
+    def test_serper_diagnostics_context_does_not_become_gp(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Mirxes",
+                "website_content": "A new dawn in disease early interception.",
+                "_serper_context_text": (
+                    "MiRXES is a molecular diagnostics company developing RNA-powered cancer screening tests "
+                    "and diagnostic technology for healthcare partners."
+                ),
+            }
+        )
+        self.assertEqual(classification["primary_email_track"], "hia_regulatory")
+        self.assertEqual(classification["hia_service_type_guess"], "diagnostic")
+        self.assertEqual(classification["hia_official_service_type"], "clinical_laboratory")
+        self.assertNotEqual(classification["hia_service_type_guess"], "GP_OMS")
+
+    def test_generic_medical_context_does_not_create_gp_hia_match(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Medical Technology",
+                "website_content": "Medical technology company working with healthcare partners and enterprise customers.",
+            }
+        )
+        self.assertNotEqual(classification["primary_email_track"], "hia_regulatory")
+        self.assertNotEqual(classification["hia_service_type_guess"], "GP_OMS")
+
     def test_allied_health_is_not_hia_without_patient_care_evidence(self):
         classification = o.classify_row(
             {

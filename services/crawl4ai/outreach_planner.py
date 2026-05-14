@@ -387,6 +387,9 @@ SPECIALIST_SERVICE_TERMS = (
 SPECIFIC_SPECIALIST_SERVICE_TERMS = tuple(term for term in SPECIALIST_SERVICE_TERMS if term != "specialist")
 DIAGNOSTIC_SERVICE_TERMS = (
     "diagnostic",
+    "diagnostics",
+    "molecular diagnostic",
+    "molecular diagnostics",
     "radiology",
     "clinical laboratory",
     "laboratory",
@@ -1267,7 +1270,17 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         if value
     ).lower()
     primary_gp = has_family_clinic_evidence(row, primary_text) or any(
-        term in primary_text for term in ("gp clinic", "gp clinics", "general practitioner", "health screening", "medical check-up", "medical checkup")
+        term in primary_text
+        for term in (
+            "gp clinic",
+            "gp clinics",
+            "general practitioner",
+            "medical check-up",
+            "medical checkup",
+            "outpatient medical clinic",
+            "medical clinic",
+            "doctor-led",
+        )
     )
     primary_dental = has_dental_service_evidence(company) or (has_dental_service_evidence(primary_text) and not primary_gp)
     primary_allied = any(
@@ -1379,7 +1392,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "diagnostic"
     elif "hims" in text or "health information management system" in text or "nehr" in text:
         service = "unknown"
-    elif has_clinic_word(text) or "doctor" in text or "medical" in text:
+    elif has_clinic_word(text) or "doctor" in text:
         service = "GP_OMS"
     else:
         service = "unknown"
@@ -1765,6 +1778,8 @@ def has_clinical_lab_evidence(text: str) -> bool:
             "diagnostic lab",
             "diagnostic laboratory",
             "medical laboratory",
+            "molecular diagnostic",
+            "molecular diagnostics",
             "laboratory diagnostic",
             "lab test",
             "lab tests",
@@ -1784,6 +1799,8 @@ def has_strong_diagnostic_lab_evidence(text: str) -> bool:
             "diagnostic lab",
             "diagnostic laboratory",
             "medical laboratory",
+            "molecular diagnostic",
+            "molecular diagnostics",
             "radiology",
             "nuclear medicine",
             "test reports",
