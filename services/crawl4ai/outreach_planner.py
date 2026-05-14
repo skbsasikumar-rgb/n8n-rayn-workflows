@@ -1059,7 +1059,6 @@ def lower_blob(row: dict[str, Any]) -> str:
         row.get("locations_detected", ""),
         row.get("leadership_or_team_signals", ""),
         row.get("contact_info_detected", ""),
-        row.get("structured_data_detected", ""),
         row.get("notes", ""),
         row.get("_serper_context_text", ""),
         row.get("selected_contact_title", ""),

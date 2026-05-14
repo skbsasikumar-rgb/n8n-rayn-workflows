@@ -2503,6 +2503,25 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(classification["hia_relevant"])
         self.assertEqual(classification["hia_official_service_type"], "")
 
+    def test_structured_metadata_keys_do_not_create_hia_match(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Nature's Own Essentials",
+                "website_content": "Brown rice cereal, instant porridge, food products, Shopify checkout and customer support.",
+                "structured_data_detected": {
+                    "derived_evidence": {
+                        "has_doctor_profiles": False,
+                        "has_patient_portal": False,
+                        "doctor_mentions": 0,
+                        "clinic_mentions": 0,
+                    }
+                },
+            }
+        )
+        self.assertNotEqual(classification["primary_email_track"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+
     def test_allied_health_is_not_hia_without_patient_care_evidence(self):
         classification = o.classify_row(
             {
