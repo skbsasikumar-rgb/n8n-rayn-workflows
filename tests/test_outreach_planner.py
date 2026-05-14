@@ -1189,6 +1189,8 @@ class OutreachPlannerTests(unittest.TestCase):
         }
         plan = o.plan_outreach(row, programmes=[verified_program()])
         self.assertEqual(plan.quality_flags, [])
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
         records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
         self.assertIn(records, plan.emails["email_3"]["body"])
         self.assertIn("backups", plan.emails["email_3"]["body"])
@@ -1894,6 +1896,9 @@ class OutreachPlannerTests(unittest.TestCase):
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                if "specialist" in observation or "neuroscience" in observation:
+                    self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+                    self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
                 self.assertIn(observation, plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic.replace(" and backups", ""), plan.emails["email_3"]["body"])
                 self.assertIn("backups", plan.emails["email_3"]["body"])

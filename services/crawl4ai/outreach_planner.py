@@ -1287,12 +1287,6 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         term in primary_text
         for term in ("physio", "physiotherapy", "podiatry", "podiatrist", "psychology", "psychologist", "mental health", "counselling", "counseling", "therapy")
     )
-    primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
-        term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
-    )
-    primary_hospital = "hospital" in company or "hospital" in primary_text
-    primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text
-    primary_ambulatory_surgical = "ambulatory surgical" in primary_text or "day surgery" in primary_text
     primary_specialist = contains_any(primary_text, SPECIFIC_SPECIALIST_SERVICE_TERMS) or any(
         term in primary_text
         for term in (
@@ -1318,6 +1312,15 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neuroscience",
         )
     )
+    primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
+        term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
+    )
+    primary_hospital = "hospital" in company or (
+        not primary_specialist
+        and any(term in primary_text for term in ("acute hospital", "community hospital", "hospital services", "inpatient"))
+    )
+    primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text
+    primary_ambulatory_surgical = "ambulatory surgical" in primary_text or "day surgery" in primary_text
     specialist_name_evidence = any(
         term in " ".join((company, compact(row.get("company_homepage_name")).lower()))
         for term in (
