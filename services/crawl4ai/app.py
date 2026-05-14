@@ -1057,6 +1057,8 @@ app = FastAPI(title="Browser Scraper", version="2.0.0")
 
 SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
 scrape_semaphore = asyncio.Semaphore(SCRAPE_CONCURRENCY)
+OUTREACH_PLAN_CONCURRENCY = max(1, int(os.getenv("OUTREACH_PLAN_CONCURRENCY", "2")))
+outreach_plan_semaphore = asyncio.Semaphore(OUTREACH_PLAN_CONCURRENCY)
 
 
 @app.on_event("startup")
@@ -1963,7 +1965,12 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
 async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
     payload = request.model_dump()
     try:
-        return outreach_planner.plan_and_patch(payload, copy_qa_mode=bool(payload.get("copy_qa_mode")))
+        async with outreach_plan_semaphore:
+            return await asyncio.to_thread(
+                outreach_planner.plan_and_patch,
+                payload,
+                copy_qa_mode=bool(payload.get("copy_qa_mode")),
+            )
     except Exception as exc:
         error_text = compact_whitespace(str(exc)) or "outreach planning failed"
         return {
