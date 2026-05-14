@@ -190,36 +190,47 @@ AI_GIVEAWAY_PHRASES = (
     "unlock the secrets",
 )
 
-EMAIL_1_REWRITE_PROMPT = """You rewrite one approved cold email.
-Return strict JSON only. Do not add facts.
+EMAIL_1_REWRITE_PROMPT = """You rewrite two approved cold emails as one steady sequence.
+Return strict JSON only. Do not add facts, claims, pricing, eligibility, locations, services, names, or vendor details.
 
 Rules:
-- Rewrite Email 1 only.
-- Keep the same greeting.
-- Keep the approved company hook, problem, mechanism, and CTA.
-- Prefer a question hook when the approved context is concrete.
-- Link paragraph 2 back to paragraph 1 with phrases like "that data", "that trail", or "that proof".
-- For HIA, mention HIA before Cyber Essentials. Ideally start paragraph 2 with the approved problem.
-- Mention Cyber Essentials only as a path, baseline, evidence map, or route. Do not say it equals HIA or PDPA compliance.
+- Rewrite Email 1 and Email 2 only.
+- Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 follows naturally into cost/support route.
+- Keep the same recipient addressing style from each deterministic email.
+- Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA/customer-trust track, and support-route caution.
+- You may improve flow and make it sound human. You may not change the meaning.
 - Use "We", not "RAYN".
-- Use simple words.
-- Short sentences.
-- Use 4 short paragraphs separated by blank lines:
-  1. greeting + company hook
-  2. problem / why now
-  3. what We help with
-  4. tiny CTA
-- Sound like a normal person.
-- No marketing copy.
-- No meeting ask.
+- Use simple words and short sentences.
+- No marketing copy. No hype. No meeting ask.
 - No "from the site".
-- Avoid these words and phrases: dive into, unleash, game-changing, revolutionary, transformative, leverage, optimize, unlock potential.
-- Keep it under 90 words.
+- Avoid: dive into, unleash, game-changing, revolutionary, transformative, leverage, optimize, unlock potential, unlock the secrets.
+
+Email 1 rules:
+- Use 4 short paragraphs separated by blank lines.
+- Paragraph 1: greeting plus a specific company hook, preferably a question if the approved context is concrete.
+- Paragraph 2: problem / why now. Link it back to paragraph 1 with "that data", "that proof", "that trail", or similar plain wording.
+- Paragraph 3: Cyber Essentials as a practical path, baseline, evidence map, or route.
+- Paragraph 4: tiny CTA only.
+- For HIA, mention HIA before Cyber Essentials.
+- Keep Email 1 under 95 words.
+
+Email 2 rules:
+- This is the second and final touch.
+- Keep the same first-name dash prefix if the deterministic email uses one, for example "Samuel - ".
+- Do not restart with a new greeting unless the deterministic email does.
+- Move from "if the asset/checklist/map is useful" to cost/support/funding route.
+- For HIA tracks, mention HIA in the CTA or support-route line.
+- For PDPA tracks, do not say Cyber Essentials replaces PDPA obligations. Say it can help structure evidence for security safeguards.
+- Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
+- Do not mention exact prices. Do not say "second cheapest".
+- Keep this P.S. exactly as written:
+  P.S. We are usually priced near the lower end, and the scope is heavier: evidence prep, certification support, and a SaaS tool to help the team stay certified.
+- Keep Email 2 under 105 words.
 
 Return:
 {
-  "subject": "",
-  "body": "",
+  "email_1": {"subject": "", "body": ""},
+  "email_2": {"subject": "", "body": ""},
   "notes": []
 }
 """
@@ -1028,6 +1039,8 @@ def followup_sentence(prefix: str, sentence: str) -> str:
     text = compact(sentence)
     if prefix.endswith("- ") and text:
         text = text[:1].lower() + text[1:]
+    elif not prefix and text:
+        text = text[:1].upper() + text[1:]
     return f"{prefix}{text}"
 
 
@@ -4602,11 +4615,11 @@ def truthy(value: Any) -> bool:
 
 
 def email_1_llm_rewrite_enabled(row: dict[str, Any]) -> bool:
-    if not (truthy(row.get("use_llm_humaniser")) or truthy(row.get("use_llm_humanizer")) or truthy(row.get("use_llm_email_1"))):
+    if truthy(row.get("disable_llm_humaniser")) or truthy(row.get("disable_llm_humanizer")) or truthy(row.get("disable_llm_rewrite")):
         return False
     if truthy(row.get("skip_openrouter")):
         return False
-    if not truthy(row.get("openrouter_allowed")):
+    if not sendable_email(row) and not row.get("copy_qa_mode"):
         return False
     return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
 
@@ -4619,6 +4632,8 @@ def email_1_rewrite_payload(
     emails: dict[str, Any],
 ) -> dict[str, Any]:
     email1 = emails.get("email_1") or {}
+    email2 = emails.get("email_2") or {}
+    funding_safe = funding_claim_send_safe(funding, copy_brief, classification)
     return {
         "company_name": email_display_company_name(row),
         "first_name": first_name_from_contact(compact(row.get("selected_contact_name"))),
@@ -4627,13 +4642,27 @@ def email_1_rewrite_payload(
         "pressure_type": classification.get("pressure_type", ""),
         "deterministic_subject": compact(email1.get("chosen_subject")),
         "deterministic_body": compact(email1.get("body")),
+        "deterministic_email_1": {
+            "subject": compact(email1.get("chosen_subject")),
+            "body": strip_trailing_signature(email1.get("body") or ""),
+        },
+        "deterministic_email_2": {
+            "subject": compact(email2.get("chosen_subject")),
+            "body": strip_trailing_signature(email2.get("body") or ""),
+        },
         "approved_company_hook": compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal")),
         "approved_problem": compact(copy_brief.get("email_problem_statement")),
         "approved_mechanism": compact(copy_brief.get("email_mechanism_statement")),
         "approved_cta": compact(copy_brief.get("email_cta")),
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
-        "funding_claim_safe": funding_claim_send_safe(funding, copy_brief, classification),
+        "email_2_required_ps": EMAIL_2_VALUE_PS,
+        "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "funding_claim_line": compact(funding.funding_claim_line),
+        "funding_claim_safe": funding_safe,
+        "pricing_email_2_mode": compact(copy_brief.get("pricing_email_2_mode")),
+        "pricing_claim_safe": bool(copy_brief.get("pricing_claim_safe")),
+        "pricing_claim_line": compact(copy_brief.get("pricing_claim_line")),
         "forbidden_claims": [
             "Do not say Cyber Essentials equals HIA compliance.",
             "Do not say Cyber Essentials equals PDPA compliance.",
@@ -4700,6 +4729,58 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
     return flags
 
 
+def email_2_rewrite_static_flags(body: str, deterministic_body: str, classification: dict[str, Any]) -> list[str]:
+    flags: list[str] = []
+    body_l = compact(body).lower()
+    if not body or word_count(body) > 105:
+        flags.append("llm_email_2_rewrite_length")
+    if len([part for part in body.split("\n\n") if compact(part)]) < 4:
+        flags.append("llm_email_2_rewrite_paragraph_shape")
+    if EMAIL_2_VALUE_PS not in body:
+        flags.append("llm_email_2_rewrite_missing_value_ps")
+    if "from the site" in body_l:
+        flags.append("llm_email_2_rewrite_from_site")
+    if "rayn" in body_l:
+        flags.append("llm_email_2_rewrite_mentions_rayn")
+    if any(phrase in body_l for phrase in AI_GIVEAWAY_PHRASES):
+        flags.append("llm_email_2_rewrite_ai_phrase")
+    prefix_match = re.match(r"^([A-Z][A-Za-z.'-]{1,40} - )", deterministic_body)
+    if prefix_match:
+        prefix = prefix_match.group(1)
+        if not body.startswith(prefix):
+            flags.append("llm_email_2_rewrite_changed_prefix")
+        after_prefix = body[len(prefix) : len(prefix) + 1]
+        if after_prefix and after_prefix.isalpha() and after_prefix != after_prefix.lower():
+            flags.append("llm_email_2_rewrite_prefix_not_lowercase")
+    else:
+        greeting_match = re.match(r"^(Hi [^,]{1,60},|Hello team,)", deterministic_body)
+        if greeting_match and not body.startswith(greeting_match.group(1)):
+            flags.append("llm_email_2_rewrite_changed_greeting")
+    if classification.get("pressure_type") == "hia_regulatory" and "hia" not in body_l:
+        flags.append("llm_email_2_rewrite_missing_hia")
+    if classification.get("pressure_type") != "hia_regulatory" and re.search(r"\b(?:s\$|sgd)\s*\d|\bcisoaas pricing\b", body_l):
+        flags.append("llm_email_2_rewrite_non_hia_pricing_claim")
+    if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
+        flags.append("llm_email_2_rewrite_forbidden_compliance_claim")
+    return flags
+
+
+def normalize_email_2_opening_case(body: str, deterministic_body: str) -> str:
+    if re.match(r"^[A-Z][A-Za-z.'-]{1,40} - ", deterministic_body):
+        return body
+    if body and body[0].isalpha() and body[0].islower():
+        return body[0].upper() + body[1:]
+    return body
+
+
+def _email_rewrite_disabled_metadata(reason: str) -> dict[str, Any]:
+    return {"attempted": False, "used": False, "reason": reason}
+
+
+def _email_rewrite_subject_options(subject: str, original: dict[str, Any]) -> list[str]:
+    return list(dict.fromkeys([subject, *((original or {}).get("subject_options") or [])]))
+
+
 def maybe_rewrite_email_1_with_llm(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -4708,37 +4789,66 @@ def maybe_rewrite_email_1_with_llm(
     emails: dict[str, Any],
 ) -> tuple[dict[str, Any], list[str]]:
     if not email_1_llm_rewrite_enabled(row):
-        emails["llm_email_1_rewrite"] = {"attempted": False, "used": False, "reason": "disabled"}
+        reason = "missing_api_key" if not os.getenv("OPENROUTER_API_KEY", "").strip() else "disabled"
+        emails["llm_email_1_rewrite"] = _email_rewrite_disabled_metadata(reason)
+        emails["llm_email_2_rewrite"] = _email_rewrite_disabled_metadata(reason)
+        emails["llm_email_rewrite"] = _email_rewrite_disabled_metadata(reason)
         return emails, []
     original = sanitize_email_sequence(emails)
     payload = email_1_rewrite_payload(row, classification, funding, copy_brief, original)
     result = call_email_1_rewrite_llm(payload)
     if not isinstance(result, dict):
-        original["llm_email_1_rewrite"] = {"attempted": True, "used": False, "reason": "llm_error_or_empty"}
-        return original, ["llm_email_1_rewrite_failed"]
-    subject = compact(result.get("subject") or original["email_1"].get("chosen_subject"))
-    body = strip_trailing_signature(result.get("body") or "")
+        metadata = {"attempted": True, "used": False, "reason": "llm_error_or_empty"}
+        original["llm_email_1_rewrite"] = metadata
+        original["llm_email_2_rewrite"] = metadata
+        original["llm_email_rewrite"] = metadata
+        return original, []
+    result_email1 = result.get("email_1") if isinstance(result.get("email_1"), dict) else result
+    result_email2 = result.get("email_2") if isinstance(result.get("email_2"), dict) else None
+    subject1 = compact(result_email1.get("subject") or original["email_1"].get("chosen_subject"))
+    body1 = strip_trailing_signature(result_email1.get("body") or "")
+    subject2 = compact((result_email2 or {}).get("subject") or original["email_2"].get("chosen_subject"))
+    body2 = strip_trailing_signature((result_email2 or {}).get("body") or original["email_2"].get("body") or "")
+    body2 = normalize_email_2_opening_case(body2, original["email_2"].get("body", ""))
     candidate = {
         **original,
         "email_1": {
             **(original.get("email_1") or {}),
-            "chosen_subject": subject,
-            "subject_options": list(dict.fromkeys([subject, *((original.get("email_1") or {}).get("subject_options") or [])])),
-            "body": body,
-            "word_count": word_count(body),
+            "chosen_subject": subject1,
+            "subject_options": _email_rewrite_subject_options(subject1, original.get("email_1") or {}),
+            "body": body1,
+            "word_count": word_count(body1),
+        },
+        "email_2": {
+            **(original.get("email_2") or {}),
+            "chosen_subject": subject2,
+            "subject_options": _email_rewrite_subject_options(subject2, original.get("email_2") or {}),
+            "body": body2,
+            "word_count": word_count(body2),
         },
     }
-    static_flags = email_1_rewrite_static_flags(body, original["email_1"].get("body", ""), classification)
+    static_flags = email_1_rewrite_static_flags(body1, original["email_1"].get("body", ""), classification)
+    if result_email2:
+        static_flags += email_2_rewrite_static_flags(body2, original["email_2"].get("body", ""), classification)
     score, gate_flags, _ = quality_gate(row, classification, funding, candidate, copy_brief)
-    reject_flags = list(dict.fromkeys(static_flags + severe_flags(gate_flags) + [flag for flag in gate_flags if flag.startswith("email_1_")]))
+    reject_flags = list(
+        dict.fromkeys(
+            static_flags
+            + severe_flags(gate_flags)
+            + [flag for flag in gate_flags if flag.startswith("email_1_") or flag.startswith("email_2_")]
+        )
+    )
     if score < 7 or reject_flags:
-        original["llm_email_1_rewrite"] = {
+        metadata = {
             "attempted": True,
             "used": False,
             "reason": "qa_rejected",
             "flags": reject_flags,
         }
-        return original, [f"llm_email_1_rewrite_rejected:{flag}" for flag in reject_flags[:6]]
+        original["llm_email_1_rewrite"] = metadata
+        original["llm_email_2_rewrite"] = {**metadata, "attempted": bool(result_email2)}
+        original["llm_email_rewrite"] = metadata
+        return original, []
     candidate["llm_email_1_rewrite"] = {
         "attempted": True,
         "used": True,
@@ -4746,7 +4856,20 @@ def maybe_rewrite_email_1_with_llm(
         "model": os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip(),
         "notes": result.get("notes") if isinstance(result.get("notes"), list) else [],
     }
-    return candidate, ["llm_email_1_rewrite_used"]
+    candidate["llm_email_2_rewrite"] = {
+        **candidate["llm_email_1_rewrite"],
+        "attempted": bool(result_email2),
+        "used": bool(result_email2),
+    }
+    candidate["llm_email_rewrite"] = {
+        "attempted": True,
+        "used": True,
+        "reason": "qa_passed",
+        "model": candidate["llm_email_1_rewrite"]["model"],
+        "emails_rewritten": ["email_1", *([] if not result_email2 else ["email_2"])],
+        "notes": candidate["llm_email_1_rewrite"]["notes"],
+    }
+    return candidate, []
 
 
 def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
@@ -5871,7 +5994,7 @@ def plan_and_patch(row: dict[str, Any], programmes: list[Any] | None = None, cop
         "automation_blockers": plan.automation_blockers,
         "automation_advisory_flags": plan.automation_advisory_flags,
         "openrouter_allowed": bool(row.get("openrouter_allowed")),
-        "skip_openrouter": bool(row.get("skip_openrouter", True)),
+        "skip_openrouter": bool(row.get("skip_openrouter", False) or not sendable_email(row)),
         "audit_report": build_audit_report(row, plan=plan),
         "patch": patch,
         "record": plan.to_dict(),

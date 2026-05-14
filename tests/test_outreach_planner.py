@@ -464,14 +464,21 @@ class OutreachPlannerTests(unittest.TestCase):
 
         def fake_rewrite(payload):
             captured.update(payload)
+            deterministic_email_2 = payload["deterministic_email_2"]
             return {
-                "subject": payload["deterministic_subject"],
-                "body": (
-                    "Hi Ivan, saw that Example Medical Clinic is a family clinic offering GP-style consultations.\n\n"
-                    f"{payload['approved_problem']}\n\n"
-                    f"{payload['approved_mechanism']}\n\n"
-                    f"{payload['approved_cta']}"
-                ),
+                "email_1": {
+                    "subject": payload["deterministic_subject"],
+                    "body": (
+                        "Hi Ivan, saw that Example Medical Clinic is a family clinic offering GP-style consultations.\n\n"
+                        f"{payload['approved_problem']}\n\n"
+                        f"{payload['approved_mechanism']}\n\n"
+                        f"{payload['approved_cta']}"
+                    ),
+                },
+                "email_2": {
+                    "subject": deterministic_email_2["subject"],
+                    "body": deterministic_email_2["body"],
+                },
                 "notes": ["kept approved facts"],
             }
 
@@ -491,7 +498,10 @@ class OutreachPlannerTests(unittest.TestCase):
             )
 
         self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
-        self.assertIn("llm_email_1_rewrite_used", plan.quality_flags)
+        self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
+        self.assertIn("email_2_required_ps", captured)
+        self.assertIn(o.EMAIL_2_VALUE_PS, plan.emails["email_2"]["body"])
+        self.assertNotIn("llm_email_1_rewrite_used", plan.quality_flags)
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan, saw that"))
         self.assertIn("approved_problem", captured)
 
@@ -550,7 +560,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(plan.emails["llm_email_1_rewrite"]["used"])
         self.assertIn("qa_rejected", plan.emails["llm_email_1_rewrite"]["reason"])
         self.assertNotIn("unlock potential", plan.emails["email_1"]["body"].lower())
-        self.assertTrue(any(flag.startswith("llm_email_1_rewrite_rejected:") for flag in plan.quality_flags))
+        self.assertFalse(any(flag.startswith("llm_email_1_rewrite_rejected:") for flag in plan.quality_flags))
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):

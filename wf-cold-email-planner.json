@@ -72,7 +72,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {
-          "timeout": 120000
+          "timeout": 300000
         }
       },
       "id": "outreach-plan",
@@ -108,7 +108,7 @@
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify($json.patches) }}",
         "options": {
-          "timeout": 120000
+          "timeout": 300000
         }
       },
       "id": "patch-drafts",

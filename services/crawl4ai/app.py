@@ -371,7 +371,7 @@ class OutreachPlanRequest(BaseModel):
     use_llm_humanizer: bool = False
     use_llm_email_1: bool = False
     openrouter_allowed: bool = False
-    skip_openrouter: bool = True
+    skip_openrouter: bool = False
     hia_llm_review: Any = Field(default_factory=dict)
 
 
