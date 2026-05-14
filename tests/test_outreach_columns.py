@@ -91,6 +91,23 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertEqual(column.uidt, "LongText")
         self.assertEqual(column.db_type, "text")
 
+    def test_classification_audit_columns_exist(self):
+        expected = {
+            "primary_email_track": "SingleSelect",
+            "secondary_email_track": "SingleSelect",
+            "regulatory_applicability": "LongText",
+            "classification_confidence": "SingleSelect",
+            "classification_evidence_json": "LongText",
+            "classification_rejected_tracks_json": "LongText",
+            "hia_official_service_type": "SingleSelect",
+            "hia_official_service_label": "SingleLineText",
+        }
+        for name, uidt in expected.items():
+            with self.subTest(name=name):
+                column = self.columns[name]
+                self.assertEqual(column.uidt, uidt)
+                self.assertEqual(column.db_type, "text")
+
     def test_email_subject_body_fields_exist(self):
         for index in range(1, 5):
             self.assertIn(f"email_{index}_subject", self.columns)
@@ -133,6 +150,28 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("not_required", options)
         self.assertIn("not_ready", options)
         self.assertIn("ready_for_review", options)
+
+    def test_official_hia_service_options_match_taxonomy(self):
+        options = self.module.SELECT_OPTIONS["hia_official_service_type"]
+        self.assertEqual(
+            options,
+            [
+                "outpatient_medical_gp",
+                "outpatient_medical_specialist",
+                "outpatient_dental",
+                "acute_hospital",
+                "nursing_home",
+                "ambulatory_surgical_centre",
+                "community_hospital",
+                "contingency_care_service",
+                "assisted_reproduction",
+                "clinical_laboratory",
+                "outpatient_renal_dialysis",
+                "retail_pharmacy",
+                "radiology_laboratory",
+                "nuclear_medicine_service",
+            ],
+        )
 
     def test_workflow_fetch_fields_are_existing_or_installed(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())

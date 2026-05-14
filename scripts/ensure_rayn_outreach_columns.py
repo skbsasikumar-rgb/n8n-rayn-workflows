@@ -33,6 +33,12 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("entity_evidence_json", "LongText", "text", "360px"),
     # Pressure classification
     OutreachColumn("pressure_type", "SingleSelect", "text"),
+    OutreachColumn("primary_email_track", "SingleSelect", "text"),
+    OutreachColumn("secondary_email_track", "SingleSelect", "text"),
+    OutreachColumn("regulatory_applicability", "LongText", "text", "300px"),
+    OutreachColumn("classification_confidence", "SingleSelect", "text"),
+    OutreachColumn("classification_evidence_json", "LongText", "text", "420px"),
+    OutreachColumn("classification_rejected_tracks_json", "LongText", "text", "360px"),
     OutreachColumn("pressure_reason", "LongText", "text", "360px"),
     OutreachColumn("outreach_trigger_signal", "LongText", "text", "360px"),
     OutreachColumn("outreach_trigger_source_url", "URL", "text"),
@@ -47,6 +53,8 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("hia_confidence", "SingleSelect", "text"),
     OutreachColumn("hia_scope_reason", "LongText", "text", "360px"),
     OutreachColumn("hia_service_type_guess", "SingleSelect", "text"),
+    OutreachColumn("hia_official_service_type", "SingleSelect", "text"),
+    OutreachColumn("hia_official_service_label", "SingleLineText", "text"),
     OutreachColumn("hia_timeline_batch_guess", "SingleSelect", "text"),
     OutreachColumn("hia_deadline_claim_safe", "Checkbox", "boolean", "160px"),
     OutreachColumn("hia_disclaimer_needed", "Checkbox", "boolean", "160px"),
@@ -179,7 +187,10 @@ DEFAULT_VISIBLE_GRID_COLUMNS = {
     "validated_email",
     "entity_type_guess",
     "pressure_type",
+    "primary_email_track",
+    "classification_confidence",
     "hia_service_type_guess",
+    "hia_official_service_type",
     "funding_status",
     "selected_contact_title",
     "do_not_contact",
@@ -213,12 +224,31 @@ SELECT_OPTIONS: dict[str, list[str]] = {
     "npo_likelihood": ["likely", "possible", "unlikely", "unknown"],
     "charity_or_social_service_likelihood": ["likely", "possible", "unlikely", "unknown"],
     "pressure_type": ["hia_regulatory", "pdpa_safeguards", "customer_trust", "funding", "not_ready"],
+    "primary_email_track": ["hia_regulatory", "dpo_evidence", "customer_trust", "pdpa_safeguards", "funding", "not_ready"],
+    "secondary_email_track": ["hia_regulatory", "dpo_evidence", "customer_trust", "pdpa_safeguards", "funding", "not_ready"],
+    "classification_confidence": ["low", "medium", "high"],
     "outreach_trigger_confidence": ["low", "medium", "high"],
     "data_type_signal": ["patient_data", "health_information", "resident_data", "beneficiary_data", "customer_data", "employee_data", "student_data", "financial_data", "business_partner_data", "unknown"],
     "problem_area": ["access_control", "data_mapping", "offboarding", "backup", "patching", "malware_protection", "incident_response", "vendor_management", "staff_awareness", "evidence_collection", "hia_readiness", "pdpa_safeguards", "unknown"],
     "value_asset_offer": ["hia_readiness_map", "clinic_access_checklist", "solo_gp_checklist", "pdpa_safeguards_checklist", "data_access_map", "offboarding_checklist", "cyber_essentials_readiness_checklist", "funding_route_summary", "security_evidence_checklist"],
     "hia_confidence": ["low", "medium", "high"],
-    "hia_service_type_guess": ["GP_OMS", "specialist_OMS", "dental", "retail_pharmacy", "diagnostic", "hospital", "allied_health", "hearing_care", "long_term_care", "HIMS_provider", "NEHR_user", "unknown"],
+    "hia_service_type_guess": ["GP_OMS", "specialist_OMS", "dental", "retail_pharmacy", "diagnostic", "hospital", "allied_health", "hearing_care", "long_term_care", "outpatient_renal_dialysis", "ambulatory_surgical_centre", "HIMS_provider", "NEHR_user", "unknown"],
+    "hia_official_service_type": [
+        "outpatient_medical_gp",
+        "outpatient_medical_specialist",
+        "outpatient_dental",
+        "acute_hospital",
+        "nursing_home",
+        "ambulatory_surgical_centre",
+        "community_hospital",
+        "contingency_care_service",
+        "assisted_reproduction",
+        "clinical_laboratory",
+        "outpatient_renal_dialysis",
+        "retail_pharmacy",
+        "radiology_laboratory",
+        "nuclear_medicine_service",
+    ],
     "hia_timeline_batch_guess": ["Batch 1 - Sep 2027", "Batch 2 - Sep 2028", "Batch 3 - Mar 2030", "Other CS/DS by Sep 2028", "unknown"],
     "personal_data_intensity": ["low", "medium", "high", "unknown"],
     "sensitive_data_likelihood": ["low", "medium", "high", "unknown"],
@@ -330,10 +360,22 @@ def main() -> None:
 
             cur.execute("select id from public.nc_columns_v2")
             existing_column_ids = {row[0] for row in cur.fetchall()}
+            cur.execute(
+                "select column_name, id from public.nc_columns_v2 where fk_model_id = %s",
+                (model_id,),
+            )
+            existing_columns_by_name = {row[0]: row[1] for row in cur.fetchall()}
             cur.execute("select id from public.nc_grid_view_columns_v2")
             existing_grid_ids = {row[0] for row in cur.fetchall()}
+            cur.execute(
+                "select fk_column_id, id, show from public.nc_grid_view_columns_v2 where fk_view_id = %s",
+                (view_id,),
+            )
+            existing_grid_by_column_id = {row[0]: (row[1], row[2]) for row in cur.fetchall()}
             cur.execute("select id from public.nc_col_select_options_v2")
             existing_select_option_ids = {row[0] for row in cur.fetchall()}
+            cur.execute("select fk_column_id, title from public.nc_col_select_options_v2")
+            existing_select_options = {(row[0], row[1]) for row in cur.fetchall()}
 
             cur.execute(
                 'select coalesce(max("order"), 0) from public.nc_columns_v2 where fk_model_id = %s',
@@ -359,13 +401,8 @@ def main() -> None:
                 else:
                     summary["existing_physical"] = int(summary["existing_physical"]) + 1
 
-                cur.execute(
-                    "select id from public.nc_columns_v2 where fk_model_id = %s and column_name = %s",
-                    (model_id, column.name),
-                )
-                row = cur.fetchone()
-                if row:
-                    column_id = row[0]
+                column_id = existing_columns_by_name.get(column.name)
+                if column_id:
                     summary["existing_metadata"] = int(summary["existing_metadata"]) + 1
                 else:
                     summary["created_metadata"] = int(summary["created_metadata"]) + 1
@@ -394,16 +431,13 @@ def main() -> None:
                                 workspace_id,
                             ),
                         )
+                        existing_columns_by_name[column.name] = column_id
 
                 grid_exists = False
                 grid_id = ""
                 grid_show = None
                 if column_id:
-                    cur.execute(
-                        'select id, show from public.nc_grid_view_columns_v2 where fk_view_id = %s and fk_column_id = %s',
-                        (view_id, column_id),
-                    )
-                    grid_row = cur.fetchone()
+                    grid_row = existing_grid_by_column_id.get(column_id)
                     if grid_row:
                         grid_id, grid_show = grid_row
                         grid_exists = True
@@ -433,25 +467,14 @@ def main() -> None:
                             workspace_id,
                         ),
                     )
-                elif grid_exists and grid_show is not None and bool(grid_show) != desired_show:
-                    summary["updated_grid_visibility"] = int(summary["updated_grid_visibility"]) + 1
-                    summary["planned_grid_visibility_updates"].append(f"{column.name}:{desired_show}")  # type: ignore[union-attr]
-                    if not args.dry_run:
-                        cur.execute(
-                            "update public.nc_grid_view_columns_v2 set show = %s where id = %s",
-                            (desired_show, grid_id),
-                        )
+                    existing_grid_by_column_id[column_id] = (grid_id, desired_show)
 
                 for option_index, option_title in enumerate(SELECT_OPTIONS.get(column.name, []), start=1):
                     if not column_id:
                         summary["created_select_options"] = int(summary["created_select_options"]) + 1
                         summary["planned_select_options"].append(f"{column.name}:{option_title}")  # type: ignore[union-attr]
                         continue
-                    cur.execute(
-                        "select id from public.nc_col_select_options_v2 where fk_column_id = %s and title = %s",
-                        (column_id, option_title),
-                    )
-                    if cur.fetchone():
+                    if (column_id, option_title) in existing_select_options:
                         summary["existing_select_options"] = int(summary["existing_select_options"]) + 1
                         continue
                     summary["created_select_options"] = int(summary["created_select_options"]) + 1
@@ -474,6 +497,7 @@ def main() -> None:
                                 workspace_id,
                             ),
                         )
+                        existing_select_options.add((column_id, option_title))
 
             if not args.dry_run:
                 cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))
