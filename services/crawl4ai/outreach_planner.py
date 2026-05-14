@@ -294,6 +294,38 @@ AMBIGUOUS_HIA_TERMS = (
     "test",
     "tests",
 )
+HIA_OFFICIAL_SERVICE_LABELS = {
+    "outpatient_medical_gp": "Outpatient Medical Service (GP)",
+    "outpatient_medical_specialist": "Outpatient Medical Service (Specialist)",
+    "outpatient_dental": "Outpatient Dental",
+    "acute_hospital": "Acute Hospital",
+    "nursing_home": "Nursing Home",
+    "ambulatory_surgical_centre": "Ambulatory Surgical Centre",
+    "community_hospital": "Community Hospital",
+    "contingency_care_service": "Contingency Care Service",
+    "assisted_reproduction": "Assisted Reproduction",
+    "clinical_laboratory": "Clinical Laboratory",
+    "outpatient_renal_dialysis": "Outpatient Renal Dialysis",
+    "retail_pharmacy": "Retail Pharmacy",
+    "radiology_laboratory": "Radiology Laboratory",
+    "nuclear_medicine_service": "Nuclear Medicine Service",
+}
+HIA_BATCH_BY_OFFICIAL_SERVICE = {
+    "outpatient_medical_gp": "Batch 1 - Sep 2027",
+    "acute_hospital": "Batch 1 - Sep 2027",
+    "clinical_laboratory": "Batch 1 - Sep 2027",
+    "radiology_laboratory": "Batch 1 - Sep 2027",
+    "nuclear_medicine_service": "Batch 1 - Sep 2027",
+    "outpatient_medical_specialist": "Batch 2 - Sep 2028",
+    "nursing_home": "Batch 2 - Sep 2028",
+    "community_hospital": "Batch 2 - Sep 2028",
+    "assisted_reproduction": "Batch 2 - Sep 2028",
+    "outpatient_renal_dialysis": "Batch 2 - Sep 2028",
+    "outpatient_dental": "Batch 3 - Mar 2030",
+    "ambulatory_surgical_centre": "Batch 3 - Mar 2030",
+    "contingency_care_service": "Batch 3 - Mar 2030",
+    "retail_pharmacy": "Batch 3 - Mar 2030",
+}
 HIA_BATCH_BY_SERVICE = {
     "GP_OMS": "Batch 1 - Sep 2027",
     "hospital": "Batch 1 - Sep 2027",
@@ -302,8 +334,6 @@ HIA_BATCH_BY_SERVICE = {
     "long_term_care": "Batch 2 - Sep 2028",
     "dental": "Batch 3 - Mar 2030",
     "retail_pharmacy": "Batch 3 - Mar 2030",
-    "HIMS_provider": "Other CS/DS by Sep 2028",
-    "NEHR_user": "Other CS/DS by Sep 2028",
 }
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
@@ -1146,6 +1176,69 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
     return False
 
 
+def official_hia_service_type(service: str, text: str) -> str:
+    service = compact(service)
+    if service == "GP_OMS":
+        return "outpatient_medical_gp"
+    if service == "specialist_OMS":
+        if "fertility" in text or "ivf" in text or "assisted reproduction" in text:
+            return "assisted_reproduction"
+        return "outpatient_medical_specialist"
+    if service == "dental":
+        return "outpatient_dental"
+    if service == "retail_pharmacy":
+        return "retail_pharmacy"
+    if service == "hospital":
+        if "community hospital" in text:
+            return "community_hospital"
+        return "acute_hospital"
+    if service == "diagnostic":
+        if "nuclear medicine" in text:
+            return "nuclear_medicine_service"
+        if "radiology" in text or "imaging" in text:
+            return "radiology_laboratory"
+        return "clinical_laboratory"
+    if service == "long_term_care":
+        if "nursing home" in text:
+            return "nursing_home"
+        if "community hospital" in text:
+            return "community_hospital"
+        if "contingency care" in text or "home care" in text or "caregiver" in text:
+            return "contingency_care_service"
+        return ""
+    if service in {"allied_health", "hearing_care"}:
+        clinical_allied = any(
+            term in text
+            for term in (
+                "patient",
+                "appointment",
+                "assessment",
+                "treatment",
+                "case-note",
+                "case note",
+                "clinical",
+                "consultation",
+                "rehabilitation",
+                "audiology",
+                "audiologist",
+                "hearing test",
+                "hearing assessment",
+                "physiotherapy",
+                "psychologist",
+            )
+        )
+        if clinical_allied:
+            return "outpatient_medical_specialist"
+        return ""
+    if service == "outpatient_renal_dialysis":
+        return "outpatient_renal_dialysis"
+    if service == "ambulatory_surgical_centre":
+        return "ambulatory_surgical_centre"
+    if service in HIA_OFFICIAL_SERVICE_LABELS:
+        return service
+    return ""
+
+
 def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     score = 0
     batch_override = ""
@@ -1177,9 +1270,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     primary_gp = has_family_clinic_evidence(row, primary_text) or any(
         term in primary_text for term in ("gp clinic", "gp clinics", "general practitioner", "health screening", "medical check-up", "medical checkup")
     )
-    primary_dental = any(term in company for term in ("dental", "dentist", "orthodont", "braces")) or (
-        any(term in primary_text for term in ("dental", "dentist", "orthodont", "braces")) and not primary_gp
-    )
+    primary_dental = has_dental_service_evidence(company) or (has_dental_service_evidence(primary_text) and not primary_gp)
     primary_allied = any(
         term in primary_text
         for term in ("physio", "physiotherapy", "podiatry", "podiatrist", "psychology", "psychologist", "mental health", "counselling", "counseling", "therapy")
@@ -1187,6 +1278,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
         term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
     )
+    primary_hospital = "hospital" in company or "hospital" in primary_text
+    primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text
+    primary_ambulatory_surgical = "ambulatory surgical" in primary_text or "day surgery" in primary_text
     primary_specialist = contains_any(primary_text, SPECIFIC_SPECIALIST_SERVICE_TERMS) or any(
         term in primary_text
         for term in (
@@ -1242,15 +1336,22 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "dental"
     elif primary_diagnostic:
         service = "diagnostic"
+    elif primary_hospital:
+        service = "hospital"
+    elif primary_renal:
+        service = "outpatient_renal_dialysis"
+    elif primary_ambulatory_surgical:
+        service = "ambulatory_surgical_centre"
+    elif primary_gp:
+        service = "GP_OMS"
     elif primary_specialist and specialist_name_evidence:
+        service = "specialist_OMS"
+    elif primary_specialist:
         service = "specialist_OMS"
     elif primary_allied:
         service = "allied_health"
-    elif primary_gp:
-        service = "GP_OMS"
     elif "ambulatory surgical" in text or "day surgery" in text:
-        service = "unknown"
-        batch_override = "Batch 3 - Mar 2030"
+        service = "ambulatory_surgical_centre"
     elif "assisted reproduction" in text or "ivf" in text or ("fertility" in text and not has_family_clinic_evidence(row, text)):
         service = "specialist_OMS"
     elif any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
@@ -1262,13 +1363,12 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif has_hearing_care_evidence(text) or "audiology" in text:
         service = "hearing_care"
     elif "renal dialysis" in text or "dialysis" in text:
-        service = "unknown"
-        batch_override = "Batch 2 - Sep 2028"
+        service = "outpatient_renal_dialysis"
     elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
         service = "GP_OMS"
     elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
-    elif "aesthetic" in text and "clinic" in text and ("doctor" in text or "medical" in text):
+    elif "aesthetic" in text and has_clinic_word(text) and ("doctor" in text or "medical" in text):
         service = "GP_OMS"
     elif primary_specialist:
         service = "specialist_OMS"
@@ -1278,26 +1378,46 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "specialist_OMS"
     elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
         service = "diagnostic"
-    elif "hims" in text or "health information management system" in text:
-        service = "HIMS_provider"
-    elif "nehr" in text:
-        service = "NEHR_user"
-    elif "clinic" in text or "doctor" in text or "medical" in text:
+    elif "hims" in text or "health information management system" in text or "nehr" in text:
+        service = "unknown"
+    elif has_clinic_word(text) or "doctor" in text or "medical" in text:
         service = "GP_OMS"
     else:
         service = "unknown"
-    concrete_hia_evidence = has_concrete_hia_evidence(row, text, service) or bool(batch_override)
-    if service in HIA_BATCH_BY_SERVICE or batch_override:
+    official_service = official_hia_service_type(service, text)
+    concrete_hia_evidence = bool(official_service) and (has_concrete_hia_evidence(row, text, service) or bool(batch_override))
+    if official_service or service in HIA_BATCH_BY_SERVICE or batch_override:
         score = max(score + 24, 45)
+    name_blob = " ".join((company, compact(row.get("company_homepage_name")).lower()))
+    if official_service and any(
+        term in name_blob
+        for term in (
+            "clinic",
+            "medical",
+            "dental",
+            "hospital",
+            "centre",
+            "center",
+            "surgery",
+            "surgeon",
+            "heart",
+            "cancer",
+            "neuro",
+            "rheumat",
+            "arthritis",
+            "ivf",
+            "fertility",
+        )
+    ):
+        score = max(score, 75)
     if not concrete_hia_evidence:
         score = min(score, 36)
-        service = "unknown"
         batch_override = ""
     score = min(score, 100)
     confidence = confidence_from_score(score)
-    batch = batch_override or HIA_BATCH_BY_SERVICE.get(service, "unknown")
+    batch = batch_override or HIA_BATCH_BY_OFFICIAL_SERVICE.get(official_service) or HIA_BATCH_BY_SERVICE.get(service, "unknown")
     hia_relevant = concrete_hia_evidence and (
-        score >= 45 or (service in HIA_BATCH_BY_SERVICE and score >= 36) or (service == "hearing_care" and has_hearing_care_evidence(text))
+        score >= 45 or (official_service in HIA_BATCH_BY_OFFICIAL_SERVICE and score >= 36)
     )
     return {
         "hia_relevant": hia_relevant,
@@ -1309,6 +1429,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             else "Healthcare/HIA scope evidence is weak."
         ),
         "hia_service_type_guess": service,
+        "hia_official_service_type": official_service,
+        "hia_official_service_label": HIA_OFFICIAL_SERVICE_LABELS.get(official_service, ""),
         "hia_timeline_batch_guess": batch,
         "hia_deadline_claim_safe": batch != "unknown" and confidence in {"medium", "high"},
         "hia_disclaimer_needed": True,
@@ -1322,10 +1444,13 @@ def hia_llm_enabled() -> bool:
 
 
 def should_review_hia_with_llm(row: dict[str, Any], text: str, hia: dict[str, Any]) -> bool:
+    review = row.get("hia_llm_review")
+    if review and hia.get("hia_confidence") == "high" and hia.get("hia_relevant") and not review.get("hia_relevant"):
+        return False
+    if review:
+        return True
     if hia.get("hia_confidence") == "high":
         return False
-    if row.get("hia_llm_review"):
-        return True
     if hia.get("hia_relevant") and hia.get("hia_service_type_guess") in HIA_BATCH_BY_SERVICE:
         return False
     return contains_any(text, AMBIGUOUS_HIA_TERMS)
@@ -1352,9 +1477,10 @@ HIA_LLM_REVIEW_PROMPT = """You classify ambiguous Singapore healthcare scope for
 Use only provided evidence. Return strict JSON only. Do not invent facts.
 
 Rules:
-- If it is clearly a clinic, GP, outpatient medical provider, dental clinic, retail pharmacy, diagnostic/lab/radiology provider, hospital, nursing home, renal dialysis provider, HIMS provider, or NEHR user, set hia_relevant true.
+- If it clearly matches one official HIA service type, set hia_relevant true.
+- Official HIA service types are: Outpatient Medical Service (GP), Outpatient Medical Service (Specialist), Outpatient Dental, Acute Hospital, Nursing Home, Ambulatory Surgical Centre, Community Hospital, Contingency Care Service, Assisted Reproduction, Clinical Laboratory, Outpatient Renal Dialysis, Retail Pharmacy, Radiology Laboratory, Nuclear Medicine Service.
 - If it is only wellness, beauty, product retail, training, media, or generic care language without healthcare service evidence, set hia_relevant false.
-- For hearing-care or audiology, set hia_relevant true only when the evidence shows hearing tests, appointments, clinical care, audiologists, or patient/customer health records.
+- For hearing-care, audiology, physiotherapy, psychology, or other allied-health evidence, set hia_relevant true only when the evidence shows clinical patient care such as appointments, assessments, treatment, patient records or case notes.
 - Return a service type only when evidence supports it.
 - Use medium/high confidence only when evidence quotes are concrete.
 
@@ -1362,7 +1488,7 @@ Return:
 {
   "hia_relevant": false,
   "hia_confidence": "low|medium|high",
-  "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|HIMS_provider|NEHR_user|unknown",
+  "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|outpatient_renal_dialysis|ambulatory_surgical_centre|unknown",
   "hia_scope_reason": "",
   "evidence": [{"quote": "", "source_field": "", "reason": ""}],
   "human_review_required": true
@@ -1425,8 +1551,9 @@ def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None) -> 
     }
     if service not in valid_services:
         service = "unknown"
-    relevant = bool(review.get("hia_relevant"))
-    batch = HIA_BATCH_BY_SERVICE.get(service, "unknown")
+    official_service = official_hia_service_type(service, f"{hia.get('hia_scope_reason', '')} {compact(review.get('hia_scope_reason'))}".lower())
+    relevant = bool(review.get("hia_relevant")) and bool(official_service)
+    batch = HIA_BATCH_BY_OFFICIAL_SERVICE.get(official_service) or HIA_BATCH_BY_SERVICE.get(service, "unknown")
     reason = compact(review.get("hia_scope_reason")) or hia.get("hia_scope_reason", "")
     return {
         **hia,
@@ -1435,6 +1562,8 @@ def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None) -> 
         "hia_confidence": confidence,
         "hia_scope_reason": f"LLM ambiguous-HIA review: {reason}",
         "hia_service_type_guess": service,
+        "hia_official_service_type": official_service,
+        "hia_official_service_label": HIA_OFFICIAL_SERVICE_LABELS.get(official_service, ""),
         "hia_timeline_batch_guess": batch,
         "hia_deadline_claim_safe": relevant and batch != "unknown" and confidence in {"medium", "high"},
         "hia_disclaimer_needed": True,
@@ -1486,6 +1615,114 @@ def business_model_trust_signal(text: str) -> str:
     return "clients or business partners"
 
 
+def score_email_tracks(
+    row: dict[str, Any],
+    text: str,
+    entity: dict[str, Any],
+    hia: dict[str, Any],
+    data_type: str,
+    personal_intensity: str,
+    dpo_owner: bool,
+    trust_signal: str,
+) -> dict[str, dict[str, Any]]:
+    official_service = compact(hia.get("hia_official_service_type"))
+    hia_score = 0
+    hia_reasons: list[str] = []
+    if official_service and hia.get("hia_relevant"):
+        hia_score = max(int(hia.get("hia_relevance_score") or 0), 70)
+        hia_reasons.append(f"official_hia_service:{official_service}")
+        if hia.get("hia_confidence") == "high":
+            hia_score += 10
+        elif hia.get("hia_confidence") == "medium":
+            hia_score += 5
+    elif hia.get("hia_service_type_guess") not in {"", "unknown"}:
+        hia_reasons.append(f"non_official_or_weak_hia_service:{hia.get('hia_service_type_guess')}")
+
+    personal_score = {"high": 70, "medium": 55, "low": 20}.get(personal_intensity, 0)
+    if data_type != "unknown":
+        personal_score += 8
+    if entity.get("entity_type_guess") in {"charity", "social_service", "npo"} and data_type in {"beneficiary_data", "resident_data"}:
+        personal_score += 7
+    pdpa_reasons = [f"personal_intensity:{personal_intensity}", f"data_type:{data_type}"]
+
+    dpo_score = personal_score + (22 if dpo_owner else 0)
+    dpo_reasons = pdpa_reasons + (["contact_or_role_owner"] if dpo_owner else ["no_dpo_ops_owner_signal"])
+
+    trust_score = 0
+    trust_reasons: list[str] = []
+    if has_customer_trust_pressure(text):
+        trust_score = 68
+        trust_reasons.append(f"trust_signal:{trust_signal}")
+    if contains_any(text, B2B_TERMS):
+        trust_score = max(trust_score, 55)
+        trust_reasons.append("b2b_terms")
+    if personal_intensity in {"medium", "high"} and trust_score:
+        trust_score += 8
+
+    return {
+        "hia_regulatory": {
+            "score": min(hia_score, 100),
+            "eligible": bool(official_service and hia.get("hia_relevant") and hia.get("hia_confidence") in {"medium", "high"}),
+            "reason": "; ".join(hia_reasons) or "no_official_hia_service_evidence",
+        },
+        "dpo_evidence": {
+            "score": min(dpo_score, 100),
+            "eligible": bool(dpo_owner and personal_intensity in {"medium", "high"}),
+            "reason": "; ".join(dpo_reasons),
+        },
+        "customer_trust": {
+            "score": min(trust_score, 100),
+            "eligible": bool(trust_score >= 65),
+            "reason": "; ".join(trust_reasons) or "no_customer_or_partner_trust_signal",
+        },
+        "pdpa_safeguards": {
+            "score": min(personal_score, 100),
+            "eligible": personal_intensity in {"medium", "high"},
+            "reason": "; ".join(pdpa_reasons),
+        },
+    }
+
+
+def choose_email_track(track_scores: dict[str, dict[str, Any]]) -> tuple[str, str, list[dict[str, Any]]]:
+    thresholds = {
+        "hia_regulatory": 70,
+        "dpo_evidence": 70,
+        "customer_trust": 65,
+        "pdpa_safeguards": 50,
+    }
+    candidates = [
+        (track, int(data.get("score") or 0))
+        for track, data in track_scores.items()
+        if data.get("eligible") and int(data.get("score") or 0) >= thresholds[track]
+    ]
+    if not candidates:
+        rejected = [
+            {"track": track, "score": int(data.get("score") or 0), "reason": data.get("reason", ""), "eligible": bool(data.get("eligible"))}
+            for track, data in sorted(track_scores.items())
+        ]
+        return "not_ready", "", rejected
+    hia_candidate = next((item for item in candidates if item[0] == "hia_regulatory"), None)
+    if hia_candidate and hia_candidate[1] >= thresholds["hia_regulatory"]:
+        primary = "hia_regulatory"
+        secondary = next((track for track, _score in sorted(candidates, key=lambda item: item[1], reverse=True) if track != primary), "")
+        rejected = [
+            {"track": track, "score": int(data.get("score") or 0), "reason": data.get("reason", ""), "eligible": bool(data.get("eligible"))}
+            for track, data in sorted(track_scores.items())
+            if track != primary
+        ]
+        return primary, secondary, rejected
+    priority = {"hia_regulatory": 4, "dpo_evidence": 3, "customer_trust": 2, "pdpa_safeguards": 1}
+    candidates.sort(key=lambda item: (item[1], priority[item[0]]), reverse=True)
+    primary = candidates[0][0]
+    secondary = next((track for track, _score in candidates[1:] if track != primary), "")
+    rejected = [
+        {"track": track, "score": int(data.get("score") or 0), "reason": data.get("reason", ""), "eligible": bool(data.get("eligible"))}
+        for track, data in sorted(track_scores.items())
+        if track != primary
+    ]
+    return primary, secondary, rejected
+
+
 def healthcare_segment(classification: dict[str, Any]) -> str:
     service = compact(classification.get("hia_service_type_guess")).replace("_", " ")
     entity = compact(classification.get("entity_type_guess")).replace("_", " ")
@@ -1513,6 +1750,12 @@ def has_hearing_care_evidence(text: str) -> bool:
             "audiologist",
         )
     )
+
+
+def has_dental_service_evidence(text: str) -> bool:
+    if any(term in text for term in ("dental", "dentist", "orthodont", "orthodontic")):
+        return True
+    return "braces" in text and any(term in text for term in ("teeth", "tooth", "aligner", "dental", "orthodont"))
 
 
 def has_clinical_lab_evidence(text: str) -> bool:
@@ -1568,29 +1811,31 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     data_type, personal_intensity, sensitive_likelihood = infer_data_signal(text, hia, entity)
     dpo_owner = is_data_protection_owner(row)
     trust_signal = business_model_trust_signal(text)
+    track_scores = score_email_tracks(row, text, entity, hia, data_type, personal_intensity, dpo_owner, trust_signal)
+    primary_track, secondary_track, rejected_tracks = choose_email_track(track_scores)
 
-    if hia["hia_relevant"] and hia["hia_confidence"] in {"medium", "high"}:
+    if primary_track == "hia_regulatory":
         pressure_type = "hia_regulatory"
         problem_area = "hia_readiness"
         value_asset = "hia_readiness_map"
         trigger = "HIA timelines start from 2027, and the website indicates healthcare or patient-data activity."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Start with HIA readiness mapping, then use Cyber Essentials as a practical cybersecurity/data-security baseline."
-    elif dpo_owner and personal_intensity in {"medium", "high"}:
+    elif primary_track == "dpo_evidence":
         pressure_type = "pdpa_safeguards"
         problem_area = "evidence_collection"
         value_asset = "security_evidence_checklist"
         trigger = "The selected contact appears to own data-protection, compliance, operations, admin or HR evidence across teams."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials to structure security evidence across IT, HR, vendors and operations; consider DPE/DPTM only when broader data-protection governance evidence supports it."
-    elif has_customer_trust_pressure(text):
+    elif primary_track == "customer_trust":
         pressure_type = "customer_trust"
         problem_area = "evidence_collection"
         value_asset = "security_evidence_checklist"
         trigger = f"Customers and partners may ask for reusable security evidence because the website indicates {trust_signal} activity."
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials as the first reusable security-evidence baseline."
-    elif personal_intensity in {"medium", "high"}:
+    elif primary_track == "pdpa_safeguards":
         pressure_type = "pdpa_safeguards"
         problem_area = "pdpa_safeguards" if personal_intensity in {"medium", "high"} else "unknown"
         value_asset = "pdpa_safeguards_checklist"
@@ -1606,9 +1851,9 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         recommended_path = "Do not generate outreach until stronger HIA, personal-data, DPO/ops, or customer-trust evidence is available."
 
     trigger_confidence = "medium" if entity["entity_type_confidence"] in {"medium", "high"} else "low"
-    if hia["hia_confidence"] == "high":
+    if pressure_type == "hia_regulatory" and hia["hia_confidence"] == "high":
         trigger_confidence = "high"
-    elif pressure_type in {"pdpa_safeguards", "customer_trust"} and personal_intensity in {"medium", "high"}:
+    elif primary_track in {"dpo_evidence", "pdpa_safeguards", "customer_trust"} and personal_intensity in {"medium", "high"}:
         trigger_confidence = "medium"
 
     certification_score = 82 if recommended_first_cert == "Cyber Essentials" and pressure_type != "not_ready" else 40
@@ -1621,7 +1866,25 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "entity_evidence_json": {
             "terms": sorted({term for term in (*HEALTHCARE_TERMS, *NPO_TERMS, *SOCIAL_TERMS, *B2B_TERMS) if term in text})[:20],
         },
-        "campaign_track": "dpo_evidence" if dpo_owner and pressure_type == "pdpa_safeguards" else pressure_type,
+        "campaign_track": "dpo_evidence" if primary_track == "dpo_evidence" else pressure_type,
+        "primary_email_track": primary_track,
+        "secondary_email_track": secondary_track,
+        "regulatory_applicability": (
+            ["HIA", "PDPA"] if hia.get("hia_relevant") and hia.get("hia_official_service_type") else ["PDPA"] if personal_intensity in {"medium", "high"} else []
+        ),
+        "classification_confidence": trigger_confidence,
+        "classification_evidence_json": {
+            "track_scores": track_scores,
+            "selected_track": primary_track,
+            "secondary_track": secondary_track,
+            "official_hia_service_type": hia.get("hia_official_service_type", ""),
+            "official_hia_service_label": hia.get("hia_official_service_label", ""),
+            "data_type_signal": data_type,
+            "personal_data_intensity": personal_intensity,
+            "dpo_owner_signal": dpo_owner,
+            "trust_signal": trust_signal if has_customer_trust_pressure(text) else "",
+        },
+        "classification_rejected_tracks_json": rejected_tracks,
         "pressure_type": pressure_type,
         "pressure_reason": trigger,
         "outreach_trigger_signal": trigger,
@@ -1647,7 +1910,14 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "recommended_cert_path": recommended_path,
         "certification_reason": certification_reason(pressure_type),
         "certification_fit_score": certification_score,
-        "certification_evidence_json": {"pressure_type": pressure_type, "data_type_signal": data_type},
+        "certification_evidence_json": {
+            "pressure_type": pressure_type,
+            "primary_email_track": primary_track,
+            "secondary_email_track": secondary_track,
+            "data_type_signal": data_type,
+            "track_scores": track_scores,
+            "rejected_tracks": rejected_tracks,
+        },
         "evidence": [
             {
                 "field": "website_content",
@@ -1841,7 +2111,7 @@ def email_variant_segment(row: dict[str, Any], classification: dict[str, Any], c
             return "pharmacy"
         if profile == "hearing_care" or service == "hearing_care":
             return "hearing_care"
-        if profile in {"hospice_long_term_care", "home_care"} or service == "long_term_care":
+        if profile in {"hospice_long_term_care", "home_care", "nursing_home", "community_hospital"} or service == "long_term_care":
             return "care"
         if profile == "specialist_led" or service == "specialist_OMS":
             return "specialist"
@@ -3239,6 +3509,7 @@ def primary_service_summary_for_profile(row: dict[str, Any], text: str, service_
 
 def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], text: str) -> dict[str, Any]:
     service_type = str(classification.get("hia_service_type_guess") or "")
+    official_service = str(classification.get("hia_official_service_type") or "")
     company = compact(row.get("company_name"))
     parent = compact(row.get("parent_company"))
     locations = listish_items(row.get("locations_detected"))
@@ -3342,9 +3613,7 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     if service_type == "diagnostic":
         guess = "diagnostic_lab"
         add_evidence("diagnostic, screening or lab terms")
-    elif service_type == "dental" or (
-        any(term in primary_source_l for term in ("dental", "dentist", "orthodont", "braces")) and not has_gp
-    ):
+    elif service_type == "dental" or (has_dental_service_evidence(primary_source_l) and not has_gp):
         guess = "dental"
         add_evidence("dental terms")
     elif has_neuro_institute:
@@ -3379,7 +3648,13 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     ):
         guess = "allied_health"
         add_evidence("allied-health or physiotherapy terms")
-    elif home_care_subtype(primary_source_l):
+    elif official_service == "nursing_home":
+        guess = "nursing_home"
+        add_evidence("nursing-home service terms")
+    elif official_service == "community_hospital":
+        guess = "community_hospital"
+        add_evidence("community-hospital service terms")
+    elif official_service == "contingency_care_service" or home_care_subtype(primary_source_l):
         guess = "home_care"
         add_evidence("home-care or caregiver terms")
     elif service_type == "long_term_care" and any(
@@ -3498,6 +3773,10 @@ def prospect_facing_profile_phrase(
         return "an allied-health provider offering physiotherapy or treatment support"
     if guess == "mental_health":
         return "a psychology / mental-health provider handling assessment and case-note records"
+    if guess == "nursing_home":
+        return "a nursing home handling resident and patient care records"
+    if guess == "community_hospital":
+        return "a community hospital handling patient and discharge records"
     if guess == "hospice_long_term_care":
         return "a hospice / long-term care provider handling patient, resident, family, volunteer and staff data"
     if guess == "home_care":
@@ -3513,6 +3792,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
     service_type = classification.get("hia_service_type_guess")
     if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
         return "patient records, appointment details, consultation notes, clinic email, vendor systems"
+    if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
+        return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
     if profile_guess == "specialist_led" or service_type == "specialist_OMS":
         subtype = specialist_subtype(text)
         if subtype == "cardiology":
@@ -3538,8 +3819,6 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
         if subtype == "orthopaedic":
             return "orthopaedic consultation notes, imaging/referral records, treatment plans, appointment details and vendor systems"
         return "consultation notes, patient reports, treatment records, vendor systems"
-    if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
-        return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
     if profile_guess == "dental" or service_type == "dental":
         return "patient records, imaging files, appointment details, dental software"
     if profile_guess == "pharmacy" or service_type == "retail_pharmacy":
@@ -3552,6 +3831,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
         return "appointment, treatment and exercise-plan records"
     if profile_guess == "mental_health":
         return "appointment, assessment and case-note records"
+    if profile_guess in {"nursing_home", "community_hospital"}:
+        return "resident, patient, family, staff and care records"
     if profile_guess == "hospice_long_term_care" or service_type == "long_term_care":
         if profile_guess == "home_care" or home_care_subtype(text):
             return "client, patient, caregiver, family and staff records"
@@ -3591,7 +3872,7 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_pr
         return "allied-health readiness map"
     if profile_guess == "mental_health":
         return "psychology readiness map"
-    if profile_guess == "hospice_long_term_care":
+    if profile_guess in {"hospice_long_term_care", "nursing_home", "community_hospital"}:
         return "long-term care readiness map"
     if profile_guess == "home_care":
         return "care readiness map"
@@ -4605,6 +4886,8 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
         "allied_health": ("allied-health", "physiotherapy", "treatment support"),
         "mental_health": ("psychology", "mental-health", "assessment"),
         "hearing_care": ("hearing-care", "hearing test", "audiology"),
+        "nursing_home": ("nursing home", "resident", "patient care", "care records"),
+        "community_hospital": ("community hospital", "patient", "discharge records"),
     }
     return not any(term in body_l for term in equivalents.get(profile_guess, ()))
 
@@ -5319,7 +5602,12 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "hia_timeline_batch_guess": c["hia_timeline_batch_guess"],
         "hia_deadline_claim_safe": c["hia_deadline_claim_safe"],
         "hia_disclaimer_needed": c["hia_disclaimer_needed"],
-        "hia_evidence_json": json_dumps({"evidence": c["evidence"], "scope_reason": c["hia_scope_reason"]}),
+        "hia_evidence_json": json_dumps({
+            "evidence": c["evidence"],
+            "scope_reason": c["hia_scope_reason"],
+            "official_service_type": c.get("hia_official_service_type", ""),
+            "official_service_label": c.get("hia_official_service_label", ""),
+        }),
         "pdpa_relevant": c["pdpa_relevant"],
         "pdpa_reason": c["pdpa_reason"],
         "personal_data_intensity": c["personal_data_intensity"],

@@ -2355,13 +2355,13 @@ class OutreachPlannerTests(unittest.TestCase):
             (
                 {
                     "Id": 49,
-                    "company_name": "Assisi Hospice",
-                    "website_content": "Hospice and palliative care provider with patient care, resident support, family contacts, volunteers and staff.",
-                    "services_detected": "patient care; palliative care; volunteer support",
+                    "company_name": "Assisi Nursing Home",
+                    "website_content": "Nursing home with resident care, patient care, family contacts, volunteers and staff.",
+                    "services_detected": "resident care; patient care; volunteer support",
                 },
                 "long_term_care",
-                "hospice / long-term care provider handling patient, resident, family, volunteer and staff data",
-                "patient, resident, family, volunteer and staff data",
+                "nursing home handling resident and patient care records",
+                "resident, patient, family, staff and care records",
             ),
             (
                 {
@@ -2410,8 +2410,122 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Outpatient renal dialysis service with patient appointments in Singapore.",
             }
         )
-        self.assertEqual(renal["hia_service_type_guess"], "unknown")
+        self.assertEqual(renal["hia_service_type_guess"], "outpatient_renal_dialysis")
+        self.assertEqual(renal["hia_official_service_type"], "outpatient_renal_dialysis")
         self.assertEqual(renal["hia_timeline_batch_guess"], "Batch 2 - Sep 2028")
+
+    def test_classifier_uses_official_hia_service_types(self):
+        cases = [
+            (
+                "Example GP Clinic",
+                "Outpatient medical GP clinic with doctors, appointments and patient treatment records.",
+                "outpatient_medical_gp",
+            ),
+            (
+                "Example Dental Surgery",
+                "Outpatient dental clinic with dentists, imaging, appointments and patient records.",
+                "outpatient_dental",
+            ),
+            (
+                "Example Renal Centre",
+                "Outpatient renal dialysis service with patient appointments and treatment records.",
+                "outpatient_renal_dialysis",
+            ),
+            (
+                "Example Radiology",
+                "Radiology laboratory with imaging reports, patient appointments and diagnostic records.",
+                "radiology_laboratory",
+            ),
+        ]
+        for company, website_content, official_service in cases:
+            with self.subTest(company=company):
+                classification = o.classify_row({"company_name": company, "website_content": website_content})
+                self.assertEqual(classification["primary_email_track"], "hia_regulatory")
+                self.assertEqual(classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(classification["hia_official_service_type"], official_service)
+                self.assertIn("HIA", classification["regulatory_applicability"])
+                self.assertIn("PDPA", classification["regulatory_applicability"])
+
+    def test_clinical_allied_health_can_map_to_official_hia_service(self):
+        cases = [
+            (
+                "Example Physio Clinic",
+                "Physiotherapy clinic with patient appointments, assessments, treatment plans and rehabilitation records.",
+            ),
+            (
+                "Example Hearing Centre",
+                "Audiology clinic with hearing tests, hearing assessments, patient appointments and device fitting records.",
+            ),
+        ]
+        for company, website_content in cases:
+            with self.subTest(company=company):
+                classification = o.classify_row({"company_name": company, "website_content": website_content})
+                self.assertEqual(classification["primary_email_track"], "hia_regulatory")
+                self.assertEqual(classification["pressure_type"], "hia_regulatory")
+                self.assertTrue(classification["hia_relevant"])
+                self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+                self.assertIn("HIA", classification["regulatory_applicability"])
+                self.assertIn("PDPA", classification["regulatory_applicability"])
+
+    def test_retail_or_wellness_allied_context_is_not_hia(self):
+        cases = [
+            (
+                "Example Hearing Retail",
+                "Singapore retailer offering hearing aid accessories, batteries and customer service.",
+            ),
+            (
+                "Example Therapy Studio",
+                "Wellness studio offering fitness classes, coaching and customer memberships.",
+            ),
+            (
+                "Example Therapy Clinic",
+                "Wellness therapy clinic offering coaching, fitness classes and customer memberships.",
+            ),
+        ]
+        for company, website_content in cases:
+            with self.subTest(company=company):
+                classification = o.classify_row({"company_name": company, "website_content": website_content})
+                self.assertNotEqual(classification["primary_email_track"], "hia_regulatory")
+                self.assertFalse(classification["hia_relevant"])
+                self.assertEqual(classification["hia_official_service_type"], "")
+
+    def test_clinically_word_does_not_create_clinic_hia_match(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Nature's Own Essentials",
+                "website_content": (
+                    "Brown rice cereal and food products. Naturally nutritious and clinically proven "
+                    "nutrition claims are listed with Shopify e-commerce, orders and customer support."
+                ),
+            }
+        )
+        self.assertNotEqual(classification["primary_email_track"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+
+    def test_allied_health_is_not_hia_without_patient_care_evidence(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Physio Retail",
+                "website_content": "Physio equipment store selling braces, exercise bands, posture aids and customer support.",
+            }
+        )
+        self.assertNotEqual(classification["primary_email_track"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertIn(classification["primary_email_track"], {"pdpa_safeguards", "not_ready"})
+
+    def test_scored_tracks_keep_hia_applicability_separate_from_email_track(self):
+        classification = o.classify_row(
+            {
+                "company_name": "Example Health Marketplace",
+                "website_content": "Healthcare marketplace platform for enterprise clients handling customer data, vendor access and partner onboarding.",
+            }
+        )
+        self.assertEqual(classification["primary_email_track"], "customer_trust")
+        self.assertEqual(classification["pressure_type"], "customer_trust")
+        self.assertIn("track_scores", classification["classification_evidence_json"])
+        self.assertTrue(classification["classification_rejected_tracks_json"])
 
     def test_clinic_entity_precedence_survives_incidental_social_terms(self):
         classification = o.classify_row(
