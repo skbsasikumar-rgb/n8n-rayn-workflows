@@ -2439,12 +2439,25 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
     return f"{greeting} {observation_after_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
+EMAIL_2_VALUE_PS = (
+    "P.S. We are usually priced near the lower end, and the scope is heavier: "
+    "evidence prep, certification support, and a SaaS tool to help the team stay certified."
+)
+
+
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
-    first_line = followup_sentence(prefix, f"{funding_line}{caveat}")
+    first_line = followup_sentence(prefix, "if the route summary is useful, the next question is usually cost.")
+    claim_line = compact(f"{funding_line}{caveat}")
+    second_line = (
+        f"{claim_line} The useful step is a quick fit check before anyone spends time on a full quote."
+        if claim_line
+        else "The useful step is a quick fit check before anyone spends time on a full quote."
+    )
     return (
         f"{first_line}\n\n"
-        "The useful first step is to check the route before lining up readiness work.\n\n"
-        "Should I send the route summary?"
+        f"{second_line}\n\n"
+        "Worth checking the support route?\n\n"
+        f"{EMAIL_2_VALUE_PS}"
     )
 
 
@@ -2455,50 +2468,45 @@ def hia_pricing_email_2_body(
     slots: dict[str, str] | None = None,
 ) -> str:
     slots = slots or {}
-    price_text = CISOAAS_HIA_PRICING["price_text"]
-    cost_opener = slots.get("cost_opener") or "Straight up on cost:"
-    endpoint_caveat = slots.get("endpoint_caveat") or "CISOaaS pricing is endpoint-based, so I would not guess the final number from the outside."
-    small_price = slots.get("small_clinic_price") or f"For smaller clinics, CISOaaS starts around {price_text} before funding."
-    group_line = slots.get("group_larger_setup") or "Bigger or group setups need a quick endpoint check."
-    funding_sentence = f" {slots.get('conditional_funding')}" if funding_safe and slots.get("conditional_funding") else ""
-    value_line = slots.get("rayn_value_line") or "We handle the messy evidence work. The software helps keep training and governance tidy after certification."
-    cta = slots.get("cta") or "Worth doing a quick endpoint check?"
-    if pricing_mode == "small_clinic_starting_price":
-        first_line = followup_sentence(prefix, f"{cost_opener} {small_price}{funding_sentence}")
-        return (
-            f"{first_line}\n\n"
-            f"{value_line}\n\n"
-            f"{cta}"
-        )
-    if pricing_mode == "group_or_larger_sizing_needed":
-        first_line = followup_sentence(prefix, f"{cost_opener} {endpoint_caveat}")
-        return (
-            f"{first_line}\n\n"
-            f"{group_line}"
-            f"{funding_sentence}\n\n"
-            f"{value_line}\n\n"
-            f"{cta}"
-        )
-    first_line = followup_sentence(prefix, f"{cost_opener} {endpoint_caveat}")
+    first_line = followup_sentence(prefix, "if the HIA readiness map is relevant, the next question is usually cost.")
+    route_line = slots.get("route_line") or (
+        "The tricky part is that support depends on the route and the size of the setup."
+    )
+    if slots.get("sizing_line"):
+        sizing_line = slots["sizing_line"]
+    elif pricing_mode == "small_clinic_starting_price":
+        sizing_line = "For smaller clinics, that usually means endpoint count and which users need to be covered."
+    elif pricing_mode == "group_or_larger_sizing_needed":
+        sizing_line = "For group or larger setups, that usually means endpoint count and which users need to be covered."
+    else:
+        sizing_line = "For smaller clinics or larger setups, that usually means endpoint count and which users need to be covered."
+    fit_line = slots.get("fit_line") or "We can do a quick fit check before anyone spends time on a full quote."
+    cta = slots.get("cta") or "Worth checking the HIA funding route?"
     return (
         f"{first_line}\n\n"
-        f"{small_price} {group_line}"
-        f"{funding_sentence}\n\n"
-        f"{value_line}\n\n"
-        f"{cta}"
+        f"{route_line} {sizing_line}\n\n"
+        f"{fit_line} {cta}\n\n"
+        f"{EMAIL_2_VALUE_PS}"
     )
 
 
 def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str] | None = None) -> str:
     slots = slots or {}
-    evidence_line = slots.get("evidence_line") or "A simple first pass is to check what evidence already exists: access lists, backups, updates, malware controls and incident contacts."
-    second_line = slots.get("second_line") or "If those are already in decent shape, Cyber Essentials is usually a cleaner job."
-    cta = slots.get("cta") or f"Worth sending the {asset_name}?"
-    first_line = followup_sentence(prefix, evidence_line)
+    first_line = followup_sentence(
+        prefix,
+        slots.get("opening_line") or f"if the {asset_name} is useful, the next question is whether there is any support route for the work.",
+    )
+    second_line = slots.get("second_line") or (
+        "I would not assume that from the outside. It depends on the company setup, scope, "
+        "and whether Cyber Essentials is the right first step."
+    )
+    fit_line = slots.get("fit_line") or "We can do a quick fit check before anyone spends time on a full quote."
+    cta = slots.get("cta") or "Worth checking the support route?"
     return (
         f"{first_line}\n\n"
         f"{second_line}\n\n"
-        f"{cta}"
+        f"{fit_line} {cta}\n\n"
+        f"{EMAIL_2_VALUE_PS}"
     )
 
 
@@ -2682,9 +2690,9 @@ def hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "quick_endpoint_check": "Worth doing a quick endpoint check?",
-                "send_endpoint_check": "Should I send a quick endpoint check?",
-                "check_endpoint_tier": "Worth checking the endpoint tier first?",
+                "hia_funding_route": "Worth checking the HIA funding route?",
+                "hia_support_route": "Should I check the HIA support route?",
+                "hia_cost_route": "Worth checking the HIA cost route first?",
             },
         ),
     }
@@ -2747,7 +2755,19 @@ def non_hia_email_2_sentence_slots(
         }
     return {
         "evidence_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "evidence_line", evidence_options),
-        "second_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "second_line", second_options),
+        "second_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "second_line",
+            {
+                "depends_on_setup": "I would not assume that from the outside. It depends on the company setup, scope, and whether Cyber Essentials is the right first step.",
+                "route_and_scope": "The route depends on the setup, the scope, and what proof the team already has.",
+                "first_step_fit": "The useful check is whether Cyber Essentials is the right first step and what scope needs covering.",
+            },
+        ),
         "cta": choose_sentence_slot(
             row,
             classification,
@@ -2756,9 +2776,9 @@ def non_hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "safeguards_checklist": f"Worth sending the {asset_name}?",
-                "evidence_checklist": f"Should I send the {asset_name}?",
-                "security_evidence_checklist": f"Worth sending the {asset_name}?",
+                "support_route": "Worth checking the support route?",
+                "fit_check": "Should I check the support route?",
+                "scope_route": "Worth checking the route and scope first?",
             },
         ),
     }
@@ -4482,7 +4502,7 @@ def generate_email_sequence(
             email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, "", asset)
             email3_body = diagnostic_email_3_body_fixed(diagnostic, email3_slots, followup_prefix)
         if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
-            hia_pricing_subjects = {"A": "endpoint check", "B": "CISOaaS sizing", "C": "cost check"}
+            hia_pricing_subjects = {"A": "HIA funding route", "B": "support route", "C": "cost check"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
             email2_subject = hia_pricing_subjects[email2_subject_key]
             email2_subject_options = list(hia_pricing_subjects.values())
@@ -4507,7 +4527,7 @@ def generate_email_sequence(
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
             email2_body = funding_email_2_body_fixed(followup_prefix, funding_line, caveat)
         else:
-            fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
+            fallback_subjects = {"A": "support route", "B": "funding fit", "C": "cost check"}
             subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
             email2_subject = fallback_subjects[subject_key]
             email2_subject_options = list(fallback_subjects.values())
@@ -5265,7 +5285,7 @@ def quality_gate(
         if phrase in blob:
             flags.append(f"style_banned_phrase:{phrase}")
 
-    limits = {"email_1": 85, "email_2": 80, "email_3": 95, "email_4": 55}
+    limits = {"email_1": 85, "email_2": 105, "email_3": 95, "email_4": 55}
     for key, limit in limits.items():
         if emails[key]["word_count"] > limit:
             flags.append(f"{key}_too_long")

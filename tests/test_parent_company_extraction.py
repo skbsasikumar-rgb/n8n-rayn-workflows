@@ -5,7 +5,9 @@ import types
 import unittest
 from unittest.mock import patch
 
-if "bs4" not in sys.modules:
+try:
+    import bs4  # noqa: F401
+except Exception:
     bs4 = types.ModuleType("bs4")
     bs4.BeautifulSoup = object
     sys.modules["bs4"] = bs4

@@ -634,7 +634,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
                 elif o.hia_pricing_active(plan.classification, plan.copy_brief):
-                    self.assertIn("CISOaaS", plan.emails["email_2"]["body"])
+                    self.assertIn("HIA readiness map", plan.emails["email_2"]["body"])
+                    self.assertIn("endpoint count", plan.emails["email_2"]["body"])
                     self.assertLessEqual(plan.emails["email_2"]["body"].lower().count("size it"), 1)
                 elif not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertNotIn("funding", plan.emails["email_2"]["body"].lower())
@@ -745,8 +746,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(partial_funding_patch["email_2_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["funding_followup_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
-        self.assertNotIn("support route", partial_funding_patch["email_2_body"].lower())
-        self.assertIn("safeguards checklist?", partial_funding_patch["email_2_body"])
+        self.assertIn("support route", partial_funding_patch["email_2_body"].lower())
+        self.assertIn("quick fit check", partial_funding_patch["email_2_body"])
         self.assertNotIn("email_2_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -992,7 +993,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(result["patch"]["automation_decision_reason"], "funding_claim_not_safe_used_value_fallback")
         self.assertNotIn("funding", result["patch"]["email_2_body"].lower())
         self.assertNotIn("you qualify", result["patch"]["email_2_body"].lower())
-        self.assertIn("safeguards checklist?", result["patch"]["email_2_body"])
+        self.assertIn("support route", result["patch"]["email_2_body"].lower())
 
     def test_funding_requires_verified_current_matched_programme(self):
         row = {
@@ -1019,7 +1020,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(matched.copy_brief["email_2_mode"], "funding")
         self.assertEqual(matched.copy_brief["funding_followup_mode"], "funding")
         self.assertTrue("endpoint-based" in matched.emails["email_2"]["body"] or "endpoint count" in matched.emails["email_2"]["body"])
-        self.assertIn("S$4,300 before funding", matched.emails["email_2"]["body"])
+        self.assertIn("HIA readiness map", matched.emails["email_2"]["body"])
+        self.assertNotIn("S$4,300 before funding", matched.emails["email_2"]["body"])
 
     def test_send_readiness_distinguishes_gate_from_draft_mode(self):
         row = {
@@ -1281,19 +1283,17 @@ class OutreachPlannerTests(unittest.TestCase):
             "Based on the company profile, the Cyber Essentials support route appears worth checking for Example Clinic.",
             "\n\nThis is subject to programme confirmation.",
         )
-        self.assertIn(
-            "The useful first step is to check the route before lining up readiness work.",
-            body,
-        )
-        self.assertNotIn("before anyone spends time", body)
+        self.assertIn("the next question is usually cost", body)
+        self.assertIn("quick fit check before anyone spends time on a full quote", body)
+        self.assertIn("P.S. We are usually priced near the lower end", body)
 
     def test_email_2_named_followup_lowercases_after_dash(self):
         funding = o.funding_email_2_body_fixed("Samuel - ", "Based on the company profile, the Cyber Essentials support route appears worth checking.", "")
         fallback = o.value_fallback_body_fixed("Samuel - ", "safeguards checklist")
         pricing = o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False)
-        self.assertTrue(funding.startswith("Samuel - based"))
-        self.assertTrue(fallback.startswith("Samuel - a simple first pass"))
-        self.assertTrue(pricing.startswith("Samuel - straight up"))
+        self.assertTrue(funding.startswith("Samuel - if"))
+        self.assertTrue(fallback.startswith("Samuel - if"))
+        self.assertTrue(pricing.startswith("Samuel - if"))
 
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
@@ -2109,9 +2109,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.copy_brief["clinic_size_guess"], {"solo_gp", "small_single_clinic"})
         self.assertEqual(plan.copy_brief["endpoint_band_guess"], "1_5")
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
-        self.assertIn("S$4,300 before funding", email2)
-        self.assertTrue("If the route applies" in email2 or "Subject to programme confirmation" in email2)
-        self.assertIn("software", email2.lower())
+        self.assertNotIn("S$4,300 before funding", email2)
+        self.assertIn("HIA readiness map", email2)
+        self.assertIn("quick fit check", email2)
+        self.assertIn("saas tool", email2.lower())
         self.assertTrue(plan.final_send_gate_passed)
         self.assertNotIn("you qualify", email2.lower())
         self.assertNotIn("you are eligible", email2.lower())
@@ -2135,7 +2136,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(record["copy_brief"]["pricing_email_2_mode"], "endpoint_sizing_needed")
         self.assertTrue("endpoint-based" in email2 or "endpoint count" in email2)
         self.assertRegex(email2, r"[Ss]maller clinics|[Ss]mall clinic")
-        self.assertIn("S$4,300 before funding", email2)
+        self.assertNotIn("S$4,300 before funding", email2)
+        self.assertIn("HIA ", email2)
         self.assertEqual(patch["automation_decision"], "auto_send_eligible")
         self.assertTrue(patch["final_send_gate_passed"])
 
@@ -2220,7 +2222,10 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         email2 = plan.emails["email_2"]["body"]
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
-        self.assertIn("S$4,300 before funding", email2)
+        self.assertIn("HIA readiness map", email2)
+        self.assertIn("endpoint count", email2)
+        self.assertIn("HIA ", email2)
+        self.assertIn("priced near the lower end", email2)
         self.assertNotIn("70%", email2)
         self.assertNotIn("If the route applies", email2)
         self.assertTrue(plan.final_send_gate_passed)
@@ -2236,7 +2241,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertNotIn("S$4,300", email2)
         self.assertNotIn("CISOaaS pricing", email2)
-        self.assertIn("evidence", email2.lower())
+        self.assertIn("support route", email2.lower())
+        self.assertIn("priced near the lower end", email2)
 
     def test_friendlier_deterministic_copy_style_keeps_track_spines(self):
         cases = [
