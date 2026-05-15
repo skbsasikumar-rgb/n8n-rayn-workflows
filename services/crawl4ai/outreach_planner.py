@@ -223,9 +223,12 @@ Email 2 rules:
 - For PDPA tracks, do not say Cyber Essentials replaces PDPA obligations. Say it can help structure evidence for security safeguards.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
+- Use 4 short paragraphs separated by blank lines.
+- Keep the main body to 3 short paragraphs before the P.S.
 - Keep this P.S. exactly as written:
   P.S. We are usually priced near the lower end, and the scope is heavier: evidence prep, certification support, and a SaaS tool to help the team stay certified.
-- Keep Email 2 under 105 words.
+- Keep Email 2 under 95 words. Aim for 85-92 words so it does not fail QA.
+- If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
 Return:
 {
@@ -4657,6 +4660,9 @@ def email_1_rewrite_payload(
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
         "email_2_required_ps": EMAIL_2_VALUE_PS,
+        "email_2_target_words": "85-92",
+        "email_2_hard_max_words": 95,
+        "email_2_required_shape": "4 short paragraphs: opener, support route, CTA, exact P.S.",
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "funding_claim_line": compact(funding.funding_claim_line),
         "funding_claim_safe": funding_safe,
@@ -4892,9 +4898,10 @@ def _email_rewrite_retry_feedback(
             "fix_only_these_issues": True,
             "rules": [
                 "Return a fresh rewrite, not an explanation.",
-                "Keep Email 2 under 105 words.",
+                "Keep Email 2 under 95 words. Aim for 85-92 words.",
                 "Keep the required P.S. exactly as provided.",
-                "Use 4 short paragraphs for Email 1 and Email 2.",
+                "Use 4 short paragraphs for Email 1 and Email 2. Email 2 must be opener, support route, CTA, exact P.S.",
+                "Cut extra explanation before the P.S.; the P.S. already carries the scope/value point.",
                 "Make Email 1 specific; do not weaken the company hook.",
                 "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
             ],
