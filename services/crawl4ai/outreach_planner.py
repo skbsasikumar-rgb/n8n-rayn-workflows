@@ -4781,6 +4781,14 @@ def _email_rewrite_subject_options(subject: str, original: dict[str, Any]) -> li
     return list(dict.fromkeys([subject, *((original or {}).get("subject_options") or [])]))
 
 
+def _email_rewrite_candidate_snapshot(subject: str, body: str) -> dict[str, Any]:
+    return {
+        "subject": compact(subject),
+        "body": body,
+        "word_count": word_count(body),
+    }
+
+
 def maybe_rewrite_email_1_with_llm(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -4839,14 +4847,27 @@ def maybe_rewrite_email_1_with_llm(
         )
     )
     if score < 7 or reject_flags:
+        model = os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip()
         metadata = {
             "attempted": True,
             "used": False,
             "reason": "qa_rejected",
             "flags": reject_flags,
+            "model": model,
+            "rejected_candidate_word_counts": {
+                "email_1": word_count(body1),
+                "email_2": word_count(body2) if result_email2 else None,
+            },
         }
-        original["llm_email_1_rewrite"] = metadata
-        original["llm_email_2_rewrite"] = {**metadata, "attempted": bool(result_email2)}
+        original["llm_email_1_rewrite"] = {
+            **metadata,
+            "rejected_candidate": _email_rewrite_candidate_snapshot(subject1, body1),
+        }
+        original["llm_email_2_rewrite"] = {
+            **metadata,
+            "attempted": bool(result_email2),
+            "rejected_candidate": _email_rewrite_candidate_snapshot(subject2, body2) if result_email2 else {},
+        }
         original["llm_email_rewrite"] = metadata
         return original, []
     candidate["llm_email_1_rewrite"] = {
