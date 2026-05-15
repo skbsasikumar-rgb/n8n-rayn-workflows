@@ -4789,28 +4789,10 @@ def _email_rewrite_candidate_snapshot(subject: str, body: str) -> dict[str, Any]
     }
 
 
-def maybe_rewrite_email_1_with_llm(
-    row: dict[str, Any],
-    classification: dict[str, Any],
-    funding: FundingMatch,
-    copy_brief: dict[str, Any],
-    emails: dict[str, Any],
-) -> tuple[dict[str, Any], list[str]]:
-    if not email_1_llm_rewrite_enabled(row):
-        reason = "missing_api_key" if not os.getenv("OPENROUTER_API_KEY", "").strip() else "disabled"
-        emails["llm_email_1_rewrite"] = _email_rewrite_disabled_metadata(reason)
-        emails["llm_email_2_rewrite"] = _email_rewrite_disabled_metadata(reason)
-        emails["llm_email_rewrite"] = _email_rewrite_disabled_metadata(reason)
-        return emails, []
-    original = sanitize_email_sequence(emails)
-    payload = email_1_rewrite_payload(row, classification, funding, copy_brief, original)
-    result = call_email_1_rewrite_llm(payload)
-    if not isinstance(result, dict):
-        metadata = {"attempted": True, "used": False, "reason": "llm_error_or_empty"}
-        original["llm_email_1_rewrite"] = metadata
-        original["llm_email_2_rewrite"] = metadata
-        original["llm_email_rewrite"] = metadata
-        return original, []
+def _email_rewrite_candidate_from_result(
+    result: dict[str, Any],
+    original: dict[str, Any],
+) -> tuple[dict[str, Any], bool]:
     result_email1 = result.get("email_1") if isinstance(result.get("email_1"), dict) else result
     result_email2 = result.get("email_2") if isinstance(result.get("email_2"), dict) else None
     subject1 = compact(result_email1.get("subject") or original["email_1"].get("chosen_subject"))
@@ -4835,8 +4817,22 @@ def maybe_rewrite_email_1_with_llm(
             "word_count": word_count(body2),
         },
     }
+    return candidate, bool(result_email2)
+
+
+def _email_rewrite_reject_flags(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    copy_brief: dict[str, Any],
+    original: dict[str, Any],
+    candidate: dict[str, Any],
+    has_email_2: bool,
+) -> tuple[int, list[str]]:
+    body1 = candidate["email_1"].get("body", "")
+    body2 = candidate["email_2"].get("body", "")
     static_flags = email_1_rewrite_static_flags(body1, original["email_1"].get("body", ""), classification)
-    if result_email2:
+    if has_email_2:
         static_flags += email_2_rewrite_static_flags(body2, original["email_2"].get("body", ""), classification)
     score, gate_flags, _ = quality_gate(row, classification, funding, candidate, copy_brief)
     reject_flags = list(
@@ -4846,50 +4842,173 @@ def maybe_rewrite_email_1_with_llm(
             + [flag for flag in gate_flags if flag.startswith("email_1_") or flag.startswith("email_2_")]
         )
     )
-    if score < 7 or reject_flags:
-        model = os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip()
-        metadata = {
-            "attempted": True,
-            "used": False,
-            "reason": "qa_rejected",
-            "flags": reject_flags,
-            "model": model,
-            "rejected_candidate_word_counts": {
-                "email_1": word_count(body1),
-                "email_2": word_count(body2) if result_email2 else None,
+    return score, reject_flags
+
+
+def _email_rewrite_rejected_metadata(
+    candidate: dict[str, Any],
+    reject_flags: list[str],
+    has_email_2: bool,
+    attempt_number: int,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    model = os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip()
+    body1 = candidate["email_1"].get("body", "")
+    body2 = candidate["email_2"].get("body", "")
+    metadata = {
+        "attempted": True,
+        "used": False,
+        "reason": "qa_rejected",
+        "attempt_number": attempt_number,
+        "flags": reject_flags,
+        "model": model,
+        "rejected_candidate_word_counts": {
+            "email_1": word_count(body1),
+            "email_2": word_count(body2) if has_email_2 else None,
+        },
+    }
+    email1_metadata = {
+        **metadata,
+        "rejected_candidate": _email_rewrite_candidate_snapshot(candidate["email_1"].get("chosen_subject", ""), body1),
+    }
+    email2_metadata = {
+        **metadata,
+        "attempted": has_email_2,
+        "rejected_candidate": _email_rewrite_candidate_snapshot(candidate["email_2"].get("chosen_subject", ""), body2) if has_email_2 else {},
+    }
+    return metadata, email1_metadata, email2_metadata
+
+
+def _email_rewrite_retry_feedback(
+    payload: dict[str, Any],
+    reject_flags: list[str],
+    candidate: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        **payload,
+        "retry_instruction": {
+            "attempt": 2,
+            "reason": "first_rewrite_failed_qa",
+            "qa_flags": reject_flags,
+            "fix_only_these_issues": True,
+            "rules": [
+                "Return a fresh rewrite, not an explanation.",
+                "Keep Email 2 under 105 words.",
+                "Keep the required P.S. exactly as provided.",
+                "Use 4 short paragraphs for Email 1 and Email 2.",
+                "Make Email 1 specific; do not weaken the company hook.",
+                "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
+            ],
+            "rejected_candidate": {
+                "email_1": _email_rewrite_candidate_snapshot(
+                    candidate["email_1"].get("chosen_subject", ""),
+                    candidate["email_1"].get("body", ""),
+                ),
+                "email_2": _email_rewrite_candidate_snapshot(
+                    candidate["email_2"].get("chosen_subject", ""),
+                    candidate["email_2"].get("body", ""),
+                ),
             },
-        }
-        original["llm_email_1_rewrite"] = {
-            **metadata,
-            "rejected_candidate": _email_rewrite_candidate_snapshot(subject1, body1),
-        }
-        original["llm_email_2_rewrite"] = {
-            **metadata,
-            "attempted": bool(result_email2),
-            "rejected_candidate": _email_rewrite_candidate_snapshot(subject2, body2) if result_email2 else {},
-        }
+        },
+    }
+
+
+def maybe_rewrite_email_1_with_llm(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    copy_brief: dict[str, Any],
+    emails: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    if not email_1_llm_rewrite_enabled(row):
+        reason = "missing_api_key" if not os.getenv("OPENROUTER_API_KEY", "").strip() else "disabled"
+        emails["llm_email_1_rewrite"] = _email_rewrite_disabled_metadata(reason)
+        emails["llm_email_2_rewrite"] = _email_rewrite_disabled_metadata(reason)
+        emails["llm_email_rewrite"] = _email_rewrite_disabled_metadata(reason)
+        return emails, []
+    original = sanitize_email_sequence(emails)
+    payload = email_1_rewrite_payload(row, classification, funding, copy_brief, original)
+    result = call_email_1_rewrite_llm(payload)
+    if not isinstance(result, dict):
+        metadata = {"attempted": True, "used": False, "reason": "llm_error_or_empty"}
+        original["llm_email_1_rewrite"] = metadata
+        original["llm_email_2_rewrite"] = metadata
         original["llm_email_rewrite"] = metadata
         return original, []
+    candidate, has_email_2 = _email_rewrite_candidate_from_result(result, original)
+    used_result = result
+    score, reject_flags = _email_rewrite_reject_flags(row, classification, funding, copy_brief, original, candidate, has_email_2)
+    retry_metadata = None
+    if score < 7 or reject_flags:
+        first_metadata, first_email1_metadata, first_email2_metadata = _email_rewrite_rejected_metadata(candidate, reject_flags, has_email_2, 1)
+        retry_result = call_email_1_rewrite_llm(_email_rewrite_retry_feedback(payload, reject_flags, candidate))
+        if isinstance(retry_result, dict):
+            retry_candidate, retry_has_email_2 = _email_rewrite_candidate_from_result(retry_result, original)
+            retry_score, retry_reject_flags = _email_rewrite_reject_flags(row, classification, funding, copy_brief, original, retry_candidate, retry_has_email_2)
+            if retry_score >= 7 and not retry_reject_flags:
+                candidate = retry_candidate
+                has_email_2 = retry_has_email_2
+                used_result = retry_result
+                retry_metadata = {
+                    "attempted": True,
+                    "used": True,
+                    "reason": "qa_passed",
+                    "attempt_number": 2,
+                    "first_attempt": first_metadata,
+                }
+            else:
+                retry_metadata, retry_email1_metadata, retry_email2_metadata = _email_rewrite_rejected_metadata(
+                    retry_candidate,
+                    retry_reject_flags,
+                    retry_has_email_2,
+                    2,
+                )
+                retry_metadata["first_attempt"] = first_metadata
+                retry_email1_metadata["first_attempt"] = first_email1_metadata
+                retry_email2_metadata["first_attempt"] = first_email2_metadata
+                original["llm_email_1_rewrite"] = retry_email1_metadata
+                original["llm_email_2_rewrite"] = retry_email2_metadata
+                original["llm_email_rewrite"] = retry_metadata
+                return original, []
+        else:
+            first_metadata["retry_attempted"] = True
+            first_metadata["retry_used"] = False
+            first_metadata["retry_reason"] = "llm_error_or_empty"
+            first_email1_metadata["retry_attempted"] = True
+            first_email1_metadata["retry_used"] = False
+            first_email1_metadata["retry_reason"] = "llm_error_or_empty"
+            first_email2_metadata["retry_attempted"] = True
+            first_email2_metadata["retry_used"] = False
+            first_email2_metadata["retry_reason"] = "llm_error_or_empty"
+            original["llm_email_1_rewrite"] = first_email1_metadata
+            original["llm_email_2_rewrite"] = first_email2_metadata
+            original["llm_email_rewrite"] = first_metadata
+            return original, []
     candidate["llm_email_1_rewrite"] = {
         "attempted": True,
         "used": True,
         "reason": "qa_passed",
+        "attempt_number": retry_metadata["attempt_number"] if retry_metadata else 1,
         "model": os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip(),
-        "notes": result.get("notes") if isinstance(result.get("notes"), list) else [],
+        "notes": used_result.get("notes") if isinstance(used_result.get("notes"), list) else [],
     }
+    if retry_metadata:
+        candidate["llm_email_1_rewrite"]["first_attempt"] = retry_metadata["first_attempt"]
     candidate["llm_email_2_rewrite"] = {
         **candidate["llm_email_1_rewrite"],
-        "attempted": bool(result_email2),
-        "used": bool(result_email2),
+        "attempted": has_email_2,
+        "used": has_email_2,
     }
     candidate["llm_email_rewrite"] = {
         "attempted": True,
         "used": True,
         "reason": "qa_passed",
+        "attempt_number": candidate["llm_email_1_rewrite"]["attempt_number"],
         "model": candidate["llm_email_1_rewrite"]["model"],
-        "emails_rewritten": ["email_1", *([] if not result_email2 else ["email_2"])],
+        "emails_rewritten": ["email_1", *([] if not has_email_2 else ["email_2"])],
         "notes": candidate["llm_email_1_rewrite"]["notes"],
     }
+    if retry_metadata:
+        candidate["llm_email_rewrite"]["first_attempt"] = retry_metadata["first_attempt"]
     return candidate, []
 
 

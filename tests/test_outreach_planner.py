@@ -559,8 +559,62 @@ class OutreachPlannerTests(unittest.TestCase):
 
         self.assertFalse(plan.emails["llm_email_1_rewrite"]["used"])
         self.assertIn("qa_rejected", plan.emails["llm_email_1_rewrite"]["reason"])
+        self.assertEqual(2, plan.emails["llm_email_1_rewrite"]["attempt_number"])
+        self.assertIn("first_attempt", plan.emails["llm_email_1_rewrite"])
         self.assertNotIn("unlock potential", plan.emails["email_1"]["body"].lower())
         self.assertFalse(any(flag.startswith("llm_email_1_rewrite_rejected:") for flag in plan.quality_flags))
+
+    def test_email_1_llm_rewrite_retries_once_when_qa_rejects(self):
+        calls = []
+
+        def rewrite(payload):
+            calls.append(payload)
+            if len(calls) == 1:
+                return {
+                    "subject": "growth",
+                    "body": "Hi Ivan, we can unlock potential and transform your security.",
+                    "notes": ["bad first draft"],
+                }
+            deterministic_email_2 = payload["deterministic_email_2"]
+            return {
+                "email_1": {
+                    "subject": payload["deterministic_subject"],
+                    "body": (
+                        "Hi Ivan, saw that Example Medical Clinic is a family clinic offering GP-style consultations.\n\n"
+                        f"{payload['approved_problem']}\n\n"
+                        f"{payload['approved_mechanism']}\n\n"
+                        f"{payload['approved_cta']}"
+                    ),
+                },
+                "email_2": {
+                    "subject": deterministic_email_2["subject"],
+                    "body": deterministic_email_2["body"],
+                },
+                "notes": ["fixed after QA"],
+            }
+
+        with patch.object(o, "email_1_llm_rewrite_enabled", return_value=True), patch.object(o, "call_email_1_rewrite_llm", side_effect=rewrite):
+            plan = o.plan_outreach(
+                {
+                    "Id": 903,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertEqual(2, len(calls))
+        self.assertIn("retry_instruction", calls[1])
+        self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
+        self.assertEqual(2, plan.emails["llm_email_1_rewrite"]["attempt_number"])
+        self.assertEqual(["fixed after QA"], plan.emails["llm_email_1_rewrite"]["notes"])
+        self.assertIn("first_attempt", plan.emails["llm_email_1_rewrite"])
+        self.assertNotIn("unlock potential", plan.emails["email_1"]["body"].lower())
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
