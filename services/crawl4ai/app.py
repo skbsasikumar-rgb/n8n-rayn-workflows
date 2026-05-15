@@ -375,6 +375,12 @@ class OutreachPlanRequest(BaseModel):
     hia_llm_review: Any = Field(default_factory=dict)
 
 
+class OutreachPlanBatchRequest(BaseModel):
+    rows: list[OutreachPlanRequest] = Field(default_factory=list, max_length=100)
+    concurrency: int = Field(default=0, ge=0, le=10)
+    copy_qa_mode: bool = False
+
+
 def compact_whitespace(value: Any) -> str:
     text = str(value or "")
     text = text.replace("\r", "\n")
@@ -1985,3 +1991,62 @@ async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
             },
             "record": {},
         }
+
+
+@app.post("/outreach-plan-batch")
+async def outreach_plan_batch(request: OutreachPlanBatchRequest) -> dict[str, Any]:
+    rows = [row.model_dump() for row in request.rows]
+    if not rows:
+        return {"ok": True, "count": 0, "patches": [], "audits": [], "errors": [], "results": []}
+
+    requested_concurrency = request.concurrency or OUTREACH_PLAN_CONCURRENCY
+    concurrency = max(1, min(requested_concurrency, OUTREACH_PLAN_CONCURRENCY, len(rows)))
+    row_semaphore = asyncio.Semaphore(concurrency)
+
+    async def run_row(row: dict[str, Any]) -> dict[str, Any]:
+        try:
+            async with row_semaphore:
+                return await asyncio.to_thread(
+                    outreach_planner.plan_and_patch,
+                    row,
+                    copy_qa_mode=bool(row.get("copy_qa_mode") or request.copy_qa_mode),
+                )
+        except Exception as exc:
+            error_text = compact_whitespace(str(exc)) or "outreach planning failed"
+            return {
+                "ok": False,
+                "row_id": row.get("Id", ""),
+                "error": error_text,
+                "patch": {
+                    "Id": row.get("Id", ""),
+                    "email_send_ready": False,
+                    "human_review_status": "not_ready",
+                    "email_quality_flags": json.dumps(["outreach_planner_error"], ensure_ascii=False),
+                },
+                "record": {},
+            }
+
+    async with outreach_plan_semaphore:
+        results = await asyncio.gather(*(run_row(row) for row in rows))
+
+    patches = [
+        result.get("patch")
+        for result in results
+        if isinstance(result.get("patch"), dict) and result["patch"].get("Id")
+    ]
+    audits = [result.get("audit_report") for result in results if isinstance(result.get("audit_report"), dict)]
+    errors = [
+        {"row_id": result.get("row_id", ""), "error": result.get("error", "missing_patch")}
+        for result in results
+        if not (isinstance(result.get("patch"), dict) and result["patch"].get("Id"))
+    ]
+    return {
+        "ok": not errors,
+        "count": len(patches),
+        "requested": len(rows),
+        "concurrency": concurrency,
+        "patches": patches,
+        "audits": audits,
+        "errors": errors,
+        "results": results,
+    }

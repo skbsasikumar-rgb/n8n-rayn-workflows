@@ -212,6 +212,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertNotIn("Merge OpenRouter Email Draft", node_names)
         self.assertNotIn("Validate LLM Email Draft", node_names)
         self.assertNotIn("Copy Brief Ready?", node_names)
+        generate_node = next(node for node in workflow["nodes"] if node["name"] == "Generate Outreach Plan")
+        self.assertIn("/outreach-plan-batch", generate_node["parameters"]["url"])
         generate_connections = workflow["connections"]["Generate Outreach Plan"]["main"][0]
         self.assertEqual(generate_connections[0]["node"], "Collect NocoDB Patches")
 
@@ -222,7 +224,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertNotIn("ensureFundingClaim", js_code)
         self.assertNotIn("fundingGreeting", js_code)
         self.assertNotIn("email_2_body: replacement", js_code)
-        self.assertIn("const patch = body.patch;", js_code)
+        self.assertIn("const patches = []", js_code)
+        self.assertIn("const results = Array.isArray(body.results)", js_code)
+        self.assertIn("patches.push(...body.patches)", js_code)
 
     def test_rows_to_items_does_not_pre_filter_contact_suppression_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
@@ -231,6 +235,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertNotIn("use_llm", js_code)
         self.assertNotIn("if (normalized.do_not_contact) continue", js_code)
         self.assertNotIn("blockedStatuses", js_code)
+        self.assertIn("normalizedRows.push", js_code)
+        self.assertIn("chunkSize", js_code)
+        self.assertIn("normalizedRows.slice", js_code)
 
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(

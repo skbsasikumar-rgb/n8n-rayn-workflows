@@ -499,20 +499,6 @@
       }
     },
     {
-      "id": "continue-url-pick-patch",
-      "name": "Continue URL Pick Patch",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3600,
-        300
-      ],
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "// Hard stage boundary: URL discovery must never continue into public enrichment.\nreturn [];"
-      }
-    },
-    {
       "id": "webhook-contact-search-trigger",
       "name": "Webhook Contact Search Trigger",
       "type": "n8n-nodes-base.webhook",
@@ -775,11 +761,6 @@
       ]
     },
     "Patch URL Picked": {
-      "main": [
-        []
-      ]
-    },
-    "Continue URL Pick Patch": {
       "main": [
         []
       ]

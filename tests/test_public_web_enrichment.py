@@ -606,9 +606,9 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         nodes = {node["name"]: node for node in workflow["nodes"]}
         webhook_code = nodes["Webhook To Item"]["parameters"]["jsCode"]
         parse_code = nodes["Parse URL Pick"]["parameters"]["jsCode"]
-        continue_code = nodes["Continue URL Pick Patch"]["parameters"]["jsCode"]
         enrichment_url = nodes["Get Enrichment Rows"]["parameters"]["url"]
         rows_to_enrichment_code = nodes["Rows To Enrichment Items"]["parameters"]["jsCode"]
+        self.assertNotIn("Continue URL Pick Patch", nodes)
         self.assertIn("stage_mode", webhook_code)
         self.assertIn("stage_mode", parse_code)
         self.assertIn("url_picked", parse_code)
@@ -617,10 +617,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("status,eq,url_picked", enrichment_url)
         self.assertNotIn("status,eq,processing", enrichment_url)
         self.assertIn("=== 'url_picked'", rows_to_enrichment_code)
-        self.assertIn("Hard stage boundary", continue_code)
-        self.assertIn("return []", continue_code)
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
-        self.assertEqual(workflow["connections"]["Continue URL Pick Patch"]["main"], [[]])
 
     def test_workflow_keeps_sparse_successes_completed(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
