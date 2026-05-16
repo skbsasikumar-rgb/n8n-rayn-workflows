@@ -5706,6 +5706,7 @@ def automation_decision_for(
     if not can_send:
         return "suppressed", suppress_reason, [suppress_reason], False
     mode = contact_send_mode(row)
+    identity_confidence = contact_identity_confidence(row)
     if row.get("copy_qa_mode"):
         return "draft_only_review", "copy_qa_mode", ["copy_qa_mode"], False
     if classification.get("pressure_type") == "not_ready":
@@ -5739,6 +5740,24 @@ def automation_decision_for(
         return "auto_skipped", "copy_brief_not_safe", blockers or ["weak_copy_brief"], False
     if blockers:
         return "auto_skipped", "copy_failed_after_llm_and_deterministic_fallback", blockers, False
+    has_contact_provenance = any(
+        compact(row.get(field))
+        for field in (
+            "selected_contact_source_url",
+            "contact_search_status",
+            "contact_search_run_id",
+            "contact_candidates_json",
+            "contact_search_evidence_json",
+            "email_source",
+        )
+    )
+    if mode == "generic_team" and identity_confidence in {"none", "low"} and has_contact_provenance:
+        return "draft_only_review", "generic_or_low_identity_contact", ["generic_or_low_identity_contact"], False
+    source_urls_text = compact(row.get("source_urls"))
+    thin_content = bool(source_urls_text) and len(compact(row.get("website_content"))) < 500
+    thin_sources = bool(source_urls_text) and len(source_urls_text) < 60
+    if (thin_content or thin_sources) and classification.get("classification_confidence") != "high":
+        return "draft_only_review", "thin_classification_evidence", ["thin_classification_evidence"], False
     if any(not compact((emails.get(key) or {}).get("body")) for key in ACTIVE_EMAIL_KEYS):
         return "auto_skipped", "missing_email_body", ["missing_email_body"], False
     if score < 7:

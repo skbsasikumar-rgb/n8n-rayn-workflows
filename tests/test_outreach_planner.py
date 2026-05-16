@@ -1042,6 +1042,39 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(non_person_name["patch"]["contact_identity_confidence"], "none")
         self.assertTrue(non_person_name["patch"]["email_1_body"].startswith("Hello team,"))
 
+    def test_live_generic_contact_provenance_requires_review(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Example Medical Clinic",
+                "website_content": "Medical clinic in Singapore with doctors, appointments and patient services.",
+                "source_urls": "https://example.com/",
+                "validated_email": "info@example.com",
+                "selected_contact_source_url": "https://example.com/contact",
+                "contact_search_status": "contact_found",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(result["patch"]["contact_send_mode"], "generic_team")
+        self.assertEqual(result["patch"]["contact_identity_confidence"], "none")
+        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
+        self.assertEqual(result["patch"]["automation_decision_reason"], "generic_or_low_identity_contact")
+        self.assertFalse(result["patch"]["final_send_gate_passed"])
+
+    def test_thin_non_high_classification_requires_review(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "General Data Services",
+                "website_content": "Singapore company collecting customer enquiries and employee data.",
+                "source_urls": "https://example.com/",
+                "validated_email": "ivan@example.com",
+                "selected_contact_name": "Ivan Puah",
+            }
+        )
+        self.assertEqual(result["patch"]["classification_confidence"], "medium")
+        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
+        self.assertEqual(result["patch"]["automation_decision_reason"], "thin_classification_evidence")
+        self.assertFalse(result["patch"]["final_send_gate_passed"])
+
     def test_unsafe_funding_uses_value_fallback_without_review(self):
         result = o.plan_and_patch(
             {
