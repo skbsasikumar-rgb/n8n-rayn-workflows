@@ -3538,6 +3538,19 @@ def has_cardiology_subtype(text: str) -> bool:
     )
 
 
+def primary_profile_source_text(row: dict[str, Any]) -> str:
+    return " ".join(
+        compact(value)
+        for value in (
+            row.get("company_name"),
+            row.get("company_homepage_name"),
+            compact(row.get("website_content"))[:1800],
+            compact(row.get("services_detected"))[:900],
+        )
+        if value
+    ).lower()
+
+
 def home_care_subtype(text: str) -> bool:
     return any(term in text for term in ("caregiver", "home care", "home nursing", "patient care at home"))
 
@@ -3651,6 +3664,10 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
         )
     )
     has_gp = any(term in source_l for term in ("family clinic", "family medicine", "general practitioner", " gp ", "outpatient", "doctor-led", "medical clinic"))
+    primary_has_gp = any(
+        term in primary_source_l
+        for term in ("family clinic", "family medicine", "general practitioner", " gp ", "outpatient", "doctor-led", "medical clinic")
+    )
     has_diagnostic = any(term in source_l for term in ("diagnostic", "screening", "laboratory", " lab ", "radiology", "nuclear medicine", "test reports"))
     has_strong_lab = any(term in source_l for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "radiology", "nuclear medicine", "test reports", "lab test"))
     has_neuro_institute = any(
@@ -3668,9 +3685,30 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     if service_type == "diagnostic":
         guess = "diagnostic_lab"
         add_evidence("diagnostic, screening or lab terms")
+    elif service_type == "hospital" or official_service == "acute_hospital" or "hospital" in company.lower():
+        guess = "hospital"
+        add_evidence("hospital service terms")
     elif service_type == "dental" or (has_dental_service_evidence(primary_source_l) and not has_gp):
         guess = "dental"
         add_evidence("dental terms")
+    elif primary_aesthetic:
+        guess = "aesthetic_medical"
+        add_evidence("medical/aesthetic terms")
+    elif any(term in primary_source_l for term in ("holding company", "holdings", "public healthcare institutions", "healthcare institutions")):
+        guess = "healthcare_group"
+        add_evidence("healthcare holding or group terms")
+    elif any(term in primary_source_l for term in ("daycare", "day care", "elderly", "elders", "senior care")):
+        guess = "elder_daycare"
+        add_evidence("elder day-care or senior-care terms")
+    elif any(term in primary_source_l for term in ("psychotherapy", "counselling", "counseling", "mental health", "wellbeing", "wellness journey")):
+        guess = "mental_health"
+        add_evidence("psychology or mental-health terms")
+    elif structure == "solo_gp" and (service_type == "GP_OMS" or primary_has_gp or has_gp):
+        guess = "solo_gp"
+        add_evidence("solo GP/outpatient evidence")
+    elif has_family_clinic_evidence(row, primary_source_l) or primary_has_gp:
+        guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
+        add_evidence("family clinic, GP or outpatient terms")
     elif has_neuro_institute:
         guess = "specialist_led"
         add_evidence("neuroscience or neurology specialist terms")
@@ -3686,9 +3724,6 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
         guess = "hearing_care"
         add_evidence("hearing-care terms")
-    elif primary_aesthetic:
-        guess = "aesthetic_medical"
-        add_evidence("medical/aesthetic terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
         guess = "solo_gp"
         add_evidence("solo GP/outpatient evidence")
@@ -3762,7 +3797,7 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
         guess = "clinic_group"
 
     confidence = "high" if len(evidence) >= 2 or service_type not in {"", "unknown"} else "medium" if evidence else "low"
-    primary = primary_service_summary_for_profile(row, source_l, service_type)
+    primary = primary_service_summary_for_profile(row, primary_source_l, service_type)
     profile = {
         "clinic_profile_guess": guess,
         "clinic_profile_phrase": "",
@@ -3798,7 +3833,7 @@ def prospect_facing_profile_phrase(
     if guess == "multi_doctor_gp":
         return "a multi-doctor clinic offering outpatient consultations"
     if guess == "specialist_led":
-        subtype = specialist_subtype(lower_blob(row))
+        subtype = specialist_subtype(primary_profile_source_text(row))
         subtype_phrases = {
             "cardiology": "a specialist-led heart/cardiology clinic",
             "fertility": "a fertility / IVF specialist clinic",
@@ -3822,6 +3857,12 @@ def prospect_facing_profile_phrase(
         return "a pharmacy / compounding provider"
     if guess == "diagnostic_lab":
         return "a diagnostic / laboratory provider handling screening or test records"
+    if guess == "hospital":
+        return "a hospital handling patient and clinical records"
+    if guess == "healthcare_group":
+        return "a healthcare holding or group organisation"
+    if guess == "elder_daycare":
+        return "a health and day-care provider handling elder/client care records"
     if guess == "hearing_care":
         return "a hearing-care provider offering hearing tests, hearing aids and audiology support"
     if guess == "allied_health":
@@ -3842,13 +3883,19 @@ def prospect_facing_profile_phrase(
 
 
 def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any] | None = None) -> str:
-    text = lower_blob(row)
+    text = primary_profile_source_text(row)
     profile_guess = compact((copy_brief or {}).get("clinic_profile_guess"))
     service_type = classification.get("hia_service_type_guess")
     if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"}:
         return "patient records, appointment details, consultation notes, clinic email, vendor systems"
     if profile_guess == "aesthetic_medical" or (service_type == "GP_OMS" and "aesthetic" in text):
         return "consultation records, treatment notes, appointment details, clinic email, vendor systems"
+    if profile_guess == "hospital" or service_type == "hospital":
+        return "patient records, clinical service records, referrals, vendor systems"
+    if profile_guess == "healthcare_group":
+        return "institutional systems, vendor systems, staff access and governance workflows"
+    if profile_guess == "elder_daycare":
+        return "care notes, client details, family contact details, staff and vendor systems"
     if profile_guess == "specialist_led" or service_type == "specialist_OMS":
         subtype = specialist_subtype(text)
         if subtype == "cardiology":
@@ -3915,6 +3962,10 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_pr
         return "clinic readiness map"
     if profile_guess == "diagnostic_lab":
         return "diagnostic readiness map"
+    if profile_guess == "hospital":
+        return "hospital readiness map"
+    if profile_guess in {"healthcare_group", "elder_daycare"}:
+        return "healthcare readiness map"
     if profile_guess == "specialist_led":
         return "specialist clinic readiness map"
     if profile_guess == "dental":
@@ -5192,6 +5243,9 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
         "dental": ("dental", "braces", "orthodont"),
         "pharmacy": ("pharmacy", "compounding"),
         "diagnostic_lab": ("diagnostic", "laboratory", "screening"),
+        "hospital": ("hospital", "patient", "clinical records"),
+        "healthcare_group": ("healthcare holding", "group organisation", "institutional healthcare"),
+        "elder_daycare": ("day-care provider", "elder/client care", "elder care"),
         "allied_health": ("allied-health", "physiotherapy", "treatment support"),
         "mental_health": ("psychology", "mental-health", "assessment"),
         "hearing_care": ("hearing-care", "hearing test", "audiology"),

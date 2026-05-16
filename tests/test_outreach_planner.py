@@ -2089,6 +2089,89 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(diagnostic, plan.emails["email_3"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
+    def test_far_down_service_terms_do_not_override_primary_profile(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Mint Medical Centre",
+                "website_content": (
+                    "# GP | Expat clinic | STD testing | Men’s clinic | women’s Clinic - Mint Medical Centre\n"
+                    "Health Screening Family Health Expatriate Healthcare Comprehensive healthcare services for your family. "
+                    + ("general clinic services " * 500)
+                    + " neurosurgery brain"
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        self.assertIn("family clinic", plan.copy_brief["clinic_profile_phrase"])
+        self.assertNotIn("neuroscience", plan.emails["email_1"]["body"])
+        self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_hospital_profile_overrides_specialist_page_terms(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Mount Alvernia Hospital",
+                "website_content": (
+                    "# Mount Alvernia Hospital Singapore\n"
+                    "Clinical services, maternity care, rehabilitative care and patient services. "
+                    "The site also mentions cardiac services and vision mission content."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        self.assertEqual(plan.copy_brief["clinic_profile_guess"], "hospital")
+        self.assertIn("a hospital handling patient and clinical records", plan.emails["email_1"]["body"])
+        self.assertNotIn("cardiology clinic", plan.emails["email_1"]["body"])
+        self.assert_no_final_email_batch_or_signal_language(plan)
+
+    def test_profile_uses_operating_identity_before_nav_or_secondary_terms(self):
+        cases = [
+            (
+                {
+                    "company_name": "Mind Wellness",
+                    "website_content": (
+                        "# Mind Wellness\n"
+                        "Psychotherapy, counselling, client assessments, appointments and wellbeing support for patients. "
+                        + ("wellness journey " * 120)
+                        + " vision"
+                    ),
+                },
+                "psychology / mental-health provider",
+                "eye clinic",
+            ),
+            (
+                {
+                    "company_name": "MOH Holdings (Singapore)",
+                    "website_content": (
+                        "MOH Holdings is the holding company of Singapore public healthcare institutions. "
+                        + ("healthcare resources " * 300)
+                        + " gastroenterology neuroscience"
+                    ),
+                },
+                "healthcare holding or group organisation",
+                "gastroenterology",
+            ),
+            (
+                {
+                    "company_name": "Muhammadiyah Health & Daycare Centre",
+                    "website_content": (
+                        "Health and day care centre providing compassionate care for elderly clients. "
+                        + ("elder care " * 120)
+                        + " arthritis"
+                    ),
+                },
+                "health and day-care provider",
+                "rheumatology",
+            ),
+        ]
+        for row, expected, rejected in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertIn(expected, plan.emails["email_1"]["body"])
+                self.assertNotIn(rejected, plan.emails["email_1"]["body"])
+                self.assert_no_final_email_batch_or_signal_language(plan)
+
     def test_rheumatology_clinic_stays_in_hia_not_customer_trust(self):
         plan = o.plan_outreach(
             {
