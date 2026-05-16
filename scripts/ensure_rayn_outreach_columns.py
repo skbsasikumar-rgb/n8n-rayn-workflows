@@ -147,8 +147,10 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("outreach_variant", "SingleSelect", "text"),
     OutreachColumn("email_1_subject", "SingleLineText", "text"),
     OutreachColumn("email_1_body", "LongText", "text", "420px"),
+    OutreachColumn("email_1_llm_rewritten", "Checkbox", "boolean", "160px"),
     OutreachColumn("email_2_subject", "SingleLineText", "text"),
     OutreachColumn("email_2_body", "LongText", "text", "420px"),
+    OutreachColumn("email_2_llm_rewritten", "Checkbox", "boolean", "160px"),
     OutreachColumn("email_3_subject", "SingleLineText", "text"),
     OutreachColumn("email_3_body", "LongText", "text", "420px"),
     OutreachColumn("email_4_subject", "SingleLineText", "text"),
@@ -197,8 +199,10 @@ DEFAULT_VISIBLE_GRID_COLUMNS = {
     "unsubscribe_status",
     "email_1_subject",
     "email_1_body",
+    "email_1_llm_rewritten",
     "email_2_subject",
     "email_2_body",
+    "email_2_llm_rewritten",
     "email_3_subject",
     "email_3_body",
     "email_4_subject",
@@ -215,6 +219,11 @@ DEFAULT_VISIBLE_GRID_COLUMNS = {
     "contact_send_mode",
     "final_send_gate_passed",
     "email_2_mode",
+}
+
+GRID_COLUMN_AFTER = {
+    "email_1_llm_rewritten": "email_1_body",
+    "email_2_llm_rewritten": "email_2_body",
 }
 
 SELECT_OPTIONS: dict[str, list[str]] = {
@@ -316,6 +325,8 @@ def main() -> None:
         "planned_grid_columns": [],
         "updated_grid_visibility": 0,
         "planned_grid_visibility_updates": [],
+        "updated_grid_order": 0,
+        "planned_grid_order_updates": [],
         "created_select_options": 0,
         "existing_select_options": 0,
         "planned_select_options": [],
@@ -498,6 +509,45 @@ def main() -> None:
                             ),
                         )
                         existing_select_options.add((column_id, option_title))
+
+            cur.execute(
+                """
+                select g.id, c.column_name, g."order"
+                from public.nc_grid_view_columns_v2 g
+                join public.nc_columns_v2 c on c.id = g.fk_column_id
+                where g.fk_view_id = %s
+                order by g."order", c.column_name
+                """,
+                (view_id,),
+            )
+            grid_rows = [{"id": row[0], "name": row[1], "order": float(row[2] or 0)} for row in cur.fetchall()]
+            ordered_names = [str(row["name"]) for row in grid_rows]
+            grid_row_by_name = {str(row["name"]): row for row in grid_rows}
+            order_updates: dict[str, float] = {}
+            for target, anchor in GRID_COLUMN_AFTER.items():
+                if target not in ordered_names or anchor not in ordered_names:
+                    continue
+                current_index = ordered_names.index(target)
+                anchor_index = ordered_names.index(anchor)
+                target_row = grid_row_by_name[target]
+                anchor_row = grid_row_by_name[anchor]
+                target_order = float(target_row["order"])
+                anchor_order = float(anchor_row["order"])
+                if current_index == anchor_index + 1 and target_order > anchor_order:
+                    continue
+                order_updates[target] = anchor_order + 0.1
+                summary["planned_grid_order_updates"].append(f"{target}:after:{anchor}")  # type: ignore[union-attr]
+
+            for name, desired_order in order_updates.items():
+                row = grid_row_by_name.get(name)
+                if not row or float(row["order"]) == desired_order:
+                    continue
+                summary["updated_grid_order"] = int(summary["updated_grid_order"]) + 1
+                if not args.dry_run:
+                    cur.execute(
+                        'update public.nc_grid_view_columns_v2 set "order" = %s where id = %s',
+                        (desired_order, row["id"]),
+                    )
 
             if not args.dry_run:
                 cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))

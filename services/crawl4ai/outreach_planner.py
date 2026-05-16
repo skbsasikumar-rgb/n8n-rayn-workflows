@@ -5873,6 +5873,11 @@ def json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def email_rewrite_used(emails: dict[str, Any], key: str) -> bool:
+    metadata = emails.get(f"llm_{key}_rewrite")
+    return isinstance(metadata, dict) and bool(metadata.get("used"))
+
+
 def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     c = plan.classification
     f = plan.funding
@@ -5985,8 +5990,10 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "outreach_variant": choose_variant(c),
         "email_1_subject": patch_emails["email_1"]["chosen_subject"],
         "email_1_body": patch_emails["email_1"]["body"],
+        "email_1_llm_rewritten": email_rewrite_used(patch_emails, "email_1"),
         "email_2_subject": patch_emails["email_2"]["chosen_subject"],
         "email_2_body": patch_emails["email_2"]["body"],
+        "email_2_llm_rewritten": email_rewrite_used(patch_emails, "email_2"),
         "email_3_subject": patch_emails["email_3"]["chosen_subject"],
         "email_3_body": patch_emails["email_3"]["body"],
         "email_4_subject": patch_emails["email_4"]["chosen_subject"],
@@ -6065,8 +6072,10 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
             "email_3_generic_hia_diagnostic": email_2_generic_hia_diagnostic((emails.get("email_3") or {}).get("body", ""), classification),
             "email_1_subject": (emails.get("email_1") or {}).get("chosen_subject", ""),
             "email_1_body": (emails.get("email_1") or {}).get("body", ""),
+            "email_1_llm_rewritten": email_rewrite_used(emails, "email_1"),
             "email_2_subject": (emails.get("email_2") or {}).get("chosen_subject", ""),
             "email_2_body": (emails.get("email_2") or {}).get("body", ""),
+            "email_2_llm_rewritten": email_rewrite_used(emails, "email_2"),
             "email_3_subject": (emails.get("email_3") or {}).get("chosen_subject", ""),
             "email_3_body": (emails.get("email_3") or {}).get("body", ""),
             "email_4_subject": (emails.get("email_4") or {}).get("chosen_subject", ""),
@@ -6122,8 +6131,10 @@ def build_audit_report(row: dict[str, Any], plan: OutreachPlan | None = None, pa
         "email_3_generic_hia_diagnostic": "email_3_generic_hia_diagnostic" in flags,
         "email_1_subject": patch.get("email_1_subject", ""),
         "email_1_body": patch.get("email_1_body", ""),
+        "email_1_llm_rewritten": patch.get("email_1_llm_rewritten", False),
         "email_2_subject": patch.get("email_2_subject", ""),
         "email_2_body": patch.get("email_2_body", ""),
+        "email_2_llm_rewritten": patch.get("email_2_llm_rewritten", False),
         "email_3_subject": patch.get("email_3_subject", ""),
         "email_3_body": patch.get("email_3_body", ""),
         "email_4_subject": patch.get("email_4_subject", ""),

@@ -58,6 +58,8 @@ class OutreachColumnContractTests(unittest.TestCase):
             "funding_human_review_required",
             "pricing_claim_safe",
             "do_not_contact",
+            "email_1_llm_rewritten",
+            "email_2_llm_rewritten",
             "email_send_ready",
             "final_send_gate_passed",
         ]:
@@ -112,6 +114,13 @@ class OutreachColumnContractTests(unittest.TestCase):
         for index in range(1, 5):
             self.assertIn(f"email_{index}_subject", self.columns)
             self.assertIn(f"email_{index}_body", self.columns)
+        self.assertIn("email_1_llm_rewritten", self.columns)
+        self.assertIn("email_2_llm_rewritten", self.columns)
+
+    def test_llm_rewrite_markers_are_ordered_after_body_columns(self):
+        names = [column.name for column in self.module.OUTREACH_COLUMNS]
+        self.assertEqual(names.index("email_1_llm_rewritten"), names.index("email_1_body") + 1)
+        self.assertEqual(names.index("email_2_llm_rewritten"), names.index("email_2_body") + 1)
 
     def test_quality_fields_exist(self):
         for name in [

@@ -496,6 +496,19 @@ class OutreachPlannerTests(unittest.TestCase):
                 },
                 programmes=[verified_program()],
             )
+            patch_result = o.plan_and_patch(
+                {
+                    "Id": 901,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
 
         self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
         self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
@@ -504,6 +517,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("llm_email_1_rewrite_used", plan.quality_flags)
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan, saw that"))
         self.assertIn("approved_problem", captured)
+
+        self.assertTrue(patch_result["patch"]["email_1_llm_rewritten"])
+        self.assertTrue(patch_result["patch"]["email_2_llm_rewritten"])
+        self.assertTrue(patch_result["audit_report"]["email_1_llm_rewritten"])
+        self.assertTrue(patch_result["audit_report"]["email_2_llm_rewritten"])
 
     def test_email_1_llm_rewrite_rejects_one_paragraph_output(self):
         def one_paragraph(payload):
@@ -792,6 +810,8 @@ class OutreachPlannerTests(unittest.TestCase):
         emails = o.normalize_llm_email_sequence(candidate)
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding.to_dict(), emails)
         self.assertEqual(patch["email_1_body"], plan.emails["email_1"]["body"])
+        self.assertFalse(patch["email_1_llm_rewritten"])
+        self.assertFalse(patch["email_2_llm_rewritten"])
         self.assertFalse(patch["email_send_ready"])
         self.assertEqual(patch["email_2_mode"], "value_fallback")
         self.assertEqual(patch["funding_followup_mode"], "value_fallback")
@@ -850,8 +870,10 @@ class OutreachPlannerTests(unittest.TestCase):
                 "clinic_structure_evidence",
                 "email_1_subject",
                 "email_1_body",
+                "email_1_llm_rewritten",
                 "email_2_subject",
                 "email_2_body",
+                "email_2_llm_rewritten",
                 "email_3_subject",
                 "email_3_body",
                 "email_4_subject",
