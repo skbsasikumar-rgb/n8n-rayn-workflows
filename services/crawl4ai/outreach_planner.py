@@ -681,6 +681,146 @@ def contact_send_mode(row: dict[str, Any]) -> str:
     return "generic_team"
 
 
+def parse_jsonish(value: Any) -> Any:
+    if isinstance(value, (dict, list)):
+        return value
+    text = compact(value)
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
+
+
+def host_from_url(value: Any) -> str:
+    text = compact(value).lower()
+    if not text:
+        return ""
+    if "://" not in text:
+        text = f"https://{text}"
+    text = re.sub(r"^[a-z]+://", "", text, flags=re.I).split("/", 1)[0]
+    text = text.split("@")[-1].split(":", 1)[0]
+    return re.sub(r"^www\.", "", text)
+
+
+def domain_from_email(value: Any) -> str:
+    email = compact(value).lower()
+    if "@" not in email:
+        return ""
+    return host_from_url(email.rsplit("@", 1)[1])
+
+
+def company_domain(row: dict[str, Any]) -> str:
+    for field in ("canonical_domain", "best_url", "company_url", "website_url"):
+        host = host_from_url(row.get(field))
+        if host:
+            return host
+    return ""
+
+
+def domain_country_suffix(domain: str) -> str:
+    parts = domain.split(".")
+    if len(parts) >= 2 and len(parts[-1]) == 2:
+        return parts[-1]
+    return ""
+
+
+def json_blob(value: Any) -> str:
+    parsed = parse_jsonish(value)
+    if parsed is None:
+        return compact(value)
+    try:
+        return json.dumps(parsed, sort_keys=True)
+    except Exception:
+        return compact(value)
+
+
+def selected_contact_was_rejected(row: dict[str, Any]) -> bool:
+    name = compact(row.get("selected_contact_name")).lower()
+    email = selected_email(row)
+    if not name and not email:
+        return False
+    evidence = parse_jsonish(row.get("contact_search_evidence_json"))
+    if not isinstance(evidence, dict):
+        return False
+    rejected = evidence.get("rejected_candidates") or evidence.get("rejected") or []
+    if not isinstance(rejected, list):
+        return False
+    email_local = email.partition("@")[0].replace(".", " ").replace("_", " ")
+    for candidate in rejected:
+        if not isinstance(candidate, dict):
+            continue
+        reason = compact(candidate.get("reason_code") or candidate.get("reason")).lower()
+        if "not_target_company" not in reason and "not target" not in reason:
+            continue
+        raw = compact(candidate.get("raw_name") or candidate.get("name") or candidate.get("contact_name")).lower()
+        candidate_email = compact(candidate.get("email")).lower()
+        if (name and raw and (name in raw or raw in name)) or (candidate_email and candidate_email == email):
+            return True
+        if raw and email_local and raw.replace(".", " ") in email_local:
+            return True
+    return False
+
+
+def validation_evidence_supports_alternate_domain(row: dict[str, Any], email_domain: str, site_domain: str) -> bool:
+    evidence = " ".join(
+        json_blob(row.get(field)).lower()
+        for field in (
+            "email_validation_evidence_json",
+            "email_candidates_json",
+            "email_validation_summary",
+            "email_source",
+        )
+    )
+    if not evidence or email_domain not in evidence or site_domain not in evidence:
+        return False
+    return any(term in evidence for term in ("accepted", "valid", "deliverable", "person_domain", "anymail"))
+
+
+def website_mentions_email_domain(row: dict[str, Any], email_domain: str) -> bool:
+    if not email_domain:
+        return False
+    haystack = " ".join(
+        compact(row.get(field)).lower()
+        for field in (
+            "website_content",
+            "source_urls",
+            "contact_info_detected",
+            "structured_data_detected",
+            "selected_contact_source_url",
+        )
+    )
+    return email_domain in haystack
+
+
+def contact_provenance_review_reason(row: dict[str, Any], mode: str) -> str:
+    if mode != "named_person":
+        return ""
+    email_domain = domain_from_email(selected_email(row))
+    site_domain = company_domain(row)
+    if not email_domain or not site_domain or email_domain == site_domain:
+        return ""
+    if selected_contact_was_rejected(row):
+        return "rejected_contact_reused_by_fallback"
+    email_country = domain_country_suffix(email_domain)
+    site_country = domain_country_suffix(site_domain)
+    if email_country and site_country and email_country != site_country:
+        return "cross_domain_contact_review"
+    if website_mentions_email_domain(row, email_domain):
+        return ""
+    if validation_evidence_supports_alternate_domain(row, email_domain, site_domain):
+        return ""
+    evidence = " ".join(
+        json_blob(row.get(field)).lower()
+        for field in ("email_validation_evidence_json", "email_candidates_json", "selected_contact_linkedin_url", "email_source")
+    )
+    fallback_terms = ("decision_maker_fallback", "decision maker fallback", "anymail_finder_decision_maker")
+    if any(term in evidence for term in fallback_terms):
+        return "cross_domain_contact_review"
+    return ""
+
+
 NON_PERSON_CONTACT_NAME_TERMS = {
     "admin",
     "admissions",
@@ -5797,6 +5937,9 @@ def automation_decision_for(
     source_urls_text = compact(row.get("source_urls"))
     if mode == "generic_team" and identity_confidence in {"none", "low"} and source_urls_text:
         return "draft_only_review", "generic_or_low_identity_contact", ["generic_or_low_identity_contact"], False
+    contact_review_reason = contact_provenance_review_reason(row, mode)
+    if contact_review_reason:
+        return "draft_only_review", contact_review_reason, [contact_review_reason], False
     thin_content = bool(source_urls_text) and len(compact(row.get("website_content"))) < 500
     thin_sources = bool(source_urls_text) and len(source_urls_text) < 60
     if (thin_content or thin_sources) and classification.get("classification_confidence") != "high":

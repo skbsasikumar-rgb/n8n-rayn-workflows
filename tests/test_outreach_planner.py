@@ -1082,6 +1082,98 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(result["patch"]["automation_decision_reason"], "generic_or_low_identity_contact")
         self.assertFalse(result["patch"]["final_send_gate_passed"])
 
+    def test_cross_country_decision_maker_fallback_requires_review(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "My Dental Team",
+                "best_url": "https://www.mydentalteam.sg/",
+                "website_content": "Dental clinic in Singapore providing dental services, appointments, patient records and treatment plans.",
+                "validated_email": "dinesh@mydentalteam.com.au",
+                "selected_contact_name": "Dinesh Sanmuganathan",
+                "selected_contact_title": "CEO",
+                "selected_contact_linkedin_url": "https://au.linkedin.com/in/dinesh-sanmuganathan-6462b563",
+                "email_source": "anymail_finder_decision_maker",
+                "email_validation_evidence_json": json.dumps({"decision_maker_fallback": {"selected": True}}),
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(result["patch"]["contact_send_mode"], "named_person")
+        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
+        self.assertEqual(result["patch"]["automation_decision_reason"], "cross_domain_contact_review")
+        self.assertFalse(result["patch"]["final_send_gate_passed"])
+
+    def test_rejected_contact_reused_by_fallback_requires_review(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "my FootDr (Singapore) Pte Ltd",
+                "best_url": "https://www.myfootdr.com.sg/",
+                "website_content": "Singapore foot care and podiatry clinic providing patient consultations and treatment services.",
+                "validated_email": "greg.dower@myfootdr.com.au",
+                "selected_contact_name": "Greg Dower",
+                "selected_contact_title": "Founder",
+                "email_source": "anymail_finder_decision_maker",
+                "contact_search_evidence_json": json.dumps(
+                    {
+                        "rejected_candidates": [
+                            {
+                                "raw_name": "Greg Dower",
+                                "reason_code": "not_target_company",
+                                "reason": "Australia-based My FootDr group, not the Singapore entity.",
+                            }
+                        ]
+                    }
+                ),
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(result["patch"]["contact_send_mode"], "named_person")
+        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
+        self.assertEqual(result["patch"]["automation_decision_reason"], "rejected_contact_reused_by_fallback")
+        self.assertFalse(result["patch"]["final_send_gate_passed"])
+
+    def test_related_cross_domain_contact_allowed_when_site_mentions_domain(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Monash IVF Singapore",
+                "best_url": "https://monashivf.com.sg/",
+                "website_content": "Monash IVF Singapore provides fertility services and patient appointments. Contact emails may use monashivf.com for the same group.",
+                "validated_email": "rebecca.redden@monashivf.com",
+                "selected_contact_name": "Rebecca Redden",
+                "selected_contact_title": "Director",
+                "selected_contact_linkedin_url": "https://au.linkedin.com/in/rebecca-redden-1461a2260",
+                "email_source": "anymail_finder_decision_maker",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(result["patch"]["contact_send_mode"], "named_person")
+        self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
+
+    def test_alternate_domain_allowed_when_validation_ties_to_site_domain(self):
+        result = o.plan_and_patch(
+            {
+                "company_name": "Mint Medical Centre",
+                "best_url": "https://mintmedicalcentre.sg/",
+                "website_content": "Mint Medical Centre is a Singapore clinic providing patient appointments, medical consultations and health services.",
+                "selected_contact_source_url": "https://mintmedicalcentre.sg/",
+                "validated_email": "dora@mintmed.com.sg",
+                "selected_contact_name": "Dora Cheong",
+                "selected_contact_title": "Senior Doctor",
+                "email_source": "anymail_person_domain",
+                "email_validation_evidence_json": json.dumps(
+                    {
+                        "person_domain_lookup": {
+                            "input_domain": "mintmedicalcentre.sg",
+                            "accepted_email": "dora@mintmed.com.sg",
+                            "status": "valid",
+                        }
+                    }
+                ),
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(result["patch"]["contact_send_mode"], "named_person")
+        self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
+
     def test_thin_non_high_classification_requires_review(self):
         result = o.plan_and_patch(
             {

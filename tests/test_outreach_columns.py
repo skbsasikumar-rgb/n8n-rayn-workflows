@@ -196,6 +196,12 @@ class OutreachColumnContractTests(unittest.TestCase):
             "website_content",
             "source_urls",
             "attempt_count",
+            "contact_search_status",
+            "contact_search_reason",
+            "contact_search_evidence_json",
+            "selected_contact_source_url",
+            "email_candidates_json",
+            "email_validation_evidence_json",
         }
         missing = sorted(field for field in fields if field not in existing_fields and field not in self.columns)
         self.assertEqual(missing, [])
