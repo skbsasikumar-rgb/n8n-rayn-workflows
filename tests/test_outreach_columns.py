@@ -448,6 +448,8 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         self.assertIn("INSTANTLY_CAMPAIGN_ID", js_code)
         self.assertIn("custom_variables", js_code)
         self.assertIn("rayn_row_id", js_code)
+        self.assertIn("email_1_body_html", js_code)
+        self.assertIn("email_2_body_html", js_code)
         self.assertIn("skip_if_in_workspace", js_code)
         self.assertIn("send_provider: 'instantly'", result_node["parameters"]["jsCode"])
         self.assertIn("instantly_sync_status = 'synced'", result_node["parameters"]["jsCode"])
