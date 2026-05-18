@@ -201,6 +201,24 @@ def test_url_picker_rejects_shortener_even_when_llm_selects_it():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_rejects_marketplace_product_page_even_when_named():
+    result = run_parse_url_pick_with_content(
+        "Praventac - Acne Treatment",
+        [
+            {
+                "rank": 1,
+                "title": "PRAVENTAC Natural Acne Treatment Supplement",
+                "url": "https://www.amazon.sg/PRAVENTAC-Natural-Blemishes-Supplement-60Capsules/dp/B01NBQ1V0A",
+                "snippet": "Praventac acne treatment product page on Amazon Singapore.",
+            }
+        ],
+        '{"url":"https://www.amazon.sg/PRAVENTAC-Natural-Blemishes-Supplement-60Capsules/dp/B01NBQ1V0A","reason":"brand and product match"}',
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_picker_rejects_nlb_directory_result():
     result = run_parse_url_pick_with_content(
         "Bishan Grace Clinic",

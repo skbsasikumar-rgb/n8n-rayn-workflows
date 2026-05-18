@@ -268,7 +268,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
         self.assertIn("(email_1_subject,blank)", url_expr)
         self.assertIn("(automation_decision,blank)", url_expr)
-        self.assertNotIn("(validated_email,notblank)", url_expr)
+        self.assertNotIn("(contact_search_status,notblank)", url_expr)
+        self.assertIn("(contact_search_status,eq,contact_not_found)", url_expr)
+        self.assertIn("(contact_search_status,eq,failed)", url_expr)
+        self.assertIn("(contact_search_status,eq,skipped)", url_expr)
+        self.assertIn("(validated_email,notblank)", url_expr)
+        self.assertIn("(selected_contact_email,notblank)", url_expr)
 
     def test_workflow_fetch_does_not_refetch_suppressed_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
@@ -327,8 +332,48 @@ class OutreachColumnContractTests(unittest.TestCase):
         js_code = rows_node["parameters"]["jsCode"]
         self.assertIn("(status,blank)", url_expr)
         self.assertIn("(status,eq,pending)", url_expr)
+        self.assertIn("(status,eq,failed_retryable)", url_expr)
+        self.assertIn("(status,eq,processing)", url_expr)
+        self.assertIn("processing_started_at,lt", url_expr)
+        self.assertIn("RAYN_URL_PICKER_DISCOVERY_LIMIT", url_expr)
+        self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
+        self.assertIn("Math.min(25", url_expr)
         self.assertIn("isPendingOrNew", js_code)
-        self.assertIn("return !status || status === 'pending'", js_code)
+        self.assertIn("isRetryable(row)", js_code)
+        self.assertIn("isStaleProcessing(row)", js_code)
+        self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
+        self.assertIn("RAYN_MAX_RETRY_ATTEMPTS", js_code)
+        self.assertIn("attemptCount >= maxRetryAttempts", js_code)
+
+    def test_url_picker_worker_picks_retryable_and_stale_enrichment_rows(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        get_rows_node = next(node for node in workflow["nodes"] if node["name"] == "Get Enrichment Rows")
+        rows_node = next(node for node in workflow["nodes"] if node["name"] == "Rows To Enrichment Items")
+        url_expr = get_rows_node["parameters"]["url"]
+        js_code = rows_node["parameters"]["jsCode"]
+        self.assertIn("(status,eq,url_picked)", url_expr)
+        self.assertIn("(status,eq,failed_retryable)", url_expr)
+        self.assertIn("(status,eq,processing)", url_expr)
+        self.assertIn("processing_started_at,lt", url_expr)
+        self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
+        self.assertIn("isRetryable(row)", js_code)
+        self.assertIn("isStaleProcessing(row)", js_code)
+        self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
+        self.assertIn("RAYN_MAX_RETRY_ATTEMPTS", js_code)
+        self.assertIn("attemptCount >= maxRetryAttempts", js_code)
+
+    def test_url_picker_worker_claims_stamp_attempt_and_processing_times(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        for node_name in ["Continue Discovery Claim", "Continue Enrichment Claim"]:
+            with self.subTest(node=node_name):
+                js_code = next(node for node in workflow["nodes"] if node["name"] == node_name)["parameters"][
+                    "jsCode"
+                ]
+                self.assertIn("const now = new Date().toISOString()", js_code)
+                self.assertIn("processing_started_at: now", js_code)
+                self.assertIn("last_attempted_at: now", js_code)
+                self.assertIn("attempt_count: String(attempt)", js_code)
+                self.assertIn("retry_eligible: 'true'", js_code)
 
     def test_url_picker_worker_throws_on_provider_account_errors(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
@@ -345,6 +390,31 @@ class OutreachColumnContractTests(unittest.TestCase):
                 self.assertIn("providerAccountError", js_code)
                 self.assertIn("provider_account_error", js_code)
                 self.assertIn("insufficient balance", js_code)
+        enrichment_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare Enrichment Patch"
+        )["parameters"]["jsCode"]
+        self.assertIn("providerErrorFields", enrichment_code)
+        self.assertNotIn("payload.error || payload.message || payload.last_error || payload", enrichment_code)
+
+    def test_url_picker_worker_queues_contact_search_after_enrichment(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        enrichment_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare Enrichment Patch"
+        )["parameters"]["jsCode"]
+        self.assertIn("finalStatus === 'completed'", enrichment_code)
+        self.assertIn("patch.contact_search_status = 'pending'", enrichment_code)
+        self.assertIn("pending_after_enrichment", enrichment_code)
+
+    def test_url_picker_worker_patches_transport_timeout_as_retryable(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        enrichment_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare Enrichment Patch"
+        )["parameters"]["jsCode"]
+        self.assertIn("isTransportTimeout(errorText)", enrichment_code)
+        self.assertIn("status: 'failed_retryable'", enrichment_code)
+        self.assertIn("status_reason: 'enrichment_transport_timeout'", enrichment_code)
+        self.assertIn("error_type: 'enrichment_timeout'", enrichment_code)
+        self.assertNotIn("if (isTransportTimeout(errorText)) {\n    return [];", enrichment_code)
 
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(
@@ -401,13 +471,21 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         js_code = build_node["parameters"]["jsCode"]
         self.assertIn("RAYN_AUTOMATION_CONTROLLER_ENABLED", js_code)
         self.assertIn("RAYN_AUTOMATION_WORKER_TICKS", js_code)
+        self.assertIn("RAYN_AUTOMATION_CONTACT_TICKS", js_code)
+        self.assertIn("RAYN_CONTACT_SEARCH_BATCH_LIMIT", js_code)
+        self.assertIn("RAYN_URL_PICKER_DISCOVERY_LIMIT", js_code)
+        self.assertIn("RAYN_URL_PICKER_ENRICHMENT_LIMIT", js_code)
         self.assertIn("RAYN_AUTOMATION_PLANNER_LIMIT", js_code)
         self.assertIn("process.env", js_code)
         self.assertNotIn("$env.", js_code)
+        self.assertIn(".replace(/\\/$/, '')", js_code)
+        self.assertNotIn(".replace(//$/, '')", js_code)
         self.assertIn("enabledDefault", js_code)
         self.assertIn("/webhook/rayn-url-picker-batch", js_code)
+        self.assertIn("/webhook/rayn-contact-search-batch", js_code)
         self.assertIn("/webhook/rayn-cold-email-planner", js_code)
         self.assertIn("copy_qa_mode: copyQaMode", js_code)
+        self.assertIn("RAYN_AUTOMATION_WORKER_TICKS, 1, 0, 10", js_code)
         self.assertEqual(trigger_node["parameters"]["method"], "POST")
         self.assertEqual(trigger_node["parameters"]["url"], "={{ $json.url }}")
 

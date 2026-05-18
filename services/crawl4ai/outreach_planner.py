@@ -4997,6 +4997,11 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_paragraph_shape")
     if EMAIL_2_VALUE_PS not in body:
         flags.append("llm_email_2_rewrite_missing_value_ps")
+    ps_lines = [compact(line) for line in body.splitlines() if compact(line).lower().startswith("p.s.")]
+    if re.search(r"\bP\.S\.\s*\d", body):
+        flags.append("llm_email_2_rewrite_broken_ps")
+    if body.count(EMAIL_2_VALUE_PS) != 1 or ps_lines != [EMAIL_2_VALUE_PS]:
+        flags.append("llm_email_2_rewrite_changed_value_ps")
     if "from the site" in body_l:
         flags.append("llm_email_2_rewrite_from_site")
     if "rayn" in body_l:

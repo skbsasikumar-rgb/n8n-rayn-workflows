@@ -526,17 +526,18 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 18 : 14", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 8", prepare_code)
         self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 15000", prepare_code)
         self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 2", prepare_code)
-        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 300 : 150", prepare_code)
+        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 210 : 120", prepare_code)
         self.assertIn("allow_low_limits: false", prepare_code)
         http_node = nodes["Crawl4AI Public Enrich"]
-        self.assertEqual(http_node["parameters"]["options"]["timeout"], 360000)
+        self.assertEqual(http_node["parameters"]["options"]["timeout"], 240000)
         self.assertNotIn("retryOnFail", http_node)
         patch_code = nodes["Prepare Enrichment Patch"]["parameters"]["jsCode"]
         self.assertIn("isTransportTimeout", patch_code)
-        self.assertIn("return []", patch_code)
+        self.assertIn("status: 'failed_retryable'", patch_code)
+        self.assertIn("status_reason: 'enrichment_transport_timeout'", patch_code)
         self.assertIn("NOCO_LONG_TEXT_LIMIT = 95000", patch_code)
         self.assertIn("compactStructuredData", patch_code)
         self.assertIn("capNocoLongTextFields(patch)", patch_code)
@@ -615,8 +616,9 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("pickedUrl ? 'url_picked' : 'skipped'", parse_code)
         self.assertNotIn("'processing') : 'skipped'", parse_code)
         self.assertIn("status,eq,url_picked", enrichment_url)
-        self.assertNotIn("status,eq,processing", enrichment_url)
-        self.assertIn("=== 'url_picked'", rows_to_enrichment_code)
+        self.assertIn("status,eq,processing", enrichment_url)
+        self.assertIn("isStaleProcessing(row)", rows_to_enrichment_code)
+        self.assertIn("status === 'url_picked'", rows_to_enrichment_code)
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
 
     def test_workflow_keeps_sparse_successes_completed(self):

@@ -634,6 +634,61 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("first_attempt", plan.emails["llm_email_1_rewrite"])
         self.assertNotIn("unlock potential", plan.emails["email_1"]["body"].lower())
 
+    def test_email_2_llm_rewrite_rejects_broken_ps_line(self):
+        calls = []
+
+        def rewrite(payload):
+            calls.append(payload)
+            deterministic_email_2 = payload["deterministic_email_2"]
+            if len(calls) == 1:
+                return {
+                    "email_1": {
+                        "subject": payload["deterministic_subject"],
+                        "body": payload["deterministic_email_1"]["body"],
+                    },
+                    "email_2": {
+                        "subject": deterministic_email_2["subject"],
+                        "body": deterministic_email_2["body"].replace(
+                            o.EMAIL_2_VALUE_PS,
+                            "P.S.0\n" + o.EMAIL_2_VALUE_PS,
+                        ),
+                    },
+                    "notes": ["bad ps"],
+                }
+            return {
+                "email_1": {
+                    "subject": payload["deterministic_subject"],
+                    "body": payload["deterministic_email_1"]["body"],
+                },
+                "email_2": {
+                    "subject": deterministic_email_2["subject"],
+                    "body": deterministic_email_2["body"],
+                },
+                "notes": ["fixed ps"],
+            }
+
+        with patch.object(o, "email_1_llm_rewrite_enabled", return_value=True), patch.object(o, "call_email_1_rewrite_llm", side_effect=rewrite):
+            plan = o.plan_outreach(
+                {
+                    "Id": 904,
+                    "company_name": "Example Medical Clinic",
+                    "selected_contact_name": "Ivan Tan",
+                    "validated_email": "ivan@example.com",
+                    "website_content": "Family clinic with doctors, patient appointments, consultation notes and patient services.",
+                    "openrouter_allowed": True,
+                    "use_llm_humaniser": True,
+                    "skip_openrouter": False,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertEqual(2, len(calls))
+        self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
+        self.assertEqual(2, plan.emails["llm_email_2_rewrite"]["attempt_number"])
+        self.assertEqual(1, plan.emails["email_2"]["body"].count(o.EMAIL_2_VALUE_PS))
+        self.assertNotIn("P.S.0", plan.emails["email_2"]["body"])
+        self.assertIn("llm_email_2_rewrite_broken_ps", plan.emails["llm_email_2_rewrite"]["first_attempt"]["flags"])
+
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
             with self.subTest(track=track):
