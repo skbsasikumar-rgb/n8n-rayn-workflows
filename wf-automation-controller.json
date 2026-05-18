@@ -1,0 +1,137 @@
+{
+  "name": "RAYN Automation Controller v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-automation-controller",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = ($json.body && Object.keys($json.body).length ? $json.body : $json) || {};\nconst env = typeof process !== 'undefined' && process.env ? process.env : {};\nfunction intValue(value, fallback, min, max) {\n  const parsed = Number(value);\n  if (!Number.isFinite(parsed)) return fallback;\n  return Math.max(min, Math.min(max, Math.floor(parsed)));\n}\nfunction boolValue(value, fallback = false) {\n  if (value === true || value === false) return value;\n  const text = String(value ?? '').trim().toLowerCase();\n  if (['true', '1', 'yes', 'on'].includes(text)) return true;\n  if (['false', '0', 'no', 'off'].includes(text)) return false;\n  return fallback;\n}\nconst envEnabled = String(env.RAYN_AUTOMATION_CONTROLLER_ENABLED || '').trim();\nconst enabledDefault = envEnabled ? boolValue(envEnabled, false) : true;\nconst enabled = boolValue(source.enabled, enabledDefault);\nif (!enabled) return [];\nconst baseUrl = String(env.RAYN_N8N_PUBLIC_BASE_URL || env.N8N_EDITOR_BASE_URL || 'https://primary-production-a6441.up.railway.app').replace(/\\/$/, '');\nconst workerTicks = intValue(source.worker_ticks ?? env.RAYN_AUTOMATION_WORKER_TICKS, 8, 0, 50);\nconst plannerTicks = intValue(source.planner_ticks ?? env.RAYN_AUTOMATION_PLANNER_TICKS, 1, 0, 10);\nconst plannerLimit = intValue(source.planner_limit ?? env.RAYN_AUTOMATION_PLANNER_LIMIT, 15, 1, 100);\nconst plannerChunkSize = intValue(source.planner_chunk_size ?? env.RAYN_AUTOMATION_PLANNER_CHUNK_SIZE, 3, 1, 10);\nconst plannerConcurrency = intValue(source.planner_concurrency ?? env.RAYN_AUTOMATION_PLANNER_CONCURRENCY, 4, 1, 8);\nconst copyQaMode = boolValue(source.copy_qa_mode, false);\nconst items = [];\nfor (let index = 0; index < workerTicks; index += 1) {\n  items.push({\n    json: {\n      step: 'url_picker_worker_tick',\n      url: `${baseUrl}/webhook/rayn-url-picker-batch`,\n      body: {\n        source: 'rayn_automation_controller',\n        tick: index + 1,\n        worker_ticks: workerTicks\n      }\n    }\n  });\n}\nfor (let index = 0; index < plannerTicks; index += 1) {\n  items.push({\n    json: {\n      step: 'cold_email_planner_tick',\n      url: `${baseUrl}/webhook/rayn-cold-email-planner`,\n      body: {\n        source: 'rayn_automation_controller',\n        limit: plannerLimit,\n        chunk_size: plannerChunkSize,\n        concurrency: plannerConcurrency,\n        copy_qa_mode: copyQaMode\n      }\n    }\n  });\n}\nreturn items;"
+      },
+      "id": "build-controller-actions",
+      "name": "Build Controller Actions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -420,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "trigger-worker-or-planner",
+      "name": "Trigger Worker Or Planner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -120,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Controller Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Controller Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Controller Actions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Controller Actions": {
+      "main": [
+        [
+          {
+            "node": "Trigger Worker Or Planner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

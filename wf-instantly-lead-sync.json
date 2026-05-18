@@ -1,0 +1,249 @@
+{
+  "name": "RAYN Instantly Lead Sync v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -720,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-instantly-lead-sync",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ (() => { const limit = Number(($json.body && $json.body.limit) || $json.limit || $env.RAYN_INSTANTLY_SYNC_LIMIT || 25); const where = '(email_send_ready,eq,true)~and(automation_decision,eq,auto_send_eligible)~and(final_send_gate_passed,eq,true)~and(validated_email,notblank)~and(do_not_contact,neq,true)~and(unsubscribe_status,eq,active)~and(send_provider,neq,instantly)~and(instantly_sync_status,neq,synced)~and(instantly_sync_status,neq,skipped)'; const fields = 'Id,company_name,best_url,selected_contact_name,selected_contact_title,selected_contact_role,validated_email,email_1_subject,email_1_body,email_2_subject,email_2_body,email_quality_flags,severe_email_flags,automation_decision,final_send_gate_passed,email_send_ready,do_not_contact,unsubscribe_status,send_provider,sequence_status,send_status,instantly_campaign_id,instantly_lead_id,instantly_sync_status'; return 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent(where) + '&fields=' + encodeURIComponent(fields) + '&limit=' + String(Math.max(1, Math.min(100, limit))) + '&sort=Id'; })() }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "options": {}
+      },
+      "id": "get-send-ready-rows",
+      "name": "Get Send Ready Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -460,
+        80
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nconst enabled = String($env.RAYN_INSTANTLY_SYNC_ENABLED || '').trim().toLowerCase() === 'true';\nconst apiKey = String($env.INSTANTLY_API_KEY || '').trim();\nconst campaignId = String($env.INSTANTLY_CAMPAIGN_ID || '').trim();\nfunction text(value) { return String(value || '').trim(); }\nfunction boolish(value) { return value === true || text(value).toLowerCase() === 'true'; }\nfunction hasFlags(value) {\n  try {\n    const parsed = Array.isArray(value) ? value : JSON.parse(text(value) || '[]');\n    return Array.isArray(parsed) && parsed.length > 0;\n  } catch {\n    return Boolean(text(value));\n  }\n}\nfunction splitName(value) {\n  const parts = text(value).split(/\\s+/).filter(Boolean);\n  if (!parts.length) return { first_name: '', last_name: '' };\n  if (parts.length === 1) return { first_name: parts[0], last_name: '' };\n  return { first_name: parts[0], last_name: parts.slice(1).join(' ') };\n}\nif (!enabled || !apiKey || !campaignId) return [];\nconst candidates = [];\nfor (const row of rows) {\n  if (!row || !row.Id) continue;\n  if (!boolish(row.email_send_ready)) continue;\n  if (text(row.automation_decision) !== 'auto_send_eligible') continue;\n  if (!boolish(row.final_send_gate_passed)) continue;\n  if (boolish(row.do_not_contact)) continue;\n  if (text(row.unsubscribe_status || 'active') !== 'active') continue;\n  if (text(row.send_provider) === 'instantly') continue;\n  if (['synced', 'skipped'].includes(text(row.instantly_sync_status))) continue;\n  if (hasFlags(row.severe_email_flags) || hasFlags(row.email_quality_flags)) continue;\n  if (!text(row.validated_email) || !text(row.email_1_subject) || !text(row.email_1_body)) continue;\n  candidates.push(row);\n}\nif (!candidates.length) return [];\ncandidates.sort((a, b) => Number(a.Id) - Number(b.Id));\nconst row = candidates[0];\nconst name = splitName(row.selected_contact_name);\nconst customVariables = {\n  rayn_row_id: String(row.Id),\n  email_1_subject: text(row.email_1_subject),\n  email_1_body: text(row.email_1_body),\n  email_2_subject: text(row.email_2_subject),\n  email_2_body: text(row.email_2_body),\n  selected_contact_role: text(row.selected_contact_role || row.selected_contact_title),\n  source: 'rayn_nocodb'\n};\nreturn [{ json: {\n  Id: row.Id,\n  company_name: text(row.company_name),\n  recipient_email: text(row.validated_email),\n  campaign_id: campaignId,\n  instantly_body: {\n    campaign: campaignId,\n    email: text(row.validated_email),\n    first_name: name.first_name,\n    last_name: name.last_name,\n    company_name: text(row.company_name),\n    job_title: text(row.selected_contact_title || row.selected_contact_role),\n    website: text(row.best_url),\n    skip_if_in_workspace: true,\n    skip_if_in_campaign: true,\n    skip_if_in_list: true,\n    custom_variables: customVariables\n  }\n} }];"
+      },
+      "id": "prepare-instantly-lead",
+      "name": "Prepare Instantly Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -200,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.instantly.ai/api/v2/leads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.INSTANTLY_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.instantly_body) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "create-instantly-lead",
+      "name": "Create Instantly Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        60,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const preparedItems = $('Prepare Instantly Lead').all();\nconst now = new Date().toISOString();\nfunction text(value) { return String(value || '').trim(); }\nfunction errorText(payload) {\n  if (!payload) return 'Instantly request failed';\n  if (typeof payload === 'string') return payload;\n  return text(payload.message || payload.error || payload.detail || JSON.stringify(payload));\n}\nfunction providerAccountError(value) {\n  const message = errorText(value).toLowerCase().replace(/[_-]+/g, ' ');\n  return /provider_account_error|insufficient balance|zero balance|balance not enough|no funds|out of funds|insufficient funds|quota|billing|payment required|invalid api key|invalid key|wrong api key|api key|unauthorized|too many requests|rate limit/.test(message);\n}\nconst patches = [];\nfor (const [index, item] of $input.all().entries()) {\n  const source = preparedItems[index]?.json || {};\n  const response = item.json || {};\n  const leadId = text(response.id || response.lead_id || response.data?.id);\n  const ok = Boolean(leadId) && !response.error && !response.message?.toLowerCase?.().includes('error');\n  const patch = {\n    Id: source.Id,\n    send_provider: 'instantly',\n    instantly_campaign_id: source.campaign_id,\n    send_last_attempted_at: now\n  };\n  if (ok) {\n    patch.instantly_lead_id = leadId;\n    patch.instantly_sync_status = 'synced';\n    patch.instantly_sync_error = '';\n    patch.instantly_synced_at = now;\n    patch.sequence_status = 'queued';\n    patch.send_status = 'queued';\n  } else {\n    const syncError = errorText(response);\n    if (providerAccountError(response)) {\n      throw new Error('provider_account_error: Instantly lead sync failed: ' + syncError);\n    }\n    patch.instantly_sync_status = 'failed_retryable';\n    patch.instantly_sync_error = syncError;\n    patch.sequence_status = 'failed';\n    patch.send_status = 'failed_retryable';\n    patch.send_error = patch.instantly_sync_error;\n  }\n  patches.push(patch);\n}\nreturn patches.map((patch) => ({ json: patch }));"
+      },
+      "id": "build-sync-patch",
+      "name": "Build Instantly Sync Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($input.all().map((item) => item.json)) }}",
+        "options": {}
+      },
+      "id": "patch-sync-result",
+      "name": "Patch Instantly Sync Result",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        80
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Send Ready Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Send Ready Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Send Ready Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Send Ready Rows": {
+      "main": [
+        [
+          {
+            "node": "Prepare Instantly Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Instantly Lead": {
+      "main": [
+        [
+          {
+            "node": "Create Instantly Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Instantly Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Instantly Sync Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Instantly Sync Patch": {
+      "main": [
+        [
+          {
+            "node": "Patch Instantly Sync Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

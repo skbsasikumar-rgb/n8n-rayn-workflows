@@ -121,6 +121,45 @@ class CaptchaSolverTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["task"]["type"], "ReCaptchaV2TaskProxyLess")
         self.assertEqual(calls[0][1]["task"]["websiteKey"], "site-key")
 
+    def test_capsolver_account_errors_raise_provider_account_error(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(
+                    {
+                        "errorId": 1,
+                        "errorCode": "ERROR_ZERO_BALANCE",
+                        "errorDescription": "Insufficient balance",
+                    }
+                ).encode("utf-8")
+
+        with patch.object(captcha_solver, "urlopen", return_value=FakeResponse()):
+            with self.assertRaises(captcha_solver.ProviderAccountError):
+                captcha_solver._capsolver_post("createTask", {"clientKey": "key", "task": {}})
+
+    def test_2captcha_account_errors_raise_provider_account_error(self):
+        fake_module = types.ModuleType("twocaptcha")
+
+        class FakeTwoCaptcha:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def recaptcha(self, **kwargs):
+                raise RuntimeError("ERROR_ZERO_BALANCE")
+
+        fake_module.TwoCaptcha = FakeTwoCaptcha
+        with patch.dict(sys.modules, {"twocaptcha": fake_module}):
+            with patch.dict(os.environ, {"TWOCAPTCHA_API_KEY": "test-key"}, clear=False):
+                with self.assertRaises(captcha_solver.ProviderAccountError):
+                    asyncio.run(
+                        captcha_solver._solve_recaptcha_v2(None, "site-key", "https://example.com/")
+                    )
+
     def test_cloudflare_solver_uses_capsolver_proxy_format(self):
         calls = []
 

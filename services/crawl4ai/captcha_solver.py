@@ -33,6 +33,36 @@ USER_AGENT = (
 )
 
 
+class ProviderAccountError(RuntimeError):
+    """Raised when a captcha provider account/key/credit problem needs operator action."""
+
+
+PROVIDER_ACCOUNT_ERROR_PATTERNS = (
+    "insufficient balance",
+    "zero balance",
+    "balance not enough",
+    "no funds",
+    "out of funds",
+    "insufficient funds",
+    "credit",
+    "quota",
+    "billing",
+    "payment required",
+    "invalid api key",
+    "invalid key",
+    "wrong api key",
+    "api key",
+    "unauthorized",
+    "forbidden",
+)
+
+
+def is_provider_account_error(value: Any) -> bool:
+    text = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value or "")
+    lowered = re.sub(r"[_-]+", " ", text.lower())
+    return any(pattern in lowered for pattern in PROVIDER_ACCOUNT_ERROR_PATTERNS)
+
+
 def _api_key() -> str:
     return (
         os.getenv("TWOCAPTCHA_API_KEY", "").strip()
@@ -110,6 +140,8 @@ def _capsolver_post(endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(f"capsolver returned unexpected response: {type(data).__name__}")
     if data.get("errorId"):
         error = data.get("errorDescription") or data.get("errorCode") or data
+        if is_provider_account_error(error):
+            raise ProviderAccountError(f"capsolver provider_account_error: {error}")
         raise RuntimeError(f"capsolver error: {error}")
     return data
 
@@ -199,6 +231,8 @@ async def _solve_recaptcha_v2_with_2captcha(sitekey: str, page_url: str) -> str 
         if token:
             return token
     except Exception as exc:
+        if is_provider_account_error(exc):
+            raise ProviderAccountError(f"2captcha provider_account_error: {exc}") from exc
         logger.error("recaptcha solve failed: %s", exc)
     return None
 
@@ -243,11 +277,15 @@ async def _solve_recaptcha_v2_with_capsolver(sitekey: str, page_url: str) -> str
                 logger.error("capsolver recaptcha ready response missing token")
                 return None
             if status == "failed":
+                if is_provider_account_error(result):
+                    raise ProviderAccountError(f"capsolver provider_account_error: {result}")
                 logger.error("capsolver recaptcha task failed: %s", result)
                 return None
 
         logger.error("capsolver recaptcha solve timed out after %ss", SOLVER_RECAPTCHA_TIMEOUT_SECONDS)
     except Exception as exc:
+        if isinstance(exc, ProviderAccountError):
+            raise
         logger.error("capsolver recaptcha solve failed: %s", exc)
     return None
 
@@ -308,11 +346,15 @@ async def solve_cloudflare_challenge(
                 logger.error("capsolver cloudflare ready response missing cookies")
                 return None
             if status == "failed":
+                if is_provider_account_error(result):
+                    raise ProviderAccountError(f"capsolver provider_account_error: {result}")
                 logger.error("capsolver cloudflare task failed: %s", result)
                 return None
 
         logger.error("capsolver cloudflare solve timed out after %ss", SOLVER_TIMEOUT_SECONDS)
     except Exception as exc:
+        if isinstance(exc, ProviderAccountError):
+            raise
         logger.error("capsolver cloudflare solve failed: %s", exc)
     return None
 
@@ -348,6 +390,8 @@ async def _solve_hcaptcha_with_2captcha(sitekey: str, page_url: str) -> str | No
         if token:
             return token
     except Exception as exc:
+        if is_provider_account_error(exc):
+            raise ProviderAccountError(f"2captcha provider_account_error: {exc}") from exc
         logger.error("hcaptcha solve failed: %s", exc)
     return None
 

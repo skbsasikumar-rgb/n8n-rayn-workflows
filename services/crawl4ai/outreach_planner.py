@@ -15,6 +15,60 @@ except ImportError:  # pragma: no cover - service runtime imports modules from c
     from funding_programs import FundingMatch, match_programmes
 
 
+PROVIDER_ACCOUNT_ERROR_PATTERNS = (
+    "provider account error",
+    "provider_account_error",
+    "insufficient balance",
+    "zero balance",
+    "balance not enough",
+    "no funds",
+    "out of funds",
+    "insufficient funds",
+    "credit",
+    "quota",
+    "billing",
+    "payment required",
+    "invalid api key",
+    "invalid key",
+    "wrong api key",
+    "api key",
+    "unauthorized",
+    "too many requests",
+    "rate limit",
+)
+
+
+class ProviderAccountError(RuntimeError):
+    """Raised when an LLM provider account/key/credit problem needs operator action."""
+
+
+def is_provider_account_error(value: Any) -> bool:
+    text = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else str(value or "")
+    normalized = re.sub(r"[_-]+", " ", text.lower())
+    return any(pattern.replace("_", " ") in normalized for pattern in PROVIDER_ACCOUNT_ERROR_PATTERNS)
+
+
+def openrouter_error_text(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+        if isinstance(payload, dict):
+            error = payload.get("error")
+            if isinstance(error, dict):
+                return compact(error.get("message") or error.get("code") or payload)
+            return compact(payload.get("message") or error or payload)
+    except Exception:
+        pass
+    return compact(response.text)[:500] or f"HTTP {response.status_code}"
+
+
+def raise_for_openrouter_account_error(response: requests.Response, context: str) -> None:
+    if response.status_code < 400:
+        return
+    message = openrouter_error_text(response)
+    if response.status_code in {401, 402, 429} or is_provider_account_error(message):
+        raise ProviderAccountError(f"provider_account_error: {context}: {message}")
+
+
 LLM_CLASSIFICATION_PROMPT = """System:
 You classify Singapore organisations for cyber/data certification outreach. Use only provided evidence. Return strict JSON only. Do not invent facts.
 
@@ -1689,12 +1743,15 @@ def call_hia_llm_review(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, A
             },
             timeout=float(os.getenv("OUTREACH_HIA_LLM_TIMEOUT_SECONDS", "20")),
         )
+        raise_for_openrouter_account_error(response, "HIA LLM review")
         response.raise_for_status()
         choices = response.json().get("choices") or []
         content = choices[0].get("message", {}).get("content", "") if choices else ""
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
         parsed = json.loads(content)
         return parsed if isinstance(parsed, dict) else None
+    except ProviderAccountError:
+        raise
     except Exception:
         return None
 
@@ -2710,16 +2767,16 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
     }
     if track == "hia_regulatory":
         problem_options = {
-            "hia_messy_evidence": "With HIA starting from 2027, the practical issue is proving the trail around that data: who can access it, which vendors touch it, how backups work and who owns incident steps.",
-            "hia_getting_closer": "With HIA starting from 2027, that data trail gets harder to leave informal: access, vendors, backups and incident ownership need evidence.",
-            "hia_prep_access_backup": "With HIA starting from 2027, the messy bit is proving who can access that data, where backups sit, which vendors touch it and what happens during an incident.",
-            "hia_readiness_evidence": "With HIA starting from 2027, the messy part is usually evidence around that data: access, vendors, backups and incident steps.",
-            "hia_real_for_providers": "With HIA starting from 2027 for healthcare providers, the cleanup is usually around that data trail: access, vendors, backups and incident ownership.",
+            "hia_messy_evidence": "If so, HIA starting from 2027 makes the practical issue proving that trail: who can access it, which vendors touch it, how backups work and who owns incident steps.",
+            "hia_getting_closer": "If so, HIA starting from 2027 makes that spread harder to leave informal: access, vendors, backups and incident ownership need evidence.",
+            "hia_prep_access_backup": "If so, HIA starting from 2027 means the messy bit is proving who can access those records, where backups sit, which vendors touch them and what happens during an incident.",
+            "hia_readiness_evidence": "If so, HIA starting from 2027 makes the messy part evidence around that trail: access, vendors, backups and incident steps.",
+            "hia_real_for_providers": "If so, HIA starting from 2027 for healthcare providers makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
-            "decent_cyber_data_baseline": "We help map that into a Cyber Essentials route for the HIA cyber/data-security side.",
-            "practical_cyber_data_baseline": "We help turn that into a practical Cyber Essentials baseline for the HIA cyber/data-security side.",
-            "controls_evidence_baseline": "We help build a Cyber Essentials evidence map for the controls expected on the HIA cyber/data-security side.",
+            "decent_cyber_data_baseline": "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.",
+            "practical_cyber_data_baseline": "We help turn that records map into a practical Cyber Essentials baseline for the HIA cyber/data-security side.",
+            "controls_evidence_baseline": "We help build a Cyber Essentials evidence map for that data trail on the HIA cyber/data-security side.",
         }
     elif track == "dpo_evidence":
         problem_options = {
@@ -3988,37 +4045,39 @@ def prospect_facing_profile_phrase(
         }
         if subtype in subtype_phrases:
             return subtype_phrases[subtype]
+        if subtype == "oncology":
+            return "an oncology/radiation provider"
         return f"a specialist-led clinic focused on {(primary or 'specialist care').replace(' / ', ' and ')}"
     if guess == "aesthetic_medical":
         return "a medical/aesthetic clinic with doctor-led consultations"
     if guess == "dental":
-        return "a dental clinic handling patient appointments and dental records"
+        return "a dental clinic"
     if guess == "pharmacy":
         return "a pharmacy / compounding provider"
     if guess == "diagnostic_lab":
-        return "a diagnostic / laboratory provider handling screening or test records"
+        return "a diagnostic / laboratory provider"
     if guess == "hospital":
-        return "a hospital handling patient and clinical records"
+        return "a hospital"
     if guess == "healthcare_group":
         return "a healthcare holding or group organisation"
     if guess == "elder_daycare":
-        return "a health and day-care provider handling elder/client care records"
+        return "a health and day-care provider"
     if guess == "hearing_care":
         return "a hearing-care provider offering hearing tests, hearing aids and audiology support"
     if guess == "allied_health":
         return "an allied-health provider offering physiotherapy or treatment support"
     if guess == "mental_health":
-        return "a psychology / mental-health provider handling assessment and case-note records"
+        return "a psychology / mental-health provider"
     if guess == "nursing_home":
-        return "a nursing home handling resident and patient care records"
+        return "a nursing home"
     if guess == "community_hospital":
-        return "a community hospital handling patient and discharge records"
+        return "a community hospital"
     if guess == "hospice_long_term_care":
-        return "a hospice / long-term care provider handling patient, resident, family, volunteer and staff data"
+        return "a hospice / long-term care provider"
     if guess == "home_care":
         return "a home-care / caregiver provider"
     if guess == "clinic_group":
-        return "part of a wider clinic group or multi-location healthcare operation"
+        return "a multi-location clinic group"
     return "a healthcare provider"
 
 
@@ -4888,12 +4947,15 @@ def call_email_1_rewrite_llm(payload: dict[str, Any]) -> dict[str, Any] | None:
             },
             timeout=float(os.getenv("OUTREACH_EMAIL_1_REWRITE_TIMEOUT_SECONDS", "20")),
         )
+        raise_for_openrouter_account_error(response, "email 1 rewrite")
         response.raise_for_status()
         choices = response.json().get("choices") or []
         content = choices[0].get("message", {}).get("content", "") if choices else ""
         content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
         parsed = json.loads(content)
         return parsed if isinstance(parsed, dict) else None
+    except ProviderAccountError:
+        raise
     except Exception:
         return None
 
@@ -5935,8 +5997,6 @@ def automation_decision_for(
     if blockers:
         return "auto_skipped", "copy_failed_after_llm_and_deterministic_fallback", blockers, False
     source_urls_text = compact(row.get("source_urls"))
-    if mode == "generic_team" and identity_confidence in {"none", "low"} and source_urls_text:
-        return "draft_only_review", "generic_or_low_identity_contact", ["generic_or_low_identity_contact"], False
     contact_review_reason = contact_provenance_review_reason(row, mode)
     if contact_review_reason:
         return "draft_only_review", contact_review_reason, [contact_review_reason], False
@@ -6002,6 +6062,11 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         dict.fromkeys(
             advisory_enrichment_flags(enrichment_flags, classification, enrichment_score)
             + advisory_copy_brief_flags(copy_flags, classification, copy_brief)
+            + (
+                ["generic_or_low_identity_contact"]
+                if contact_send_mode(row) == "generic_team" and contact_identity_confidence(row) in {"none", "low"}
+                else []
+            )
         )
     )
     decision, decision_reason, blockers, final_gate = automation_decision_for(

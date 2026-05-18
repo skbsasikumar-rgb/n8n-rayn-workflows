@@ -1064,7 +1064,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(non_person_name["patch"]["contact_identity_confidence"], "none")
         self.assertTrue(non_person_name["patch"]["email_1_body"].startswith("Hello team,"))
 
-    def test_live_generic_contact_provenance_requires_review(self):
+    def test_live_generic_contact_provenance_can_auto_send_with_advisory(self):
         result = o.plan_and_patch(
             {
                 "company_name": "Example Medical Clinic",
@@ -1078,9 +1078,11 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(result["patch"]["contact_send_mode"], "generic_team")
         self.assertEqual(result["patch"]["contact_identity_confidence"], "none")
-        self.assertEqual(result["patch"]["automation_decision"], "draft_only_review")
-        self.assertEqual(result["patch"]["automation_decision_reason"], "generic_or_low_identity_contact")
-        self.assertFalse(result["patch"]["final_send_gate_passed"])
+        self.assertEqual(result["patch"]["automation_decision"], "auto_send_eligible")
+        self.assertNotEqual(result["patch"]["automation_decision_reason"], "generic_or_low_identity_contact")
+        self.assertIn("generic_or_low_identity_contact", result["patch"]["automation_advisory_flags_json"])
+        self.assertNotIn("generic_or_low_identity_contact", result["patch"]["automation_blockers_json"])
+        self.assertTrue(result["patch"]["final_send_gate_passed"])
 
     def test_cross_country_decision_maker_fallback_requires_review(self):
         result = o.plan_and_patch(
@@ -1531,6 +1533,51 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("incident", plan.emails["email_3"]["body"])
                 self.assertNotIn("email_3_missing_hia_segment_terms", plan.quality_flags)
                 self.assertNotIn("email_3_not_hia_segment_diagnostic_shape", plan.quality_flags)
+
+    def test_hia_email_1_links_question_pressure_mechanism_and_cta(self):
+        cases = [
+            (
+                {
+                    "company_name": "Mind Wellness",
+                    "selected_contact_name": "Nisha Tan",
+                    "website_content": (
+                        "Psychology and mental-health clinic with counselling appointments, mental health assessments, "
+                        "case-note records, patient care, psychologists, therapy appointments, care notes, staff access, "
+                        "vendor systems and incident-response workflows. "
+                    )
+                    * 4,
+                },
+                "for a psychology / mental-health provider like Mind Wellness",
+                "are patient records spread across appointment, assessment, and case-note records?",
+            ),
+            (
+                {
+                    "company_name": "National Dental Centre Singapore",
+                    "selected_contact_name": "Joyce Tan",
+                    "website_content": (
+                        "Dental clinic with dentists, patient appointments, imaging files, dental software, "
+                        "treatment records, patient care, staff access, vendor systems and incident-response workflows. "
+                    )
+                    * 4,
+                },
+                "for a dental clinic like National Dental Centre Singapore",
+                "are patient records spread across imaging files, appointment details, and dental software?",
+            ),
+        ]
+        for row, profile, records_question in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                paragraphs = plan.emails["email_1"]["body"].split("\n\n")
+                self.assertEqual(len(paragraphs), 4)
+                self.assertIn(profile, paragraphs[0])
+                self.assertIn(records_question, paragraphs[0])
+                self.assertNotIn("handling", paragraphs[0])
+                self.assertTrue(paragraphs[1].startswith("If so, HIA starting from 2027"))
+                self.assertRegex(paragraphs[1], r"that (data )?trail|that spread")
+                self.assertIn("Cyber Essentials", paragraphs[2])
+                self.assertRegex(paragraphs[2], r"that (records map|data trail|trail)")
+                self.assertIn("HIA readiness map?", paragraphs[3])
+                self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
     def test_funding_email_rebuilt_when_llm_adds_non_funding_claims(self):
         row = {
@@ -2034,7 +2081,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "locations_detected": "Bedok; Jurong; Novena",
                     "website_content": "Medical group with branches, multiple doctors and outpatient clinics across Singapore.",
                 },
-                "part of a wider clinic group or multi-location healthcare operation",
+                "a multi-location clinic group",
             ),
             (
                 {
@@ -2097,7 +2144,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "company_name": "Amoy Street Dental",
                     "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software.",
                 },
-                "dental clinic handling patient appointments and dental records",
+                "dental clinic",
                 "patient records, imaging files, appointment details, dental software and backups",
                 "dental readiness map",
             ),
@@ -2213,7 +2260,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         self.assertEqual(plan.copy_brief["clinic_profile_guess"], "hospital")
-        self.assertIn("a hospital handling patient and clinical records", plan.emails["email_1"]["body"])
+        self.assertIn("a hospital", plan.emails["email_1"]["body"])
         self.assertNotIn("cardiology clinic", plan.emails["email_1"]["body"])
         self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -2294,14 +2341,14 @@ class OutreachPlannerTests(unittest.TestCase):
                 "AO Psychology",
                 "# Clinical Psychologist Singapore | Counselling & Psychotherapy | AO Psychology\nClinical Psychologist in Singapore. Counselling and psychotherapy services for individuals, couples and families. Evidence-based therapy by registered psychologists. Mental wellness blog and resources.",
                 "allied_health",
-                "a psychology / mental-health provider handling assessment and case-note records",
+                "a psychology / mental-health provider",
                 "heart/cardiology",
             ),
             (
                 "Appletree Medical",
                 "# Appletree Medical Group | Walk-In, Family Doctors, Virtual Care & Telemedicine\nAppletree Medical Group offers Virtual Care, Walk-In, Family Medicine and Specialists services in Ontario, for same-day doctor's visit or ongoing medical care. Healthcare that fits your life.",
                 "GP_OMS",
-                "part of a wider clinic group or multi-location healthcare operation",
+                "a multi-location clinic group",
                 "heart/cardiology",
             ),
             (
@@ -2315,7 +2362,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Asia Diagnostics Group",
                 "# Asia Diagnostics Group\nGeneral Radiology Services. ADG is a qualified independent diagnostics service provider with Bedok X-ray Centre and Jurong Imaging Centre. Diagnostics imaging such as Chest X-ray supports diagnosis and monitoring.",
                 "diagnostic",
-                "a diagnostic / laboratory provider handling screening or test records",
+                "a diagnostic / laboratory provider",
                 "dental",
             ),
             (
@@ -2377,7 +2424,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(clinical.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(clinical.classification["hia_service_type_guess"], "diagnostic")
         self.assertEqual(clinical.copy_brief["email_asset_offer"], "diagnostic readiness map")
-        self.assertIn("diagnostic / laboratory provider handling screening or test records", clinical.emails["email_1"]["body"])
+        self.assertIn("diagnostic / laboratory provider", clinical.emails["email_1"]["body"])
         self.assert_no_final_email_batch_or_signal_language(clinical)
 
         generic = o.plan_outreach(
@@ -2664,7 +2711,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "leadership_or_team_signals": "psychologist team",
                 },
                 "allied_health",
-                "psychology / mental-health provider handling assessment and case-note records",
+                "psychology / mental-health provider",
                 "appointment, assessment and case-note records",
             ),
             (
@@ -2675,7 +2722,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "services_detected": "resident care; patient care; volunteer support",
                 },
                 "long_term_care",
-                "nursing home handling resident and patient care records",
+                "nursing home",
                 "resident, patient, family, staff and care records",
             ),
             (
@@ -2948,6 +2995,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(classification["pressure_type"], "hia_regulatory")
         self.assertTrue(classification["hia_relevant"])
         self.assertNotIn("LLM ambiguous-HIA review", classification["hia_scope_reason"])
+
+    def test_provider_account_error_detection_normalizes_provider_codes(self):
+        self.assertTrue(o.is_provider_account_error("ERROR_ZERO_BALANCE"))
+        self.assertTrue(o.is_provider_account_error({"error": {"message": "Rate limit exceeded"}}))
+        self.assertFalse(o.is_provider_account_error("target website returned 403"))
 
 
 if __name__ == "__main__":

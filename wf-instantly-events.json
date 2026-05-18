@@ -1,0 +1,148 @@
+{
+  "name": "RAYN Instantly Events v1",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-instantly-events",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "instantly-webhook",
+      "name": "Instantly Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const payload = $json.body || $json;\nfunction text(value) { return String(value || '').trim(); }\nconst eventType = text(payload.event_type || payload.event || payload.type).toLowerCase();\nconst leadEmail = text(payload.lead_email || payload.email || payload.Email || payload.recipient_email).toLowerCase();\nconst campaignId = text(payload.campaign_id || payload.campaign || payload.campaignId);\nconst emailId = text(payload.email_id || payload.email_uuid || payload.reply_to_uuid || payload.message_id);\nconst emailAccount = text(payload.email_account || payload.sender_email || payload.from_email);\nconst step = Number(payload.step || payload.sequence_step || payload.step_number || 0);\nconst timestamp = text(payload.timestamp || payload.created_at || payload.event_time) || new Date().toISOString();\nconst custom = payload.custom_variables || payload.payload || {};\nconst rowId = text(payload.rayn_row_id || custom.rayn_row_id || payload.metadata?.rayn_row_id);\nconst replySnippet = text(payload.reply_text || payload.text_body || payload.body || payload.message || payload.email_body).slice(0, 1000);\nlet kind = 'unknown';\nif (eventType.includes('reply')) kind = 'human_reply';\nif (eventType.includes('out_of_office') || eventType.includes('out of office')) kind = 'auto_reply';\nif (eventType.includes('bounce')) kind = 'bounce';\nif (eventType.includes('unsubscribe')) kind = 'unsubscribed';\nif (eventType.includes('sent')) kind = 'email_sent';\nreturn [{ json: { event_type: eventType, kind, lead_email: leadEmail, campaign_id: campaignId, email_id: emailId, email_account: emailAccount, step, timestamp, rayn_row_id: rowId, reply_snippet: replySnippet } }];"
+      },
+      "id": "normalize-event",
+      "name": "Normalize Instantly Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ (() => { const rowId = String($json.rayn_row_id || '').trim(); const email = String($json.lead_email || '').trim(); const where = rowId ? '(Id,eq,' + rowId + ')' : '(validated_email,eq,' + email + ')'; const fields = 'Id,validated_email,instantly_lead_id,instantly_campaign_id,email_1_send_status,email_2_send_status,email_1_sent_at,email_2_sent_at,reply_status'; return 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9?where=' + encodeURIComponent(where) + '&fields=' + encodeURIComponent(fields) + '&limit=1'; })() }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "options": {}
+      },
+      "id": "get-matching-row",
+      "name": "Get Matching Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        0
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const event = $('Normalize Instantly Event').first().json;\nconst row = Array.isArray($json.list) ? $json.list[0] : null;\nif (!row || !row.Id) return [];\nconst patch = {\n  Id: row.Id,\n  send_provider: 'instantly',\n  instantly_last_event_type: event.event_type || event.kind,\n  instantly_last_event_at: event.timestamp,\n  instantly_email_account: event.email_account,\n  instantly_campaign_id: event.campaign_id || row.instantly_campaign_id || '',\n  send_last_attempted_at: event.timestamp\n};\nif (event.kind === 'email_sent') {\n  patch.send_status = 'sent';\n  if (!event.step || event.step <= 1) {\n    patch.sequence_status = 'email_2_scheduled';\n    patch.email_1_send_status = 'sent';\n    patch.email_1_sent_at = event.timestamp;\n    patch.email_1_message_id = event.email_id;\n  } else {\n    patch.sequence_status = 'completed';\n    patch.email_2_send_status = 'sent';\n    patch.email_2_sent_at = event.timestamp;\n    patch.email_2_message_id = event.email_id;\n  }\n} else if (event.kind === 'human_reply') {\n  patch.sequence_status = 'replied';\n  patch.reply_status = 'human_reply';\n  patch.reply_type = 'human';\n  patch.reply_detected_at = event.timestamp;\n  patch.reply_message_id = event.email_id;\n  patch.reply_snippet = event.reply_snippet;\n  patch.email_2_send_status = 'cancelled';\n  patch.followup_suppressed_reason = 'human_reply_to_email_1';\n} else if (event.kind === 'auto_reply') {\n  patch.reply_status = 'auto_reply';\n  patch.reply_type = 'out_of_office';\n  patch.reply_detected_at = event.timestamp;\n  patch.reply_message_id = event.email_id;\n  patch.reply_snippet = event.reply_snippet;\n} else if (event.kind === 'bounce') {\n  patch.sequence_status = 'suppressed';\n  patch.send_status = 'suppressed';\n  patch.reply_status = 'bounce';\n  patch.reply_type = 'bounce';\n  patch.reply_detected_at = event.timestamp;\n  patch.reply_message_id = event.email_id;\n  patch.unsubscribe_status = 'bounced';\n  patch.followup_suppressed_reason = 'instantly_bounce';\n} else if (event.kind === 'unsubscribed') {\n  patch.sequence_status = 'suppressed';\n  patch.send_status = 'suppressed';\n  patch.unsubscribe_status = 'unsubscribed';\n  patch.followup_suppressed_reason = 'instantly_unsubscribed';\n}\nreturn [{ json: patch }];"
+      },
+      "id": "build-event-patch",
+      "name": "Build Event Patch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($input.all().map((item) => item.json)) }}",
+        "options": {}
+      },
+      "id": "patch-event",
+      "name": "Patch Instantly Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        420,
+        0
+      ],
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Instantly Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Instantly Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Instantly Event": {
+      "main": [
+        [
+          {
+            "node": "Get Matching Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Matching Row": {
+      "main": [
+        [
+          {
+            "node": "Build Event Patch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Event Patch": {
+      "main": [
+        [
+          {
+            "node": "Patch Instantly Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": []
+}

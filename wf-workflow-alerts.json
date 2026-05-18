@@ -1,0 +1,130 @@
+{
+  "name": "RAYN Workflow Alerts v1",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        -120
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "rayn-workflow-alerts",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const source = ($json.body && Object.keys($json.body).length ? $json.body : $json) || {};\nfunction text(value) {\n  if (value == null) return '';\n  if (typeof value === 'string') return value;\n  try { return JSON.stringify(value); } catch { return String(value); }\n}\nfunction compact(value) {\n  return text(value).replace(/\\s+/g, ' ').trim();\n}\nconst workflowName = compact(source.workflow?.name || source.workflowName || source.workflow_name || source.workflowId || 'RAYN workflow');\nconst executionId = compact(source.execution?.id || source.executionId || source.execution_id || source.id || 'unknown');\nconst nodeName = compact(source.execution?.lastNodeExecuted || source.node?.name || source.nodeName || source.lastNodeExecuted || 'unknown node');\nconst errorMessage = compact(source.error?.message || source.error || source.message || source.errorMessage || 'Workflow error detected');\nconst startedAt = compact(source.execution?.startedAt || source.startedAt || source.timestamp || new Date().toISOString());\nconst alertText = [\n  'RAYN workflow alert',\n  '',\n  `Workflow: ${workflowName}`,\n  `Execution: ${executionId}`,\n  `Node: ${nodeName}`,\n  `Time: ${startedAt}`,\n  '',\n  `Error: ${errorMessage.slice(0, 1200)}`\n].join('\\n');\nreturn [{ json: { text: alertText } }];"
+      },
+      "id": "build-alert-message",
+      "name": "Build Alert Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + ($env.RAYN_TELEGRAM_BOT_TOKEN || '') + '/sendMessage' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chat_id: $env.RAYN_TELEGRAM_CHAT_ID || '', text: $json.text, disable_web_page_preview: true }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "send-telegram-alert",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -100,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Build Alert Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Alert Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all"
+  },
+  "staticData": null,
+  "tags": []
+}
