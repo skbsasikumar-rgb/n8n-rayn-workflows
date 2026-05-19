@@ -685,6 +685,8 @@ class ContactCandidateVerifierTests(unittest.TestCase):
 
         def fake_search(payload):
             queries = [item["query"] for item in payload.get("search_queries", [])]
+            if not queries:
+                return []
             self.assertEqual(len(queries), 1)
             self.assertIn("Jessica Choo", queries[0])
             return [
@@ -707,12 +709,78 @@ class ContactCandidateVerifierTests(unittest.TestCase):
             result = c.enrich_contact(payload, validate_email=True)
 
         self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_company_email_found")
         self.assertEqual(result.validated_email, "jessicachoo@apaxmedical.com")
         self.assertEqual(result.selected_contact_name, "Jessica Choo")
         self.assertEqual(result.selected_contact_role, "Company Contact")
         self.assertEqual(result.selected_contact_seniority, "team")
         self.assertEqual(result.selected_contact_confidence, "Low")
+        self.assertTrue(result.email_validation_evidence["final_domain_fallback_reused"])
         self.assertTrue(result.email_validation_evidence["company_email_identity_resolution"]["partially_proved"])
+
+    def test_public_person_candidate_beats_cached_company_email_fallback(self):
+        payload = {
+            "Id": 795,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "",
+        }
+
+        public_candidate = c.ContactCandidate(
+            name="Mei Tan",
+            role="Clinic Manager",
+            seniority="manager",
+            role_bucket="operations",
+            role_priority=4,
+            source_url="https://exampleclinic.sg/team",
+            source_type="public_search_result",
+            evidence_text="Mei Tan is listed as Clinic Manager at Example Clinic.",
+            confidence="High",
+            confidence_score=0.9,
+            company_match=True,
+            first_name="Mei",
+            last_name="Tan",
+        )
+
+        def fake_company(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "results": [{
+                    "credits_charged": 1,
+                    "email_status": "valid",
+                    "emails": ["info@exampleclinic.sg"],
+                    "valid_emails": ["info@exampleclinic.sg"],
+                }],
+                "email_type": "any",
+            }
+
+        def fake_person(candidate, domain):
+            self.assertEqual(candidate.name, "Mei Tan")
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{
+                    "email_status": "valid",
+                    "valid_email": "mei.tan@exampleclinic.sg",
+                    "input": {"domain": domain, "full_name": candidate.name},
+                }],
+                "mx_exists": True,
+            }
+
+        with patch.dict(os.environ, {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false"}, clear=False), patch.object(c, "validate_anymail_company", side_effect=fake_company), patch.object(c, "execute_provider_cascade", return_value=[{"provider": "serper", "results": []}]) as search, patch.object(c, "verify_candidates", return_value=c.CandidateVerification(accepted=[public_candidate])), patch.object(c, "validate_anymail_person", side_effect=fake_person):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        search.assert_called_once()
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_person_specific_email_found")
+        self.assertEqual(result.validated_email, "mei.tan@exampleclinic.sg")
+        self.assertEqual(result.selected_contact_name, "Mei Tan")
+        self.assertEqual(result.email_validation_provider, "anymail_finder")
 
     def test_decision_maker_fallback_runs_before_public_search(self):
         payload = {

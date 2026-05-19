@@ -1062,9 +1062,26 @@ async def ensure_browser(app: FastAPI) -> Browser:
 app = FastAPI(title="Browser Scraper", version="2.0.0")
 
 SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
-scrape_semaphore = asyncio.Semaphore(SCRAPE_CONCURRENCY)
 OUTREACH_PLAN_CONCURRENCY = max(1, int(os.getenv("OUTREACH_PLAN_CONCURRENCY", "2")))
-outreach_plan_semaphore = asyncio.Semaphore(OUTREACH_PLAN_CONCURRENCY)
+_loop_semaphores: dict[tuple[str, int], asyncio.Semaphore] = {}
+
+
+def loop_semaphore(name: str, limit: int) -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    key = (name, id(loop))
+    semaphore = _loop_semaphores.get(key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(max(1, limit))
+        _loop_semaphores[key] = semaphore
+    return semaphore
+
+
+def scrape_semaphore() -> asyncio.Semaphore:
+    return loop_semaphore("scrape", SCRAPE_CONCURRENCY)
+
+
+def outreach_plan_semaphore() -> asyncio.Semaphore:
+    return loop_semaphore("outreach_plan", OUTREACH_PLAN_CONCURRENCY)
 
 
 @app.on_event("startup")
@@ -1490,7 +1507,7 @@ async def scrape(request: ScrapeRequest) -> ScrapeResponse:
 
     async def run_scrape() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         nonlocal context, page
-        async with scrape_semaphore:
+        async with scrape_semaphore():
             browser = await ensure_browser(app)
             context = await browser.new_context(ignore_https_errors=True)
             page = await context.new_page()
@@ -1710,7 +1727,7 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
             )
 
     try:
-        async with scrape_semaphore:
+        async with scrape_semaphore():
             if request.allow_low_limits:
                 effective_page_limit = min(18 if stage == "deep_retry" else 14, max(1, request.page_limit))
                 effective_scrape_char_limit = min(180000, max(2000, request.scrape_char_limit))
@@ -1869,7 +1886,7 @@ def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: fl
 async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
     timeout_seconds = public_enrich_hard_timeout_seconds(request)
     request_data = request.model_dump()
-    async with scrape_semaphore:
+    async with scrape_semaphore():
         if public_enrich_is_fast_static_only(request_data):
             try:
                 return await asyncio.wait_for(
@@ -1971,7 +1988,7 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
 async def outreach_plan(request: OutreachPlanRequest) -> dict[str, Any]:
     payload = request.model_dump()
     try:
-        async with outreach_plan_semaphore:
+        async with outreach_plan_semaphore():
             return await asyncio.to_thread(
                 outreach_planner.plan_and_patch,
                 payload,
@@ -2026,7 +2043,7 @@ async def outreach_plan_batch(request: OutreachPlanBatchRequest) -> dict[str, An
                 "record": {},
             }
 
-    async with outreach_plan_semaphore:
+    async with outreach_plan_semaphore():
         results = await asyncio.gather(*(run_row(row) for row in rows))
 
     patches = [
