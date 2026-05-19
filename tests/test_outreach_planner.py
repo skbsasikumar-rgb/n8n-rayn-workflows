@@ -42,6 +42,34 @@ class OutreachPlannerTests(unittest.TestCase):
             self.assertNotRegex(body, r"(?im)^\s*SK\s*$")
             self.assertNotRegex(body, r"(?im)^\s*RAYN Secure\s*$")
 
+    def test_generic_cross_domain_contact_requires_review(self):
+        row = {
+            "company_name": "Prime Surgery",
+            "best_url": "https://www.drwinstonwoon.com/",
+            "canonical_domain": "drwinstonwoon.com",
+            "validated_email": "joao.brandao@primesurgery.com.br",
+            "selected_contact_name": "",
+            "contact_search_reason": "sendable_company_email_found",
+            "email_validation_evidence_json": json.dumps({"status": "sendable"}),
+        }
+
+        self.assertEqual(o.contact_send_mode(row), "generic_team")
+        self.assertEqual(o.contact_provenance_review_reason(row, "generic_team"), "cross_domain_contact_review")
+
+    def test_generic_alternate_domain_allowed_when_site_mentions_domain(self):
+        row = {
+            "company_name": "Example Clinic",
+            "best_url": "https://exampleclinic.sg/",
+            "canonical_domain": "exampleclinic.sg",
+            "validated_email": "hello@examplehealth.sg",
+            "selected_contact_name": "",
+            "contact_search_reason": "sendable_company_email_found",
+            "website_content": "For appointments, email hello@examplehealth.sg.",
+        }
+
+        self.assertEqual(o.contact_send_mode(row), "generic_team")
+        self.assertEqual(o.contact_provenance_review_reason(row, "generic_team"), "")
+
     def test_hia_high_confidence_uses_regulatory_pressure(self):
         plan = o.plan_outreach(
             {

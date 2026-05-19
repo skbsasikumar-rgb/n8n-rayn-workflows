@@ -849,7 +849,7 @@ def website_mentions_email_domain(row: dict[str, Any], email_domain: str) -> boo
 
 
 def contact_provenance_review_reason(row: dict[str, Any], mode: str) -> str:
-    if mode != "named_person":
+    if mode not in {"named_person", "generic_team"}:
         return ""
     email_domain = domain_from_email(selected_email(row))
     site_domain = company_domain(row)
@@ -865,6 +865,8 @@ def contact_provenance_review_reason(row: dict[str, Any], mode: str) -> str:
         return ""
     if validation_evidence_supports_alternate_domain(row, email_domain, site_domain):
         return ""
+    if mode == "generic_team":
+        return "cross_domain_contact_review"
     evidence = " ".join(
         json_blob(row.get(field)).lower()
         for field in ("email_validation_evidence_json", "email_candidates_json", "selected_contact_linkedin_url", "email_source")
