@@ -237,23 +237,27 @@ async def _solve_recaptcha_v2_with_2captcha(sitekey: str, page_url: str) -> str 
     return None
 
 
-async def _solve_recaptcha_v2_with_capsolver(sitekey: str, page_url: str) -> str | None:
+async def _solve_recaptcha_v2_with_capsolver(
+    sitekey: str,
+    page_url: str,
+    is_invisible: bool = False,
+) -> str | None:
     api_key = _capsolver_api_key()
     if not api_key:
         return None
 
     try:
+        task: dict[str, Any] = {
+            "type": "ReCaptchaV2TaskProxyLess",
+            "websiteURL": page_url,
+            "websiteKey": sitekey,
+        }
+        if is_invisible:
+            task["isInvisible"] = True
         created = await asyncio.to_thread(
             _capsolver_post,
             "createTask",
-            {
-                "clientKey": api_key,
-                "task": {
-                    "type": "ReCaptchaV2TaskProxyLess",
-                    "websiteURL": page_url,
-                    "websiteKey": sitekey,
-                },
-            },
+            {"clientKey": api_key, "task": task},
         )
         task_id = created.get("taskId")
         if not task_id:
@@ -359,10 +363,15 @@ async def solve_cloudflare_challenge(
     return None
 
 
-async def _solve_recaptcha_v2(page: Page, sitekey: str, page_url: str) -> str | None:
+async def _solve_recaptcha_v2(
+    page: Page,
+    sitekey: str,
+    page_url: str,
+    is_invisible: bool = False,
+) -> str | None:
     for provider in _active_providers("recaptcha"):
         if provider == "capsolver":
-            token = await _solve_recaptcha_v2_with_capsolver(sitekey, page_url)
+            token = await _solve_recaptcha_v2_with_capsolver(sitekey, page_url, is_invisible=is_invisible)
         elif provider == "2captcha":
             token = await _solve_recaptcha_v2_with_2captcha(sitekey, page_url)
         else:
@@ -413,9 +422,10 @@ async def _solve_hcaptcha(page: Page, sitekey: str, page_url: str) -> str | None
 def _extract_sitekey(html: str, captcha_type: str = "recaptcha") -> str | None:
     if captcha_type == "recaptcha":
         patterns = [
-            r"""data-sitekey=["']([^"']+)""",
+            r"""g-recaptcha[^>]+data-sitekey=["']([^"']+)""",
             r'grecaptcha\.render[^}]*sitekey\s*:\s*["\']([^"\']+)',
             r'["\']sitekey["\']\s*:\s*["\']([^"\']+)',
+            r"""data-sitekey=["']([^"']+)""",
         ]
     elif captcha_type == "hcaptcha":
         patterns = [
@@ -428,17 +438,39 @@ def _extract_sitekey(html: str, captcha_type: str = "recaptcha") -> str | None:
     for pattern in patterns:
         match = re.search(pattern, html, re.I)
         if match:
-            return match.group(1)
+            sitekey = match.group(1)
+            if captcha_type != "recaptcha" or _looks_like_recaptcha_sitekey(sitekey):
+                return sitekey
     return None
+
+
+def _looks_like_recaptcha_sitekey(sitekey: str) -> bool:
+    return bool(re.fullmatch(r"6[0-9A-Za-z_-]{20,}", (sitekey or "").strip()))
+
+
+def _recaptcha_is_invisible(html: str) -> bool:
+    lowered = html.lower()
+    return any(
+        hint in lowered
+        for hint in (
+            'data-size="invisible"',
+            "data-size='invisible'",
+            'size: "invisible"',
+            "size: 'invisible'",
+            "grecaptcha.execute",
+        )
+    )
 
 
 def _detect_captcha_type(html: str) -> str | None:
     lowered = html.lower()
     if "hcaptcha" in lowered:
         return "hcaptcha"
-    if "recaptcha" in lowered or "grecaptcha" in lowered or "/sorry/index" in lowered:
-        return "recaptcha"
+    if "turnstile" in lowered or "challenges.cloudflare.com" in lowered:
+        return "cloudflare"
     if any(hint in lowered for hint in ("challenge-platform", "cf-challenge", "challenge-form")):
+        return "cloudflare"
+    if "recaptcha" in lowered or "grecaptcha" in lowered or "/sorry/index" in lowered:
         return "recaptcha"
     return None
 
@@ -449,6 +481,9 @@ async def solve_page_captcha(page: Page, html: str) -> bool:
 
     captcha_type = _detect_captcha_type(html)
     if not captcha_type:
+        return False
+    if captcha_type not in {"recaptcha", "hcaptcha"}:
+        logger.info("unsupported captcha detected (%s), skipping solver", captcha_type)
         return False
 
     sitekey = _extract_sitekey(html, captcha_type)
@@ -473,7 +508,12 @@ async def solve_page_captcha(page: Page, html: str) -> bool:
     if captcha_type == "hcaptcha":
         token = await _solve_hcaptcha(page, sitekey, page_url)
     else:
-        token = await _solve_recaptcha_v2(page, sitekey, page_url)
+        token = await _solve_recaptcha_v2(
+            page,
+            sitekey,
+            page_url,
+            is_invisible=_recaptcha_is_invisible(html),
+        )
 
     if not token:
         return False

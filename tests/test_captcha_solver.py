@@ -121,6 +121,82 @@ class CaptchaSolverTests(unittest.TestCase):
         self.assertEqual(calls[0][1]["task"]["type"], "ReCaptchaV2TaskProxyLess")
         self.assertEqual(calls[0][1]["task"]["websiteKey"], "site-key")
 
+    def test_capsolver_recaptcha_passes_invisible_flag_when_detected(self):
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return json.dumps(self.payload).encode("utf-8")
+
+        def fake_urlopen(request, timeout):
+            body = json.loads(request.data.decode("utf-8"))
+            calls.append(body)
+            if request.full_url.endswith("/createTask"):
+                return FakeResponse({"errorId": 0, "taskId": "task-1"})
+            return FakeResponse(
+                {
+                    "errorId": 0,
+                    "status": "ready",
+                    "solution": {"gRecaptchaResponse": "capsolver-token"},
+                }
+            )
+
+        with patch.dict(
+            os.environ,
+            {
+                "TWOCAPTCHA_API_KEY": "",
+                "CAPSOLVER_API_KEY": "capsolver-key",
+                "CAPTCHA_SOLVER_PROVIDER_ORDER": "capsolver",
+            },
+            clear=False,
+        ):
+            with patch.object(captcha_solver, "urlopen", side_effect=fake_urlopen), patch.object(
+                captcha_solver, "SOLVER_POLL_INTERVAL", 0.01
+            ), patch.object(captcha_solver, "SOLVER_RECAPTCHA_TIMEOUT_SECONDS", 3):
+                token = asyncio.run(
+                    captcha_solver._solve_recaptcha_v2(
+                        None,
+                        "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+                        "https://example.com/",
+                        is_invisible=True,
+                    )
+                )
+
+        self.assertEqual(token, "capsolver-token")
+        self.assertTrue(calls[0]["task"]["isInvisible"])
+
+    def test_turnstile_challenge_is_not_misclassified_as_recaptcha(self):
+        html = """
+        <script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script>
+        <div class="cf-turnstile" data-sitekey="0x4AAAAAAABBBBBBBBBBBBBB"></div>
+        """
+
+        self.assertEqual(captcha_solver._detect_captcha_type(html), "cloudflare")
+        self.assertIsNone(captcha_solver._extract_sitekey(html, "recaptcha"))
+
+    def test_recaptcha_extract_ignores_invalid_generic_sitekey(self):
+        html = '<div data-sitekey="0x4AAAAAAABBBBBBBBBBBBBB"></div><script>grecaptcha.ready()</script>'
+
+        self.assertEqual(captcha_solver._detect_captcha_type(html), "recaptcha")
+        self.assertIsNone(captcha_solver._extract_sitekey(html, "recaptcha"))
+
+    def test_recaptcha_extract_accepts_google_sitekey(self):
+        html = '<div class="g-recaptcha" data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>'
+
+        self.assertEqual(
+            captcha_solver._extract_sitekey(html, "recaptcha"),
+            "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI",
+        )
+
     def test_capsolver_account_errors_raise_provider_account_error(self):
         class FakeResponse:
             def __enter__(self):
