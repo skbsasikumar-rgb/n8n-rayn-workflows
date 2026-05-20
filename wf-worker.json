@@ -516,9 +516,98 @@
       "webhookId": "4b6d2f56-0e9f-4c57-930c-67e94cf59f84"
     },
     {
+      "id": "get-contact-search-rows",
+      "name": "Get Contact Search Rows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        820
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ (() => { const body = $json.body || {}; const query = $json.query || {}; const rawIds = body.ids || body.row_ids || query.ids || query.row_ids || []; const ids = (Array.isArray(rawIds) ? rawIds : String(rawIds || '').split(',')).map((value) => String(value).trim()).filter(Boolean); const limitValue = ids.length ? ids.length : (body.limit || query.limit || $env.RAYN_CONTACT_SEARCH_BATCH_LIMIT || $env.CONTACT_SEARCH_BATCH_LIMIT || 5); const limit = Math.max(1, Math.min(25, Number(limitValue) || 5)); const base = 'https://nocodb-production-f802.up.railway.app/api/v1/db/data/noco/pb7f1zou786xyqc/mey3zgihq7o4at9'; const fields = 'Id,company_name,best_url,canonical_domain,contact_search_status,contact_search_reason,contact_search_run_id,contact_search_started_at,contact_search_finished_at,selected_contact_name,selected_contact_title,selected_contact_role,selected_contact_email,selected_contact_seniority,selected_contact_confidence,selected_contact_source_url,selected_contact_linkedin_url,validated_email,email_candidates_json,email_validation_status,email_validation_summary,email_validation_provider,email_validation_evidence_json,contact_search_evidence_json,source_row_created_at,source_row_updated_at,CreatedAt,UpdatedAt'; const where = ids.length ? '(Id,in,' + ids.join(',') + ')' : '(status,eq,completed)~and(canonical_domain,notblank)~and(best_url,notblank)~and(duplicate_of_id,blank)~and(contact_search_status,eq,pending)'; return base + '?where=' + encodeURIComponent(where) + '&fields=' + encodeURIComponent(fields) + '&limit=' + String(limit) + '&sort=Id'; })() }}",
+        "sendHeaders": false,
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "rows-to-contact-search-items",
+      "name": "Rows To Contact Search Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = Array.isArray($json.list) ? $json.list : [];\nreturn rows\n  .filter((row) => row && row.Id && String(row.best_url || '').trim() && String(row.canonical_domain || '').trim())\n  .map((row, index) => ({\n    json: {\n      ...row,\n      contact_search_claim_source: 'n8n_contact_row_job'\n    },\n    pairedItem: { item: index }\n  }));"
+      }
+    },
+    {
+      "id": "claim-contact-search-row",
+      "name": "Claim Contact Search Row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1000,
+        820
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, contact_search_status: 'processing', contact_search_reason: 'processing:contact_search_claimed', contact_search_started_at: $now.toISO(), contact_search_finished_at: '', contact_search_run_id: 'n8n:' + String($execution.id || '') + ':' + String($json.Id || ''), selected_contact_name: '', selected_contact_title: '', selected_contact_role: '', selected_contact_email: '', selected_contact_seniority: '', selected_contact_confidence: '', selected_contact_source_url: '', selected_contact_linkedin_url: '', validated_email: '', email_candidates_json: '', email_validation_status: '', email_validation_summary: '', email_validation_provider: '', email_validation_evidence_json: '', contact_search_evidence_json: '', source_row_created_at: String($json.source_row_created_at || $json.CreatedAt || ''), source_row_updated_at: String($json.source_row_updated_at || $json.UpdatedAt || '') }]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "continue-contact-search-claim",
+      "name": "Continue Contact Search Claim",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1260,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sourceItems = $('Rows To Contact Search Items').all();\nreturn $input.all().map((item, index) => {\n  const source = (sourceItems[index] && sourceItems[index].json) || {};\n  const patchResult = Array.isArray(item.json) ? (item.json[0] || {}) : (item.json || {});\n  return {\n    json: {\n      ...source,\n      ...patchResult,\n      Id: patchResult.Id || source.Id\n    },\n    pairedItem: item.pairedItem || { item: index }\n  };\n});"
+      }
+    },
+    {
       "parameters": {
         "method": "POST",
-        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/contact-enrich-batch') }}",
+        "url": "={{ String($env.CRAWL4AI_SCRAPER_URL || 'https://n8n-rayn-workflows-production.up.railway.app/scrape').replace(/\\/scrape$/, '/contact-enrich-row') }}",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -530,19 +619,66 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ limit: Number(($json.body && $json.body.limit) || ($json.query && $json.query.limit) || $env.CONTACT_SEARCH_BATCH_LIMIT || 1), reset_provider_health: Boolean(($json.body && $json.body.reset_provider_health) || false), validate_email: true }) }}",
+        "jsonBody": "={{ JSON.stringify({ row_id: $json.Id, reset_provider_health: false, validate_email: true }) }}",
         "options": {
-          "timeout": 300000
+          "timeout": 30000
         }
       },
       "id": "8a6c96d0-6823-4fb8-bcf8-f4c61c872077",
-      "name": "Run Contact Search Batch",
+      "name": "Run Contact Search Row",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        480,
-        1040
-      ]
+        1520,
+        820
+      ],
+      "continueOnFail": true
+    },
+    {
+      "id": "build-contact-search-transport-patches",
+      "name": "Build Contact Search Transport Patches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        820
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const sources = $('Continue Contact Search Claim').all();\nfunction stringify(value) {\n  try {\n    if (value == null) return '';\n    if (typeof value === 'string') return value;\n    return JSON.stringify(value);\n  } catch {\n    return String(value || '');\n  }\n}\nfunction messageFrom(payload) {\n  return stringify(payload?.error || payload?.message || payload?.reason || payload);\n}\nreturn $input.all().flatMap((item, index) => {\n  const source = (sources[index] && sources[index].json) || {};\n  const payload = item.json || {};\n  const accepted = payload.accepted === true && payload.ok !== false && !payload.error;\n  if (accepted) return [];\n  const message = messageFrom(payload) || 'contact search row enqueue failed';\n  return [{\n    json: {\n      Id: source.Id,\n      contact_search_status: 'failed_retryable',\n      contact_search_reason: 'contact_search_transport_timeout',\n      contact_search_finished_at: new Date().toISOString(),\n      contact_search_evidence_json: JSON.stringify({ source: 'n8n_contact_row_job', error: message, response: payload }),\n      email_candidates_json: '[]',\n      email_validation_provider: 'anymail_finder',\n      email_validation_status: '',\n      email_validation_summary: message,\n      email_validation_evidence_json: JSON.stringify({ error: message })\n    },\n    pairedItem: item.pairedItem || { item: index }\n  }];\n});"
+      }
+    },
+    {
+      "id": "patch-contact-search-transport-failure",
+      "name": "Patch Contact Search Transport Failure",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        820
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "https://nocodb-production-f802.up.railway.app/api/v1/db/data/bulk/noco/pb7f1zou786xyqc/mey3zgihq7o4at9",
+        "sendHeaders": false,
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify([$json]) }}",
+        "options": {
+          "timeout": 30000
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken"
+      },
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "d5Rz1LXeEoHMrZwo",
+          "name": "NocoDB Token account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
     }
   ],
   "connections": {
@@ -769,7 +905,73 @@
       "main": [
         [
           {
-            "node": "Run Contact Search Batch",
+            "node": "Get Contact Search Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact Search Rows": {
+      "main": [
+        [
+          {
+            "node": "Rows To Contact Search Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rows To Contact Search Items": {
+      "main": [
+        [
+          {
+            "node": "Claim Contact Search Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Contact Search Row": {
+      "main": [
+        [
+          {
+            "node": "Continue Contact Search Claim",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Contact Search Claim": {
+      "main": [
+        [
+          {
+            "node": "Run Contact Search Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Contact Search Row": {
+      "main": [
+        [
+          {
+            "node": "Build Contact Search Transport Patches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Contact Search Transport Patches": {
+      "main": [
+        [
+          {
+            "node": "Patch Contact Search Transport Failure",
             "type": "main",
             "index": 0
           }

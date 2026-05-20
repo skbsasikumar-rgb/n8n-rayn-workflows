@@ -433,6 +433,64 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("error_type: 'enrichment_timeout'", enrichment_code)
         self.assertNotIn("if (isTransportTimeout(errorText)) {\n    return [];", enrichment_code)
 
+    def test_contact_search_runs_as_async_row_jobs(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        node_names = {node["name"] for node in workflow["nodes"]}
+        for node_name in [
+            "Get Contact Search Rows",
+            "Rows To Contact Search Items",
+            "Claim Contact Search Row",
+            "Continue Contact Search Claim",
+            "Run Contact Search Row",
+            "Build Contact Search Transport Patches",
+            "Patch Contact Search Transport Failure",
+        ]:
+            with self.subTest(node=node_name):
+                self.assertIn(node_name, node_names)
+        self.assertNotIn("Run Contact Search Batch", node_names)
+
+        connections = workflow["connections"]
+        self.assertEqual(
+            connections["Webhook Contact Search Trigger"]["main"][0][0]["node"],
+            "Get Contact Search Rows",
+        )
+        self.assertEqual(
+            connections["Continue Contact Search Claim"]["main"][0][0]["node"],
+            "Run Contact Search Row",
+        )
+
+        get_node = next(node for node in workflow["nodes"] if node["name"] == "Get Contact Search Rows")
+        get_url = get_node["parameters"]["url"]
+        self.assertIn("RAYN_CONTACT_SEARCH_BATCH_LIMIT", get_url)
+        self.assertIn("(contact_search_status,eq,pending)", get_url)
+        self.assertIn("&sort=Id", get_url)
+
+        claim_node = next(node for node in workflow["nodes"] if node["name"] == "Claim Contact Search Row")
+        claim_body = claim_node["parameters"]["jsonBody"]
+        self.assertIn("processing:contact_search_claimed", claim_body)
+        self.assertIn("selected_contact_source_url", claim_body)
+
+        run_node = next(node for node in workflow["nodes"] if node["name"] == "Run Contact Search Row")
+        self.assertIn("/contact-enrich-row", run_node["parameters"]["url"])
+        self.assertIn("row_id: $json.Id", run_node["parameters"]["jsonBody"])
+        self.assertEqual(run_node["parameters"]["options"]["timeout"], 30000)
+        self.assertTrue(run_node.get("continueOnFail"))
+
+        patch_node = next(
+            node for node in workflow["nodes"] if node["name"] == "Build Contact Search Transport Patches"
+        )
+        patch_code = patch_node["parameters"]["jsCode"]
+        self.assertIn("status: 'failed_retryable'", patch_code)
+        self.assertIn("contact_search_transport_timeout", patch_code)
+
+    def test_contact_search_backend_accepts_async_row_jobs(self):
+        app_source = (Path(__file__).resolve().parents[1] / "services" / "crawl4ai" / "app.py").read_text()
+        self.assertIn("class ContactRowRunRequest", app_source)
+        self.assertIn('CONTACT_ROW_ASYNC_CONCURRENCY', app_source)
+        self.assertIn('@app.post("/contact-enrich-row")', app_source)
+        self.assertIn("asyncio.create_task(run_contact_row_background", app_source)
+        self.assertIn("noco_fetch_contact_rows(1, [row_id])", app_source)
+
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(
             {

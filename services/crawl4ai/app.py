@@ -342,6 +342,14 @@ class ContactBatchRunRequest(BaseModel):
     validate_email: bool = True
     dry_run: bool = False
 
+
+class ContactRowRunRequest(BaseModel):
+    id: int | str | None = None
+    row_id: int | str | None = None
+    reset_provider_health: bool = False
+    validate_email: bool = True
+
+
 class OutreachPlanRequest(BaseModel):
     Id: int | str
     company_name: str = Field(min_length=1, max_length=300)
@@ -1063,7 +1071,9 @@ app = FastAPI(title="Browser Scraper", version="2.0.0")
 
 SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
 OUTREACH_PLAN_CONCURRENCY = max(1, int(os.getenv("OUTREACH_PLAN_CONCURRENCY", "2")))
+CONTACT_ROW_ASYNC_CONCURRENCY = max(1, int(os.getenv("CONTACT_ROW_ASYNC_CONCURRENCY", "4")))
 _loop_semaphores: dict[tuple[str, int], asyncio.Semaphore] = {}
+_contact_row_tasks: set[asyncio.Task[Any]] = set()
 
 
 def loop_semaphore(name: str, limit: int) -> asyncio.Semaphore:
@@ -1082,6 +1092,10 @@ def scrape_semaphore() -> asyncio.Semaphore:
 
 def outreach_plan_semaphore() -> asyncio.Semaphore:
     return loop_semaphore("outreach_plan", OUTREACH_PLAN_CONCURRENCY)
+
+
+def contact_row_async_semaphore() -> asyncio.Semaphore:
+    return loop_semaphore("contact_row_async", CONTACT_ROW_ASYNC_CONCURRENCY)
 
 
 @app.on_event("startup")
@@ -1389,6 +1403,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         "contact_search_run_id": run_id,
         "selected_contact_name": "",
         "selected_contact_role": "",
+        "selected_contact_email": "",
         "selected_contact_seniority": "",
         "selected_contact_source_url": "",
         "selected_contact_linkedin_url": "",
@@ -1438,6 +1453,41 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         patch = terminal_contact_patch(row_id, "failed", "contact_row_runner_error", run_id, started_at, error_text)
         noco_patch_rows([patch])
         return {"Id": row_id, "status": "failed", "reason": "contact_row_runner_error", "error": error_text, "patch": patch}
+
+
+async def run_contact_row_background(row: dict[str, Any], validate_email: bool) -> None:
+    async with contact_row_async_semaphore():
+        await asyncio.to_thread(run_contact_row, row, validate_email)
+
+
+def discard_contact_row_task(task: asyncio.Task[Any]) -> None:
+    _contact_row_tasks.discard(task)
+    try:
+        task.result()
+    except Exception as exc:
+        print(f"contact_row_background_error: {compact_whitespace(str(exc))}")
+
+
+@app.post("/contact-enrich-row")
+async def contact_enrich_row(request: ContactRowRunRequest) -> dict[str, Any]:
+    row_id = request.row_id if request.row_id not in (None, "") else request.id
+    if row_id in (None, ""):
+        return {"ok": False, "accepted": False, "reason": "missing_row_id"}
+    if request.reset_provider_health:
+        contact_enrichment.reset_provider_state(f"contact-row:{int(time.time())}", preserve_non_timeout=True)
+    rows = noco_fetch_contact_rows(1, [row_id])
+    if not rows:
+        return {"ok": False, "accepted": False, "row_id": row_id, "reason": "row_not_found"}
+    task = asyncio.create_task(run_contact_row_background(rows[0], request.validate_email))
+    _contact_row_tasks.add(task)
+    task.add_done_callback(discard_contact_row_task)
+    return {
+        "ok": True,
+        "accepted": True,
+        "row_id": row_id,
+        "active_tasks": len(_contact_row_tasks),
+        "concurrency": CONTACT_ROW_ASYNC_CONCURRENCY,
+    }
 
 
 @app.post("/contact-enrich-batch")
