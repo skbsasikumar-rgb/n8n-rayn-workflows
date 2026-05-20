@@ -442,6 +442,56 @@ class OutreachPlannerTests(unittest.TestCase):
         evidence = classification["classification_evidence_json"]
         self.assertEqual(evidence["hia_serper_context"]["source"], "serper")
 
+    def test_optometry_serper_context_still_does_not_become_hia_without_ophthalmology(self):
+        classification = o.classify_row(
+            {
+                "Id": 307,
+                "company_name": "EMME Visioncare",
+                "website_content": (
+                    "Expert Eye Care & Optometry Services in Singapore with registered optometrists, "
+                    "professional consultations, primary eye care, glasses and opticians."
+                ),
+                "_serper_context_text": (
+                    "EMME Visioncare has registered optometrists recognized by Singapore's "
+                    "Optometrists and Opticians Board. It provides primary eye care, glasses and optician services."
+                ),
+            }
+        )
+        self.assertNotEqual(classification["entity_type_guess"], "social_service")
+        self.assertNotEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "unknown")
+        self.assertEqual(classification["hia_official_service_type"], "")
+
+    def test_clinical_provider_entity_wins_over_incidental_care_social_terms(self):
+        cases = [
+            (
+                "East Coast Physiotherapy Clinic",
+                "Sports physiotherapy clinic with physiotherapists, appointments, patient rehabilitation records and personalised care.",
+                "clinic",
+                "allied_health",
+            ),
+            (
+                "Foundation Healthcare Holdings",
+                "Multi-specialty private healthcare group with cardiology, urology, diagnostic radiology and patient specialist appointments.",
+                "healthcare_provider",
+                "specialist_OMS",
+            ),
+            (
+                "Care IVFc",
+                "Fertility and IVF clinic offering assisted reproduction appointments and patient treatment records.",
+                "clinic",
+                "specialist_OMS",
+            ),
+        ]
+        for company, website_content, entity_type, service_type in cases:
+            with self.subTest(company=company):
+                classification = o.classify_row({"company_name": company, "website_content": website_content})
+                self.assertEqual(classification["entity_type_guess"], entity_type)
+                self.assertEqual(classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(classification["hia_service_type_guess"], service_type)
+                self.assertNotEqual(classification["entity_type_guess"], "social_service")
+
     def test_pdpa_industry_variants(self):
         cases = [
             (
