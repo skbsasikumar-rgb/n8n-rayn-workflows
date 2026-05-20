@@ -360,6 +360,88 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "customer_trust")
         self.assertFalse(plan.classification["hia_relevant"])
 
+    def test_optometry_visioncare_does_not_become_hia_or_social_service(self):
+        classification = o.classify_row(
+            {
+                "Id": 304,
+                "company_name": "EMME Visioncare",
+                "website_content": (
+                    "Expert eye care and optometry services in Singapore. Registered optometrists, "
+                    "frames, lenses, eye exams and retail appointments."
+                ),
+            }
+        )
+        self.assertNotEqual(classification["entity_type_guess"], "social_service")
+        self.assertNotEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertNotEqual(classification["hia_service_type_guess"], "specialist_OMS")
+
+    def test_aesthetic_wellness_without_clinical_patient_care_is_not_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 305,
+                "company_name": "ENSOUL Wellness Aesthetics",
+                "website_content": (
+                    "Aesthetic wellness studio offering skin treatments, beauty packages, "
+                    "retail products, customer enquiries and memberships."
+                ),
+            }
+        )
+        self.assertNotEqual(classification["entity_type_guess"], "social_service")
+        self.assertNotEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+
+    def test_ambiguous_allied_health_uses_serper_before_hia_decision(self):
+        original_fetch = o.fetch_serper_company_context
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+        calls = []
+
+        def fake_fetch(row, classification, limit=5):
+            calls.append((row.get("company_name"), classification.get("pressure_type")))
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": '"A Plus Physio" Singapore physiotherapy clinic patient appointments',
+                "evidence": [
+                    {
+                        "title": "A Plus Physio Clinic",
+                        "link": "https://aplusphysio.example/",
+                        "snippet": (
+                            "A Plus Physio is a physiotherapy clinic with patient appointments, "
+                            "assessments, treatment plans and rehabilitation records."
+                        ),
+                    }
+                ],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            classification = o.classify_row(
+                {
+                    "Id": 306,
+                    "company_name": "A Plus Physio",
+                    "website_content": "Physio and wellness support in Singapore.",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original_fetch
+            if original_key is None:
+                os.environ.pop("SERPER_API_KEY", None)
+            else:
+                os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertEqual(calls, [("A Plus Physio", "hia_regulatory")])
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+        evidence = classification["classification_evidence_json"]
+        self.assertEqual(evidence["hia_serper_context"]["source"], "serper")
+
     def test_pdpa_industry_variants(self):
         cases = [
             (

@@ -405,6 +405,74 @@ HIA_BATCH_BY_SERVICE = {
 }
 NPO_TERMS = ("charity", "society", "mission", "foundation", "volunteer", "donation", "ncss", "ipc", "beneficiary")
 SOCIAL_TERMS = ("resident", "beneficiary", "care", "nursing home", "community", "social service", "eldercare")
+STRONG_NPO_TERMS = ("charity", "ipc", "ncss", "social service", "beneficiary", "beneficiaries", "volunteer", "donation")
+STRONG_SOCIAL_SERVICE_TERMS = (
+    "social service",
+    "ncss",
+    "ipc",
+    "beneficiary",
+    "beneficiaries",
+    "casework",
+    "eldercare",
+    "elder care",
+    "nursing home",
+    "residential care",
+    "resident care",
+    "welfare",
+)
+CLINICAL_ENTITY_NAME_TERMS = (
+    "clinic",
+    "medical",
+    "dental",
+    "hospital",
+    "pharmacy",
+    "hearing",
+    "physio",
+    "podiatry",
+    "podiatrist",
+    "visioncare",
+    "optometry",
+    "surgery",
+    "surgical",
+    "laboratory",
+    "lab",
+    "dialysis",
+    "healthcare",
+)
+CLINICAL_CARE_EVIDENCE_TERMS = (
+    "patient",
+    "patients",
+    "appointment",
+    "appointments",
+    "assessment",
+    "assessments",
+    "treatment",
+    "treatments",
+    "consultation",
+    "consultations",
+    "doctor",
+    "doctors",
+    "clinician",
+    "clinical",
+    "outpatient",
+    "case-note",
+    "case note",
+    "medical record",
+    "medical records",
+    "health record",
+    "health records",
+)
+WEAK_SPECIALIST_HIA_TERMS = (
+    "optometry",
+    "optometrist",
+    "optometrists",
+    "visioncare",
+    "vision care",
+    "eye care",
+    "aesthetic",
+    "aesthetics",
+    "wellness",
+)
 SPECIALIST_SERVICE_TERMS = (
     "cancer centre",
     "cancer center",
@@ -452,7 +520,9 @@ SPECIALIST_SERVICE_TERMS = (
     "surgical",
     "specialist",
 )
-SPECIFIC_SPECIALIST_SERVICE_TERMS = tuple(term for term in SPECIALIST_SERVICE_TERMS if term != "specialist")
+SPECIFIC_SPECIALIST_SERVICE_TERMS = tuple(
+    term for term in SPECIALIST_SERVICE_TERMS if term != "specialist" and term not in WEAK_SPECIALIST_HIA_TERMS
+)
 DIAGNOSTIC_SERVICE_TERMS = (
     "diagnostic",
     "diagnostics",
@@ -1315,13 +1385,19 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
     npo_score = evidence_count(text, NPO_TERMS)
     social_score = evidence_count(text, SOCIAL_TERMS)
     healthcare_score = evidence_count(text, HEALTHCARE_TERMS)
-    clinical_name = any(term in company_l for term in ("clinic", "medical", "dental", "hospital", "pharmacy", "hearing", "physio"))
+    clinical_name = any(term in company_l for term in CLINICAL_ENTITY_NAME_TERMS)
+    strong_npo = contains_any(text, STRONG_NPO_TERMS) or contains_any(company_l, ("charity", "mission", "society"))
+    strong_social = contains_any(text, STRONG_SOCIAL_SERVICE_TERMS) or (
+        "mission" in company_l and contains_any(text, ("nursing home", "resident care", "eldercare", "palliative"))
+    )
 
     # Entity type describes the organisation model. Keep it separate from pressure_type.
-    if "sree narayana mission" in text or npo_score >= 2 or (npo_score >= 1 and social_score >= 1):
+    if "sree narayana mission" in text or strong_npo or strong_social or (
+        npo_score >= 2 and social_score >= 1 and not clinical_name
+    ):
         if "charity" in text or "ipc" in text:
             entity = "charity"
-        elif social_score >= 1:
+        elif strong_social or social_score >= 1:
             entity = "social_service"
         else:
             entity = "npo"
@@ -1331,6 +1407,14 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
             "sme_likelihood": "unlikely",
             "npo_likelihood": "likely",
             "charity_or_social_service_likelihood": "likely",
+        }
+    if contains_any(company_l, ("holdings", "holding", "group")) and healthcare_score < 2 and not has_clinic_word(text):
+        return {
+            "entity_type_guess": "private_company",
+            "entity_type_confidence": "medium",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
         }
     if "clinic" in company_l or company_l.endswith("clinic"):
         return {
@@ -1348,7 +1432,7 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
             "npo_likelihood": "unlikely",
             "charity_or_social_service_likelihood": "unlikely",
         }
-    if (clinical_name or healthcare_score >= 2) and not contains_any(text, NPO_TERMS):
+    if (clinical_name or healthcare_score >= 2) and not strong_npo:
         return {
             "entity_type_guess": "healthcare_provider",
             "entity_type_confidence": "medium",
@@ -1375,18 +1459,53 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
 
 def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> bool:
     company = compact(row.get("company_name")).lower()
-    if service in HIA_BATCH_BY_SERVICE:
-        return True
-    if service == "allied_health" and any(term in text for term in ("clinical psychologist", "psychologist", "physiotherapy", "patient", "assessment", "case-note", "case note")):
-        return True
-    if service == "hearing_care" and has_hearing_care_evidence(text):
-        return True
-    if any(term in company for term in ("clinic", "medical", "dental", "hospital", "pharmacy", "hearing", "physio")):
-        return True
-    if any(term in text for term in ("patient", "doctor", "appointment", "consultation", "treatment", "outpatient")):
-        return True
-    if has_hearing_care_evidence(text) or has_clinical_lab_evidence(text):
-        return True
+    care_evidence = contains_any(text, CLINICAL_CARE_EVIDENCE_TERMS)
+    clinical_name = contains_any(company, CLINICAL_ENTITY_NAME_TERMS)
+    if service == "GP_OMS":
+        return has_family_clinic_evidence(row, text) or (
+            (has_clinic_word(text) or contains_any(company, ("clinic", "medical")))
+            and contains_any(text, ("doctor", "doctors", "consultation", "appointment", "patient", "outpatient", "medical clinic"))
+        )
+    if service == "specialist_OMS":
+        return contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS) and (
+            care_evidence or clinical_name or contains_any(text, ("specialist clinic", "specialist centre", "surgeon", "doctor"))
+        )
+    if service == "dental":
+        return has_dental_service_evidence(company) or has_dental_service_evidence(text)
+    if service == "hospital":
+        return "hospital" in company or "hospital" in text
+    if service == "diagnostic":
+        return has_clinical_lab_evidence(text) or has_strong_diagnostic_lab_evidence(text)
+    if service == "retail_pharmacy":
+        return "pharmacy" in company or "pharmacy" in text or "pharmacist" in text
+    if service == "long_term_care":
+        return contains_any(text, ("nursing home", "community hospital", "home care", "caregiver", "palliative", "hospice", "resident care"))
+    if service == "outpatient_renal_dialysis":
+        return "dialysis" in text or "kidney care" in text or "renal" in text
+    if service == "ambulatory_surgical_centre":
+        return "ambulatory surgical" in text or "day surgery" in text or ("surgery" in text and care_evidence)
+    if service == "hearing_care":
+        return has_hearing_care_evidence(text) and care_evidence
+    if service == "allied_health":
+        return contains_any(
+            text,
+            (
+                "physiotherapist",
+                "physiotherapy",
+                "podiatrist",
+                "podiatry",
+                "clinical psychologist",
+                "psychology",
+                "psychologist",
+                "psychotherapy",
+                "counselling",
+                "counseling",
+                "mental-health clinic",
+                "mental health clinic",
+                "audiologist",
+                "rehabilitation",
+            ),
+        ) and care_evidence
     return False
 
 
@@ -1497,7 +1616,20 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     primary_dental = has_dental_service_evidence(company) or (has_dental_service_evidence(primary_text) and not primary_gp)
     primary_allied = any(
         term in primary_text
-        for term in ("physio", "physiotherapy", "podiatry", "podiatrist", "psychology", "psychologist", "mental health", "counselling", "counseling", "therapy")
+        for term in (
+            "physio",
+            "physiotherapy",
+            "podiatry",
+            "podiatrist",
+            "clinical psychologist",
+            "psychologist",
+            "mental health clinic",
+            "counselling clinic",
+            "counseling clinic",
+            "rehabilitation",
+            "audiology",
+            "audiologist",
+        )
     )
     primary_specialist = contains_any(primary_text, SPECIFIC_SPECIALIST_SERVICE_TERMS) or any(
         term in primary_text
@@ -1524,6 +1656,26 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neuroscience",
         )
     )
+    weak_specialist_only = contains_any(primary_text, WEAK_SPECIALIST_HIA_TERMS) and not contains_any(
+        primary_text,
+        (
+            "ophthalmologist",
+            "ophthalmology",
+            "cataract",
+            "retina",
+            "doctor",
+            "medical clinic",
+            "specialist clinic",
+            "patient",
+            "appointment",
+            "consultation",
+            "treatment",
+            "surgery",
+            "surgeon",
+        ),
+    )
+    if weak_specialist_only:
+        primary_specialist = False
     primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
         term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
     )
@@ -1533,6 +1685,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     )
     primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text
     primary_ambulatory_surgical = "ambulatory surgical" in primary_text or "day surgery" in primary_text
+    primary_hearing = has_hearing_care_evidence(primary_text) or contains_any(
+        primary_text,
+        ("audiology", "audiologist", "hearing test", "hearing tests", "hearing assessment", "hearing assessments"),
+    )
     specialist_name_evidence = any(
         term in " ".join((company, compact(row.get("company_homepage_name")).lower()))
         for term in (
@@ -1569,6 +1725,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "outpatient_renal_dialysis"
     elif primary_ambulatory_surgical:
         service = "ambulatory_surgical_centre"
+    elif primary_hearing:
+        service = "hearing_care"
     elif primary_gp:
         service = "GP_OMS"
     elif primary_specialist and specialist_name_evidence:
@@ -1599,9 +1757,29 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "GP_OMS"
     elif primary_specialist:
         service = "specialist_OMS"
-    elif "physio" in text or "physiotherapy" in text or "psychology" in text or "psychologist" in text or "mental health" in text or "therapy" in text:
+    elif contains_any(
+        text,
+        (
+            "physio",
+            "physiotherapy",
+            "podiatry",
+            "podiatrist",
+            "clinical psychologist",
+            "psychology",
+            "psychologist",
+            "psychotherapy",
+            "counselling",
+            "counseling",
+            "mental-health clinic",
+            "mental health clinic",
+            "mental-health",
+            "counselling clinic",
+            "counseling clinic",
+            "rehabilitation",
+        ),
+    ):
         service = "allied_health"
-    elif contains_any(text, SPECIALIST_SERVICE_TERMS):
+    elif contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS):
         service = "specialist_OMS"
     elif has_clinical_lab_evidence(text) or contains_any(text, DIAGNOSTIC_SERVICE_TERMS):
         service = "diagnostic"
@@ -1646,6 +1824,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     hia_relevant = concrete_hia_evidence and (
         score >= 45 or (official_service in HIA_BATCH_BY_OFFICIAL_SERVICE and score >= 36)
     )
+    if not hia_relevant:
+        official_service = ""
+        batch = "unknown"
     return {
         "hia_relevant": hia_relevant,
         "hia_relevance_score": score,
@@ -1706,8 +1887,8 @@ Use only provided evidence. Return strict JSON only. Do not invent facts.
 Rules:
 - If it clearly matches one official HIA service type, set hia_relevant true.
 - Official HIA service types are: Outpatient Medical Service (GP), Outpatient Medical Service (Specialist), Outpatient Dental, Acute Hospital, Nursing Home, Ambulatory Surgical Centre, Community Hospital, Contingency Care Service, Assisted Reproduction, Clinical Laboratory, Outpatient Renal Dialysis, Retail Pharmacy, Radiology Laboratory, Nuclear Medicine Service.
-- If it is only wellness, beauty, product retail, training, media, or generic care language without healthcare service evidence, set hia_relevant false.
-- For hearing-care, audiology, physiotherapy, psychology, or other allied-health evidence, set hia_relevant true only when the evidence shows clinical patient care such as appointments, assessments, treatment, patient records or case notes.
+- If it is only wellness, beauty, aesthetics, optometry retail, product retail, training, media, holdings/group activity, or generic care language without clinical patient-care evidence, set hia_relevant false.
+- For hearing-care, audiology, physiotherapy, podiatry, psychology, optometry, or other allied-health evidence, set hia_relevant true only when evidence shows clinical patient care such as appointments, assessments, treatment, patient records or case notes.
 - Return a service type only when evidence supports it.
 - Use medium/high confidence only when evidence quotes are concrete.
 
@@ -2033,10 +2214,61 @@ def has_family_clinic_evidence(row: dict[str, Any], text: str) -> bool:
     return "family clinic" in company or "family clinic" in text or "family medicine" in text
 
 
+def should_use_serper_for_hia_adjudication(
+    row: dict[str, Any],
+    text: str,
+    entity: dict[str, Any],
+    hia: dict[str, Any],
+) -> bool:
+    if row.get("_serper_context_text") or not serper_context_enabled():
+        return False
+    service = compact(hia.get("hia_service_type_guess"))
+    confidence = compact(hia.get("hia_confidence"))
+    entity_type = compact(entity.get("entity_type_guess"))
+    if hia.get("hia_relevant") and confidence == "high" and service in {
+        "GP_OMS",
+        "dental",
+        "hospital",
+        "diagnostic",
+        "retail_pharmacy",
+        "long_term_care",
+        "outpatient_renal_dialysis",
+        "ambulatory_surgical_centre",
+    }:
+        return False
+    if service in {"unknown", "allied_health", "hearing_care", "specialist_OMS"}:
+        return True
+    if confidence in {"", "low", "medium"} and contains_any(text, AMBIGUOUS_HIA_TERMS):
+        return True
+    if entity_type in {"social_service", "npo", "charity"} and hia.get("hia_relevant"):
+        return True
+    return False
+
+
+def add_hia_serper_context_if_needed(
+    row: dict[str, Any],
+    text: str,
+    entity: dict[str, Any],
+    hia: dict[str, Any],
+) -> tuple[dict[str, Any], str, dict[str, Any], dict[str, Any]]:
+    if not should_use_serper_for_hia_adjudication(row, text, entity, hia):
+        return row, text, entity, hia
+    search_context = fetch_serper_company_context(row, {"pressure_type": "hia_regulatory"})
+    context_text = serper_context_text(search_context)
+    if not search_context.get("used") or not context_text:
+        return row, text, entity, hia
+    augmented = dict(row)
+    augmented["_hia_serper_context"] = search_context
+    augmented["_serper_context_text"] = context_text
+    refreshed_text = lower_blob(augmented)
+    return augmented, refreshed_text, infer_entity(augmented, refreshed_text), infer_hia(augmented, refreshed_text)
+
+
 def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     text = lower_blob(row)
     entity = infer_entity(row, text)
     hia = infer_hia(row, text)
+    row, text, entity, hia = add_hia_serper_context_if_needed(row, text, entity, hia)
     hia_review = row.get("hia_llm_review")
     if not hia_review and hia_llm_enabled() and should_review_hia_with_llm(row, text, hia):
         hia_review = call_hia_llm_review(row, hia)
@@ -2114,6 +2346,7 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
             "official_hia_service_type": hia.get("hia_official_service_type", ""),
             "official_hia_service_label": hia.get("hia_official_service_label", ""),
             "data_type_signal": data_type,
+            "hia_serper_context": row.get("_hia_serper_context") or row.get("_preclassification_company_context") or {},
             "personal_data_intensity": personal_intensity,
             "dpo_owner_signal": dpo_owner,
             "trust_signal": trust_signal if has_customer_trust_pressure(text) else "",
@@ -2550,6 +2783,11 @@ def email_1_question_hook(row: dict[str, Any], classification: dict[str, Any], c
     data_label = "personal data"
     if track == "dpo_evidence":
         data_label = "employee, vendor and operations data"
+    profile = compact(copy_brief.get("clinic_profile_phrase"))
+    if not profile:
+        profile = email_1_signal_description(copy_brief)
+    if profile:
+        return f"For {profile} like {company_name}, is {data_label} spread across {system_list}?"
     return f"Is {data_label} at {company_name} spread across {system_list}?"
 
 
@@ -4277,7 +4515,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for candidate, employee, payroll or client records.",
             "asset": "HR data safeguards checklist",
         }
-    if entity in {"npo", "charity", "social_service"} or contains_any(text, NPO_TERMS + SOCIAL_TERMS):
+    if entity in {"npo", "charity", "social_service"} or contains_any(text, STRONG_NPO_TERMS + STRONG_SOCIAL_SERVICE_TERMS):
         return {
             "signal": f"{company} appears to operate in a care/community-service setting handling beneficiary, volunteer, donor and staff data.",
             "personal_data": "beneficiary, volunteer, donor and staff data handled through care and community operations.",
@@ -4416,7 +4654,26 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     pressure = classification.get("pressure_type", "not_ready")
     entity = classification.get("entity_type_guess", "unknown")
     data_type = str(classification.get("data_type_signal") or "unknown").replace("_", " ")
-    clinic_profile = infer_clinic_profile(row, classification, text) if pressure == "hia_regulatory" else {}
+    healthcare_profile_signal = (
+        entity in {"clinic", "healthcare_provider"}
+        or contains_any(
+            text,
+            (
+                "holding company",
+                "healthcare institutions",
+                "public healthcare institutions",
+                "daycare",
+                "day care",
+                "elderly",
+                "elder care",
+                "psychotherapy",
+                "counselling",
+                "counseling",
+                "mental health",
+            ),
+        )
+    )
+    clinic_profile = infer_clinic_profile(row, classification, text) if pressure == "hia_regulatory" or healthcare_profile_signal else {}
     email_2_diagnostic = ""
 
     if entity == "clinic":
