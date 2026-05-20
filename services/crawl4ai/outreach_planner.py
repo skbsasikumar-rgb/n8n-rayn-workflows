@@ -1767,6 +1767,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     )
     primary_hospital = "hospital" in company or (
         not primary_specialist
+        and not primary_allied
         and any(term in primary_text for term in ("acute hospital", "community hospital", "hospital services", "inpatient"))
     )
     primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text

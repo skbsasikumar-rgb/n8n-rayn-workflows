@@ -442,6 +442,23 @@ class OutreachPlannerTests(unittest.TestCase):
         evidence = classification["classification_evidence_json"]
         self.assertEqual(evidence["hia_serper_context"]["source"], "serper")
 
+    def test_serper_directory_hospital_label_does_not_override_physiotherapy(self):
+        classification = o.classify_row(
+            {
+                "Id": 308,
+                "company_name": "East Coast Physiotherapy Clinic",
+                "website_content": "Physiotherapy clinic with physiotherapists, appointments, patient rehabilitation records and treatment plans.",
+                "_serper_context_text": (
+                    "Best Sports Physiotherapy Clinic in Singapore. East Coast Physiotherapy Clinic provides sports physiotherapy. "
+                    "Third-party directory says EASTCOASTPHYSIO is a trusted choice for Hospital services in Singapore."
+                ),
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+
     def test_optometry_serper_context_still_does_not_become_hia_without_ophthalmology(self):
         classification = o.classify_row(
             {
