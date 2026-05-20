@@ -15,6 +15,7 @@ AUTOMATION_CONTROLLER_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-
 WORKFLOW_ALERTS_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-workflow-alerts.json"
 INSTANTLY_SYNC_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-instantly-lead-sync.json"
 INSTANTLY_EVENTS_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-instantly-events.json"
+REVIEW_APPROVAL_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-review-approval.json"
 
 
 def load_column_script():
@@ -87,6 +88,11 @@ class OutreachColumnContractTests(unittest.TestCase):
                 self.assertEqual(column.uidt, "Number")
                 self.assertEqual(column.db_type, "numeric")
 
+    def test_manual_review_approval_fields_are_visible(self):
+        visible = self.module.DEFAULT_VISIBLE_GRID_COLUMNS
+        self.assertIn("manual_send_approval", visible)
+        self.assertIn("manual_review_notes", visible)
+
     def test_email_body_fields_are_long_text(self):
         for index in range(1, 5):
             column = self.columns[f"email_{index}_body"]
@@ -133,6 +139,10 @@ class OutreachColumnContractTests(unittest.TestCase):
             "email_quality_flags",
             "email_send_ready",
             "human_review_status",
+            "manual_send_approval",
+            "manual_approved_at",
+            "manual_approved_by",
+            "manual_review_notes",
             "automation_decision",
             "automation_decision_reason",
             "automation_blockers_json",
@@ -549,6 +559,47 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
             "(instantly_sync_status,neq,synced)",
         ]:
             self.assertIn(fragment, url_expr)
+
+    def test_review_approval_workflow_promotes_only_manually_approved_rows(self):
+        workflow = json.loads(REVIEW_APPROVAL_WORKFLOW_PATH.read_text())
+        self.assertEqual(workflow["name"], "RAYN Review Approval v1")
+        self.assertNotIn("active", workflow)
+        node_names = {node["name"] for node in workflow["nodes"]}
+        for name in [
+            "Schedule Trigger",
+            "Webhook Trigger",
+            "Get Approved Review Rows",
+            "Build Approval Patches",
+            "Patch Approved Reviews",
+        ]:
+            self.assertIn(name, node_names)
+
+        url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Approved Review Rows")[
+            "parameters"
+        ]["url"]
+        for fragment in [
+            "(automation_decision,eq,draft_only_review)",
+            "(manual_send_approval,eq,approved)",
+            "(validated_email,notblank)",
+            "(email_1_subject,notblank)",
+            "(email_1_body,notblank)",
+            "(send_provider,neq,instantly)",
+            "(instantly_sync_status,neq,synced)",
+        ]:
+            self.assertIn(fragment, url_expr)
+
+        build_code = next(node for node in workflow["nodes"] if node["name"] == "Build Approval Patches")[
+            "parameters"
+        ]["jsCode"]
+        for fragment in [
+            "manual_approved_review",
+            "email_send_ready: true",
+            "final_send_gate_passed: true",
+            "human_review_status: 'approved'",
+            "hasFlags(row.severe_email_flags)",
+            "hasFlags(row.email_quality_flags)",
+        ]:
+            self.assertIn(fragment, build_code)
 
     def test_instantly_events_workflow_updates_reply_bounce_and_sent_state(self):
         workflow = json.loads(INSTANTLY_EVENTS_WORKFLOW_PATH.read_text())
