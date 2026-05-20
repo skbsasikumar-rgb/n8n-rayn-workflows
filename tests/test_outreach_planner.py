@@ -492,6 +492,70 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(classification["hia_service_type_guess"], service_type)
                 self.assertNotEqual(classification["entity_type_guess"], "social_service")
 
+    def test_non_hia_healthcare_rows_use_pdpa_not_stale_clinic_or_education_copy(self):
+        cases = [
+            (
+                {
+                    "company_name": "EMME Visioncare",
+                    "website_content": (
+                        "Expert Eye Care & Optometry Services in Singapore with registered optometrists, "
+                        "primary eye care, glasses, opticians, appointments and customer enquiries."
+                    ),
+                },
+                "healthcare data safeguards checklist",
+                ("specialist-led eye clinic", "education data checklist", "student/enrolment systems"),
+            ),
+            (
+                {
+                    "company_name": "Eu Yan Sang",
+                    "website_content": "Online TCM retail store with healthcare products, customer orders, e-commerce, email and enquiries.",
+                    "hia_llm_review": {"hia_relevant": False, "hia_confidence": "low", "hia_service_type_guess": "unknown"},
+                },
+                "healthcare data safeguards checklist",
+                ("gastroenterology", "specialist-led clinic", "education data checklist"),
+            ),
+        ]
+        for row, expected_asset, forbidden in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertNotEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertIn(expected_asset, plan.emails["email_1"]["body"])
+                body = plan.emails["email_1"]["body"].lower()
+                for phrase in forbidden:
+                    self.assertNotIn(phrase.lower(), body)
+
+    def test_profile_copy_uses_service_type_before_incidental_specialist_terms(self):
+        cases = [
+            (
+                {
+                    "company_name": "East Coast Physiotherapy Clinic",
+                    "website_content": (
+                        "Sports physiotherapy clinic with physiotherapists, appointments, patient rehabilitation "
+                        "records, personalised care and sports medicine education."
+                    ),
+                },
+                "allied_health",
+                "allied-health provider offering physiotherapy or treatment support",
+                "orthopaedic",
+            ),
+            (
+                {
+                    "company_name": "Forte Cardiology Clinic",
+                    "website_content": "Cardiology clinic with cardiac consultations, heart screening, patient appointments and treatment records.",
+                },
+                "specialist_OMS",
+                "specialist-led heart/cardiology clinic",
+                "psychology / mental-health",
+            ),
+        ]
+        for row, service_type, expected, forbidden in cases:
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
+                self.assertIn(expected, plan.emails["email_1"]["body"])
+                self.assertNotIn(forbidden, plan.emails["email_1"]["body"])
+
     def test_pdpa_industry_variants(self):
         cases = [
             (

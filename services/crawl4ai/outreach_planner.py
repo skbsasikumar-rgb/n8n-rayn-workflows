@@ -2868,6 +2868,16 @@ def email_1_signal_description(copy_brief: dict[str, Any], fallback: str = "") -
     return compact(description) or compact(fallback)
 
 
+def non_hia_operating_profile(copy_brief: dict[str, Any]) -> str:
+    profile = compact(copy_brief.get("clinic_profile_phrase"))
+    if not profile:
+        return ""
+    profile_l = profile.lower()
+    if any(term in profile_l for term in ("holding", "group organisation", "day-care", "day care", "nursing home", "social service")):
+        return profile
+    return ""
+
+
 def email_1_question_hook(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any], company: str) -> str:
     pressure = compact(classification.get("pressure_type"))
     track = email_variant_track(classification)
@@ -2884,9 +2894,7 @@ def email_1_question_hook(row: dict[str, Any], classification: dict[str, Any], c
     data_label = "personal data"
     if track == "dpo_evidence":
         data_label = "employee, vendor and operations data"
-    profile = compact(copy_brief.get("clinic_profile_phrase"))
-    if not profile:
-        profile = email_1_signal_description(copy_brief)
+    profile = non_hia_operating_profile(copy_brief) or email_1_signal_description(copy_brief)
     if profile:
         return f"For {profile} like {company_name}, is {data_label} spread across {system_list}?"
     return f"Is {data_label} at {company_name} spread across {system_list}?"
@@ -2901,7 +2909,7 @@ def email_1_careful_hook(row: dict[str, Any], classification: dict[str, Any], co
     if email_variant_track(classification) == "customer_trust":
         profile = email_1_signal_description(copy_brief, "a business with customer security reviews")
         return f"For {profile} like {company_name}, the practical issue may be keeping security proof ready before customers ask."
-    profile = email_1_signal_description(copy_brief, "an organisation handling personal data")
+    profile = non_hia_operating_profile(copy_brief) or email_1_signal_description(copy_brief, "an organisation handling personal data")
     return f"For {profile} like {company_name}, the practical issue may be where personal data sits and who can show the proof."
 
 
@@ -4094,6 +4102,10 @@ def home_care_subtype(text: str) -> bool:
 
 
 def primary_service_summary_for_profile(row: dict[str, Any], text: str, service_type: str) -> str:
+    if service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
+        return "psychology / mental-health services"
+    if service_type == "allied_health":
+        return "physiotherapy or treatment support"
     for terms, summary in SPECIALIST_SERVICE_SUMMARIES:
         if any(term in text for term in terms):
             return summary
@@ -4101,10 +4113,6 @@ def primary_service_summary_for_profile(row: dict[str, Any], text: str, service_
         return "screening or diagnostic services"
     if service_type == "hearing_care":
         return "hearing tests, hearing aids and audiology support"
-    if service_type == "allied_health" and ("psychology" in text or "psychologist" in text or "mental health" in text):
-        return "psychology / mental-health services"
-    if service_type == "allied_health":
-        return "physiotherapy or treatment support"
     if service_type == "retail_pharmacy":
         return "pharmacy and compounding services"
     if service_type == "dental":
@@ -4238,7 +4246,9 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif any(term in primary_source_l for term in ("daycare", "day care", "elderly", "elders", "senior care")):
         guess = "elder_daycare"
         add_evidence("elder day-care or senior-care terms")
-    elif any(term in primary_source_l for term in ("psychotherapy", "counselling", "counseling", "mental health", "wellbeing", "wellness journey")):
+    elif service_type == "allied_health" and any(
+        term in primary_source_l for term in ("psychotherapy", "counselling", "counseling", "mental health", "wellbeing", "wellness journey")
+    ):
         guess = "mental_health"
         add_evidence("psychology or mental-health terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or primary_has_gp or has_gp):
@@ -4253,6 +4263,14 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif has_cancer_centre:
         guess = "specialist_led"
         add_evidence("cancer, oncology or radiation specialist terms")
+    elif service_type == "allied_health" and any(term in source_l for term in ("psychology", "psychologist", "counselling", "counseling", "mental health", "case-note")):
+        guess = "mental_health"
+        add_evidence("psychology or mental-health terms")
+    elif service_type == "allied_health" or (
+        service_type != "specialist_OMS" and any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support", "podiatry", "podiatrist"))
+    ):
+        guess = "allied_health"
+        add_evidence("allied-health or physiotherapy terms")
     elif service_type == "specialist_OMS" or (has_specialist and not has_gp):
         guess = "specialist_led"
         add_evidence("specialist-led care terms")
@@ -4271,14 +4289,6 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "GP_OMS" and has_gp:
         guess = "multi_doctor_gp" if structure == "multi_practitioner" else "family_gp"
         add_evidence("GP/outpatient evidence")
-    elif service_type == "allied_health" and any(term in source_l for term in ("psychology", "psychologist", "counselling", "counseling", "mental health", "case-note")):
-        guess = "mental_health"
-        add_evidence("psychology or mental-health terms")
-    elif service_type == "allied_health" or (
-        service_type != "specialist_OMS" and any(term in source_l for term in ("physiotherapy", "physio", "rehab", "exercise-plan", "treatment support", "podiatry", "podiatrist"))
-    ):
-        guess = "allied_health"
-        add_evidence("allied-health or physiotherapy terms")
     elif official_service == "nursing_home":
         guess = "nursing_home"
         add_evidence("nursing-home service terms")
@@ -4596,6 +4606,18 @@ def hia_email_2_diagnostic(
 
 
 def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -> dict[str, str]:
+    if entity in {"clinic", "healthcare_provider"} or contains_any(
+        text,
+        ("optometry", "optometrist", "visioncare", "vision care", "eye care", "tcm", "healthcare", "health care"),
+    ):
+        return {
+            "signal": f"{company} appears to handle appointment, enquiry, customer and staff records through its healthcare-facing operations.",
+            "personal_data": "appointment, enquiry, customer and staff records handled through healthcare-facing operations.",
+            "sensitive_examples": "appointment details, customer contact data, enquiry records, staff access records and vendor records.",
+            "systems": "appointments/enquiries, email, CRM/POS or spreadsheets, file shares, vendor tools, backups and incident contacts.",
+            "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for those records, not writing another policy.",
+            "asset": "healthcare data safeguards checklist",
+        }
     if any(term in text for term in ("student", "parent", "enrolment", "enrollment", "education", "training", "tuition", "course")):
         return {
             "signal": f"{company} appears to provide education/training services handling student, parent, staff or enrolment records.",
@@ -4663,6 +4685,13 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
 
 
 def customer_trust_variant_context(company: str, text: str) -> dict[str, str]:
+    if contains_any(text, ("cord blood", "healthcare", "health care", "clinic", "diagnostic", "laboratory")):
+        return {
+            "signal": f"{company} works in a healthcare-adjacent setting where customers may ask how sensitive records and access are protected.",
+            "asset": "healthcare security evidence checklist",
+            "systems": "customer records, consent or service records, staff access, backups, patching, malware protection and incident response evidence.",
+            "diagnostic": "Can customer security questions be mapped to evidence for sensitive-record access, backups, patching, malware protection and incident response?",
+        }
     if any(term in text for term in ("saas", "software", "platform", "dashboard", "user data", "admin access")):
         return {
             "signal": f"{company} works with customers who may ask how user data, admin access and backups are controlled.",
