@@ -9,6 +9,7 @@ from services.crawl4ai import outreach_planner as planner
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ensure_rayn_outreach_columns.py"
+INSTANTLY_BACKFILL_PATH = Path(__file__).resolve().parents[1] / "scripts" / "backfill_instantly_send_ready.py"
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-cold-email-planner.json"
 WORKER_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-worker.json"
 AUTOMATION_CONTROLLER_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-automation-controller.json"
@@ -25,6 +26,16 @@ def load_column_script():
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_instantly_backfill_script():
+    if "psycopg" not in sys.modules:
+        sys.modules["psycopg"] = types.ModuleType("psycopg")
+    spec = importlib.util.spec_from_file_location("backfill_instantly_send_ready", INSTANTLY_BACKFILL_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -434,6 +445,31 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertNotEqual(result["patch"]["funding_status"], "verified_match")
         self.assertFalse(result["patch"]["email_send_ready"])
 
+    def test_planner_marks_auto_send_rows_ready_for_instantly_sync(self):
+        result = planner.plan_and_patch(
+            {
+                "Id": 457,
+                "company_name": "Example Dental Clinic",
+                "best_url": "https://exampledental.sg/",
+                "canonical_domain": "exampledental.sg",
+                "website_content": (
+                    "Singapore dental clinic providing dental appointments, patient treatment, "
+                    "dental records, and oral health services."
+                ),
+                "validated_email": "hello@exampledental.sg",
+                "email_validation_evidence_json": json.dumps({"status": "sendable"}),
+                "contact_search_reason": "sendable_company_email_found",
+            }
+        )
+        patch = result["patch"]
+        self.assertEqual(patch["automation_decision"], "auto_send_eligible")
+        self.assertTrue(patch["final_send_gate_passed"])
+        self.assertTrue(patch["email_send_ready"])
+        self.assertEqual(patch["unsubscribe_status"], "active")
+        self.assertEqual(patch["sequence_status"], "not_queued")
+        self.assertEqual(patch["send_status"], "not_ready")
+        self.assertEqual(patch["instantly_sync_status"], "not_synced")
+
     def test_forbidden_phrases_rejected(self):
         classification = planner.classify_row(
             {
@@ -460,6 +496,31 @@ class OutreachColumnContractTests(unittest.TestCase):
                 _, flags, send_ready = planner.quality_gate(classification, funding, emails)
                 self.assertTrue(any(flag.startswith("forbidden_phrase:") for flag in flags))
                 self.assertFalse(send_ready)
+
+
+class InstantlyBackfillScriptTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.module = load_instantly_backfill_script()
+
+    def test_backfill_where_matches_strict_instantly_gate(self):
+        where = self.module.ELIGIBLE_WHERE
+        for fragment in [
+            "automation_decision = 'auto_send_eligible'",
+            "final_send_gate_passed is true",
+            "coalesce(validated_email, '') <> ''",
+            "coalesce(email_1_subject, '') <> ''",
+            "coalesce(email_1_body, '') <> ''",
+            "coalesce(do_not_contact, false) is false",
+            "coalesce(send_provider, '') <> 'instantly'",
+            "coalesce(instantly_sync_status, '') not in ('synced', 'skipped')",
+            "coalesce(severe_email_flags, '') in ('', '[]')",
+            "coalesce(email_quality_flags, '') in ('', '[]')",
+        ]:
+            self.assertIn(fragment, where)
+
+    def test_quote_identifier_escapes_double_quotes(self):
+        self.assertEqual(self.module.quote_identifier('bad"name'), '"bad""name"')
 
 
 class InstantlyWorkflowContractTests(unittest.TestCase):

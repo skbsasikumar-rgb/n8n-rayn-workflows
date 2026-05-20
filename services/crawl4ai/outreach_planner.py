@@ -6097,7 +6097,7 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         for flag in previous_flags:
             if flag not in flags:
                 flags.append(flag)
-    send_ready = decision == "auto_send_eligible" and bool(row.get("send_mode")) and not row.get("draft_only")
+    send_ready = decision == "auto_send_eligible" and final_gate and not row.get("draft_only")
     if row.get("copy_qa_mode"):
         send_ready = False
         if "copy_qa_mode" not in flags:
@@ -6271,6 +6271,10 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_quality_score": plan.quality_score,
         "email_quality_flags": json_dumps(visible_quality_flags),
         "email_send_ready": plan.email_send_ready,
+        "unsubscribe_status": compact(row.get("unsubscribe_status")) or "active",
+        "sequence_status": "not_queued" if plan.email_send_ready else compact(row.get("sequence_status")),
+        "send_status": "not_ready" if plan.email_send_ready else compact(row.get("send_status")),
+        "instantly_sync_status": "not_synced" if plan.email_send_ready else compact(row.get("instantly_sync_status")),
         "human_review_status": plan.human_review_status,
         "automation_decision": plan.automation_decision,
         "automation_decision_reason": plan.automation_decision_reason,
