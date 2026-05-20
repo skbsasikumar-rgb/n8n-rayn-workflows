@@ -526,7 +526,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 14 : 8", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 12 : 8", prepare_code)
+        self.assertNotIn("? 14 : 8", prepare_code)
         self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 15000", prepare_code)
         self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 2", prepare_code)
         self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 210 : 120", prepare_code)

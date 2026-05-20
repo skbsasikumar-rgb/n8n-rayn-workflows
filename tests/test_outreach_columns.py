@@ -433,6 +433,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("error_type: 'enrichment_timeout'", enrichment_code)
         self.assertNotIn("if (isTransportTimeout(errorText)) {\n    return [];", enrichment_code)
 
+    def test_url_picker_worker_respects_public_enrichment_page_limit_cap(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        enrichment_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare Public Enrichment"
+        )["parameters"]["jsCode"]
+        self.assertIn("page_limit: stage === 'deep_retry' ? 12 : 8", enrichment_code)
+        self.assertNotIn("? 14 : 8", enrichment_code)
+
     def test_contact_search_runs_as_async_row_jobs(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
         node_names = {node["name"] for node in workflow["nodes"]}
