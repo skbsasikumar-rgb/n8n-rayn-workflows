@@ -463,7 +463,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
                 if final_status == "failed"
                 else "",
                 "error_message": last_error if final_status == "failed" else "",
-                "retry_eligible": "true" if final_status == "failed" else "false",
+                "retry_eligible": "true" if final_status in {"failed", "failed_retryable"} else "false",
             }
         )
         cap_noco_long_text_fields(patch)
