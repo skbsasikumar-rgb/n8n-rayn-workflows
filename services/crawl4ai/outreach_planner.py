@@ -280,7 +280,7 @@ Email 2 rules:
 - Use 4 short paragraphs separated by blank lines.
 - Keep the main body to 3 short paragraphs before the p.s.
 - Keep this p.s. exactly as written:
-  p.s. We are usually priced near the lower end, but the scope includes evidence prep, certification support, and a SaaS/LMS platform to get certified, stay certified, and add your own procedures or training.
+  p.s. We are usually priced near the lower end, but the scope includes evidence prep, certification support, and a SaaS/LMS platform to help your team get certified, stay certified, and keep internal procedures/training in one place.
 - Prefer 65-85 words including the p.s. Hard limit: Email 2 under 95 words.
 - If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
@@ -3001,8 +3001,8 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
 
 EMAIL_2_VALUE_PS = (
     "p.s. We are usually priced near the lower end, but the scope includes evidence prep, "
-    "certification support, and a SaaS/LMS platform to get certified, stay certified, "
-    "and add your own procedures or training."
+    "certification support, and a SaaS/LMS platform to help your team get certified, "
+    "stay certified, and keep internal procedures/training in one place."
 )
 
 
