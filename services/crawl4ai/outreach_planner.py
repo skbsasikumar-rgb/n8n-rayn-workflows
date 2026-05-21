@@ -278,10 +278,10 @@ Email 2 rules:
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
 - Use 4 short paragraphs separated by blank lines.
-- Keep the main body to 3 short paragraphs before the P.S.
-- Keep this P.S. exactly as written:
-  P.S. We are usually priced near the lower end, and the scope is heavier: evidence prep, certification support, and a SaaS tool to help the team stay certified.
-- Prefer 65-85 words including the P.S. Hard limit: Email 2 under 95 words.
+- Keep the main body to 3 short paragraphs before the p.s.
+- Keep this p.s. exactly as written:
+  p.s. We are usually priced near the lower end, but the scope includes evidence prep, certification support, and a SaaS/LMS platform to get certified, stay certified, and add your own procedures or training.
+- Prefer 65-85 words including the p.s. Hard limit: Email 2 under 95 words.
 - If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
 Return:
@@ -3000,8 +3000,9 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
 
 
 EMAIL_2_VALUE_PS = (
-    "P.S. We are usually priced near the lower end, and the scope is heavier: "
-    "evidence prep, certification support, and a SaaS tool to help the team stay certified."
+    "p.s. We are usually priced near the lower end, but the scope includes evidence prep, "
+    "certification support, and a SaaS/LMS platform to get certified, stay certified, "
+    "and add your own procedures or training."
 )
 
 
@@ -5350,7 +5351,7 @@ def email_1_rewrite_payload(
         "email_2_required_ps": EMAIL_2_VALUE_PS,
         "email_2_target_words": "85-92",
         "email_2_hard_max_words": 95,
-        "email_2_required_shape": "4 short paragraphs: opener, support route, CTA, exact P.S.",
+        "email_2_required_shape": "4 short paragraphs: opener, support route, CTA, exact p.s.",
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "funding_claim_line": compact(funding.funding_claim_line),
         "funding_claim_safe": funding_safe,
@@ -5595,9 +5596,9 @@ def _email_rewrite_retry_feedback(
             "rules": [
                 "Return a fresh rewrite, not an explanation.",
                 "Keep Email 2 under 95 words. Aim for 85-92 words.",
-                "Keep the required P.S. exactly as provided.",
-                "Use 4 short paragraphs for Email 1 and Email 2. Email 2 must be opener, support route, CTA, exact P.S.",
-                "Cut extra explanation before the P.S.; the P.S. already carries the scope/value point.",
+                "Keep the required p.s. exactly as provided.",
+                "Use 4 short paragraphs for Email 1 and Email 2. Email 2 must be opener, support route, CTA, exact p.s.",
+                "Cut extra explanation before the p.s.; the p.s. already carries the scope/value point.",
                 "Make Email 1 specific; do not weaken the company hook.",
                 "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
             ],

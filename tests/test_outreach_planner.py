@@ -910,7 +910,7 @@ class OutreachPlannerTests(unittest.TestCase):
                         "subject": deterministic_email_2["subject"],
                         "body": deterministic_email_2["body"].replace(
                             o.EMAIL_2_VALUE_PS,
-                            "P.S.0\n" + o.EMAIL_2_VALUE_PS,
+                            "p.s.0\n" + o.EMAIL_2_VALUE_PS,
                         ),
                     },
                     "notes": ["bad ps"],
@@ -946,8 +946,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
         self.assertEqual(2, plan.emails["llm_email_2_rewrite"]["attempt_number"])
         self.assertEqual(1, plan.emails["email_2"]["body"].count(o.EMAIL_2_VALUE_PS))
-        self.assertNotIn("P.S.0", plan.emails["email_2"]["body"])
-        self.assertIn("llm_email_2_rewrite_broken_ps", plan.emails["llm_email_2_rewrite"]["first_attempt"]["flags"])
+        self.assertNotIn("p.s.0", plan.emails["email_2"]["body"])
+        self.assertIn("llm_email_2_rewrite_changed_value_ps", plan.emails["llm_email_2_rewrite"]["first_attempt"]["flags"])
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
@@ -1812,7 +1812,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertIn("the next question is usually cost", body)
         self.assertIn("quick fit check before anyone spends time on a full quote", body)
-        self.assertIn("P.S. We are usually priced near the lower end", body)
+        self.assertIn("p.s. We are usually priced near the lower end", body)
 
     def test_email_2_named_followup_lowercases_after_dash(self):
         funding = o.funding_email_2_body_fixed("Samuel - ", "Based on the company profile, the Cyber Essentials support route appears worth checking.", "")
@@ -2767,7 +2767,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("S$4,300 before funding", email2)
         self.assertIn("HIA readiness map", email2)
         self.assertIn("quick fit check", email2)
-        self.assertIn("saas tool", email2.lower())
+        self.assertIn("saas/lms platform", email2.lower())
         self.assertTrue(plan.final_send_gate_passed)
         self.assertNotIn("you qualify", email2.lower())
         self.assertNotIn("you are eligible", email2.lower())
