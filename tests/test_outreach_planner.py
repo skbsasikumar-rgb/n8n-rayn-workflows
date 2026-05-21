@@ -519,7 +519,7 @@ class OutreachPlannerTests(unittest.TestCase):
                         "primary eye care, glasses, opticians, appointments and customer enquiries."
                     ),
                 },
-                "healthcare data safeguards checklist",
+                "personal-data safeguards checklist",
                 ("specialist-led eye clinic", "education data checklist", "student/enrolment systems"),
             ),
             (
@@ -528,7 +528,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Online TCM retail store with healthcare products, customer orders, e-commerce, email and enquiries.",
                     "hia_llm_review": {"hia_relevant": False, "hia_confidence": "low", "hia_service_type_guess": "unknown"},
                 },
-                "healthcare data safeguards checklist",
+                "personal-data safeguards checklist",
                 ("gastroenterology", "specialist-led clinic", "education data checklist"),
             ),
         ]
@@ -540,6 +540,25 @@ class OutreachPlannerTests(unittest.TestCase):
                 body = plan.emails["email_1"]["body"].lower()
                 for phrase in forbidden:
                     self.assertNotIn(phrase.lower(), body)
+
+    def test_weak_hia_pdpa_sequence_keeps_personal_data_asset_across_emails(self):
+        row = {
+            "Id": 784,
+            "company_name": "EUDA Health Holdings",
+            "website_content": (
+                "EUDA Health Holdings Limited is a non-invasive healthcare provider with corporate profile, "
+                "bioenergy capsule, stem cell therapy, CRISPR gene editing, enquiries, management team and finance contacts."
+            ),
+            "hia_llm_review": {"hia_relevant": False, "hia_confidence": "low", "hia_service_type_guess": "unknown"},
+        }
+
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertIn("personal-data safeguards checklist", plan.emails["email_1"]["body"])
+        self.assertIn("personal-data safeguards checklist", plan.emails["email_2"]["body"])
+        self.assertNotIn("healthcare data safeguards", plan.emails["email_1"]["body"].lower())
+        self.assertNotIn("healthcare data safeguards", plan.emails["email_2"]["body"].lower())
 
     def test_profile_copy_uses_service_type_before_incidental_specialist_terms(self):
         cases = [

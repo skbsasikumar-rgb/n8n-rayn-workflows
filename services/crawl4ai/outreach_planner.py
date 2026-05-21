@@ -4665,7 +4665,7 @@ def pdpa_variant_context(company: str, text: str, entity: str, data_type: str) -
             "sensitive_examples": "appointment details, customer contact data, enquiry records, staff access records and vendor records.",
             "systems": "appointments/enquiries, email, CRM/POS or spreadsheets, file shares, vendor tools, backups and incident contacts.",
             "problem": "PDPA is the legal responsibility. The hard part is usually proving safeguards for those records, not writing another policy.",
-            "asset": "healthcare data safeguards checklist",
+            "asset": "personal-data safeguards checklist",
         }
     if any(term in text for term in ("student", "parent", "enrolment", "enrollment", "education", "training", "tuition", "course")):
         return {
