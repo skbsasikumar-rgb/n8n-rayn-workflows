@@ -428,9 +428,11 @@ class OutreachColumnContractTests(unittest.TestCase):
             node for node in workflow["nodes"] if node["name"] == "Prepare Enrichment Patch"
         )["parameters"]["jsCode"]
         self.assertIn("isTransportTimeout(errorText)", enrichment_code)
+        self.assertIn("text.includes('timeout')", enrichment_code)
         self.assertIn("status: 'failed_retryable'", enrichment_code)
         self.assertIn("status_reason: 'enrichment_transport_timeout'", enrichment_code)
         self.assertIn("error_type: 'enrichment_timeout'", enrichment_code)
+        self.assertIn("finalStatus === 'failed_retryable'", enrichment_code)
         self.assertNotIn("if (isTransportTimeout(errorText)) {\n    return [];", enrichment_code)
 
     def test_url_picker_worker_respects_public_enrichment_page_limit_cap(self):
