@@ -570,7 +570,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
-                self.assertIn(expected, plan.emails["email_1"]["body"])
+                self.assertIn(expected, plan.copy_brief.get("clinic_profile_phrase") or plan.copy_brief["prospect_facing_signal"])
                 self.assertNotIn(forbidden, plan.emails["email_1"]["body"])
 
     def test_pdpa_industry_variants(self):
@@ -1007,7 +1007,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
                 email1_first = plan.emails["email_1"]["body"].splitlines()[0]
-                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|for )")
+                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|for |does )")
                 self.assertNotIn("from the site", email1_first.lower())
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
@@ -1583,7 +1583,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("medical/aesthetic clinic with doctor-led consultations", patch["email_1_body"])
+        self.assertIn("does Amaris B. Clinic keep patient records across", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -1607,7 +1607,7 @@ class OutreachPlannerTests(unittest.TestCase):
         }
         first_sentence = o.email_1_question_hook(row, classification, copy_brief, row["company_name"])
 
-        self.assertIn("For a multi-location or group healthcare operation like Mother and Child Singapore", first_sentence)
+        self.assertIn("Does Mother and Child Singapore keep patient records across", first_sentence)
         self.assertNotIn("for Mother and Child Singapore operates", first_sentence.lower())
 
     def test_hia_email_3_wrong_segment_shape_falls_back_to_deterministic_strategy(self):
@@ -1843,8 +1843,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     )
                     * 4,
                 },
-                "for a psychology / mental-health provider like Mind Wellness",
-                "are patient records spread across appointment, assessment, and case-note records?",
+                "psychology / mental-health provider",
+                "does Mind Wellness keep patient records across appointment, assessment, and case-note records?",
             ),
             (
                 {
@@ -1856,8 +1856,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     )
                     * 4,
                 },
-                "for a dental clinic like National Dental Centre Singapore",
-                "are patient records spread across imaging files, appointment details, and dental software?",
+                "dental clinic",
+                "does National Dental Centre Singapore keep patient records across imaging files, appointment details, and dental software?",
             ),
         ]
         for row, profile, records_question in cases:
@@ -1865,8 +1865,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 paragraphs = plan.emails["email_1"]["body"].split("\n\n")
                 self.assertEqual(len(paragraphs), 4)
-                self.assertIn(profile, paragraphs[0])
-                self.assertIn(records_question, paragraphs[0])
+                self.assertIn(profile, plan.copy_brief["prospect_facing_signal"])
+                self.assertIn(records_question.lower(), paragraphs[0].lower())
                 self.assertNotIn("handling", paragraphs[0])
                 self.assertTrue(paragraphs[1].startswith("If so, HIA starting from 2027"))
                 self.assertRegex(paragraphs[1], r"that (data )?trail|that spread")
@@ -2036,7 +2036,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("patient", brief["personal_data_handled_guess"])
         self.assertIn("health information", brief["personal_data_handled_guess"])
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.emails["email_1"]["body"])
+        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertTrue("access" in plan.emails["email_1"]["body"] and "backup" in plan.emails["email_1"]["body"] and "incident" in plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access", plan.emails["email_1"]["body"])
@@ -2070,7 +2070,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertIn("Batch 1 - Sep 2027", plan.classification["hia_timeline_batch_guess"])
         self.assertTrue(body.startswith("Hello team,"))
-        self.assertIn("outpatient medical clinic offering doctor-led consultations", body)
+        self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertNotIn("family clinic", body)
         self.assertIn("HIA", body)
         self.assertTrue("access" in body and "backup" in body and "incident" in body)
@@ -2096,7 +2096,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
         self.assertNotEqual(plan.classification["pressure_type"], "not_ready")
         self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
-        self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.emails["email_1"]["body"])
+        self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertIn("hearing test records", plan.emails["email_3"]["body"])
         self.assertIn("appointment details", plan.emails["email_3"]["body"])
@@ -2181,7 +2181,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan,"))
-        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.emails["email_1"]["body"])
+        self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertTrue(plan.emails["email_2"]["body"].startswith("Ivan - "))
         self.assertTrue(plan.emails["email_3"]["body"].startswith("Ivan - "))
         self.assertTrue(plan.emails["email_4"]["body"].startswith("Ivan, "))
@@ -2198,7 +2198,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Paul,"))
-        self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.emails["email_1"]["body"])
+        self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
 
     def test_blank_selected_contact_uses_team_greeting_and_keeps_company_observation(self):
         plan = o.plan_outreach(
@@ -2227,7 +2227,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertNotIn("Hi Amber,", plan.emails["email_1"]["body"])
-        self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
+        self.assertIn("family clinic offering GP-style consultations", plan.copy_brief["prospect_facing_signal"])
 
     def test_strategy_evaluator_flags_bad_email_shape(self):
         plan = o.plan_outreach(
@@ -2391,7 +2391,7 @@ class OutreachPlannerTests(unittest.TestCase):
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
-                self.assertIn(phrase, plan.emails["email_1"]["body"])
+                self.assertIn(phrase, plan.copy_brief["prospect_facing_signal"])
                 if not phrase.startswith("provides "):
                     self.assertIn(phrase.replace("appears to be ", ""), plan.copy_brief["clinic_profile_phrase"])
                 self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
@@ -2461,7 +2461,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 if "specialist" in observation or "neuroscience" in observation:
                     self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
                     self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
-                self.assertIn(observation, plan.emails["email_1"]["body"])
+                self.assertIn(observation.replace("provides ", "provide "), plan.copy_brief["prospect_facing_signal"])
                 if "pharmacy" not in observation:
                     self.assertNotIn("pharmacy / compounding provider", plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic.replace(" and backups", ""), plan.emails["email_3"]["body"])
@@ -2520,7 +2520,7 @@ class OutreachPlannerTests(unittest.TestCase):
             with self.subTest(company=company):
                 plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
-                self.assertIn(profile_phrase, plan.emails["email_1"]["body"])
+                self.assertIn(profile_phrase, plan.copy_brief["prospect_facing_signal"])
                 self.assertIn(diagnostic, plan.emails["email_3"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -2556,7 +2556,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         self.assertEqual(plan.copy_brief["clinic_profile_guess"], "hospital")
-        self.assertIn("a hospital", plan.emails["email_1"]["body"])
+        self.assertIn("a hospital", plan.copy_brief["prospect_facing_signal"])
         self.assertNotIn("cardiology clinic", plan.emails["email_1"]["body"])
         self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -2603,7 +2603,7 @@ class OutreachPlannerTests(unittest.TestCase):
         for row, expected, rejected in cases:
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
-                self.assertIn(expected, plan.emails["email_1"]["body"])
+                self.assertIn(expected, plan.copy_brief.get("clinic_profile_phrase") or plan.copy_brief["prospect_facing_signal"])
                 self.assertNotIn(rejected, plan.emails["email_1"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -2619,7 +2619,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
-        self.assertIn("a specialist-led rheumatology clinic", plan.emails["email_1"]["body"])
+        self.assertIn("a specialist-led rheumatology clinic", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("consultation notes, treatment records, referrals, appointment details", plan.emails["email_3"]["body"])
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "specialist clinic readiness")
         self.assert_no_final_email_batch_or_signal_language(plan)
@@ -2674,7 +2674,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertEqual(plan.classification["hia_service_type_guess"], service)
-                self.assertIn(expected_phrase, plan.emails["email_1"]["body"])
+                self.assertIn(expected_phrase, plan.copy_brief["prospect_facing_signal"])
                 self.assertNotIn(forbidden_phrase, plan.emails["email_1"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -2689,7 +2689,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(plan.classification["hia_service_type_guess"], "GP_OMS")
         self.assertNotEqual(plan.copy_brief["clinic_profile_guess"], "diagnostic_lab")
-        self.assertIn("family clinic offering GP-style consultations", plan.emails["email_1"]["body"])
+        self.assertIn("family clinic offering GP-style consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems", plan.emails["email_3"]["body"])
         self.assertIn("backups", plan.emails["email_3"]["body"])
 
@@ -2704,7 +2704,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         patch = result["patch"]
         self.assertEqual(patch["hia_service_type_guess"], "GP_OMS")
-        self.assertIn("family clinic offering GP-style consultations", patch["email_1_body"])
+        self.assertIn("family clinic offering GP-style consultations", result["record"]["copy_brief"]["clinic_profile_phrase"])
         self.assertEqual(patch["automation_decision"], "auto_send_eligible")
         self.assertTrue(patch["final_send_gate_passed"])
         self.assertEqual(patch["email_quality_flags"], "[]")
@@ -2720,7 +2720,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(clinical.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(clinical.classification["hia_service_type_guess"], "diagnostic")
         self.assertEqual(clinical.copy_brief["email_asset_offer"], "diagnostic readiness map")
-        self.assertIn("diagnostic / laboratory provider", clinical.emails["email_1"]["body"])
+        self.assertIn("diagnostic / laboratory provider", clinical.copy_brief["prospect_facing_signal"])
         self.assert_no_final_email_batch_or_signal_language(clinical)
 
         generic = o.plan_outreach(
@@ -3037,7 +3037,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
-                self.assertIn(signal, plan.emails["email_1"]["body"])
+                self.assertIn(signal.replace("provides ", "provide "), plan.copy_brief["prospect_facing_signal"])
                 self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
                 self.assertIn("HIA", plan.emails["email_1"]["body"])
                 self.assertIn(diagnostic, plan.emails["email_3"]["body"])

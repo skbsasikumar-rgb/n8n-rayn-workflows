@@ -58,7 +58,7 @@ function cleanInput(value){
     .replace(/\s+/g,' ')
     .trim();
 }
-const BLOCKED_HOSTS=['facebook.com','instagram.com','linkedin.com','x.com','twitter.com','youtube.com','yellowpages.com.sg','streetdirectory.com','findhealthclinics.com','wherecrowded.sg','recordowl.com','doctorxdentist.com','waze.com','google.com','maps.apple.com','moh.gov.sg','healthhub.sg','acra.gov.sg','gobusiness.gov.sg','sma.org.sg','ams.edu.sg','straitstimes.com','todayonline.com','channelnewsasia.com','businessinsider.com','techinasia.com','foodpanda.sg','grab.com','amazon.com','tripadvisor.com','foursquare.com','yelp.com','practo.com','threebestrated.sg','contact.page','neighbourhoodshop.sg','tracxn.com','hotfrog.sg','infobel.sg','zipleaf.com','companies.sg','sgpbusiness.com','keepital.com','sgx.com','scam.sg','zoominfo.com'];
+const BLOCKED_HOSTS=['facebook.com','instagram.com','linkedin.com','x.com','twitter.com','youtube.com','yellowpages.com.sg','streetdirectory.com','findhealthclinics.com','wherecrowded.sg','recordowl.com','doctorxdentist.com','waze.com','google.com','maps.apple.com','moh.gov.sg','healthhub.sg','acra.gov.sg','gobusiness.gov.sg','sma.org.sg','ams.edu.sg','straitstimes.com','todayonline.com','channelnewsasia.com','businessinsider.com','techinasia.com','foodpanda.sg','grab.com','amazon.com','tripadvisor.com','foursquare.com','yelp.com','practo.com','threebestrated.sg','contact.page','neighbourhoodshop.sg','tracxn.com','hotfrog.sg','infobel.sg','zipleaf.com','companies.sg','sgpbusiness.com','keepital.com','sgx.com','scam.sg','zoominfo.com','workable.com','greenhouse.io','lever.co','ashbyhq.com','recruitee.com','teamtailor.com','smartrecruiters.com','breezy.hr'];
 const BLOCKED_HOST_KEYWORDS=['jobstreet','sgpgrid','crunchbase','rocketreach','apollo','signalhire','contactout','leadiq'];
 const LISTING_HINT=/(?:directory|listing|reviews?|rating|opening hours|postal code|address|general practitioner|company profile|business database|profile, contacts|contact details|marketplace|delivery|reservations|book now|streetdirectory|findhealthclinics|yellow pages|local businesses|google rating|top rated|company data|shopping center|shopping centre|mall|stores?|store locator|poi|places?|corporate information|registration number|uen|share price|stock exchange|listed company|company announcement)/i;
 const NETWORK_HINT=/(?:our clinics|clinic locations|clinic list|list of clinics|our branches|branches|our outlets|medical group|group practice|find a clinic|find us|our centres|our centers)/i;
@@ -191,7 +191,7 @@ const prompt = [
   '- Use evidence_score, title, snippet, and identity signals; select the strongest official match.',
   '- Shared/group domains are allowed only when the clinic/company identity is explicitly evidenced.',
   '- If candidate URL path is clinic-specific, keep that full URL instead of collapsing to root.',
-  '- Do not pick social, directories, aggregators, map pages, news, or government pages.',
+  '- Do not pick social, directories, aggregators, map pages, news, government pages, job boards, or ATS/careers hosts such as Workable.',
   '- If none is official, return blank.',
   '- Return valid JSON only with two keys: selected and alternates.',
   '',
