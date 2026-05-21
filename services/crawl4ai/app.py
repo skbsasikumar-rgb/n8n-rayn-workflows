@@ -103,6 +103,8 @@ CHALLENGE_HINTS = (
     "unusual traffic",
     "verify you are human",
 )
+PUBLIC_ENRICH_FORCE_BROWSER_KEY = "_force_browser_primary"
+PUBLIC_ENRICH_BROWSER_RETRY_STATUSES = {"failed_http_status", "failed_redirect_loop"}
 
 ICP_HINTS = (
     "clinic",
@@ -1701,7 +1703,11 @@ def public_enrich_timeout_response(request_data: dict[str, Any], timeout_seconds
     }
 
 
-async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]:
+async def public_enrich_core(
+    request: PublicEnrichmentRequest,
+    *,
+    force_browser_primary: bool = False,
+) -> dict[str, Any]:
     input_row = public_enrichment.InputRow(
         row_id=request.Id,
         company_name=request.company_name,
@@ -1737,12 +1743,14 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
         use_static_transport = (
             static_only
             or (
-                stage == "fast"
+                not force_browser_primary
+                and stage == "fast"
                 and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
                 and os.getenv("PUBLIC_ENRICH_FAST_BROWSER_PRIMARY", "false").lower() != "true"
             )
             or (
-                stage == "deep_retry"
+                not force_browser_primary
+                and stage == "deep_retry"
                 and os.getenv("PUBLIC_ENRICH_DEEP_STATIC_FIRST", "true").lower() != "false"
                 and os.getenv("PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY", "false").lower() != "true"
             )
@@ -1850,12 +1858,24 @@ async def public_enrich_core(request: PublicEnrichmentRequest) -> dict[str, Any]
 def public_enrich_child_main(request_data: dict[str, Any], result_queue: Any) -> None:
     try:
         request = PublicEnrichmentRequest.model_validate(request_data)
-        result_queue.put({"ok": True, "result": asyncio.run(public_enrich_core(request))})
+        result_queue.put(
+            {
+                "ok": True,
+                "result": asyncio.run(
+                    public_enrich_core(
+                        request,
+                        force_browser_primary=bool(request_data.get(PUBLIC_ENRICH_FORCE_BROWSER_KEY)),
+                    )
+                ),
+            }
+        )
     except Exception as exc:
         result_queue.put({"ok": False, "error": compact_whitespace(str(exc)) or exc.__class__.__name__})
 
 
 def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
+    if request_data.get(PUBLIC_ENRICH_FORCE_BROWSER_KEY):
+        return False
     stage = "deep_retry" if str(request_data.get("enrichment_stage") or "fast") == "deep_retry" else "fast"
     browser_primary_key = "PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY" if stage == "deep_retry" else "PUBLIC_ENRICH_FAST_BROWSER_PRIMARY"
     static_first_key = "PUBLIC_ENRICH_DEEP_STATIC_FIRST" if stage == "deep_retry" else "PUBLIC_ENRICH_FAST_STATIC_FIRST"
@@ -1863,6 +1883,32 @@ def public_enrich_is_fast_static_only(request_data: dict[str, Any]) -> bool:
         os.getenv(static_first_key, "true").lower() != "false"
         and os.getenv(browser_primary_key, "false").lower() != "true"
     )
+
+
+def public_enrich_needs_browser_retry(result: dict[str, Any]) -> bool:
+    if not isinstance(result, dict) or result.get("ok"):
+        return False
+    record = result.get("record") if isinstance(result.get("record"), dict) else {}
+    patch = result.get("patch") if isinstance(result.get("patch"), dict) else {}
+    validation_status = str(
+        record.get("url_validation_status") or patch.get("url_validation_status") or ""
+    ).strip()
+    if validation_status not in PUBLIC_ENRICH_BROWSER_RETRY_STATUSES:
+        return False
+    crawl_status = str(record.get("crawl_status") or patch.get("last_stage") or "").strip()
+    if crawl_status and crawl_status not in {"crawl_failed", "enrichment_error"}:
+        return False
+    error_text = " ".join(
+        compact_whitespace(value)
+        for value in (
+            result.get("error"),
+            patch.get("last_error"),
+            patch.get("notes"),
+            " ".join(record.get("error_notes") or []) if isinstance(record.get("error_notes"), list) else "",
+        )
+        if value
+    )
+    return validation_status == "failed_redirect_loop" or public_enrichment.proxy_retryable_error(error_text)
 
 
 def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any]:
@@ -1939,12 +1985,19 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
     async with scrape_semaphore():
         if public_enrich_is_fast_static_only(request_data):
             try:
-                return await asyncio.wait_for(
+                fast_result = await asyncio.wait_for(
                     asyncio.to_thread(run_public_enrich_fast_static, request_data),
                     timeout=timeout_seconds + 5.0,
                 )
             except asyncio.TimeoutError:
                 return public_enrich_timeout_response(request_data, timeout_seconds)
+            if public_enrich_needs_browser_retry(fast_result):
+                retry_data = {**request_data, PUBLIC_ENRICH_FORCE_BROWSER_KEY: True}
+                retry_result = await asyncio.to_thread(run_public_enrich_isolated, retry_data, timeout_seconds)
+                if isinstance(retry_result, dict):
+                    retry_result["preflight_action"] = "browser_retry_after_static_validation_warning"
+                return retry_result
+            return fast_result
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)
 
 

@@ -602,6 +602,11 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn('PUBLIC_ENRICH_DEEP_BROWSER_PRIMARY", "false"', source)
         self.assertIn('PUBLIC_ENRICH_DEEP_STATIC_FIRST"', source)
         self.assertIn("page_limit=min(max(1, request.page_limit), max_pages)", source)
+        self.assertIn("PUBLIC_ENRICH_FORCE_BROWSER_KEY", source)
+        self.assertIn("public_enrich_needs_browser_retry", source)
+        self.assertIn("browser_retry_after_static_validation_warning", source)
+        self.assertIn("force_browser_primary=bool", source)
+        self.assertIn("not force_browser_primary", source)
 
     def test_workflow_url_only_mode_does_not_enter_public_enrichment(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
