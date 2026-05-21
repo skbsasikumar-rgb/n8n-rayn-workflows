@@ -360,6 +360,70 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "customer_trust")
         self.assertFalse(plan.classification["hia_relevant"])
 
+    def test_medical_supplier_without_patient_care_is_customer_trust_not_hia(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 3031,
+                "company_name": "DNA Medical Supplies Pte Ltd",
+                "website_content": (
+                    "Singapore distributor of medical supplies, equipment and consumables for clinics, "
+                    "procurement teams and healthcare organisations. Handles business accounts, orders, "
+                    "vendor reviews and delivery coordination."
+                ),
+            }
+        )
+        self.assertEqual(plan.classification["entity_type_guess"], "private_company")
+        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
+
+    def test_derma_product_laboratory_without_clinical_lab_is_not_retail_pharmacy(self):
+        classification = o.classify_row(
+            {
+                "Id": 3032,
+                "company_name": "derma-Rx Laboratories",
+                "website_content": (
+                    "Skincare laboratory brand with aesthetic products, formulations, retail enquiries "
+                    "and product distribution for customers and clinics."
+                ),
+            }
+        )
+        self.assertFalse(classification["hia_relevant"])
+        self.assertNotEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertNotEqual(classification["hia_service_type_guess"], "retail_pharmacy")
+        self.assertEqual(classification["hia_service_type_guess"], "unknown")
+
+    def test_telemedicine_maps_to_gp_outpatient_before_long_term_care(self):
+        classification = o.classify_row(
+            {
+                "Id": 3033,
+                "company_name": "Doctor Anywhere",
+                "website_content": (
+                    "Digital healthcare provider offering telemedicine, online doctor consultations, "
+                    "video consultation, patient appointments, prescriptions and home care coordination."
+                ),
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "GP_OMS")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_gp")
+
+    def test_clinic_and_surgery_not_overridden_by_hearing_care_keyword(self):
+        classification = o.classify_row(
+            {
+                "Id": 3034,
+                "company_name": "Doctors Clinic and Surgery",
+                "website_content": (
+                    "Medical clinic and surgery with doctors, patient consultations, appointments, "
+                    "treatment records and a hearing-screening service."
+                ),
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(classification["hia_service_type_guess"], "GP_OMS")
+        self.assertNotEqual(classification["hia_service_type_guess"], "hearing_care")
+
     def test_optometry_visioncare_does_not_become_hia_or_social_service(self):
         classification = o.classify_row(
             {

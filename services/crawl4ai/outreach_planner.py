@@ -578,6 +578,28 @@ LONG_TERM_CARE_TERMS = (
     "patient care at home",
     "lodge",
 )
+MEDICAL_SUPPLIER_TERMS = (
+    "medical supplies",
+    "medical supplier",
+    "medical device",
+    "medical devices",
+    "distributor",
+    "distribution",
+    "wholesale",
+    "equipment",
+    "consumables",
+    "supplies",
+)
+DIGITAL_HEALTH_CARE_TERMS = (
+    "telemedicine",
+    "teleconsultation",
+    "teleconsult",
+    "online doctor",
+    "video consultation",
+    "virtual consultation",
+    "digital clinic",
+    "doctor anywhere",
+)
 B2B_TERMS = (
     "enterprise",
     "vendor",
@@ -1435,8 +1457,17 @@ def infer_entity(row: dict[str, Any], text: str) -> dict[str, Any]:
     healthcare_group = contains_any(company_l, ("holdings", "holding", "group")) and contains_any(
         text, ("healthcare", "health care", "clinic", "medical", "specialist", "hospital", "patient")
     )
+    supplier_without_patient_care = healthcare_supplier_without_patient_care(text)
 
     # Entity type describes the organisation model. Keep it separate from pressure_type.
+    if supplier_without_patient_care:
+        return {
+            "entity_type_guess": "private_company",
+            "entity_type_confidence": "medium",
+            "sme_likelihood": "possible",
+            "npo_likelihood": "unlikely",
+            "charity_or_social_service_likelihood": "unlikely",
+        }
     if contains_any(company_l, ("holdings", "holding")) and not explicit_social:
         return {
             "entity_type_guess": "healthcare_provider" if healthcare_group or clinical_name else "private_company",
@@ -1542,7 +1573,7 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
         return has_family_clinic_evidence(row, text) or (
             (has_clinic_word(text) or contains_any(company, ("clinic", "medical")))
             and contains_any(text, ("doctor", "doctors", "consultation", "appointment", "patient", "outpatient", "medical clinic"))
-        )
+        ) or contains_any(text, DIGITAL_HEALTH_CARE_TERMS)
     if service == "specialist_OMS":
         return contains_any(text, SPECIFIC_SPECIALIST_SERVICE_TERMS) and (
             care_evidence or clinical_name or contains_any(text, ("specialist clinic", "specialist centre", "surgeon", "doctor"))
@@ -1584,6 +1615,48 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
             ),
         ) and care_evidence
     return False
+
+
+def healthcare_supplier_without_patient_care(text: str) -> bool:
+    if not contains_any(text, MEDICAL_SUPPLIER_TERMS):
+        return False
+    clinical_service_terms = (
+        "patient care",
+        "patient appointment",
+        "patient appointments",
+        "consultation",
+        "consultations",
+        "treatment",
+        "treatments",
+        "doctor consultation",
+        "doctors consultation",
+        "clinical laboratory",
+        "diagnostic laboratory",
+        "medical laboratory",
+        "retail pharmacy",
+        "pharmacist",
+    )
+    return not contains_any(text, clinical_service_terms)
+
+
+def product_laboratory_without_clinical_lab(text: str) -> bool:
+    if not contains_any(text, ("laboratories", "laboratory", "lab")):
+        return False
+    if has_clinical_lab_evidence(text) or has_strong_diagnostic_lab_evidence(text):
+        return False
+    product_terms = (
+        "skincare",
+        "skin care",
+        "cosmetic",
+        "cosmetics",
+        "aesthetic products",
+        "products",
+        "formulation",
+        "manufacturing",
+        "distributor",
+        "retail",
+    )
+    return contains_any(text, product_terms)
 
 
 def optometry_without_strong_clinical_evidence(text: str) -> bool:
@@ -1695,6 +1768,11 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "outpatient medical clinic",
             "medical clinic",
             "doctor-led",
+            "telemedicine",
+            "teleconsultation",
+            "online doctor",
+            "video consultation",
+            "virtual consultation",
         )
     )
     primary_dental = has_dental_service_evidence(company) or (has_dental_service_evidence(primary_text) and not primary_gp)
@@ -1777,6 +1855,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         primary_text,
         ("audiology", "audiologist", "hearing test", "hearing tests", "hearing assessment", "hearing assessments"),
     )
+    healthcare_supplier = healthcare_supplier_without_patient_care(primary_text)
+    non_clinical_product_lab = product_laboratory_without_clinical_lab(primary_text)
     specialist_name_evidence = any(
         term in " ".join((company, compact(row.get("company_homepage_name")).lower()))
         for term in (
@@ -1803,7 +1883,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neuroscience",
         )
     )
-    if primary_dental:
+    if healthcare_supplier or non_clinical_product_lab:
+        service = "unknown"
+    elif primary_dental:
         service = "dental"
     elif primary_diagnostic and not primary_specialist:
         service = "diagnostic"
@@ -1813,10 +1895,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "outpatient_renal_dialysis"
     elif primary_ambulatory_surgical:
         service = "ambulatory_surgical_centre"
-    elif primary_hearing:
-        service = "hearing_care"
     elif primary_gp:
         service = "GP_OMS"
+    elif primary_hearing:
+        service = "hearing_care"
     elif primary_specialist and specialist_name_evidence:
         service = "specialist_OMS"
     elif primary_allied:
@@ -1831,6 +1913,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "specialist_OMS"
     elif any(term in text for term in ("national neuroscience institute", "neuroscience institute", "neurology", "neurosurgery", "neuroscience")):
         service = "specialist_OMS"
+    elif healthcare_supplier or non_clinical_product_lab:
+        service = "unknown"
     elif "pharmacy" in text:
         service = "retail_pharmacy"
     elif has_hearing_care_evidence(text) or "audiology" in text:
@@ -1838,6 +1922,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     elif "renal dialysis" in text or "dialysis" in text:
         service = "outpatient_renal_dialysis"
     elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
+        service = "GP_OMS"
+    elif contains_any(text, DIGITAL_HEALTH_CARE_TERMS):
         service = "GP_OMS"
     elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
