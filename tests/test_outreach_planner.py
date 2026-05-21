@@ -949,6 +949,22 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("p.s.0", plan.emails["email_2"]["body"])
         self.assertIn("llm_email_2_rewrite_changed_value_ps", plan.emails["llm_email_2_rewrite"]["first_attempt"]["flags"])
 
+    def test_email_2_llm_rewrite_enforces_95_word_hard_limit(self):
+        long_body = (
+            "Samuel - if the route summary is useful, the next question is usually cost.\n\n"
+            + " ".join(["scope"] * 53)
+            + "\n\nWe can do a quick fit check before a full quote.\n\n"
+            + "Worth checking the HIA funding route?\n\n"
+            + o.EMAIL_2_VALUE_PS
+        )
+        flags = o.email_2_rewrite_static_flags(
+            long_body,
+            "Samuel - if the route summary is useful.\n\nWorth checking the HIA funding route?\n\n" + o.EMAIL_2_VALUE_PS,
+            {"pressure_type": "hia_regulatory"},
+        )
+        self.assertGreater(o.word_count(long_body), 95)
+        self.assertIn("llm_email_2_rewrite_length", flags)
+
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
             with self.subTest(track=track):
@@ -1821,6 +1837,24 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(funding.startswith("Samuel - if"))
         self.assertTrue(fallback.startswith("Samuel - if"))
         self.assertTrue(pricing.startswith("Samuel - if"))
+
+    def test_email_2_cta_is_own_paragraph_before_ps(self):
+        cases = [
+            o.funding_email_2_body_fixed(
+                "Samuel - ",
+                "Based on the company profile, the Cyber Essentials support route appears worth checking.",
+                "",
+            ),
+            o.value_fallback_body_fixed("Samuel - ", "safeguards checklist"),
+            o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False),
+        ]
+        for body in cases:
+            with self.subTest(body=body):
+                paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
+                self.assertIn(len(paragraphs), {4, 5})
+                self.assertEqual(o.EMAIL_2_VALUE_PS, paragraphs[-1])
+                self.assertTrue(paragraphs[-2].endswith("?"))
+                self.assertLessEqual(len(paragraphs[-2].split()), 8)
 
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
@@ -2955,7 +2989,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     self.assertNotIn(phrase, blob)
                 for index in range(1, 5):
                     paragraphs = [paragraph for paragraph in plan.emails[f"email_{index}"]["body"].split("\n\n") if paragraph.strip()]
-                    self.assertLessEqual(len(paragraphs), 4)
+                    max_paragraphs = 5 if index == 2 else 4
+                    self.assertLessEqual(len(paragraphs), max_paragraphs)
                 self.assertEqual(plan.emails["style_metadata"]["human_email_style"], "short_plain_low_cta")
                 self.assertEqual(plan.quality_flags, [])
 

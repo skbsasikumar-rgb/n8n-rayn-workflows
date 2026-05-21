@@ -277,8 +277,9 @@ Email 2 rules:
 - For PDPA tracks, do not say Cyber Essentials replaces PDPA obligations. Say it can help structure evidence for security safeguards.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
-- Use 4 short paragraphs separated by blank lines.
-- Keep the main body to 3 short paragraphs before the p.s.
+- Use 4 or 5 short paragraphs separated by blank lines.
+- Keep the CTA in its own short paragraph before the p.s.
+- Keep the main body to 3 or 4 short paragraphs before the p.s.
 - Keep this p.s. exactly as written:
   p.s. We are usually priced near the lower end, but the scope includes evidence prep, certification support, and a SaaS/LMS platform to help your team get certified, stay certified, and keep internal procedures/training in one place.
 - Prefer 65-85 words including the p.s. Hard limit: Email 2 under 95 words.
@@ -3034,11 +3035,11 @@ def hia_pricing_email_2_body(
         slots.get("opening_line") or "if the HIA readiness map is useful, I would keep the next step small.",
     )
     if pricing_mode == "small_clinic_starting_price":
-        scope_line = "For smaller clinics, support depends on route, covered users and endpoint count."
+        scope_line = "For smaller clinics, support depends on route, users and endpoint count."
     elif pricing_mode == "group_or_larger_sizing_needed":
-        scope_line = "For group or larger setups, support depends on route, covered users and endpoint count."
+        scope_line = "For group or larger setups, support depends on route, users and endpoint count."
     else:
-        scope_line = "For smaller clinics or larger setups, support depends on route, covered users and endpoint count."
+        scope_line = "For smaller clinics or larger setups, support depends on route, users and endpoint count."
     if funding_safe and slots.get("conditional_funding"):
         scope_line = compact(f"{scope_line} {slots['conditional_funding']}")
     fit_line = slots.get("fit_line") or "We can do a quick fit check before a full quote."
@@ -3046,7 +3047,8 @@ def hia_pricing_email_2_body(
     return (
         f"{first_line}\n\n"
         f"{scope_line}\n\n"
-        f"{fit_line} {cta}\n\n"
+        f"{fit_line}\n\n"
+        f"{cta}\n\n"
         f"{EMAIL_2_VALUE_PS}"
     )
 
@@ -3065,7 +3067,8 @@ def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str
     return (
         f"{first_line}\n\n"
         f"{second_line}\n\n"
-        f"{fit_line} {cta}\n\n"
+        f"{fit_line}\n\n"
+        f"{cta}\n\n"
         f"{EMAIL_2_VALUE_PS}"
     )
 
@@ -3223,7 +3226,7 @@ def hia_email_2_sentence_slots(
             {
                 "quick_fit_check": "We can do a quick fit check before a full quote.",
                 "keep_it_light": "We can keep that check light before anyone scopes the full work.",
-                "check_first": "We can check that first without turning it into a long exercise.",
+                "check_first": "We can check that before a full quote.",
             },
         ),
         "cost_opener": choose_sentence_slot(
@@ -5351,7 +5354,7 @@ def email_1_rewrite_payload(
         "email_2_required_ps": EMAIL_2_VALUE_PS,
         "email_2_target_words": "85-92",
         "email_2_hard_max_words": 95,
-        "email_2_required_shape": "4 short paragraphs: opener, support route, CTA, exact p.s.",
+        "email_2_required_shape": "4 or 5 short paragraphs: opener, support route, optional fit check, CTA alone, exact p.s.",
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "funding_claim_line": compact(funding.funding_claim_line),
         "funding_claim_safe": funding_safe,
@@ -5430,7 +5433,7 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
 def email_2_rewrite_static_flags(body: str, deterministic_body: str, classification: dict[str, Any]) -> list[str]:
     flags: list[str] = []
     body_l = compact(body).lower()
-    if not body or word_count(body) > 105:
+    if not body or word_count(body) > 95:
         flags.append("llm_email_2_rewrite_length")
     if len([part for part in body.split("\n\n") if compact(part)]) < 4:
         flags.append("llm_email_2_rewrite_paragraph_shape")
@@ -5597,7 +5600,7 @@ def _email_rewrite_retry_feedback(
                 "Return a fresh rewrite, not an explanation.",
                 "Keep Email 2 under 95 words. Aim for 85-92 words.",
                 "Keep the required p.s. exactly as provided.",
-                "Use 4 short paragraphs for Email 1 and Email 2. Email 2 must be opener, support route, CTA, exact p.s.",
+                "Use 4 short paragraphs for Email 1. Use 4 or 5 short paragraphs for Email 2: opener, support route, optional fit check, CTA alone, exact p.s.",
                 "Cut extra explanation before the p.s.; the p.s. already carries the scope/value point.",
                 "Make Email 1 specific; do not weaken the company hook.",
                 "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
