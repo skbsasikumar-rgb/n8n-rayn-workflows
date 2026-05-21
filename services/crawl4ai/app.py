@@ -1685,12 +1685,17 @@ def public_enrich_hard_timeout_seconds(request: PublicEnrichmentRequest) -> floa
 
 def public_enrich_timeout_response(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
     row_id = request_data.get("Id") or request_data.get("row_id") or ""
+    url_picked = compact_whitespace(request_data.get("url_picked") or "")
+    normalized = public_enrichment.canonical_root_url(url_picked)
     error_text = f"public_enrich_timeout_after_{int(timeout_seconds)}s"
     patch = {
         "Id": row_id,
+        "best_url": normalized.best_url,
+        "best_url_candidate": normalized.best_url,
         "last_stage": "enrichment_error",
         "last_error": error_text,
         "notes": error_text,
+        "url_validation_status": "timeout",
     }
     return {
         "ok": False,

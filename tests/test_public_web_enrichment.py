@@ -607,6 +607,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("browser_retry_after_static_validation_warning", source)
         self.assertIn("force_browser_primary=bool", source)
         self.assertIn("not force_browser_primary", source)
+        self.assertIn("normalized = public_enrichment.canonical_root_url(url_picked)", source)
+        self.assertIn('"best_url": normalized.best_url', source)
 
     def test_workflow_url_only_mode_does_not_enter_public_enrichment(self):
         workflow = json.loads(open("wf-worker.json", encoding="utf-8").read())
@@ -642,10 +644,14 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("statusReason.includes('thin_content')", prepare_code)
         self.assertIn("row.homepage_root_url || row.best_url || row.url_picked", prepare_code)
         self.assertIn("matched_url: matchedUrl", prepare_code)
-        self.assertIn("attemptCount > 1", prepare_code)
+        self.assertIn("row.status_reason, row.error_type", prepare_code)
+        self.assertIn("const retryEscalates = attemptCount > 1 && !statusReason.includes('enrichment_timeout')", prepare_code)
+        self.assertIn("retryEscalates", prepare_code)
+        self.assertIn("status === 'failed_retryable' && isTransportTimeout", patch_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
-        self.assertIn("or prior_attempt_count > 1", rerun_helper)
+        self.assertIn('"enrichment_timeout" not in prior_reason', rerun_helper)
+        self.assertIn("or retry_escalates", rerun_helper)
         self.assertIn("or url_only_content", rerun_helper)
         self.assertIn('str(row.get("status") or "") == "completed"', rerun_helper)
         self.assertIn("website_content,website_scrape", rerun_helper)
@@ -659,6 +665,18 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertTrue(rerun.content_is_url_only("https://www.advantagemedical.sg/", "https://www.advantagemedical.sg/"))
         self.assertFalse(rerun.content_is_url_only("# Advantage Medical\nUseful clinic content.", "https://www.advantagemedical.sg/"))
         self.assertFalse(rerun.content_is_url_only("https://unrelated.example/", "https://www.advantagemedical.sg/"))
+
+    def test_selected_rerun_keeps_enrichment_timeout_retryable(self):
+        from scripts import rayn_selected_rerun as rerun
+
+        patch = {
+            "last_stage": "enrichment_error",
+            "last_error": "public_enrich_timeout_after_360s",
+            "best_url": "https://clinic.example/",
+        }
+
+        self.assertEqual(rerun.terminal_status(patch), "failed_retryable")
+        self.assertEqual(rerun.status_reason("failed_retryable", patch), "enrichment_timeout")
 
     def test_selected_rerun_caps_oversized_nocodb_longtext_fields(self):
         from scripts import rayn_selected_rerun as rerun

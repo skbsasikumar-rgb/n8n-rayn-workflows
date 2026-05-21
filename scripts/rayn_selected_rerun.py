@@ -259,6 +259,11 @@ def wait_url_pick(ids: list[int], timeout_seconds: int) -> list[dict[str, Any]]:
         time.sleep(5)
 
 
+def is_transport_timeout(value: Any) -> bool:
+    text = re.sub(r"[_-]+", " ", str(value or "").lower())
+    return any(marker in text for marker in ("timeout", "etimedout", "socket hang up", "econnreset", "aborted"))
+
+
 def terminal_status(patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
     if stage == "crawled":
@@ -266,6 +271,8 @@ def terminal_status(patch: dict[str, Any]) -> str:
     if stage == "partial":
         return "completed" if str(patch.get("best_url") or "").strip() else "needs_review"
     if stage in {"crawl_failed", "enrichment_error"}:
+        if is_transport_timeout(patch.get("last_error") or patch.get("error_message") or ""):
+            return "failed_retryable"
         return "failed"
     if stage == "blocked_by_robots" or stage.startswith("skipped_"):
         return "skipped"
@@ -285,6 +292,8 @@ def status_reason(status: str, patch: dict[str, Any]) -> str:
         return "partial_crawl" if stage == "partial" else "ambiguous_enrichment"
     if status == "skipped":
         return stage or "skipped"
+    if status == "failed_retryable" and is_transport_timeout(patch.get("last_error") or patch.get("error_message") or ""):
+        return "enrichment_timeout"
     return stage or "failed"
 
 
@@ -379,12 +388,13 @@ def content_is_url_only(value: object, *urls: object) -> bool:
 def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     started_at = datetime.now(timezone.utc).isoformat()
     attempt_count = str((int(str(row.get("attempt_count") or "0") or "0") + 1))
-    prior_reason = str(row.get("status_reason") or row.get("error_type") or "").strip().lower()
+    prior_reason = f"{row.get('status_reason') or ''} {row.get('error_type') or ''}".strip().lower()
     explicit_stage = str(row.get("enrichment_stage") or row.get("public_enrichment_stage") or "").strip()
     prior_attempt_count = int(str(row.get("attempt_count") or "0") or "0")
     url_only_content = content_is_url_only(row.get("website_content"), row.get("best_url"), row.get("url_picked")) or content_is_url_only(
         row.get("website_scrape"), row.get("best_url"), row.get("url_picked")
     )
+    retry_escalates = prior_attempt_count > 1 and "enrichment_timeout" not in prior_reason
     should_deep_retry = (
         explicit_stage == "deep_retry"
         or "weak_retry" in prior_reason
@@ -394,7 +404,7 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
         or "no_team_or_contact_page" in prior_reason
         or "challenge_detected" in prior_reason
         or url_only_content
-        or prior_attempt_count > 1
+        or retry_escalates
     )
     enrichment_stage = "deep_retry" if should_deep_retry else "fast"
     run_id = f"selected-rerun:{int(time.time())}:{row['Id']}"
