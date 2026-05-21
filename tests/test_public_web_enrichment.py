@@ -754,6 +754,68 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         structured = json.loads(patch["structured_data_detected"])
         self.assertTrue(structured["truncated_for_nocodb_longtext"])
 
+    def test_url_validation_warning_allows_same_domain_403(self):
+        normalization = p.NormalizationResult(
+            best_url="https://clinic.example/",
+            hostname="clinic.example",
+            registered_domain="clinic.example",
+        )
+        validation = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://clinic.example/",
+            http_status=403,
+            redirect_chain=[{"url": "https://clinic.example/", "status": 403}],
+            url_validation_status="failed_http_status",
+            error="final HTTP status 403 is not crawlable",
+        )
+
+        self.assertTrue(p.can_continue_after_url_validation_warning(validation, normalization))
+
+    def test_url_validation_warning_allows_same_domain_redirect_loop(self):
+        normalization = p.NormalizationResult(
+            best_url="https://dermassoc.com.sg/wp/",
+            hostname="dermassoc.com.sg",
+            registered_domain="dermassoc.com.sg",
+        )
+        validation = p.UrlValidationResult(
+            best_url_candidate="https://dermassoc.com.sg/wp/",
+            best_url="https://dermassoc.com.sg/wp/",
+            http_status=0,
+            redirect_chain=[
+                {"url": "https://dermassoc.com.sg/wp/", "status": 301, "location": "/wp/"},
+            ],
+            url_validation_status="failed_redirect_loop",
+            error="redirect loop detected",
+        )
+
+        self.assertTrue(p.can_continue_after_url_validation_warning(validation, normalization))
+
+    def test_url_validation_warning_rejects_cross_domain_and_not_found(self):
+        normalization = p.NormalizationResult(
+            best_url="https://clinic.example/",
+            hostname="clinic.example",
+            registered_domain="clinic.example",
+        )
+        cross_domain = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://unrelated.example/",
+            http_status=403,
+            redirect_chain=[],
+            url_validation_status="failed_http_status",
+            error="final HTTP status 403 is not crawlable",
+        )
+        not_found = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://clinic.example/",
+            http_status=404,
+            redirect_chain=[],
+            url_validation_status="failed_http_status",
+            error="final HTTP status 404 is not crawlable",
+        )
+
+        self.assertFalse(p.can_continue_after_url_validation_warning(cross_domain, normalization))
+        self.assertFalse(p.can_continue_after_url_validation_warning(not_found, normalization))
+
 
 if __name__ == "__main__":
     unittest.main()

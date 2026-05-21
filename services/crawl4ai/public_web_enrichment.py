@@ -1217,6 +1217,21 @@ def validate_best_url_candidate(
     )
 
 
+def can_continue_after_url_validation_warning(
+    validation: UrlValidationResult,
+    normalization: NormalizationResult,
+) -> bool:
+    if validation.ok or not normalization.best_url or not validation.best_url:
+        return False
+    if not same_registered_domain(normalization.best_url, validation.best_url):
+        return False
+    if validation.url_validation_status == "failed_redirect_loop":
+        return True
+    if validation.url_validation_status == "failed_http_status":
+        return validation.http_status in {401, 403, 429}
+    return False
+
+
 def filtered_query_string(raw_url: str) -> str:
     parsed = urlsplit(raw_url)
     if not parsed.query:
@@ -3873,7 +3888,8 @@ async def enrich_row(
     validation_started = time.perf_counter()
     validation = validate_best_url_candidate(session, normalization)
     timings["validation_ms"] = elapsed_ms(validation_started)
-    if not validation.ok:
+    validation_warning_allowed = can_continue_after_url_validation_warning(validation, normalization)
+    if not validation.ok and not validation_warning_allowed:
         error_text = validation.error or validation.url_validation_status
         return stamp(EnrichmentRecord(
             row_id=row.row_id,
@@ -3906,7 +3922,11 @@ async def enrich_row(
             url_validation_status=validation.url_validation_status,
         ))
 
-    best_url = validation.best_url
+    if validation_warning_allowed:
+        warning_text = validation.error or validation.url_validation_status
+        errors.append(f"{validation.best_url}: URL validation warning; continuing with crawl: {warning_text}")
+
+    best_url = validation.best_url or normalization.best_url
     crawl_proxy_config = proxy_config_for_url(best_url)
     if not same_host(normalization.best_url, best_url):
         session = build_requests_session(best_url)
@@ -3951,7 +3971,11 @@ async def enrich_row(
     seen_hashes: set[str] = set()
 
     stage = "deep_retry" if enrichment_stage == "deep_retry" else "fast"
-    fast_static_first = stage == "fast" and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+    fast_static_first = (
+        stage == "fast"
+        and not validation_warning_allowed
+        and os.getenv("PUBLIC_ENRICH_FAST_STATIC_FIRST", "true").lower() != "false"
+    )
     fast_browser_fallback = os.getenv("PUBLIC_ENRICH_FAST_BROWSER_FALLBACK", "false").lower() == "true"
     homepage_result: dict[str, Any] | None = None
 
