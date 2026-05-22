@@ -21,6 +21,7 @@ CONTACT_COLUMNS: list[tuple[str, str, str]] = [
     ("selected_contact_confidence", "SingleLineText", "text"),
     ("email_candidates_json", "LongText", "text"),
     ("validated_email", "SingleLineText", "text"),
+    ("duplicate_validated_email_of_id", "SingleLineText", "text"),
     ("email_validation_status", "SingleLineText", "text"),
     ("email_validation_summary", "LongText", "text"),
     ("email_validation_provider", "SingleLineText", "text"),
@@ -37,6 +38,7 @@ DEFAULT_VISIBLE_CONTACT_COLUMNS = {
     "selected_contact_role",
     "selected_contact_linkedin_url",
     "validated_email",
+    "duplicate_validated_email_of_id",
     "email_validation_status",
 }
 
@@ -174,6 +176,58 @@ def main() -> None:
                     cur.execute(
                         "update public.nc_grid_view_columns_v2 set show = %s where id = %s",
                         (desired_show, grid_row[0]),
+                    )
+
+            cur.execute(
+                """
+                select c.id, g."order"
+                from public.nc_columns_v2 c
+                join public.nc_grid_view_columns_v2 g on g.fk_column_id = c.id
+                where c.fk_model_id = %s
+                  and g.fk_view_id = %s
+                  and c.column_name = 'validated_email'
+                """,
+                (model_id, view_id),
+            )
+            validated_grid = cur.fetchone()
+            cur.execute(
+                """
+                select c.id, g.id, g."order"
+                from public.nc_columns_v2 c
+                join public.nc_grid_view_columns_v2 g on g.fk_column_id = c.id
+                where c.fk_model_id = %s
+                  and g.fk_view_id = %s
+                  and c.column_name = 'duplicate_validated_email_of_id'
+                """,
+                (model_id, view_id),
+            )
+            duplicate_grid = cur.fetchone()
+            if validated_grid and duplicate_grid:
+                duplicate_column_id, duplicate_grid_id, duplicate_grid_order = duplicate_grid
+                target_order = int(validated_grid[1] or 0) + 1
+                if int(duplicate_grid_order or 0) != target_order:
+                    cur.execute(
+                        """
+                        update public.nc_grid_view_columns_v2
+                        set "order" = "order" + 1
+                        where fk_view_id = %s
+                          and fk_column_id <> %s
+                          and "order" >= %s
+                        """,
+                        (view_id, duplicate_column_id, target_order),
+                    )
+                    cur.execute(
+                        """
+                        update public.nc_grid_view_columns_v2
+                        set "order" = %s, show = true
+                        where id = %s
+                        """,
+                        (target_order, duplicate_grid_id),
+                    )
+                else:
+                    cur.execute(
+                        "update public.nc_grid_view_columns_v2 set show = true where id = %s",
+                        (duplicate_grid_id,),
                     )
 
             cur.execute("update public.nc_models_v2 set updated_at = now() where id = %s", (model_id,))

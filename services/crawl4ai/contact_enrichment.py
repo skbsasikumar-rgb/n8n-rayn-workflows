@@ -3955,6 +3955,7 @@ def build_patch(result: ContactResult) -> dict[str, Any]:
         "selected_contact_confidence": result.selected_contact_confidence,
         "email_candidates_json": json.dumps(result.email_candidates, ensure_ascii=False),
         "validated_email": result.validated_email,
+        "duplicate_validated_email_of_id": "",
         "email_validation_status": result.email_validation_status,
         "email_validation_summary": email_validation_summary,
         "email_validation_provider": result.email_validation_provider,

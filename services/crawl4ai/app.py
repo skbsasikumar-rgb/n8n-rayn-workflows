@@ -1169,6 +1169,7 @@ CONTACT_ROW_FIELDS = ",".join(
         "selected_contact_confidence",
         "email_candidates_json",
         "validated_email",
+        "duplicate_validated_email_of_id",
         "email_validation_status",
         "email_validation_summary",
         "email_validation_provider",
@@ -1248,6 +1249,63 @@ def noco_patch_rows(rows: list[dict[str, Any]]) -> Any:
     return noco_request("PATCH", noco_table_url(bulk=True), body=rows)
 
 
+def normalized_validated_email(value: Any) -> str:
+    email = compact_whitespace(str(value or "")).lower()
+    return email if "@" in email else ""
+
+
+def noco_find_duplicate_validated_email(row_id: Any, validated_email: Any) -> str:
+    email = normalized_validated_email(validated_email)
+    if not email:
+        return ""
+    current_id = str(row_id or "").strip()
+    where = f"(validated_email,eq,{email})"
+    if current_id:
+        where += f"~and(Id,neq,{current_id})"
+    try:
+        payload = noco_request(
+            "GET",
+            noco_table_url(),
+            params={
+                "where": where,
+                "fields": "Id,validated_email",
+                "limit": "1",
+                "sort": "Id",
+            },
+        )
+    except Exception as exc:
+        print(f"duplicate_validated_email_lookup_error row_id={current_id}: {compact_whitespace(str(exc))}")
+        return ""
+    rows = payload.get("list") if isinstance(payload, dict) else []
+    if not isinstance(rows, list) or not rows:
+        return ""
+    return str(rows[0].get("Id") or "")
+
+
+def annotate_validated_email_duplicate(patch: dict[str, Any]) -> dict[str, Any]:
+    duplicate_of_id = noco_find_duplicate_validated_email(
+        patch.get("Id"),
+        patch.get("validated_email"),
+    )
+    patch["duplicate_validated_email_of_id"] = duplicate_of_id
+    if duplicate_of_id:
+        patch.update(
+            {
+                "automation_decision": "suppressed",
+                "automation_decision_reason": "suppressed_duplicate_validated_email",
+                "automation_blockers_json": json.dumps(
+                    [{"code": "duplicate_validated_email", "duplicate_of_id": duplicate_of_id}],
+                    ensure_ascii=False,
+                ),
+                "email_send_ready": False,
+                "final_send_gate_passed": False,
+                "send_status": "suppressed",
+                "sequence_status": "suppressed",
+            }
+        )
+    return patch
+
+
 def terminal_contact_patch(row_id: Any, status: str, reason: str, run_id: str, started_at: str, error: str = "") -> dict[str, Any]:
     return {
         "Id": row_id,
@@ -1259,6 +1317,8 @@ def terminal_contact_patch(row_id: Any, status: str, reason: str, run_id: str, s
         "contact_candidates_json": "[]",
         "contact_search_evidence_json": json.dumps({"error": error or reason}, ensure_ascii=False),
         "email_candidates_json": "[]",
+        "validated_email": "",
+        "duplicate_validated_email_of_id": "",
         "email_validation_provider": "anymail_finder",
         "email_validation_status": "worker_error" if status == "failed" else "",
         "email_validation_summary": f"Email validation error: {error or reason}" if status == "failed" else "",
@@ -1411,6 +1471,7 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         "selected_contact_linkedin_url": "",
         "selected_contact_confidence": "",
         "validated_email": "",
+        "duplicate_validated_email_of_id": "",
         "email_candidates_json": "",
         "email_validation_status": "",
         "email_validation_summary": "",
@@ -1425,12 +1486,14 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         if preflight_result.contact_search_status == "contact_found":
             patch = contact_enrichment.build_patch(preflight_result)
             patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+            annotate_validated_email_duplicate(patch)
             noco_patch_rows([patch])
             return {"Id": row_id, "status": patch["contact_search_status"], "reason": "preflight_contact_found", "patch": patch}
 
         if preflight_result.contact_search_status == "failed":
             patch = contact_enrichment.build_patch(preflight_result)
             patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+            annotate_validated_email_duplicate(patch)
             noco_patch_rows([patch])
             return {"Id": row_id, "status": patch["contact_search_status"], "reason": patch["contact_search_reason"], "patch": patch}
 
@@ -1448,11 +1511,13 @@ def run_contact_row(row: dict[str, Any], validate_email: bool) -> dict[str, Any]
         fallback_result = merge_preflight_into_fallback(preflight_result, fallback_result)
         patch = contact_enrichment.build_patch(fallback_result)
         patch.update({"contact_search_started_at": started_at, "contact_search_run_id": run_id})
+        annotate_validated_email_duplicate(patch)
         noco_patch_rows([patch])
         return {"Id": row_id, "status": patch["contact_search_status"], "reason": patch["contact_search_reason"], "patch": patch}
     except Exception as exc:
         error_text = compact_whitespace(str(exc)) or "contact row runner failed"
         patch = terminal_contact_patch(row_id, "failed", "contact_row_runner_error", run_id, started_at, error_text)
+        annotate_validated_email_duplicate(patch)
         noco_patch_rows([patch])
         return {"Id": row_id, "status": "failed", "reason": "contact_row_runner_error", "error": error_text, "patch": patch}
 
@@ -2023,6 +2088,8 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
             "contact_candidates_json": "[]",
             "contact_search_evidence_json": json.dumps({"error": error_text}),
             "email_candidates_json": "[]",
+            "validated_email": "",
+            "duplicate_validated_email_of_id": "",
             "email_validation_provider": "anymail_finder",
             "email_validation_status": "worker_error",
             "email_validation_summary": f"Email validation error: {error_text}",
@@ -2037,7 +2104,7 @@ async def contact_enrich(request: ContactSearchRequest) -> dict[str, Any]:
             "record": {},
         }
 
-    patch = contact_enrichment.build_patch(result)
+    patch = annotate_validated_email_duplicate(contact_enrichment.build_patch(result))
     preflight_action = ""
     preflight_reason = ""
     if request.site_fast_path_only:

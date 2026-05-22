@@ -9,6 +9,7 @@ from services.crawl4ai import outreach_planner as planner
 
 
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ensure_rayn_outreach_columns.py"
+CONTACT_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "ensure_rayn_contact_columns.py"
 INSTANTLY_BACKFILL_PATH = Path(__file__).resolve().parents[1] / "scripts" / "backfill_instantly_send_ready.py"
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-cold-email-planner.json"
 WORKER_WORKFLOW_PATH = Path(__file__).resolve().parents[1] / "wf-worker.json"
@@ -23,6 +24,17 @@ def load_column_script():
     if "psycopg" not in sys.modules:
         sys.modules["psycopg"] = types.ModuleType("psycopg")
     spec = importlib.util.spec_from_file_location("ensure_rayn_outreach_columns", SCRIPT_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_contact_column_script():
+    if "psycopg" not in sys.modules:
+        sys.modules["psycopg"] = types.ModuleType("psycopg")
+    spec = importlib.util.spec_from_file_location("ensure_rayn_contact_columns", CONTACT_SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
     sys.modules[spec.name] = module
@@ -49,6 +61,13 @@ class OutreachColumnContractTests(unittest.TestCase):
     def test_outreach_columns_have_unique_names(self):
         names = [column.name for column in self.module.OUTREACH_COLUMNS]
         self.assertEqual(len(names), len(set(names)))
+
+    def test_contact_duplicate_email_column_is_next_to_validated_email(self):
+        contact_module = load_contact_column_script()
+        names = [column[0] for column in contact_module.CONTACT_COLUMNS]
+        validated_index = names.index("validated_email")
+        self.assertEqual(names[validated_index + 1], "duplicate_validated_email_of_id")
+        self.assertIn("duplicate_validated_email_of_id", contact_module.DEFAULT_VISIBLE_CONTACT_COLUMNS)
 
     def test_required_patch_fields_are_all_present_in_outreach_columns(self):
         result = planner.plan_and_patch(
@@ -280,6 +299,7 @@ class OutreachColumnContractTests(unittest.TestCase):
             "selected_contact_source_url",
             "email_candidates_json",
             "email_validation_evidence_json",
+            "duplicate_validated_email_of_id",
         }
         missing = sorted(field for field in fields if field not in existing_fields and field not in self.columns)
         self.assertEqual(missing, [])
@@ -294,6 +314,7 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("(contact_search_status,eq,failed)", url_expr)
         self.assertIn("(contact_search_status,eq,skipped)", url_expr)
         self.assertIn("(validated_email,notblank)", url_expr)
+        self.assertIn("(duplicate_validated_email_of_id,blank)", url_expr)
         self.assertIn("(selected_contact_email,notblank)", url_expr)
 
     def test_workflow_fetch_does_not_refetch_suppressed_rows(self):
@@ -473,12 +494,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         get_url = get_node["parameters"]["url"]
         self.assertIn("RAYN_CONTACT_SEARCH_BATCH_LIMIT", get_url)
         self.assertIn("(contact_search_status,eq,pending)", get_url)
+        self.assertIn("duplicate_validated_email_of_id", get_url)
         self.assertIn("&sort=Id", get_url)
 
         claim_node = next(node for node in workflow["nodes"] if node["name"] == "Claim Contact Search Row")
         claim_body = claim_node["parameters"]["jsonBody"]
         self.assertIn("processing:contact_search_claimed", claim_body)
         self.assertIn("selected_contact_source_url", claim_body)
+        self.assertIn("duplicate_validated_email_of_id", claim_body)
 
         run_node = next(node for node in workflow["nodes"] if node["name"] == "Run Contact Search Row")
         self.assertIn("/contact-enrich-row", run_node["parameters"]["url"])
@@ -500,6 +523,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn('@app.post("/contact-enrich-row")', app_source)
         self.assertIn("asyncio.create_task(run_contact_row_background", app_source)
         self.assertIn("noco_fetch_contact_rows(1, [row_id])", app_source)
+        self.assertIn("def noco_find_duplicate_validated_email", app_source)
+        self.assertIn("annotate_validated_email_duplicate(patch)", app_source)
+        self.assertIn("suppressed_duplicate_validated_email", app_source)
 
     def test_planner_never_send_ready_when_funding_not_verified(self):
         result = planner.plan_and_patch(
@@ -682,12 +708,15 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
             "(automation_decision,eq,auto_send_eligible)",
             "(final_send_gate_passed,eq,true)",
             "(validated_email,notblank)",
+            "(duplicate_validated_email_of_id,blank)",
             "(do_not_contact,neq,true)",
             "(unsubscribe_status,eq,active)",
             "(send_provider,neq,instantly)",
             "(instantly_sync_status,neq,synced)",
         ]:
             self.assertIn(fragment, url_expr)
+        prepare_node = next(node for node in workflow["nodes"] if node["name"] == "Prepare Instantly Lead")
+        self.assertIn("duplicate_validated_email_of_id", prepare_node["parameters"]["jsCode"])
 
     def test_review_approval_workflow_promotes_only_manually_approved_rows(self):
         workflow = json.loads(REVIEW_APPROVAL_WORKFLOW_PATH.read_text())
