@@ -264,6 +264,13 @@ def is_transport_timeout(value: Any) -> bool:
     return any(marker in text for marker in ("timeout", "etimedout", "socket hang up", "econnreset", "aborted"))
 
 
+def max_enrichment_attempts() -> int:
+    try:
+        return max(1, int(os.getenv("RAYN_MAX_ENRICHMENT_ATTEMPTS", "4")))
+    except ValueError:
+        return 4
+
+
 def terminal_status(patch: dict[str, Any]) -> str:
     stage = str(patch.get("last_stage") or patch.get("crawl_status") or "").strip()
     if stage == "crawled":
@@ -450,20 +457,24 @@ def public_enrich_patch(row: dict[str, Any], args: argparse.Namespace) -> dict[s
         patch = dict(payload["patch"])
         final_status = terminal_status(patch)
         last_error = str(patch.get("last_error") or "")
+        max_attempts_reached = final_status == "failed_retryable" and int(attempt_count) >= max_enrichment_attempts()
+        resolved_status = "failed" if max_attempts_reached else final_status
         patch.update(
             {
-                "status": final_status,
+                "status": resolved_status,
                 "run_id": run_id,
                 "processing_started_at": started_at,
                 "processing_finished_at": finished_at,
                 "last_attempted_at": started_at,
                 "attempt_count": attempt_count,
-                "status_reason": status_reason(final_status, patch),
+                "status_reason": "enrichment_timeout_max_attempts" if max_attempts_reached else status_reason(resolved_status, patch),
                 "error_type": (str(patch.get("last_stage") or patch.get("crawl_status") or "").strip() or "enrichment_error")
-                if final_status == "failed"
+                if resolved_status in {"failed", "failed_retryable"}
                 else "",
-                "error_message": last_error if final_status == "failed" else "",
-                "retry_eligible": "true" if final_status in {"failed", "failed_retryable"} else "false",
+                "error_message": last_error if resolved_status in {"failed", "failed_retryable"} else "",
+                "retry_eligible": "false"
+                if max_attempts_reached
+                else ("true" if resolved_status in {"failed", "failed_retryable"} else "false"),
             }
         )
         cap_noco_long_text_fields(patch)

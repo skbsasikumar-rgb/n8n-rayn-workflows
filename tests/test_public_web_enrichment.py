@@ -1,7 +1,9 @@
 import json
+import os
 import sys
 import types
 import unittest
+from unittest import mock
 
 try:
     import bs4  # noqa: F401
@@ -649,11 +651,15 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("retryEscalates", prepare_code)
         self.assertIn("status === 'failed_retryable' && isTransportTimeout", patch_code)
         self.assertIn("finalStatus === 'failed_retryable'", patch_code)
+        self.assertIn("RAYN_MAX_ENRICHMENT_ATTEMPTS", patch_code)
+        self.assertIn("maxAttemptsReached ? 'enrichment_timeout_max_attempts'", patch_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
         self.assertIn('"enrichment_timeout" not in prior_reason', rerun_helper)
         self.assertIn("or retry_escalates", rerun_helper)
-        self.assertIn('final_status in {"failed", "failed_retryable"}', rerun_helper)
+        self.assertIn('resolved_status in {"failed", "failed_retryable"}', rerun_helper)
+        self.assertIn("max_enrichment_attempts", rerun_helper)
+        self.assertIn('"enrichment_timeout_max_attempts" if max_attempts_reached', rerun_helper)
         self.assertIn("or url_only_content", rerun_helper)
         self.assertIn('str(row.get("status") or "") == "completed"', rerun_helper)
         self.assertIn("website_content,website_scrape", rerun_helper)
@@ -679,6 +685,12 @@ class PublicWebEnrichmentTests(unittest.TestCase):
 
         self.assertEqual(rerun.terminal_status(patch), "failed_retryable")
         self.assertEqual(rerun.status_reason("failed_retryable", patch), "enrichment_timeout")
+
+    def test_selected_rerun_uses_default_max_enrichment_attempts(self):
+        from scripts import rayn_selected_rerun as rerun
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(rerun.max_enrichment_attempts(), 4)
 
     def test_selected_rerun_caps_oversized_nocodb_longtext_fields(self):
         from scripts import rayn_selected_rerun as rerun
