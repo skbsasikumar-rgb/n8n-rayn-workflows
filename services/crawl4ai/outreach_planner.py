@@ -263,9 +263,9 @@ Email 1 rules:
 - Use 4 short paragraphs separated by blank lines.
 - Paragraph 1: greeting plus a specific company hook, preferably a question if the approved context is concrete.
 - Paragraph 2: problem / why now. Link it back to paragraph 1 with "that data", "that proof", "that trail", or similar plain wording.
-- Paragraph 3: Cyber Essentials as a practical path, baseline, evidence map, or route.
+- Paragraph 3: Cyber Essentials as a practical path, baseline, evidence map, or route. For HIA, this paragraph must say we map/help map it into a Cyber Essentials route for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security.
 - Paragraph 4: tiny CTA only.
-- For HIA, mention HIA before Cyber Essentials.
+- For HIA, mention HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
 - Prefer 55-75 words. Hard limit: Email 1 under 95 words.
 
 Email 2 rules:
@@ -3086,6 +3086,14 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
     return f"{greeting} {observation_after_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
+def hia_email_1_cyber_data_security_paragraph_ok(body: str) -> bool:
+    paragraphs = [compact(part).lower() for part in body.split("\n\n") if compact(part)]
+    if len(paragraphs) < 3:
+        return False
+    mechanism = paragraphs[2]
+    return all(term in mechanism for term in ("hia", "cyber essentials", "cyber", "data", "security"))
+
+
 EMAIL_2_VALUE_PS = (
     "p.s. We are usually priced near the lower end, but the scope includes evidence prep, "
     "certification support, and a SaaS/LMS platform to help your team get certified, "
@@ -3210,9 +3218,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "hia_real_for_providers": "If so, HIA starting from 2027 makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
-            "decent_cyber_data_baseline": "We help map that into a Cyber Essentials route for the HIA cyber/data-security side.",
-            "practical_cyber_data_baseline": "We help turn that records map into a practical Cyber Essentials baseline.",
-            "controls_evidence_baseline": "We help build a Cyber Essentials evidence map for that trail.",
+            "decent_cyber_data_baseline": "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.",
+            "practical_cyber_data_baseline": "We help map that records map into a practical Cyber Essentials route for the HIA cyber/data-security side.",
+            "controls_evidence_baseline": "We help map that trail into a Cyber Essentials evidence route for the HIA cyber/data-security side.",
         }
     elif track == "dpo_evidence":
         problem_options = {
@@ -5014,7 +5022,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         asset = segment_asset(row, classification, clinic_profile)
         cta = hia_email_1_cta(row, classification, asset)
         problem = hia_problem_statement(row, classification, clinic_profile)
-        mechanism = "Cyber Essentials is a decent first baseline for that cyber/data side."
+        mechanism = "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side."
         profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
         if clinic_profile.get("clinic_profile_guess") == "specialist_led" and "gastroenterology and digestive care" in profile_phrase:
             signal = f"{company} appears to provide specialist-led gastroenterology and digestive care."
@@ -5232,7 +5240,7 @@ def generate_email_sequence(
         segment = healthcare_segment(classification)
         email1_subject = "HIA readiness"
         email2_subject = "Re: HIA readiness"
-        email1_body = f"{greeting} noticed {company} appears to be a {segment}.\n\n{lead}, healthcare providers may need to show stronger readiness around health information access, cybersecurity, data security and incident response.\n\nCyber Essentials is a practical first baseline before deeper HIA work.\n\nWorth sending a simple HIA readiness checklist?"
+        email1_body = f"{greeting} noticed {company} appears to be a {segment}.\n\n{lead}, healthcare providers may need to show stronger readiness around health information access, cybersecurity, data security and incident response.\n\nWe help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.\n\nWorth sending a simple HIA readiness checklist?"
         email2_body = f"One useful check: can {company} clearly show where health information sits, who can access it, which vendors touch it, how backups work, and who reports an incident?\n\nThose are the areas that usually become messy before HIA deadlines.\n\nWant the quick readiness map?"
     elif classification["pressure_type"] == "customer_trust":
         signal = business_model_trust_signal(lower_blob(row))
@@ -5511,6 +5519,8 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
         ce_pos = body_l.find("cyber essentials")
         if hia_pos < 0 or hia_pos > 400 or (ce_pos >= 0 and hia_pos > ce_pos):
             flags.append("llm_email_1_rewrite_hia_not_early")
+        if not hia_email_1_cyber_data_security_paragraph_ok(body):
+            flags.append("llm_email_1_rewrite_missing_hia_cyber_data_security")
     if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
         flags.append("llm_email_1_rewrite_forbidden_compliance_claim")
     return flags
@@ -6293,6 +6303,8 @@ def evaluate_email_strategy(
             flags.append("clinic_profile_too_generic")
         if email_1_missing_clinic_profile(email1, copy_brief):
             flags.append("email_1_missing_clinic_profile")
+        if not hia_email_1_cyber_data_security_paragraph_ok(email1):
+            flags.append("email_1_missing_hia_cyber_data_security_mechanism")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
@@ -7016,6 +7028,7 @@ def patch_with_email_sequence(
         "clinic_profile_missing_for_hia",
         "clinic_profile_too_generic",
         "email_1_missing_clinic_profile",
+        "email_1_missing_hia_cyber_data_security_mechanism",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",
         "lab_classification_ambiguous",

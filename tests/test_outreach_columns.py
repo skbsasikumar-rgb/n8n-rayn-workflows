@@ -595,6 +595,50 @@ class OutreachColumnContractTests(unittest.TestCase):
                 self.assertTrue(any(flag.startswith("forbidden_phrase:") for flag in flags))
                 self.assertFalse(send_ready)
 
+    def test_hia_email_1_third_paragraph_keeps_cyber_data_security_route(self):
+        for row_id in range(1, 12):
+            with self.subTest(row_id=row_id):
+                plan = planner.plan_outreach(
+                    {
+                        "Id": row_id,
+                        "company_name": "Example Dental Clinic",
+                        "best_url": "https://example.sg/",
+                        "website_content": (
+                            "Singapore dental clinic providing dental appointments, patient treatment, "
+                            "dental records, dentists, oral health services, and patient care."
+                        ),
+                        "disable_llm_rewrite": True,
+                    }
+                )
+                body = plan.emails["email_1"]["body"]
+                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertTrue(planner.hia_email_1_cyber_data_security_paragraph_ok(body), body)
+
+    def test_hia_llm_rewrite_rejects_email_1_without_cyber_data_security_route(self):
+        classification = {"pressure_type": "hia_regulatory"}
+        deterministic = (
+            "Hello team, does Example Dental Clinic keep patient records across appointment and dental software?\n\n"
+            "If so, HIA starting from 2027 makes that trail the issue.\n\n"
+            "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.\n\n"
+            "Worth sending the HIA readiness map?"
+        )
+        weak_rewrite = (
+            "Hello team, does Example Dental Clinic keep patient records across appointment and dental software?\n\n"
+            "If so, HIA starting from 2027 makes that trail the issue.\n\n"
+            "Cyber Essentials is a practical first baseline before deeper HIA work.\n\n"
+            "Worth sending the HIA readiness map?"
+        )
+        flags = planner.email_1_rewrite_static_flags(weak_rewrite, deterministic, classification)
+        self.assertIn("llm_email_1_rewrite_missing_hia_cyber_data_security", flags)
+        self.assertNotIn(
+            "llm_email_1_rewrite_missing_hia_cyber_data_security",
+            planner.email_1_rewrite_static_flags(deterministic, deterministic, classification),
+        )
+
+    def test_email_rewrite_prompt_requires_hia_cyber_data_security_in_email_1(self):
+        self.assertIn("HIA cyber/data-security side", planner.EMAIL_1_REWRITE_PROMPT)
+        self.assertIn("Email 1 paragraph 3", planner.EMAIL_1_REWRITE_PROMPT)
+
 
 class InstantlyBackfillScriptTests(unittest.TestCase):
     @classmethod
