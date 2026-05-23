@@ -443,6 +443,19 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("patch.contact_search_status = 'pending'", enrichment_code)
         self.assertIn("pending_after_enrichment", enrichment_code)
 
+    def test_url_picker_worker_caps_large_enrichment_background_fields(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        enrichment_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare Enrichment Patch"
+        )["parameters"]["jsCode"]
+        for field in [
+            "services_detected",
+            "locations_detected",
+            "contact_info_detected",
+            "leadership_or_team_signals",
+        ]:
+            self.assertIn(f"patch.{field} = limitLongText(patch.{field} || '', 20000)", enrichment_code)
+
     def test_url_picker_worker_patches_transport_timeout_as_retryable(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
         enrichment_code = next(
