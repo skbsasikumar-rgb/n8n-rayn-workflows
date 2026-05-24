@@ -510,6 +510,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         parse_code = next(node for node in workflow["nodes"] if node["name"] == "Parse URL Pick")[
             "parameters"
         ]["jsCode"]
+        webhook_code = next(node for node in workflow["nodes"] if node["name"] == "Webhook To Item")[
+            "parameters"
+        ]["jsCode"]
         self.assertIn("excluded_url_domain", build_code)
         self.assertIn("carriedExcludedDomain", build_code)
         self.assertIn("-site:", build_code)
@@ -520,6 +523,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("canonicalDomain(url) === excluded", parse_code)
         self.assertIn("isExcludedCandidate(candidate, prepared)", parse_code)
         self.assertIn("isExcludedCandidate(candidatePickedUrl, prepared)", parse_code)
+        self.assertIn("excluded_url_domain: String(payload.excluded_url_domain || '').trim()", webhook_code)
+        self.assertIn("canonical_domain: String(payload.canonical_domain || '').trim()", webhook_code)
 
     def test_url_picker_worker_caps_large_enrichment_background_fields(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
