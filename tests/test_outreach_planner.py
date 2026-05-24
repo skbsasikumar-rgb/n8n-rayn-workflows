@@ -1226,7 +1226,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(partial_funding_patch["funding_followup_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
         self.assertIn("support route", partial_funding_patch["email_2_body"].lower())
-        self.assertIn("quick fit check", partial_funding_patch["email_2_body"])
+        self.assertIn("useful check", partial_funding_patch["email_2_body"])
+        self.assertIn("team training", partial_funding_patch["email_2_body"])
         self.assertNotIn("email_2_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -1890,17 +1891,18 @@ class OutreachPlannerTests(unittest.TestCase):
             "Based on the company profile, the Cyber Essentials support route appears worth checking for Example Clinic.",
             "\n\nThis is subject to programme confirmation.",
         )
-        self.assertIn("the next question is usually cost", body)
-        self.assertIn("quick fit check before anyone spends time on a full quote", body)
+        self.assertIn("just tying this back to my earlier note", body)
+        self.assertIn("practical baseline for access, backups, updates, malware protection and incident response", body)
+        self.assertIn("evidence or team training needs to stay current", body)
         self.assertIn("p.s. We are usually priced near the lower end", body)
 
     def test_email_2_named_followup_lowercases_after_dash(self):
         funding = o.funding_email_2_body_fixed("Samuel - ", "Based on the company profile, the Cyber Essentials support route appears worth checking.", "")
         fallback = o.value_fallback_body_fixed("Samuel - ", "safeguards checklist")
         pricing = o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False)
-        self.assertTrue(funding.startswith("Samuel - if"))
-        self.assertTrue(fallback.startswith("Samuel - if"))
-        self.assertTrue(pricing.startswith("Samuel - if"))
+        self.assertTrue(funding.startswith("Samuel - just"))
+        self.assertTrue(fallback.startswith("Samuel - just"))
+        self.assertTrue(pricing.startswith("Samuel - just"))
 
     def test_email_2_cta_is_own_paragraph_before_ps(self):
         cases = [
@@ -2864,7 +2866,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
         self.assertNotIn("S$4,300 before funding", email2)
         self.assertIn("HIA readiness map", email2)
-        self.assertIn("quick fit check", email2)
+        self.assertIn("useful check", email2)
+        self.assertIn("HIA cyber/data-security side", email2)
         self.assertIn("saas/lms platform", email2.lower())
         self.assertTrue(plan.final_send_gate_passed)
         self.assertNotIn("you qualify", email2.lower())

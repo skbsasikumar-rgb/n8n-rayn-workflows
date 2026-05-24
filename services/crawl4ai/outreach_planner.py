@@ -244,12 +244,13 @@ AI_GIVEAWAY_PHRASES = (
     "unlock the secrets",
 )
 
-EMAIL_1_REWRITE_PROMPT = """You rewrite two approved cold emails as one steady sequence.
+EMAIL_1_REWRITE_PROMPT = """You rewrite the first two approved cold emails in a three-touch sequence.
 Return strict JSON only. Do not add facts, claims, pricing, eligibility, locations, services, names, or vendor details.
 
 Rules:
 - Rewrite Email 1 and Email 2 only.
-- Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 follows naturally into cost/support route.
+- Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 lightly ties back to the earlier note.
+- Email 3 will carry the final close-loop SaaS/LMS point, so do not overload Email 2.
 - Keep the same recipient addressing style from each deterministic email.
 - Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA/customer-trust track, and support-route caution.
 - You may improve flow and make it sound human. You may not change the meaning.
@@ -269,11 +270,12 @@ Email 1 rules:
 - Prefer 55-75 words. Hard limit: Email 1 under 95 words.
 
 Email 2 rules:
-- This is the second and final touch.
+- This is the second touch, not the final close.
 - Keep the same first-name dash prefix if the deterministic email uses one, for example "Samuel - ".
 - Do not restart with a new greeting unless the deterministic email does.
-- Move from "if the asset/checklist/map is useful" to cost/support/funding route.
-- For HIA tracks, mention HIA in the CTA or support-route line.
+- Open by tying back to the earlier note, not by restarting the pitch.
+- For HIA tracks, do not question whether Cyber Essentials is right. State that the useful check clarifies the Cyber Essentials work needed for the HIA cyber/data-security side.
+- For non-HIA tracks, explain Cyber Essentials briefly as a practical baseline for access, backups, updates, malware protection and incident response, then say the useful check is whether that route fits.
 - For PDPA tracks, do not say Cyber Essentials replaces PDPA obligations. Say it can help structure evidence for security safeguards.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
@@ -281,8 +283,8 @@ Email 2 rules:
 - Keep the CTA in its own short paragraph before the p.s.
 - Keep the main body to 3 or 4 short paragraphs before the p.s.
 - Keep this p.s. exactly as written:
-  p.s. We are usually priced near the lower end, but the scope includes evidence prep, certification support, and a SaaS/LMS platform to help your team get certified, stay certified, and keep internal procedures/training in one place.
-- Prefer 65-85 words including the p.s. Hard limit: Email 2 under 95 words.
+  p.s. We are usually priced near the lower end; scope includes evidence prep, certification support, and the SaaS/LMS platform.
+- Prefer 65-90 words including the p.s. Hard limit: Email 2 under 95 words.
 - If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
 Return:
@@ -1067,13 +1069,33 @@ def value_fallback_email_2(
     asset_name = compact(asset) or "checklist"
     subject = "readiness evidence"
     subject_options = ["readiness evidence", "checklist"]
+    sentence_slots: dict[str, dict[str, str]] = {}
+    if classification is not None and classification.get("pressure_type") == "hia_regulatory":
+        fallback_subjects = {"A": "HIA funding route", "B": "support route", "C": "cost check"}
+        subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
+        subject = fallback_subjects[subject_key]
+        subject_options = list(fallback_subjects.values())
+        slots = hia_email_2_sentence_slots(row, classification, sentence_slots, False)
+        body = hia_pricing_email_2_body(
+            prefix,
+            compact((copy_brief or {}).get("pricing_email_2_mode")) or "endpoint_sizing_needed",
+            False,
+            slots,
+        )
+        emails = {**emails}
+        emails["email_2"] = {
+            "subject_options": subject_options,
+            "chosen_subject": subject,
+            "body": body,
+            "word_count": word_count(body),
+        }
+        return emails
     if classification is not None and copy_brief is not None:
         fallback_subjects = {"A": "readiness evidence", "B": "checklist", "C": "evidence map"}
         available = list(fallback_subjects.keys())
         subject_key = deterministic_option_key_for(row, classification, 2, available)
         subject = fallback_subjects[subject_key]
         subject_options = list(fallback_subjects.values())
-    sentence_slots: dict[str, dict[str, str]] = {}
     slots = non_hia_email_2_sentence_slots(row, classification or {}, sentence_slots, asset_name) if classification is not None else {}
     body = value_fallback_body_fixed(prefix, asset_name, slots)
     emails = {**emails}
@@ -1359,6 +1381,8 @@ def followup_sentence(prefix: str, sentence: str) -> str:
     text = compact(sentence)
     if prefix.endswith("- ") and text:
         text = text[:1].lower() + text[1:]
+    elif prefix.endswith(",") and text:
+        text = " " + text[:1].lower() + text[1:]
     elif not prefix and text:
         text = text[:1].upper() + text[1:]
     return f"{prefix}{text}"
@@ -3095,24 +3119,30 @@ def hia_email_1_cyber_data_security_paragraph_ok(body: str) -> bool:
 
 
 EMAIL_2_VALUE_PS = (
-    "p.s. We are usually priced near the lower end, but the scope includes evidence prep, "
-    "certification support, and a SaaS/LMS platform to help your team get certified, "
+    "p.s. We are usually priced near the lower end; scope includes evidence prep, "
+    "certification support, and the SaaS/LMS platform."
+)
+
+EMAIL_3_PLATFORM_LINE = (
+    "If it becomes useful later, the SaaS/LMS platform helps teams get certified, "
     "stay certified, and keep internal procedures/training in one place."
 )
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
-    first_line = followup_sentence(prefix, "if the route summary is useful, the next question is usually cost.")
+    first_line = followup_sentence(prefix, "just tying this back to my earlier note.")
     claim_line = compact(f"{funding_line}{caveat}")
     second_line = (
-        f"{claim_line} The useful step is a quick fit check before anyone spends time on a full quote."
+        f"Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response. {claim_line}"
         if claim_line
-        else "The useful step is a quick fit check before anyone spends time on a full quote."
+        else "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
     )
+    fit_line = "The useful check is whether that route fits, and what evidence or team training needs to stay current."
     return (
         f"{first_line}\n\n"
         f"{second_line}\n\n"
-        "Worth checking the support route?\n\n"
+        f"{fit_line}\n\n"
+        "Worth sending the short map?\n\n"
         f"{EMAIL_2_VALUE_PS}"
     )
 
@@ -3126,22 +3156,28 @@ def hia_pricing_email_2_body(
     slots = slots or {}
     first_line = followup_sentence(
         prefix,
-        slots.get("opening_line") or "if the HIA readiness map is useful, I would keep the next step small.",
+        slots.get("opening_line") or "just tying this back to my earlier note.",
+    )
+    check_line = slots.get("check_line") or (
+        "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles."
     )
     if pricing_mode == "small_clinic_starting_price":
-        scope_line = "For smaller clinics, support depends on route, users and endpoint count."
+        sizing_line = "For smaller clinics, support still depends on route, users and endpoint count."
     elif pricing_mode == "group_or_larger_sizing_needed":
-        scope_line = "For group or larger setups, support depends on route, users and endpoint count."
+        sizing_line = "For group or larger setups, support still depends on route, users and endpoint count."
     else:
-        scope_line = "For smaller clinics or larger setups, support depends on route, users and endpoint count."
+        sizing_line = "For smaller clinics or larger setups, support still depends on route, users and endpoint count."
+    scope_line = slots.get("route_line") or (
+        "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side."
+    )
+    scope_line = compact(f"{scope_line} {sizing_line}")
     if funding_safe and slots.get("conditional_funding"):
         scope_line = compact(f"{scope_line} {slots['conditional_funding']}")
-    fit_line = slots.get("fit_line") or "We can do a quick fit check before a full quote."
-    cta = slots.get("cta") or "Worth checking the HIA funding route?"
+    cta = slots.get("cta") or "Worth sending the short map?"
     return (
         f"{first_line}\n\n"
+        f"{check_line}\n\n"
         f"{scope_line}\n\n"
-        f"{fit_line}\n\n"
         f"{cta}\n\n"
         f"{EMAIL_2_VALUE_PS}"
     )
@@ -3151,13 +3187,15 @@ def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str
     slots = slots or {}
     first_line = followup_sentence(
         prefix,
-        slots.get("opening_line") or f"if the {asset_name} is useful, the next step is a quick fit check.",
+        slots.get("opening_line") or "just tying this back to my earlier note.",
     )
     second_line = slots.get("second_line") or (
-        "It depends on setup, scope and whether Cyber Essentials is the right first step."
+        "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
     )
-    fit_line = slots.get("fit_line") or "We can check that before anyone scopes the work."
-    cta = slots.get("cta") or "Worth checking the support route?"
+    fit_line = slots.get("fit_line") or (
+        f"The useful check is whether that support route fits the {asset_name}, and what evidence or team training needs to stay current."
+    )
+    cta = slots.get("cta") or "Worth sending the short map?"
     return (
         f"{first_line}\n\n"
         f"{second_line}\n\n"
@@ -3173,6 +3211,24 @@ def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None 
     gap_line = slots.get("gap_line") or "If any of those are unclear, that is usually where the cleanup starts."
     cta = slots.get("cta") or "Worth sending the checklist?"
     return f"{prefix}{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
+
+
+def email_3_close_loop_body_fixed(
+    prefix: str,
+    classification: dict[str, Any],
+    slots: dict[str, str] | None = None,
+) -> str:
+    slots = slots or {}
+    first_line = followup_sentence(prefix, slots.get("close_line") or "closing the loop here.")
+    if classification.get("pressure_type") == "hia_regulatory":
+        route_line = slots.get("route_line") or (
+            "For HIA, the Cyber Essentials work still comes back to systems, evidence and team training on the HIA cyber/data-security side."
+        )
+    else:
+        route_line = slots.get("route_line") or "If Cyber Essentials is not the right next step now, no worries."
+    value_line = slots.get("value_line") or EMAIL_3_PLATFORM_LINE
+    cta = slots.get("cta") or "Worth keeping this for later?"
+    return f"{first_line}\n\n{route_line}\n\n{value_line}\n\n{cta}"
 
 
 def close_loop_body_fixed(prefix: str, close_loop_line: str) -> str:
@@ -3279,9 +3335,22 @@ def hia_email_2_sentence_slots(
             2,
             "opening_line",
             {
-                "keep_next_step_small": "if the HIA readiness map is useful, I would keep the next step small.",
-                "small_scope_check": "if the HIA readiness map is relevant, the useful next step is a small scope check.",
-                "avoid_full_quote_first": "if the HIA readiness map is useful, I would check scope before a full quote.",
+                "tie_back": "just tying this back to the HIA readiness map.",
+                "link_back": "linking this back to the HIA readiness map.",
+                "same_hia_point": "following up on the same HIA readiness map.",
+            },
+        ),
+        "check_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "check_line",
+            {
+                "patient_data_map": "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles.",
+                "records_map": "The useful check is whether patient records, vendor systems, backups, access owners and incident roles can be mapped cleanly.",
+                "evidence_map": "The useful check is whether patient-data evidence is clear across systems, vendors, backups, access owners and incident roles.",
             },
         ),
         "route_line": choose_sentence_slot(
@@ -3292,9 +3361,9 @@ def hia_email_2_sentence_slots(
             2,
             "route_line",
             {
-                "setup_endpoint_users": "The route depends on setup size and which users need coverage.",
-                "support_depends_scope": "Support depends on the route and who needs to be covered.",
-                "scope_drives_route": "The practical detail is scope: users covered and how the team is set up.",
+                "hia_cyber_data_route": "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side.",
+                "hia_side_scope": "That keeps the Cyber Essentials route tied to the HIA cyber/data-security side, not a generic checklist.",
+                "hia_evidence_route": "That is the practical route into Cyber Essentials for the HIA cyber/data-security side.",
             },
         ),
         "sizing_line": choose_sentence_slot(
@@ -3399,9 +3468,9 @@ def hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "hia_funding_route": "Worth checking the HIA funding route?",
-                "hia_support_route": "Should I check the HIA support route?",
-                "hia_cost_route": "Worth checking the HIA cost route first?",
+                "short_map": "Worth sending the short map?",
+                "send_short_map": "Should I send the short map?",
+                "hia_route": "Worth checking the HIA route?",
             },
         ),
     }
@@ -3429,41 +3498,37 @@ def non_hia_email_2_sentence_slots(
     asset_name: str,
 ) -> dict[str, str]:
     track = email_variant_track(classification)
+    company = email_display_company_name(row)
+    opening_options = {
+        "tie_back": "just tying this back to my earlier note.",
+        "link_back": "linking this back to my earlier note.",
+        "same_thread": "following up on the same security-evidence point.",
+    }
+    baseline_options = {
+        "practical_baseline": "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response.",
+        "baseline_controls": "Cyber Essentials keeps the baseline practical: access, backups, updates, malware protection and incident response.",
+        "simple_baseline": "Cyber Essentials is a simple baseline for access control, backups, updates, malware protection and incident response.",
+    }
     if track == "customer_trust":
-        evidence_options = {
-            "one_security_question": "The annoying part is usually not answering one customer security question.",
-            "same_security_proof": "The hard part is rebuilding the same security proof for every customer review.",
-            "customer_reviews_same_proof": "Customer reviews tend to ask for the same proof: access, backups, patching, malware protection and incident response.",
-        }
-        second_options = {
-            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
-            "basics_cleaner_job": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
-            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        fit_options = {
+            "customer_reviews": f"For {company}, the useful check is whether that support route fits the {asset_name} and team training that need to stay current.",
+            "evidence_and_training": f"For {company}, the useful check is what customer evidence, support route and team training would need to stay current.",
+            "route_fit": f"For {company}, the useful check is whether the support route fits the evidence customers already ask for.",
         }
     elif track == "dpo_evidence":
-        evidence_options = {
-            "not_policy": "The tricky part is usually not the policy.",
-            "proof_across_ops": "The hard part is finding the proof across HR, IT, vendors and day-to-day operations.",
-            "different_teams_tools": "Most of the evidence usually sits across different teams and tools.",
-        }
-        second_options = {
-            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
-            "basics_cleaner_job": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
-            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        fit_options = {
+            "pdpa_evidence": f"For {company}, the useful check is whether that support route fits the {asset_name} and team training that need to stay current.",
+            "evidence_map": f"For {company}, the useful check is what security-safeguard evidence, support route and team training would need to stay current.",
+            "route_fit": f"For {company}, the useful check is whether the support route fits the evidence already sitting across teams and tools.",
         }
     else:
-        evidence_options = {
-            "simple_first_pass": "A simple first pass is to check what proof already exists: access lists, backups, updates, malware controls and incident contacts.",
-            "evidence_exists": "The useful check is what evidence already exists for access, backups, updates, malware controls and incident contacts.",
-            "existing_proof": "Before making this bigger than it needs to be, I would check the existing proof: access, backups, updates, malware controls and incident contacts.",
-        }
-        second_options = {
-            "decent_shape": "If those are already in decent shape, Cyber Essentials is usually a cleaner job.",
-            "basics_straightforward": "If the basics are already there, Cyber Essentials prep is usually more straightforward.",
-            "small_gaps_lighter": "If the gaps are small, the certification prep is usually lighter.",
+        fit_options = {
+            "general_fit": f"For {company}, the useful check is whether that support route fits the {asset_name}, and what evidence or team training would need to stay current.",
+            "proof_and_training": f"For {company}, the useful check is what proof, support route and team training would need to stay current.",
+            "route_scope": f"For {company}, the useful check is whether the support route fits the {asset_name} and existing evidence.",
         }
     return {
-        "evidence_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "evidence_line", evidence_options),
+        "opening_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "opening_line", opening_options),
         "second_line": choose_sentence_slot(
             row,
             classification,
@@ -3471,11 +3536,16 @@ def non_hia_email_2_sentence_slots(
             "email_2",
             2,
             "second_line",
-            {
-                "depends_on_setup": "It depends on setup, scope and whether Cyber Essentials is the right first step.",
-                "route_and_scope": "The route depends on setup, scope and what proof the team already has.",
-                "first_step_fit": "The useful check is whether Cyber Essentials is the right first step and what scope needs covering.",
-            },
+            baseline_options,
+        ),
+        "fit_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_2",
+            2,
+            "fit_line",
+            fit_options,
         ),
         "cta": choose_sentence_slot(
             row,
@@ -3485,9 +3555,9 @@ def non_hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "support_route": "Worth checking the support route?",
-                "fit_check": "Should I check the support route?",
-                "scope_route": "Worth checking the route and scope first?",
+                "short_map": "Worth sending the short map?",
+                "send_short_map": "Should I send the short map?",
+                "route_scope": "Worth checking the route and scope?",
             },
         ),
     }
@@ -3501,47 +3571,48 @@ def email_3_sentence_slots(
     records: str,
     asset: str,
 ) -> dict[str, str]:
+    track = email_variant_track(classification)
+    records_text = compact(records) or "patient-data evidence"
+    asset_name = compact(asset) or "checklist"
     if classification.get("pressure_type") == "hia_regulatory":
         return {
-            "diagnostic_opener": choose_sentence_slot(
+            "close_line": choose_sentence_slot(
                 row,
                 classification,
                 metadata,
                 "email_3",
                 3,
-                "diagnostic_opener",
+                "close_line",
                 {
-                    "simple_check": "Simple check:",
-                    "one_useful_check": "One useful check:",
-                    "quick_diagnostic": "Quick diagnostic:",
-                    "check_i_would_use": "The check I would use:",
-                    "one_practical_test": "One practical test:",
+                    "closing_loop": "closing the loop here.",
+                    "last_note": "last note from me on this.",
+                    "leave_it_here": "I will leave this here.",
                 },
             ),
-            "question_shape": choose_sentence_slot(
+            "route_line": choose_sentence_slot(
                 row,
                 classification,
                 metadata,
                 "email_3",
                 3,
-                "question_shape",
+                "route_line",
                 {
-                    "where_records_sit": f"can {company} show where {records} sit today, who owns access, how backups work and who handles incidents?",
-                    "map_records": f"can {company} map {records} to owners, access lists, backups and incident contacts?",
-                    "owns_access": f"can {company} show who owns access to {records}, where backups sit and who handles incidents?",
+                    "hia_systems_training": f"For HIA, the Cyber Essentials work still comes back to {records_text}, backups, incidents, evidence and team training on the HIA cyber/data-security side.",
+                    "hia_not_one_off": f"For HIA, the Cyber Essentials route is not just a certificate; {records_text}, backups, incidents and team training need to stay current.",
+                    "hia_ongoing": f"The HIA cyber/data-security side still needs {records_text}, backups, incidents, evidence and team training to be kept current after certification.",
                 },
             ),
-            "gap_line": choose_sentence_slot(
+            "value_line": choose_sentence_slot(
                 row,
                 classification,
                 metadata,
                 "email_3",
                 3,
-                "gap_line",
+                "value_line",
                 {
-                    "first_gap": "If that is fuzzy, that is usually the first readiness gap to close.",
-                    "cleanup_starts": "If that is unclear, that is usually where the cleanup starts.",
-                    "ownership_unclear": "If access or backup ownership is unclear, that is usually where readiness work starts.",
+                    "platform_core": EMAIL_3_PLATFORM_LINE,
+                    "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: certification, recertification, internal procedures and training in one place.",
+                    "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform keeps certification, procedures and team training in one place.",
                 },
             ),
             "cta": choose_sentence_slot(
@@ -3552,39 +3623,70 @@ def email_3_sentence_slots(
                 3,
                 "cta",
                 {
-                    "want_asset": f"Want the {asset}?",
-                    "worth_asset": f"Worth sending the {asset}?",
-                    "send_asset": f"Should I send the {asset}?",
+                    "keep_later": "Worth keeping this for later?",
+                    "leave_with_you": "Should I leave this with you?",
+                    "useful_later": "Useful to keep on file?",
                 },
             ),
         }
+    if track == "customer_trust":
+        route_options = {
+            "common_question": "If the timing is not right now, no worries; the same common customer security question still comes back to evidence and team training.",
+            "customer_reviews": "If the route is not a fit right now, no worries; each common customer security question still comes back to evidence and training.",
+            "security_proof": "If that route is not the right next step now, no worries; a common customer security question still needs evidence and training to stay current.",
+        }
+    elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
+        route_options = {
+            "beneficiary_data": f"If the route is not a fit right now, no worries; the {asset_name} still helps keep beneficiary, volunteer and staff data evidence clear.",
+            "community_records": f"If the timing is not right now, no worries; the {asset_name} can still help map beneficiary and staff evidence later.",
+            "resident_data": f"If that route is not the right next step now, no worries; beneficiary and resident data evidence still needs to stay current.",
+        }
+    elif track == "dpo_evidence":
+        route_options = {
+            "safeguards_evidence": f"If the route is not a fit right now, no worries; the {asset_name} still helps keep safeguard evidence and training clear.",
+            "pdpa_proof": f"If the timing is not right now, no worries; the {asset_name} is still a practical way to map evidence and training.",
+            "route_not_fit": f"If Cyber Essentials is not the right next step now, no worries; the {asset_name} can still keep security evidence tidy.",
+        }
+    else:
+        route_options = {
+            "not_right_now": f"If Cyber Essentials is not the right next step now, no worries; the {asset_name} can still help later.",
+            "route_not_fit": f"If the route is not a fit right now, no worries; the {asset_name} is still a useful reference.",
+            "timing_not_right": f"If the timing is not right now, no worries; the {asset_name} can stay as a future reference.",
+        }
     return {
-        "diagnostic_opener": choose_sentence_slot(
+        "close_line": choose_sentence_slot(
             row,
             classification,
             metadata,
             "email_3",
             3,
-            "diagnostic_opener",
+            "close_line",
                 {
-                    "simple_check": "Simple check:",
-                    "one_useful_check": "One useful check:",
-                    "quick_diagnostic": "Quick diagnostic:",
-                    "check_i_would_use": "The check I would use:",
-                    "one_practical_test": "One practical test:",
+                    "closing_loop": "closing the loop here.",
+                    "last_note": "last note from me on this.",
+                    "leave_it_here": "I will leave this here.",
                 },
             ),
-        "gap_line": choose_sentence_slot(
+        "route_line": choose_sentence_slot(
             row,
             classification,
             metadata,
             "email_3",
             3,
-            "gap_line",
+            "route_line",
+            route_options,
+        ),
+        "value_line": choose_sentence_slot(
+            row,
+            classification,
+            metadata,
+            "email_3",
+            3,
+            "value_line",
             {
-                "cleanup_starts": "If any of those are unclear, that is usually where the cleanup starts.",
-                "first_gap": "If that is fuzzy, that is usually the first readiness gap to close.",
-                "readiness_work": "If access or backup ownership is unclear, that is usually where readiness work starts.",
+                "platform_core": EMAIL_3_PLATFORM_LINE,
+                "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: certification, recertification, internal procedures and training in one place.",
+                "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform keeps certification, procedures and team training in one place.",
             },
         ),
         "cta": choose_sentence_slot(
@@ -3595,9 +3697,9 @@ def email_3_sentence_slots(
             3,
             "cta",
             {
-                "worth_asset": f"Worth sending the {asset}?",
-                "send_asset": f"Should I send the {asset}?",
-                "want_asset": f"Want the {asset}?",
+                "keep_later": "Worth keeping this for later?",
+                "leave_with_you": "Should I leave this with you?",
+                "useful_later": "Useful to keep on file?",
             },
         ),
     }
@@ -5290,19 +5392,9 @@ def generate_email_sequence(
         if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
             short_noticed = noticed.replace(company, "your clinic", 1)
             email1_body = email_1_body_fixed(email1_greeting, "your clinic", short_noticed, email1_slots, problem, mechanism, cta)
-        if classification["pressure_type"] == "hia_regulatory":
-            records = hia_email_1_records(row, classification, copy_brief)
-            email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
-            email3_body = hia_email_2_diagnostic(row, classification, asset, copy_brief, email3_slots, followup_prefix)
-        elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
-            diagnostic = f"Can {company} map resident, beneficiary, volunteer and staff data to an owner, access list, backup and incident contact?"
-        elif classification["pressure_type"] == "customer_trust":
-            diagnostic = compact(copy_brief.get("email_2_diagnostic")) or "Can each common customer security question be mapped to current evidence for access, backups, patching, malware protection and incident response?"
-        else:
-            diagnostic = "Can each system holding personal data be mapped to an owner, access list, backup, update process and incident contact?"
-        if classification["pressure_type"] != "hia_regulatory":
-            email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, "", asset)
-            email3_body = diagnostic_email_3_body_fixed(diagnostic, email3_slots, followup_prefix)
+        records = hia_email_1_records(row, classification, copy_brief) if classification["pressure_type"] == "hia_regulatory" else ""
+        email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
+        email3_body = email_3_close_loop_body_fixed(followup_prefix, classification, email3_slots)
         if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
             hia_pricing_subjects = {"A": "HIA funding route", "B": "support route", "C": "cost check"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
@@ -5446,9 +5538,10 @@ def email_1_rewrite_payload(
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
         "email_2_required_ps": EMAIL_2_VALUE_PS,
-        "email_2_target_words": "85-92",
+        "email_2_target_words": "65-90",
         "email_2_hard_max_words": 95,
-        "email_2_required_shape": "4 or 5 short paragraphs: opener, support route, optional fit check, CTA alone, exact p.s.",
+        "email_2_required_shape": "4 or 5 short paragraphs: tie-back opener, route/check, optional fit line, CTA alone, exact p.s.",
+        "email_3_sequence_role": "Final close-loop email carries the SaaS/LMS certified/stay-certified point, so Email 2 should stay light.",
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "funding_claim_line": compact(funding.funding_claim_line),
         "funding_claim_safe": funding_safe,
@@ -5546,6 +5639,8 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_mentions_rayn")
     if any(phrase in body_l for phrase in AI_GIVEAWAY_PHRASES):
         flags.append("llm_email_2_rewrite_ai_phrase")
+    if re.search(r"\bnext question is usually cost\b|\bquick fit check before\b", body_l):
+        flags.append("llm_email_2_rewrite_old_cost_followup")
     prefix_match = re.match(r"^([A-Z][A-Za-z.'-]{1,40} - )", deterministic_body)
     if prefix_match:
         prefix = prefix_match.group(1)
@@ -5560,6 +5655,11 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
             flags.append("llm_email_2_rewrite_changed_greeting")
     if classification.get("pressure_type") == "hia_regulatory" and "hia" not in body_l:
         flags.append("llm_email_2_rewrite_missing_hia")
+    if classification.get("pressure_type") == "hia_regulatory" and re.search(
+        r"\bwhether cyber essentials is (?:the )?(?:right|a fit)\b",
+        body_l,
+    ):
+        flags.append("llm_email_2_rewrite_questions_hia_route")
     if classification.get("pressure_type") != "hia_regulatory" and re.search(r"\b(?:s\$|sgd)\s*\d|\bcisoaas pricing\b", body_l):
         flags.append("llm_email_2_rewrite_non_hia_pricing_claim")
     if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
