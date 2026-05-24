@@ -527,6 +527,7 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("canonicalDomain(url) === excluded", parse_code)
         self.assertIn("isExcludedCandidate(candidate, prepared)", parse_code)
         self.assertIn("isExcludedCandidate(candidatePickedUrl, prepared)", parse_code)
+        self.assertIn("best_url: operatingRootUrl || pickedUrl", parse_code)
         self.assertIn("rediscoveryExcludedDomain", continue_code)
         self.assertIn("excluded_url_domain: excludedDomain", continue_code)
         self.assertIn("excluded_url_domain: String(payload.excluded_url_domain || '').trim()", webhook_code)
