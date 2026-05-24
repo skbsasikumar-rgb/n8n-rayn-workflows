@@ -781,6 +781,9 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         self.assertIn("rayn_row_id", js_code)
         self.assertIn("email_1_body_html", js_code)
         self.assertIn("email_2_body_html", js_code)
+        self.assertIn("email_3_subject", js_code)
+        self.assertIn("email_3_body", js_code)
+        self.assertIn("email_3_body_html", js_code)
         self.assertIn("skip_if_in_workspace", js_code)
         self.assertIn("send_provider: 'instantly'", result_node["parameters"]["jsCode"])
         self.assertIn("instantly_sync_status = 'synced'", result_node["parameters"]["jsCode"])
@@ -796,6 +799,8 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
             "(automation_decision,eq,auto_send_eligible)",
             "(final_send_gate_passed,eq,true)",
             "(validated_email,notblank)",
+            "(email_3_subject,notblank)",
+            "(email_3_body,notblank)",
             "(duplicate_validated_email_of_id,blank)",
             "(do_not_contact,neq,true)",
             "(unsubscribe_status,eq,active)",
@@ -803,8 +808,12 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
             "(instantly_sync_status,neq,synced)",
         ]:
             self.assertIn(fragment, url_expr)
+        self.assertIn("email_3_subject", url_expr)
+        self.assertIn("email_3_body", url_expr)
         prepare_node = next(node for node in workflow["nodes"] if node["name"] == "Prepare Instantly Lead")
         self.assertIn("duplicate_validated_email_of_id", prepare_node["parameters"]["jsCode"])
+        self.assertIn("!text(row.email_3_subject)", prepare_node["parameters"]["jsCode"])
+        self.assertIn("!text(row.email_3_body)", prepare_node["parameters"]["jsCode"])
 
     def test_review_approval_workflow_promotes_only_manually_approved_rows(self):
         workflow = json.loads(REVIEW_APPROVAL_WORKFLOW_PATH.read_text())
