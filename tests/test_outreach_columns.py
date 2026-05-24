@@ -510,6 +510,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         parse_code = next(node for node in workflow["nodes"] if node["name"] == "Parse URL Pick")[
             "parameters"
         ]["jsCode"]
+        continue_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Continue Discovery Claim"
+        )["parameters"]["jsCode"]
         webhook_code = next(node for node in workflow["nodes"] if node["name"] == "Webhook To Item")[
             "parameters"
         ]["jsCode"]
@@ -523,6 +526,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("canonicalDomain(url) === excluded", parse_code)
         self.assertIn("isExcludedCandidate(candidate, prepared)", parse_code)
         self.assertIn("isExcludedCandidate(candidatePickedUrl, prepared)", parse_code)
+        self.assertIn("rediscoveryExcludedDomain", continue_code)
+        self.assertIn("excluded_url_domain: excludedDomain", continue_code)
         self.assertIn("excluded_url_domain: String(payload.excluded_url_domain || '').trim()", webhook_code)
         self.assertIn("canonical_domain: String(payload.canonical_domain || '').trim()", webhook_code)
 
