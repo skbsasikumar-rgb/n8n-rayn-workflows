@@ -383,6 +383,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("'status_reason'", js_code)
         self.assertIn("'last_stage'", js_code)
 
+    def test_cold_email_planner_live_mode_is_not_hardcoded_draft_only(self):
+        workflow = json.loads(WORKFLOW_PATH.read_text())
+        rows_node = next(node for node in workflow["nodes"] if node["name"] == "Rows To Items")
+        js_code = rows_node["parameters"]["jsCode"]
+        self.assertNotIn("const draftOnly = true", js_code)
+        self.assertIn("RAYN_COLD_EMAIL_DRAFT_ONLY", js_code)
+        self.assertIn("draft_only: draftOnly", js_code)
+
     def test_url_picker_worker_picks_new_blank_status_rows(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
         get_rows_node = next(node for node in workflow["nodes"] if node["name"] == "Get Blank URL Picked Rows")
@@ -891,6 +899,8 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
             "(unsubscribe_status,eq,active)",
             "(send_provider,neq,instantly)",
             "(instantly_sync_status,neq,synced)",
+            "(email_quality_flags,eq,[])",
+            "(severe_email_flags,eq,[])",
         ]:
             self.assertIn(fragment, url_expr)
         self.assertIn("email_3_subject", url_expr)
