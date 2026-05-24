@@ -421,7 +421,7 @@
         "sendHeaders": false,
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, status: 'processing', last_stage: 'url_discovery', last_error: '', run_id: String($execution.id || ''), processing_started_at: $now.toISO(), processing_finished_at: '', last_attempted_at: $now.toISO(), attempt_count: String((Number($json.attempt_count || 0) || 0) + 1), status_reason: 'processing:url_discovery', error_type: '', error_message: '', retry_eligible: 'true', source_row_created_at: String($json.source_row_created_at || $json.CreatedAt || ''), source_row_updated_at: String($json.source_row_updated_at || $json.UpdatedAt || '') }]) }}",
+        "jsonBody": "={{ JSON.stringify([{ Id: $json.Id, url_picked: String($json.url_picked || ''), homepage_root_url: String($json.homepage_root_url || ''), best_url: String($json.best_url || ''), canonical_domain: String($json.canonical_domain || ''), status: 'processing', last_stage: 'url_discovery', last_error: '', run_id: String($execution.id || ''), processing_started_at: $now.toISO(), processing_finished_at: '', last_attempted_at: $now.toISO(), attempt_count: String((Number($json.attempt_count || 0) || 0) + 1), status_reason: 'processing:url_discovery', error_type: '', error_message: '', retry_eligible: 'true', source_row_created_at: String($json.source_row_created_at || $json.CreatedAt || ''), source_row_updated_at: String($json.source_row_updated_at || $json.UpdatedAt || '') }]) }}",
         "options": {
           "timeout": 30000
         },

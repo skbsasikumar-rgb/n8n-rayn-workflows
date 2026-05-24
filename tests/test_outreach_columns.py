@@ -536,6 +536,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("excluded_url_domain: excludedDomain", continue_code)
         self.assertIn("excluded_url_domain: String(payload.excluded_url_domain || '').trim()", webhook_code)
         self.assertIn("canonical_domain: String(payload.canonical_domain || '').trim()", webhook_code)
+        claim_body = next(node for node in workflow["nodes"] if node["name"] == "Claim Discovery Row")[
+            "parameters"
+        ]["jsonBody"]
+        self.assertIn("url_picked: String($json.url_picked || '')", claim_body)
+        self.assertIn("best_url: String($json.best_url || '')", claim_body)
+        self.assertIn("canonical_domain: String($json.canonical_domain || '')", claim_body)
         patch_body = next(node for node in workflow["nodes"] if node["name"] == "Patch URL Picked")[
             "parameters"
         ]["jsonBody"]
