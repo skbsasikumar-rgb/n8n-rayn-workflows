@@ -6361,9 +6361,8 @@ def active_email_body_blob(emails: dict[str, Any]) -> str:
 
 def suppress_followup_emails(emails: dict[str, Any]) -> dict[str, Any]:
     emails = {**emails}
-    emails["email_3"] = dict(DISABLED_FOLLOWUP_EMAIL)
     emails["email_4"] = dict(DISABLED_FOLLOWUP_EMAIL)
-    emails["sequence_metadata"] = {"sequence_length": 2, "disabled_emails": ["email_3", "email_4"]}
+    emails["sequence_metadata"] = {"sequence_length": 3, "disabled_emails": ["email_4"]}
     return emails
 
 
