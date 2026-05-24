@@ -404,10 +404,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         js_code = rows_node["parameters"]["jsCode"]
         self.assertIn("(status,eq,url_picked)", url_expr)
         self.assertIn("(status,eq,failed_retryable)", url_expr)
+        self.assertIn("(automation_decision,eq,retry_enrichment_once)", url_expr)
+        self.assertIn("automation_decision,automation_decision_reason", url_expr)
         self.assertIn("(status,eq,processing)", url_expr)
         self.assertIn("processing_started_at,lt", url_expr)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
         self.assertIn("status === 'failed_retryable'", js_code)
+        self.assertIn("isWeakEnrichmentRetry", js_code)
+        self.assertIn("automation_decision || '').trim() === 'retry_enrichment_once'", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
 
@@ -423,6 +427,19 @@ class OutreachColumnContractTests(unittest.TestCase):
                 self.assertIn("last_attempted_at: now", js_code)
                 self.assertIn("attempt_count: String(attempt)", js_code)
                 self.assertIn("retry_eligible: 'true'", js_code)
+
+    def test_url_picker_worker_clears_stale_planner_fields_for_weak_enrichment_retry(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        claim_node = next(node for node in workflow["nodes"] if node["name"] == "Claim Enrichment Row")
+        body_expr = claim_node["parameters"]["jsonBody"]
+        self.assertIn("weakRetry", body_expr)
+        self.assertIn("retry_enrichment_once", body_expr)
+        self.assertIn("automation_decision: ''", body_expr)
+        self.assertIn("email_1_subject: ''", body_expr)
+        self.assertIn("email_2_body: ''", body_expr)
+        self.assertIn("email_3_body: ''", body_expr)
+        self.assertIn("final_send_gate_passed: false", body_expr)
+        self.assertIn("email_send_ready: false", body_expr)
 
     def test_url_picker_worker_throws_on_provider_account_errors(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())

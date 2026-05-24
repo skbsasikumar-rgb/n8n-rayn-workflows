@@ -6644,6 +6644,17 @@ def severe_flags(flags: list[str]) -> list[str]:
     ]
 
 
+def enrichment_retry_attempt_count(row: dict[str, Any]) -> int:
+    for key in ("enrichment_attempt_count", "public_enrichment_attempt_count", "attempt_count"):
+        if row.get(key) in {"", None}:
+            continue
+        try:
+            return int(row.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
 def automation_decision_for(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -6665,12 +6676,7 @@ def automation_decision_for(
     if row.get("copy_qa_mode"):
         return "draft_only_review", "copy_qa_mode", ["copy_qa_mode"], False
     if classification.get("pressure_type") == "not_ready":
-        attempt_count = int(
-            row.get("enrichment_attempt_count")
-            or row.get("public_enrichment_attempt_count")
-            or row.get("attempt_count")
-            or 0
-        )
+        attempt_count = enrichment_retry_attempt_count(row)
         healthcare_hint = (
             classification.get("entity_type_guess") in {"clinic", "healthcare_provider"}
             or classification.get("hia_service_type_guess") not in {"", "unknown", None}
@@ -6687,7 +6693,7 @@ def automation_decision_for(
     if "no_concrete_company_observation" in blockers:
         return "auto_skipped", "no_concrete_company_observation", blockers, False
     if enrichment_score < 7:
-        attempt_count = int(row.get("enrichment_attempt_count") or row.get("public_enrichment_attempt_count") or 0)
+        attempt_count = enrichment_retry_attempt_count(row)
         if attempt_count <= 0:
             return "retry_enrichment_once", "weak_enrichment_retry_once", blockers or ["weak_enrichment"], False
         return "auto_skipped", "weak_enrichment_after_retry", blockers or ["weak_enrichment"], False

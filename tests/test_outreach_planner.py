@@ -1819,6 +1819,35 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(retried_patch["automation_decision"], "auto_skipped")
         self.assertEqual(retried_patch["automation_decision_reason"], "weak_hia_and_pdpa_evidence")
 
+    def test_weak_enrichment_retry_uses_worker_attempt_count_to_avoid_loop(self):
+        row = {
+            "Id": 52,
+            "company_name": "Example Security Services",
+            "website_content": "Professional services firm handling customer records, vendor systems and staff training.",
+            "validated_email": "team@example.com",
+            "attempt_count": 2,
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        decision, reason, blockers, final_gate = o.automation_decision_for(
+            row,
+            plan.classification,
+            plan.funding,
+            plan.copy_brief,
+            plan.emails,
+            8,
+            [],
+            6,
+            ["weak_enrichment"],
+            8,
+            [],
+        )
+
+        self.assertEqual(decision, "auto_skipped")
+        self.assertEqual(reason, "weak_enrichment_after_retry")
+        self.assertIn("weak_enrichment", blockers)
+        self.assertFalse(final_gate)
+
     def test_hia_specialist_diagnostic_uses_same_records_as_email_1(self):
         row = {
             "company_name": "Asian Heart & Vascular Centre",
