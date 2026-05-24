@@ -243,8 +243,6 @@ DEFAULT_VISIBLE_GRID_COLUMNS = {
     "email_2_llm_rewritten",
     "email_3_subject",
     "email_3_body",
-    "email_4_subject",
-    "email_4_body",
     "email_send_ready",
     "manual_send_approval",
     "manual_review_notes",
@@ -274,6 +272,8 @@ DEFAULT_VISIBLE_GRID_COLUMNS = {
 GRID_COLUMN_AFTER = {
     "email_1_llm_rewritten": "email_1_body",
     "email_2_llm_rewritten": "email_2_body",
+    "email_3_subject": "email_2_llm_rewritten",
+    "email_3_body": "email_3_subject",
 }
 
 SELECT_OPTIONS: dict[str, list[str]] = {
@@ -539,6 +539,14 @@ def main() -> None:
                         ),
                     )
                     existing_grid_by_column_id[column_id] = (grid_id, desired_show)
+                elif grid_exists and grid_show is not desired_show:
+                    summary["updated_grid_visibility"] = int(summary["updated_grid_visibility"]) + 1
+                    summary["planned_grid_visibility_updates"].append(f"{column.name}:{grid_show}->{desired_show}")  # type: ignore[union-attr]
+                    if not args.dry_run:
+                        cur.execute(
+                            "update public.nc_grid_view_columns_v2 set show = %s where id = %s",
+                            (desired_show, grid_id),
+                        )
 
                 for option_index, option_title in enumerate(SELECT_OPTIONS.get(column.name, []), start=1):
                     if not column_id:

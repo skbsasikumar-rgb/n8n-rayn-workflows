@@ -123,6 +123,13 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("manual_send_approval", visible)
         self.assertIn("manual_review_notes", visible)
 
+    def test_email_three_review_fields_are_visible_and_email_four_is_hidden(self):
+        visible = self.module.DEFAULT_VISIBLE_GRID_COLUMNS
+        self.assertIn("email_3_subject", visible)
+        self.assertIn("email_3_body", visible)
+        self.assertNotIn("email_4_subject", visible)
+        self.assertNotIn("email_4_body", visible)
+
     def test_email_body_fields_are_long_text(self):
         for index in range(1, 5):
             column = self.columns[f"email_{index}_body"]
@@ -162,6 +169,10 @@ class OutreachColumnContractTests(unittest.TestCase):
         names = [column.name for column in self.module.OUTREACH_COLUMNS]
         self.assertEqual(names.index("email_1_llm_rewritten"), names.index("email_1_body") + 1)
         self.assertEqual(names.index("email_2_llm_rewritten"), names.index("email_2_body") + 1)
+
+    def test_grid_order_keeps_email_three_after_email_two(self):
+        self.assertEqual(self.module.GRID_COLUMN_AFTER["email_3_subject"], "email_2_llm_rewritten")
+        self.assertEqual(self.module.GRID_COLUMN_AFTER["email_3_body"], "email_3_subject")
 
     def test_quality_fields_exist(self):
         for name in [
