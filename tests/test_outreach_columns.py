@@ -518,8 +518,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         ]["jsCode"]
         self.assertIn("excluded_url_domain", build_code)
         self.assertIn("carriedExcludedDomain", build_code)
+        self.assertIn("existingDomain", build_code)
         self.assertIn("-site:", build_code)
-        self.assertIn("skipped_url_validation_failed", build_code)
+        self.assertIn("canonical_domain", build_code)
         self.assertIn("Retry rule: reject the previous failed domain", prepare_code)
         self.assertIn("excluded_url_domain", prepare_code)
         self.assertIn("isExcludedCandidate", parse_code)
