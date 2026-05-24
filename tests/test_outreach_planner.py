@@ -621,8 +621,17 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertIn("personal-data safeguards checklist", plan.emails["email_1"]["body"])
         self.assertIn("personal-data safeguards checklist", plan.emails["email_2"]["body"])
+        self.assertIn("PDPA", plan.emails["email_2"]["body"])
+        self.assertTrue(
+            any(
+                phrase in plan.emails["email_2"]["body"]
+                for phrase in ("security-safeguards", "protection side", "safeguard evidence")
+            )
+        )
         self.assertNotIn("healthcare data safeguards", plan.emails["email_1"]["body"].lower())
         self.assertNotIn("healthcare data safeguards", plan.emails["email_2"]["body"].lower())
+        self.assertNotIn("structured approach to the pdpa legal obligations", plan.emails["email_2"]["body"].lower())
+        self.assertNotIn("pdpa compliance framework", plan.emails["email_2"]["body"].lower())
 
     def test_profile_copy_uses_service_type_before_incidental_specialist_terms(self):
         cases = [
@@ -1028,6 +1037,22 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertGreater(o.word_count(long_body), 95)
         self.assertIn("llm_email_2_rewrite_length", flags)
+
+    def test_email_2_llm_rewrite_rejects_pdpa_obligation_overclaim(self):
+        body = (
+            "Hi Samuel,\n\n"
+            "Cyber Essentials is a more structured approach to the PDPA legal obligations.\n\n"
+            "For Example Pte Ltd, the useful check is whether that route fits the safeguards work.\n\n"
+            "Worth sending the short map?\n\n"
+            + o.EMAIL_2_VALUE_PS
+        )
+        flags = o.email_2_rewrite_static_flags(
+            body,
+            body,
+            {"pressure_type": "pdpa_safeguards"},
+        )
+
+        self.assertIn("llm_email_2_rewrite_pdpa_obligation_overclaim", flags)
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
         for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):

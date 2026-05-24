@@ -275,8 +275,8 @@ Email 2 rules:
 - Do not use first-name dash openings such as "Samuel - ".
 - Open by tying back to the earlier note, not by restarting the pitch.
 - For HIA tracks, do not question whether Cyber Essentials is right. State that the useful check clarifies the Cyber Essentials work needed for the HIA cyber/data-security side.
-- For non-HIA tracks, explain Cyber Essentials briefly as a practical baseline for access, backups, updates, malware protection and incident response, then say the useful check is whether that route fits.
-- For PDPA tracks, do not say Cyber Essentials replaces PDPA obligations. Say it can help structure evidence for security safeguards.
+- For non-HIA tracks, explain Cyber Essentials briefly as a practical cybersecurity baseline for access, backups, updates, malware protection and incident response, then say the useful check is whether that route fits.
+- For PDPA/DPO tracks, do not say Cyber Essentials is a structured approach to PDPA legal obligations, a PDPA compliance framework, or a replacement for PDPA. Say PDPA is the legal obligation, and Cyber Essentials helps structure the security-safeguards/evidence side.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
 - Use 4 or 5 short paragraphs separated by blank lines.
@@ -3507,24 +3507,41 @@ def non_hia_email_2_sentence_slots(
         "link_back": "linking this back to my earlier note.",
         "same_thread": "following up on the same security-evidence point.",
     }
-    baseline_options = {
-        "practical_baseline": "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response.",
-        "baseline_controls": "Cyber Essentials keeps the baseline practical: access, backups, updates, malware protection and incident response.",
-        "simple_baseline": "Cyber Essentials is a simple baseline for access control, backups, updates, malware protection and incident response.",
-    }
     if track == "customer_trust":
+        baseline_options = {
+            "customer_security_proof": "Cyber Essentials gives customer-security proof a clearer baseline: access, backups, updates, malware protection and incident response.",
+            "customer_questions": "It turns repeated customer-security questions into a practical baseline: access, backups, updates, malware protection and incident response.",
+            "external_evidence": "Cyber Essentials gives external-security evidence a practical structure around access, backups, updates, malware protection and incident response.",
+        }
         fit_options = {
             "customer_reviews": f"For {company}, the useful check is whether that support route fits the {asset_name} and team training that need to stay current.",
             "evidence_and_training": f"For {company}, the useful check is what customer evidence, support route and team training would need to stay current.",
             "route_fit": f"For {company}, the useful check is whether the support route fits the evidence customers already ask for.",
         }
     elif track == "dpo_evidence":
+        baseline_options = {
+            "pdpa_legal_security_side": "PDPA is the legal obligation; Cyber Essentials gives the security-safeguards side a practical structure: access, backups, updates, malware protection and incident response.",
+            "pdpa_not_replaced": "Cyber Essentials does not replace PDPA; it gives the protection side a practical evidence structure for access, backups, updates, malware protection and incident response.",
+            "pdpa_evidence_route": "For PDPA, the obligation is legal; Cyber Essentials helps organise safeguard evidence around access, backups, updates, malware protection and incident response.",
+        }
         fit_options = {
             "pdpa_evidence": f"For {company}, the useful check is whether that support route fits the {asset_name} and team training that need to stay current.",
             "evidence_map": f"For {company}, the useful check is what security-safeguard evidence, support route and team training would need to stay current.",
             "route_fit": f"For {company}, the useful check is whether the support route fits the evidence already sitting across teams and tools.",
         }
     else:
+        if classification.get("pressure_type") == "pdpa_safeguards":
+            baseline_options = {
+                "pdpa_legal_security_side": "PDPA is the legal obligation; Cyber Essentials gives the security-safeguards side a practical structure: access, backups, updates, malware protection and incident response.",
+                "pdpa_not_replaced": "Cyber Essentials does not replace PDPA; it gives the protection side a practical evidence structure for access, backups, updates, malware protection and incident response.",
+                "pdpa_evidence_route": "For PDPA, the obligation is legal; Cyber Essentials helps organise safeguard evidence around access, backups, updates, malware protection and incident response.",
+            }
+        else:
+            baseline_options = {
+                "practical_baseline": "Cyber Essentials is a practical cybersecurity baseline for access, backups, updates, malware protection and incident response.",
+                "baseline_controls": "Cyber Essentials keeps the cyber baseline practical: access, backups, updates, malware protection and incident response.",
+                "simple_baseline": "Cyber Essentials is a simple cybersecurity baseline for access control, backups, updates, malware protection and incident response.",
+            }
         fit_options = {
             "general_fit": f"For {company}, the useful check is whether that support route fits the {asset_name}, and what evidence or team training would need to stay current.",
             "proof_and_training": f"For {company}, the useful check is what proof, support route and team training would need to stay current.",
@@ -5672,6 +5689,11 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_non_hia_pricing_claim")
     if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
         flags.append("llm_email_2_rewrite_forbidden_compliance_claim")
+    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+        if re.search(r"cyber essentials.{0,50}(?:structured approach to|approach to).{0,30}pdpa.{0,30}(?:legal )?obligations", body_l):
+            flags.append("llm_email_2_rewrite_pdpa_obligation_overclaim")
+        if re.search(r"cyber essentials.{0,30}pdpa compliance framework", body_l):
+            flags.append("llm_email_2_rewrite_pdpa_obligation_overclaim")
     return flags
 
 
