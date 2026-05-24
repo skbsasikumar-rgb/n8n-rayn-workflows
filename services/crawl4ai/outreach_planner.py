@@ -3611,8 +3611,8 @@ def email_3_sentence_slots(
                 "value_line",
                 {
                     "platform_core": EMAIL_3_PLATFORM_LINE,
-                    "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: certification, recertification, internal procedures and training in one place.",
-                    "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform keeps certification, procedures and team training in one place.",
+                    "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: get certified, stay certified, and keep internal procedures/training in one place.",
+                    "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform helps teams get certified, stay certified, and keep procedures/training in one place.",
                 },
             ),
             "cta": choose_sentence_slot(
@@ -3685,8 +3685,8 @@ def email_3_sentence_slots(
             "value_line",
             {
                 "platform_core": EMAIL_3_PLATFORM_LINE,
-                "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: certification, recertification, internal procedures and training in one place.",
-                "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform keeps certification, procedures and team training in one place.",
+                "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: get certified, stay certified, and keep internal procedures/training in one place.",
+                "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform helps teams get certified, stay certified, and keep procedures/training in one place.",
             },
         ),
         "cta": choose_sentence_slot(
