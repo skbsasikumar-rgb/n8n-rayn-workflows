@@ -399,6 +399,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("RAYN_MAX_URL_REDISCOVERY_ATTEMPTS", js_code)
         self.assertIn("skipped_url_validation_failed", js_code)
         self.assertIn("canonical_domain", js_code)
+        self.assertIn("excludedUrlDomain", js_code)
+        self.assertIn("excluded_url_domain: excludedUrlDomain(row)", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
 
@@ -509,6 +511,7 @@ class OutreachColumnContractTests(unittest.TestCase):
             "parameters"
         ]["jsCode"]
         self.assertIn("excluded_url_domain", build_code)
+        self.assertIn("carriedExcludedDomain", build_code)
         self.assertIn("-site:", build_code)
         self.assertIn("skipped_url_validation_failed", build_code)
         self.assertIn("Retry rule: reject the previous failed domain", prepare_code)
