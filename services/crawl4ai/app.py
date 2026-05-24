@@ -373,6 +373,9 @@ class OutreachPlanRequest(BaseModel):
     selected_contact_email: Any = ""
     selected_contact_linkedin_url: Any = ""
     validated_email: Any = ""
+    attempt_count: Any = ""
+    enrichment_attempt_count: Any = ""
+    public_enrichment_attempt_count: Any = ""
     do_not_contact: Any = False
     unsubscribe_status: Any = "active"
     draft_only: bool = False

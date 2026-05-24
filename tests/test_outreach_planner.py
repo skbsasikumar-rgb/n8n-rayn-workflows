@@ -1848,6 +1848,14 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("weak_enrichment", blockers)
         self.assertFalse(final_gate)
 
+    def test_outreach_plan_request_preserves_retry_attempt_fields(self):
+        from pathlib import Path
+
+        app_source = (Path(__file__).resolve().parents[1] / "services/crawl4ai/app.py").read_text()
+        self.assertIn('attempt_count: Any = ""', app_source)
+        self.assertIn('enrichment_attempt_count: Any = ""', app_source)
+        self.assertIn('public_enrichment_attempt_count: Any = ""', app_source)
+
     def test_hia_specialist_diagnostic_uses_same_records_as_email_1(self):
         row = {
             "company_name": "Asian Heart & Vascular Centre",
