@@ -386,6 +386,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("(status,blank)", url_expr)
         self.assertIn("(status,eq,pending)", url_expr)
         self.assertIn("(status,eq,failed_retryable)", url_expr)
+        self.assertIn("skipped_url_validation_failed", url_expr)
+        self.assertIn("best_url,canonical_domain", url_expr)
         self.assertIn("(status,eq,processing)", url_expr)
         self.assertIn("processing_started_at,lt", url_expr)
         self.assertIn("RAYN_URL_PICKER_DISCOVERY_LIMIT", url_expr)
@@ -393,6 +395,10 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("Math.min(25", url_expr)
         self.assertIn("isPendingOrNew", js_code)
         self.assertIn("status === 'failed_retryable'", js_code)
+        self.assertIn("isUrlRediscovery", js_code)
+        self.assertIn("RAYN_MAX_URL_REDISCOVERY_ATTEMPTS", js_code)
+        self.assertIn("skipped_url_validation_failed", js_code)
+        self.assertIn("canonical_domain", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
 
@@ -404,12 +410,16 @@ class OutreachColumnContractTests(unittest.TestCase):
         js_code = rows_node["parameters"]["jsCode"]
         self.assertIn("(status,eq,url_picked)", url_expr)
         self.assertIn("(status,eq,failed_retryable)", url_expr)
+        self.assertIn("(status,eq,failed)", url_expr)
+        self.assertIn("(retry_eligible,eq,true)", url_expr)
         self.assertIn("(automation_decision,eq,retry_enrichment_once)", url_expr)
         self.assertIn("automation_decision,automation_decision_reason", url_expr)
         self.assertIn("(status,eq,processing)", url_expr)
         self.assertIn("processing_started_at,lt", url_expr)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
-        self.assertIn("status === 'failed_retryable'", js_code)
+        self.assertIn("isRetryableFailure", js_code)
+        self.assertIn("status === 'failed_retryable' || status === 'failed'", js_code)
+        self.assertIn("RAYN_MAX_ENRICHMENT_ATTEMPTS", js_code)
         self.assertIn("isWeakEnrichmentRetry", js_code)
         self.assertIn("automation_decision || '').trim() === 'retry_enrichment_once'", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
@@ -487,6 +497,27 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("thirdPartyEditorialCandidate(candidate, prepared.company_name)", parse_code)
         self.assertIn("thirdPartyEditorialCandidate(url, prepared.company_name)", parse_code)
 
+    def test_url_picker_worker_rediscovery_excludes_previous_failed_domain(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        build_code = next(node for node in workflow["nodes"] if node["name"] == "Build URL Discovery Query")[
+            "parameters"
+        ]["jsCode"]
+        prepare_code = next(
+            node for node in workflow["nodes"] if node["name"] == "Prepare URL Discovery Pick"
+        )["parameters"]["jsCode"]
+        parse_code = next(node for node in workflow["nodes"] if node["name"] == "Parse URL Pick")[
+            "parameters"
+        ]["jsCode"]
+        self.assertIn("excluded_url_domain", build_code)
+        self.assertIn("-site:", build_code)
+        self.assertIn("skipped_url_validation_failed", build_code)
+        self.assertIn("Retry rule: reject the previous failed domain", prepare_code)
+        self.assertIn("excluded_url_domain", prepare_code)
+        self.assertIn("isExcludedCandidate", parse_code)
+        self.assertIn("canonicalDomain(url) === excluded", parse_code)
+        self.assertIn("isExcludedCandidate(candidate, prepared)", parse_code)
+        self.assertIn("isExcludedCandidate(candidatePickedUrl, prepared)", parse_code)
+
     def test_url_picker_worker_caps_large_enrichment_background_fields(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
         enrichment_code = next(
@@ -515,6 +546,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("best_url: sourceBestUrl", enrichment_code)
         self.assertIn("error_type: 'enrichment_timeout'", enrichment_code)
         self.assertIn("finalStatus === 'failed_retryable'", enrichment_code)
+        self.assertIn("genericMaxAttemptsReached", enrichment_code)
+        self.assertIn("retry_eligible: genericMaxAttemptsReached ? 'false' : 'true'", enrichment_code)
         self.assertNotIn("if (isTransportTimeout(errorText)) {\n    return [];", enrichment_code)
 
     def test_url_picker_worker_respects_public_enrichment_page_limit_cap(self):
