@@ -303,6 +303,8 @@ class OutreachColumnContractTests(unittest.TestCase):
             "canonical_domain",
             "website_content",
             "source_urls",
+            "status_reason",
+            "last_stage",
             "attempt_count",
             "contact_search_status",
             "contact_search_reason",
@@ -314,6 +316,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         }
         missing = sorted(field for field in fields if field not in existing_fields and field not in self.columns)
         self.assertEqual(missing, [])
+        self.assertIn("status_reason", fields)
+        self.assertIn("last_stage", fields)
 
     def test_workflow_fetch_skips_existing_drafts_and_not_ready_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
@@ -376,6 +380,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("normalizedRows.push", js_code)
         self.assertIn("chunkSize", js_code)
         self.assertIn("normalizedRows.slice", js_code)
+        self.assertIn("'status_reason'", js_code)
+        self.assertIn("'last_stage'", js_code)
 
     def test_url_picker_worker_picks_new_blank_status_rows(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())

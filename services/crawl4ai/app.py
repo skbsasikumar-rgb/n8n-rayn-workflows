@@ -361,6 +361,8 @@ class OutreachPlanRequest(BaseModel):
     canonical_domain: Any = ""
     website_content: Any = ""
     source_urls: Any = ""
+    status_reason: Any = ""
+    last_stage: Any = ""
     services_detected: Any = Field(default_factory=list)
     locations_detected: Any = Field(default_factory=list)
     leadership_or_team_signals: Any = Field(default_factory=list)

@@ -1285,6 +1285,12 @@ def enrichment_quality(row: dict[str, Any], classification: dict[str, Any], copy
         score += 2
     else:
         flags.append("low_trigger_confidence")
+    if no_services_enrichment_status(row):
+        search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
+        if not search_context.get("used"):
+            flags.append("weak_service_evidence_needs_review")
+        elif not serper_context_observation(row, classification, search_context):
+            flags.append("weak_service_evidence_needs_review")
     return min(score, 10), flags
 
 
@@ -1301,7 +1307,14 @@ def copy_brief_quality(classification: dict[str, Any], copy_brief: dict[str, Any
 
 
 def blocking_enrichment_flags(flags: list[str], classification: dict[str, Any], score: int) -> list[str]:
-    blocking = {"no_supported_pressure", "no_concrete_company_observation", "missing_problem", "weak_hia_and_pdpa_evidence", "no_personal_data_or_b2b_evidence"}
+    blocking = {
+        "no_supported_pressure",
+        "no_concrete_company_observation",
+        "missing_problem",
+        "weak_hia_and_pdpa_evidence",
+        "no_personal_data_or_b2b_evidence",
+        "weak_service_evidence_needs_review",
+    }
     result = [flag for flag in flags if flag in blocking]
     if "missing_data_systems" in flags and (classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards", "customer_trust"} and score < 7):
         result.append("missing_data_systems")
@@ -3832,6 +3845,41 @@ def first_source_url(row: dict[str, Any]) -> str:
     return compact(row.get("best_url") or row.get("url_picked"))
 
 
+def enrichment_status_text(row: dict[str, Any]) -> str:
+    return " ".join(
+        compact(row.get(key)).lower()
+        for key in (
+            "status_reason",
+            "last_stage",
+            "enrichment_status",
+            "crawl_status",
+            "public_enrichment_status",
+        )
+        if compact(row.get(key))
+    )
+
+
+def no_services_enrichment_status(row: dict[str, Any]) -> bool:
+    text = enrichment_status_text(row)
+    return any(
+        marker in text
+        for marker in (
+            "no_services_detected",
+            "no services detected",
+            "services_not_detected",
+            "no_service_detected",
+        )
+    )
+
+
+def preclassification_context_search_reason(row: dict[str, Any], website_text: str) -> str:
+    if len(website_text) < 450:
+        return "thin_website_content"
+    if no_services_enrichment_status(row):
+        return "no_services_detected"
+    return ""
+
+
 def email_context_website_weak(row: dict[str, Any], copy_brief: dict[str, Any], classification: dict[str, Any]) -> bool:
     if classification.get("pressure_type") == "not_ready":
         return False
@@ -3844,6 +3892,8 @@ def email_context_website_weak(row: dict[str, Any], copy_brief: dict[str, Any], 
         "appears to handle unknown",
         "data-protection / operations contact route",
     )
+    if no_services_enrichment_status(row):
+        return True
     if len(website_text) < 450:
         return True
     if not signal or any(marker in signal.lower() for marker in generic_markers):
@@ -3859,59 +3909,96 @@ def serper_context_enabled() -> bool:
 
 
 def serper_company_context_query(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    return serper_company_context_queries(row, classification)[0]
+
+
+def serper_company_context_queries(row: dict[str, Any], classification: dict[str, Any]) -> list[str]:
     company = compact(row.get("company_name") or row.get("company_homepage_name"))
+    original_company = company
     site = compact(row.get("best_url") or row.get("url_picked"))
     pressure = compact(classification.get("pressure_type"))
-    terms = {
+    base_terms = {
         "hia_regulatory": "Singapore healthcare clinic services locations",
         "pdpa_safeguards": "Singapore services personal data operations",
         "customer_trust": "Singapore company services clients security",
     }.get(pressure, "Singapore company services")
+    if no_services_enrichment_status(row):
+        company = compact(re.sub(r"\s*\([^)]*\)", " ", company))
+        company = compact(re.sub(r"[^a-zA-Z0-9 .'-]+", " ", company))
+    terms = base_terms
+    if no_services_enrichment_status(row):
+        text = lower_blob(row)
+        if contains_any(text, ("academy", "conference", "course", "event", "forum", "programme", "program", "student", "training", "workshop", "youth")):
+            terms = "Singapore registration programme conference training attendees"
+        elif pressure == "hia_regulatory":
+            terms = "Singapore healthcare clinic appointments patient services"
+        else:
+            terms = "Singapore registration services clients personal data"
     domain_hint = ""
     if site:
         domain_hint = re.sub(r"^https?://(www\.)?", "", site, flags=re.I).split("/")[0]
-    return compact(f'"{company}" {domain_hint} {terms}')
+    queries = [compact(f'"{company}" {domain_hint} {terms}')]
+    if no_services_enrichment_status(row):
+        if domain_hint:
+            queries.append(compact(f"site:{domain_hint} {company} {terms}"))
+        if original_company and original_company != company:
+            queries.append(compact(f'"{original_company}" {domain_hint} {base_terms}'))
+    return list(dict.fromkeys(query for query in queries if query))
 
 
 def fetch_serper_company_context(row: dict[str, Any], classification: dict[str, Any], limit: int = 5) -> dict[str, Any]:
     if not serper_context_enabled():
         return {"source": "serper", "used": False, "reason": "serper_disabled_or_key_missing", "evidence": []}
-    query = serper_company_context_query(row, classification)
-    try:
-        response = requests.post(
-            "https://google.serper.dev/search",
-            headers={"X-API-KEY": os.getenv("SERPER_API_KEY", "").strip(), "Content-Type": "application/json"},
-            json={"q": query, "num": limit},
-            timeout=max(4, int(os.getenv("OUTREACH_SERPER_TIMEOUT_SECONDS", "8"))),
-        )
-        payload: Any = response.json()
-        if response.status_code >= 400:
-            return {
-                "source": "serper",
-                "used": False,
-                "reason": compact(payload.get("message") if isinstance(payload, dict) else "") or f"HTTP {response.status_code}",
-                "query": query,
-                "evidence": [],
-            }
-    except requests.Timeout:
-        return {"source": "serper", "used": False, "reason": "timeout", "query": query, "evidence": []}
-    except (requests.RequestException, ValueError) as exc:
-        return {"source": "serper", "used": False, "reason": compact(str(exc), 180), "query": query, "evidence": []}
+    queries = serper_company_context_queries(row, classification)
+    queries_tried: list[str] = []
+    weak_context: dict[str, Any] | None = None
+    for query in queries:
+        queries_tried.append(query)
+        try:
+            response = requests.post(
+                "https://google.serper.dev/search",
+                headers={"X-API-KEY": os.getenv("SERPER_API_KEY", "").strip(), "Content-Type": "application/json"},
+                json={"q": query, "num": limit},
+                timeout=max(4, int(os.getenv("OUTREACH_SERPER_TIMEOUT_SECONDS", "8"))),
+            )
+            payload: Any = response.json()
+            if response.status_code >= 400:
+                return {
+                    "source": "serper",
+                    "used": False,
+                    "reason": compact(payload.get("message") if isinstance(payload, dict) else "") or f"HTTP {response.status_code}",
+                    "query": query,
+                    "queries_tried": queries_tried,
+                    "evidence": [],
+                }
+        except requests.Timeout:
+            return {"source": "serper", "used": False, "reason": "timeout", "query": query, "queries_tried": queries_tried, "evidence": []}
+        except (requests.RequestException, ValueError) as exc:
+            return {"source": "serper", "used": False, "reason": compact(str(exc), 180), "query": query, "queries_tried": queries_tried, "evidence": []}
 
-    organic = payload.get("organic") if isinstance(payload, dict) else []
-    evidence: list[dict[str, str]] = []
-    for item in organic if isinstance(organic, list) else []:
-        if not isinstance(item, dict):
+        organic = payload.get("organic") if isinstance(payload, dict) else []
+        evidence: list[dict[str, str]] = []
+        for item in organic if isinstance(organic, list) else []:
+            if not isinstance(item, dict):
+                continue
+            title = compact(item.get("title"))
+            link = compact(item.get("link"))
+            snippet = compact(item.get("snippet"))
+            if not title and not snippet:
+                continue
+            evidence.append({"title": title[:140], "link": link[:220], "snippet": snippet[:260]})
+            if len(evidence) >= limit:
+                break
+        if not evidence:
             continue
-        title = compact(item.get("title"))
-        link = compact(item.get("link"))
-        snippet = compact(item.get("snippet"))
-        if not title and not snippet:
-            continue
-        evidence.append({"title": title[:140], "link": link[:220], "snippet": snippet[:260]})
-        if len(evidence) >= limit:
-            break
-    return {"source": "serper", "used": bool(evidence), "reason": "ok" if evidence else "no_results", "query": query, "evidence": evidence}
+        context = {"source": "serper", "used": True, "reason": "ok", "query": query, "queries_tried": list(queries_tried), "evidence": evidence}
+        if not no_services_enrichment_status(row) or serper_context_observation(row, classification, context):
+            return context
+        weak_context = weak_context or context
+    if weak_context:
+        weak_context["queries_tried"] = list(queries_tried)
+        return weak_context
+    return {"source": "serper", "used": False, "reason": "no_results", "query": queries_tried[-1] if queries_tried else "", "queries_tried": queries_tried, "evidence": []}
 
 
 def preclassification_serper_pressure(row: dict[str, Any]) -> str:
@@ -3957,12 +4044,15 @@ def serper_context_text(search_context: dict[str, Any]) -> str:
 
 def add_preclassification_company_context(row: dict[str, Any]) -> dict[str, Any]:
     website_text = compact(row.get("website_content") or row.get("website_scrape") or row.get("crawl_text"))
-    if len(website_text) >= 450 or not serper_context_enabled():
+    search_reason = preclassification_context_search_reason(row, website_text)
+    if not search_reason or not serper_context_enabled():
         return row
     provisional = {"pressure_type": preclassification_serper_pressure(row)}
     search_context = fetch_serper_company_context(row, provisional)
     if not search_context.get("used"):
         return row
+    search_context = dict(search_context)
+    search_context.setdefault("trigger", search_reason)
     context_text = serper_context_text(search_context)
     if not context_text:
         return row
@@ -4013,6 +4103,9 @@ def apply_company_context_search(row: dict[str, Any], classification: dict[str, 
         search_context = preclassification_context
     else:
         search_context = fetch_serper_company_context(row, classification)
+        if no_services_enrichment_status(row):
+            search_context = dict(search_context)
+            search_context.setdefault("trigger", "no_services_detected")
     copy_brief["company_context_search"] = search_context
     observation = serper_context_observation(row, classification, search_context)
     local_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
@@ -6690,6 +6783,8 @@ def automation_decision_for(
     blocking_enrichment = blocking_enrichment_flags(enrichment_flags, classification, enrichment_score)
     blocking_copy = blocking_copy_brief_flags(copy_flags, classification, copy_brief)
     blockers = list(dict.fromkeys(severe_flags(flags) + blocking_enrichment + blocking_copy))
+    if "weak_service_evidence_needs_review" in blockers:
+        return "draft_only_review", "weak_service_evidence_needs_review", blockers, False
     if "no_concrete_company_observation" in blockers:
         return "auto_skipped", "no_concrete_company_observation", blockers, False
     if enrichment_score < 7:

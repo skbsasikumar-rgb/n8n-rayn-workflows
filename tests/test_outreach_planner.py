@@ -180,6 +180,165 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
 
+    def test_no_services_status_uses_serper_even_with_long_website_content(self):
+        original_fetch = o.fetch_serper_company_context
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+        calls = []
+
+        def fake_fetch(row, classification, limit=5):
+            calls.append((row.get("company_name"), classification.get("pressure_type")))
+            return {
+                "source": "serper",
+                "used": True,
+                "reason": "ok",
+                "query": '"WYL Conference" Singapore services personal data operations',
+                "evidence": [
+                    {
+                        "title": "WYL Conference training courses",
+                        "link": "https://wylconference.example/",
+                        "snippet": (
+                            "WYL Conference runs an enterprise training platform, professional courses "
+                            "and conference registration for Singapore business teams."
+                        ),
+                    }
+                ],
+            }
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 107,
+                    "company_name": "WYL Conference",
+                    "best_url": "https://wylconference.example/",
+                    "website_content": (
+                        "WYL Conference organises professional learning events, conference registration, "
+                        "speaker coordination, attendee communications, invoice handling, corporate workshops "
+                        "and post-event training operations for Singapore business teams. "
+                    )
+                    * 4,
+                    "status_reason": "enrichment_completed_no_services_detected",
+                    "services_detected": [],
+                    "validated_email": "team@wylconference.example",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original_fetch
+            if original_key is None:
+                os.environ.pop("SERPER_API_KEY", None)
+            else:
+                os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertEqual(calls, [("WYL Conference", "pdpa_safeguards")])
+        self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
+        self.assertEqual(plan.emails["company_context_search"]["trigger"], "no_services_detected")
+        self.assertNotEqual(plan.automation_decision_reason, "weak_service_evidence_needs_review")
+
+    def test_no_services_status_without_serper_evidence_is_review_only(self):
+        original_fetch = o.fetch_serper_company_context
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+
+        def fake_fetch(row, classification, limit=5):
+            return {"source": "serper", "used": False, "reason": "no_results", "query": "x", "evidence": []}
+
+        o.fetch_serper_company_context = fake_fetch
+        try:
+            plan = o.plan_outreach(
+                {
+                    "Id": 108,
+                    "company_name": "WYL Conference",
+                    "best_url": "https://wylconference.example/",
+                    "website_content": (
+                        "WYL Conference organises professional learning events, conference registration, "
+                        "speaker coordination, attendee communications, invoice handling, corporate workshops "
+                        "and post-event training operations for Singapore business teams. "
+                    )
+                    * 4,
+                    "status_reason": "enrichment_completed_no_services_detected",
+                    "services_detected": [],
+                    "validated_email": "team@wylconference.example",
+                }
+            )
+        finally:
+            o.fetch_serper_company_context = original_fetch
+            if original_key is None:
+                os.environ.pop("SERPER_API_KEY", None)
+            else:
+                os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertEqual(plan.automation_decision, "draft_only_review")
+        self.assertEqual(plan.automation_decision_reason, "weak_service_evidence_needs_review")
+        self.assertIn("weak_service_evidence_needs_review", plan.automation_blockers)
+
+    def test_no_services_serper_query_simplifies_event_company_names(self):
+        query = o.serper_company_context_query(
+            {
+                "company_name": "International Youth Leadership & Innovation Forum (IYLIF)",
+                "best_url": "https://wylconference.com/",
+                "status_reason": "enrichment_completed_no_services_detected",
+                "website_content": "Youth leadership conference forum and programme for students.",
+            },
+            {"pressure_type": "pdpa_safeguards"},
+        )
+
+        self.assertIn('"International Youth Leadership Innovation Forum"', query)
+        self.assertNotIn("(IYLIF)", query)
+        self.assertIn("wylconference.com", query)
+        self.assertIn("registration programme conference training attendees", query)
+
+    def test_no_services_serper_fetch_tries_site_fallback_after_no_results(self):
+        original_key = os.environ.get("SERPER_API_KEY")
+        os.environ["SERPER_API_KEY"] = "test-key"
+        calls = []
+
+        class FakeResponse:
+            def __init__(self, payload, status_code=200):
+                self._payload = payload
+                self.status_code = status_code
+
+            def json(self):
+                return self._payload
+
+        def fake_post(url, headers, json, timeout):
+            calls.append(json["q"])
+            if len(calls) == 1:
+                return FakeResponse({"organic": []})
+            return FakeResponse(
+                {
+                    "organic": [
+                        {
+                            "title": "International Youth Leadership Innovation Forum",
+                            "link": "https://wylconference.com/",
+                            "snippet": "Conference registration, training programme and attendee details for youth leaders.",
+                        }
+                    ]
+                }
+            )
+
+        with patch.object(o.requests, "post", side_effect=fake_post):
+            try:
+                context = o.fetch_serper_company_context(
+                    {
+                        "company_name": "International Youth Leadership & Innovation Forum (IYLIF)",
+                        "best_url": "https://wylconference.com/",
+                        "status_reason": "enrichment_completed_no_services_detected",
+                        "website_content": "Youth leadership conference forum and programme for students.",
+                    },
+                    {"pressure_type": "pdpa_safeguards"},
+                )
+            finally:
+                if original_key is None:
+                    os.environ.pop("SERPER_API_KEY", None)
+                else:
+                    os.environ["SERPER_API_KEY"] = original_key
+
+        self.assertTrue(context["used"])
+        self.assertEqual(len(calls), 2)
+        self.assertIn("site:wylconference.com", calls[1])
+        self.assertEqual(context["queries_tried"], calls)
+
     def test_thin_not_ready_row_uses_serper_before_classification(self):
         original_fetch = o.fetch_serper_company_context
         original_key = os.environ.get("SERPER_API_KEY")
