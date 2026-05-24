@@ -443,6 +443,22 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("patch.contact_search_status = 'pending'", enrichment_code)
         self.assertIn("pending_after_enrichment", enrichment_code)
 
+    def test_url_picker_worker_rejects_third_party_article_fallbacks(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        parse_code = next(node for node in workflow["nodes"] if node["name"] == "Parse URL Pick")[
+            "parameters"
+        ]["jsCode"]
+        self.assertIn("thirdPartyEditorialCandidate", parse_code)
+        self.assertIn("pathSegmentCount(url)", parse_code)
+        self.assertIn("oneTokenWeakTextHit", parse_code)
+        self.assertIn("cosmeticsnews", parse_code)
+        self.assertIn("acquisition", parse_code)
+        self.assertIn("prospeo.io", parse_code)
+        self.assertIn("businesstimes.com.sg", parse_code)
+        self.assertIn("'healthcare','company','services'", parse_code)
+        self.assertIn("thirdPartyEditorialCandidate(candidate, prepared.company_name)", parse_code)
+        self.assertIn("thirdPartyEditorialCandidate(url, prepared.company_name)", parse_code)
+
     def test_url_picker_worker_caps_large_enrichment_background_fields(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
         enrichment_code = next(
