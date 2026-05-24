@@ -1924,6 +1924,38 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertTrue(paragraphs[-2].endswith("?"))
                 self.assertLessEqual(len(paragraphs[-2].split()), 8)
 
+    def test_email_2_and_3_use_proper_followup_greetings_and_short_paragraphs(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 1337,
+                "company_name": "Art Play Psychotherapy",
+                "selected_contact_name": "Natalie Kang",
+                "validated_email": "natalie@example.com",
+                "website_content": "Psychotherapy and counselling clinic with assessment, case-note records, appointments and mental-health support.",
+            },
+            programmes=[verified_program()],
+        )
+        self.assertTrue(plan.emails["email_2"]["body"].startswith("Hi Natalie,"))
+        self.assertTrue(plan.emails["email_3"]["body"].startswith("Hi Natalie,"))
+        email2_paragraphs = [part.strip() for part in plan.emails["email_2"]["body"].split("\n\n") if part.strip()]
+        self.assertIn(len(email2_paragraphs), {4, 5})
+        self.assertTrue(all(len(part.split()) <= 42 for part in email2_paragraphs[:-1]))
+        self.assertNotIn("Natalie -", plan.emails["email_2"]["body"])
+        self.assertNotIn("Natalie -", plan.emails["email_3"]["body"])
+
+    def test_email_2_rewrite_rejects_long_merged_paragraph(self):
+        deterministic = o.hia_pricing_email_2_body("Hi Natalie,", "group_or_larger_sizing_needed", False)
+        merged = (
+            "Hi Natalie, linking this back to the HIA readiness map.\n\n"
+            "The useful check is whether patient records, vendor systems, backups, access owners and incident roles can be mapped cleanly. "
+            "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side. "
+            "For larger setups, support depends on route and endpoint count.\n\n"
+            "Should I send the short map?\n\n"
+            f"{o.EMAIL_2_VALUE_PS}"
+        )
+        flags = o.email_2_rewrite_static_flags(merged, deterministic, {"pressure_type": "hia_regulatory"})
+        self.assertIn("llm_email_2_rewrite_long_paragraph", flags)
+
     def test_deterministic_aesthetic_and_allied_health_diagnostics_do_not_self_flag(self):
         cases = [
             {
@@ -2303,8 +2335,8 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan,"))
         self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
-        self.assertTrue(plan.emails["email_2"]["body"].startswith("Ivan - "))
-        self.assertTrue(plan.emails["email_3"]["body"].startswith("Ivan - "))
+        self.assertTrue(plan.emails["email_2"]["body"].startswith("Hi Ivan,"))
+        self.assertTrue(plan.emails["email_3"]["body"].startswith("Hi Ivan,"))
         self.assertTrue(plan.emails["email_4"]["body"].startswith("Ivan, "))
         self.assertFalse(plan.emails["email_4"]["body"].startswith("Ivan - "))
 
@@ -2333,8 +2365,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertIn("Acme Services", plan.emails["email_1"]["body"])
         self.assertNotIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
-        self.assertFalse(plan.emails["email_2"]["body"].lower().startswith(("hi ", "hello ")))
-        self.assertFalse(plan.emails["email_3"]["body"].lower().startswith(("hi ", "hello ")))
+        self.assertTrue(plan.emails["email_2"]["body"].startswith("Hello team,"))
+        self.assertTrue(plan.emails["email_3"]["body"].startswith("Hello team,"))
         self.assertFalse(plan.emails["email_4"]["body"].lower().startswith(("hi ", "hello ")))
 
     def test_generic_contactus_email_does_not_invent_first_name(self):

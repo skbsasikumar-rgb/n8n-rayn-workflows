@@ -271,8 +271,8 @@ Email 1 rules:
 
 Email 2 rules:
 - This is the second touch, not the final close.
-- Keep the same first-name dash prefix if the deterministic email uses one, for example "Samuel - ".
-- Do not restart with a new greeting unless the deterministic email does.
+- Keep the same proper greeting from the deterministic email, for example "Hi Samuel," or "Hello team,".
+- Do not use first-name dash openings such as "Samuel - ".
 - Open by tying back to the earlier note, not by restarting the pitch.
 - For HIA tracks, do not question whether Cyber Essentials is right. State that the useful check clarifies the Cyber Essentials work needed for the HIA cyber/data-security side.
 - For non-HIA tracks, explain Cyber Essentials briefly as a practical baseline for access, backups, updates, malware protection and incident response, then say the useful check is whether that route fits.
@@ -280,6 +280,7 @@ Email 2 rules:
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
 - Use 4 or 5 short paragraphs separated by blank lines.
+- Keep each non-p.s. paragraph short. Do not merge the useful check, HIA route/scope, and sizing/support line into one long paragraph.
 - Keep the CTA in its own short paragraph before the p.s.
 - Keep the main body to 3 or 4 short paragraphs before the p.s.
 - Keep this p.s. exactly as written:
@@ -1065,7 +1066,7 @@ def value_fallback_email_2(
     classification: dict[str, Any] | None = None,
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    prefix = followup_name_prefix(row, "-")
+    prefix = email_comma_greeting(row)
     asset_name = compact(asset) or "checklist"
     subject = "readiness evidence"
     subject_options = ["readiness evidence", "checklist"]
@@ -1382,7 +1383,9 @@ def followup_sentence(prefix: str, sentence: str) -> str:
     if prefix.endswith("- ") and text:
         text = text[:1].lower() + text[1:]
     elif prefix.endswith(",") and text:
-        text = " " + text[:1].lower() + text[1:]
+        if not text.startswith("I "):
+            text = text[:1].lower() + text[1:]
+        text = " " + text
     elif not prefix and text:
         text = text[:1].upper() + text[1:]
     return f"{prefix}{text}"
@@ -5314,7 +5317,7 @@ def generate_email_sequence(
     greeting = email_greeting(row, company)
     email1_greeting = email_1_greeting(row, company)
     comma_greeting = email_comma_greeting(row, company)
-    followup_prefix = followup_name_prefix(row, "-")
+    followup_prefix = email_comma_greeting(row)
     close_loop_prefix = followup_name_prefix(row, ",")
     if not copy_brief_ready(classification, copy_brief):
         return empty_email_sequence()
@@ -5622,10 +5625,13 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
 def email_2_rewrite_static_flags(body: str, deterministic_body: str, classification: dict[str, Any]) -> list[str]:
     flags: list[str] = []
     body_l = compact(body).lower()
+    paragraphs = [compact(part) for part in body.split("\n\n") if compact(part)]
     if not body or word_count(body) > 95:
         flags.append("llm_email_2_rewrite_length")
-    if len([part for part in body.split("\n\n") if compact(part)]) < 4:
+    if len(paragraphs) < 4:
         flags.append("llm_email_2_rewrite_paragraph_shape")
+    if any(len(part.split()) > 42 for part in paragraphs[:-1]):
+        flags.append("llm_email_2_rewrite_long_paragraph")
     if EMAIL_2_VALUE_PS not in body:
         flags.append("llm_email_2_rewrite_missing_value_ps")
     ps_lines = [compact(line) for line in body.splitlines() if compact(line).lower().startswith("p.s.")]
@@ -5641,6 +5647,8 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_ai_phrase")
     if re.search(r"\bnext question is usually cost\b|\bquick fit check before\b", body_l):
         flags.append("llm_email_2_rewrite_old_cost_followup")
+    if re.match(r"^[A-Z][A-Za-z.'-]{1,40} - ", body):
+        flags.append("llm_email_2_rewrite_dash_greeting")
     prefix_match = re.match(r"^([A-Z][A-Za-z.'-]{1,40} - )", deterministic_body)
     if prefix_match:
         prefix = prefix_match.group(1)
@@ -5797,6 +5805,8 @@ def _email_rewrite_retry_feedback(
                 "Keep Email 2 under 95 words. Aim for 85-92 words.",
                 "Keep the required p.s. exactly as provided.",
                 "Use 4 short paragraphs for Email 1. Use 4 or 5 short paragraphs for Email 2: opener, support route, optional fit check, CTA alone, exact p.s.",
+                "Email 2 must keep a proper greeting like Hi Samuel, or Hello team, and must not use a dash opener like Samuel -.",
+                "Split Email 2 long ideas into short paragraphs; do not merge the useful check, route/scope, and sizing/support lines into one paragraph.",
                 "Cut extra explanation before the p.s.; the p.s. already carries the scope/value point.",
                 "Make Email 1 specific; do not weaken the company hook.",
                 "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
@@ -5972,7 +5982,7 @@ def enforce_funding_claim_email(
     useful_line = "The useful first step is to check the route before lining up readiness work."
     if claim.lower() in existing_body.lower() and funding_only_email(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
         return emails
-    prefix = followup_name_prefix(row, "-")
+    prefix = email_comma_greeting(row)
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
     body = funding_email_2_body_fixed(prefix, claim, caveat)
@@ -6276,6 +6286,23 @@ def email_3_not_hia_segment_diagnostic_shape(
     return email_2_not_hia_segment_diagnostic_shape(body, row, classification)
 
 
+def email_3_wrong_hia_segment_terms(body: str, row: dict[str, Any], classification: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") != "hia_regulatory":
+        return False
+    body_l = compact(body).lower()
+    clinic_profile = infer_clinic_profile(row, classification, lower_blob(row))
+    profile_guess = clinic_profile.get("clinic_profile_guess", "")
+    if profile_guess in {"aesthetic_medical", "solo_gp", "family_gp", "multi_doctor_gp"}:
+        return False
+    wrong_segment_terms = {
+        "retail_pharmacy": ("clinic email", "appointment forms", "dental software", "consultation notes"),
+        "dental": ("prescription", "dispensing", "compounding"),
+        "hearing_care": ("clinic email", "prescription", "dental software", "consultation notes"),
+        "diagnostic": ("clinic email", "dental software", "prescription", "dispensing"),
+    }
+    return any(term in body_l for term in wrong_segment_terms.get(str(classification.get("hia_service_type_guess")), ()))
+
+
 def asset_offer_too_generic_for_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") != "hia_regulatory":
         return False
@@ -6345,7 +6372,7 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
         return False
     for key in ("email_2", "email_3", "email_4"):
         body = trim_text((emails.get(key) or {}).get("body")).lower()
-        if body and re.match(r"^(?:hi|hello)\s+", body):
+        if body and re.match(r"^(?:hi|hello)\s+", body) and not any(body.startswith(prefix) for prefix in email1_prefixes):
             return False
     return True
 
@@ -6378,6 +6405,7 @@ def evaluate_email_strategy(
         return flags
     email1 = emails["email_1"]["body"]
     email2 = emails["email_2"]["body"]
+    email3 = (emails.get("email_3") or {}).get("body", "")
     signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
 
     if not signal or not email_1_reflects_signal(email1, signal, copy_brief):
@@ -6404,6 +6432,8 @@ def evaluate_email_strategy(
             flags.append("email_1_missing_clinic_profile")
         if not hia_email_1_cyber_data_security_paragraph_ok(email1):
             flags.append("email_1_missing_hia_cyber_data_security_mechanism")
+        if email_3_wrong_hia_segment_terms(email3, row, classification):
+            flags.append("email_3_wrong_hia_segment_terms")
     if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")) or not email_1_starts_with_target_structure(email1, copy_brief):
         flags.append("email_1_too_generic")
     if asset_offer_too_generic_for_segment(row, classification, copy_brief):
@@ -7133,6 +7163,7 @@ def patch_with_email_sequence(
         "lab_classification_ambiguous",
         "email_2_not_funding_only",
         "generic_inbox_wrong_greeting",
+        "email_3_wrong_hia_segment_terms",
     }
     rejected_strategy_flags = [flag for flag in flags if flag in strategy_reject_flags]
     rejected_strategy_flags.extend(severe_flags(flags))
