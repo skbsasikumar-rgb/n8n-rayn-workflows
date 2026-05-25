@@ -516,10 +516,10 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(plan.classification["entity_type_guess"], "private_company")
-        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertFalse(plan.classification["hia_relevant"])
 
-    def test_medical_supplier_without_patient_care_is_customer_trust_not_hia(self):
+    def test_medical_supplier_without_patient_care_is_pdpa_not_hia(self):
         plan = o.plan_outreach(
             {
                 "Id": 3031,
@@ -532,7 +532,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertEqual(plan.classification["entity_type_guess"], "private_company")
-        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertFalse(plan.classification["hia_relevant"])
         self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
 
@@ -866,6 +866,43 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
                 self.assertNotIn("PDPA compliant", plan.emails["email_1"]["body"])
 
+    def test_sports_academy_uses_pdpa_safeguards_not_customer_trust(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 82,
+                "company_name": "Example Football Academy",
+                "website_content": (
+                    "Singapore football academy offering youth football coaching, kids classes, "
+                    "holiday programmes, parent registration and player development pathways."
+                ),
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["data_type_signal"], "student_data")
+        self.assertEqual(o.email_variant_track(plan.classification), "pdpa_safeguards")
+        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+        self.assertNotIn("customer security", plan.emails["email_1"]["body"].lower())
+        self.assertNotIn("customer trust", plan.copy_brief["customer_trust_angle"].lower())
+
+    def test_sports_academy_is_not_hia_without_clinical_care(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 83,
+                "company_name": "Example Football Academy",
+                "website_content": (
+                    "Football academy for youth players with kids coaching, player pathways, "
+                    "holiday camps, sports education and parent registration."
+                ),
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
+        self.assertNotIn("HIA", plan.emails["email_1"]["body"])
+        self.assertNotIn("patient records", plan.emails["email_1"]["body"].lower())
+
     def test_dpo_contact_uses_data_protection_evidence_track(self):
         plan = o.plan_outreach(
             {
@@ -898,7 +935,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertRegex(plan.emails["email_1"]["body"], r"proof|evidence")
                 self.assertNotIn("is responsible for compliance", plan.emails["email_1"]["body"])
 
-    def test_b2b_company_uses_customer_trust_track(self):
+    def test_b2b_company_uses_pdpa_safeguards_track(self):
         plan = o.plan_outreach(
             {
                 "Id": 32,
@@ -907,13 +944,12 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Singapore SaaS platform for enterprise clients and procurement teams.",
             }
         )
-        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
-        self.assertEqual(o.choose_variant(plan.classification), "customer_trust")
-        self.assertIn(plan.emails["email_1"]["chosen_subject"], {"customer security evidence", "security evidence", "customer checklist"})
-        self.assertRegex(plan.emails["email_1"]["body"], r"security proof|customer review|customers")
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(o.choose_variant(plan.classification), "pdpa_general")
+        self.assertIn(plan.emails["email_1"]["chosen_subject"], {"data safeguards", "safeguards checklist", "data evidence"})
+        self.assertIn("PDPA", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
-        self.assertIn("customer security question", plan.emails["email_3"]["body"])
-        self.assertNotIn("Cyber Essentials is", plan.emails["email_3"]["body"])
+        self.assertIn("Cyber Essentials", plan.emails["email_3"]["body"])
 
     def test_sentence_slot_rotation_is_deterministic(self):
         row = {
@@ -1214,7 +1250,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("llm_email_2_rewrite_pdpa_obligation_overclaim", flags)
 
     def test_variant_bank_has_multiple_approved_options_per_track_and_step(self):
-        for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence", "customer_trust"):
+        for track in ("hia_regulatory", "pdpa_safeguards", "dpo_evidence"):
             with self.subTest(track=track):
                 segment_bank = next(iter(o.TRACK_SEGMENT_SUBJECT_VARIANTS[track].values()))
                 for step in (1, 2, 3, 4):
@@ -1264,7 +1300,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 [],
             ),
             (
-                "customer_trust",
+                "pdpa_safeguards",
                 {
                     "company_name": "Vendor Platform Pte Ltd",
                     "website_content": "B2B SaaS platform for enterprise clients with user data, admin access, backups and procurement reviews.",
@@ -1303,7 +1339,7 @@ class OutreachPlannerTests(unittest.TestCase):
             for index in range(1, 5):
                 self.assertGreaterEqual(len(seen[index]), 2)
 
-    def test_customer_trust_buyer_context_variants(self):
+    def test_b2b_buyer_context_uses_pdpa_safeguards(self):
         cases = [
             (
                 "SaaS Platform Pte Ltd",
@@ -1333,10 +1369,11 @@ class OutreachPlannerTests(unittest.TestCase):
         for company, content, profile, asset in cases:
             with self.subTest(company=company):
                 plan = o.plan_outreach({"company_name": company, "website_content": content})
-                self.assertEqual(plan.classification["pressure_type"], "customer_trust")
-                self.assertIn(profile, plan.emails["email_1"]["body"])
-                self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
-                self.assertRegex(plan.emails["email_1"]["body"], r"security proof|customer review|customers")
+                self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+                self.assertEqual(plan.classification["primary_email_track"], "pdpa_safeguards")
+                self.assertIn("PDPA", plan.emails["email_1"]["body"])
+                self.assertIn("safeguards", plan.copy_brief["email_asset_offer"])
+                self.assertIn("safeguards", plan.copy_brief["email_problem_statement"])
 
     def test_low_signal_row_is_not_ready(self):
         plan = o.plan_outreach(
@@ -1352,6 +1389,44 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.human_review_status, "not_ready")
         for index in range(1, 5):
             self.assertFalse(plan.emails[f"email_{index}"]["body"])
+
+    def test_unclear_classification_after_retry_goes_to_manual_review(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 3301,
+                "company_name": "Quiet Holdings",
+                "validated_email": "ops@example.com",
+                "attempt_count": 2,
+                "website_content": "Singapore corporate website with a short homepage.",
+            }
+        )
+        self.assertEqual(plan.classification["pressure_type"], "not_ready")
+        self.assertEqual(plan.classification["classification_review_status"], "review_needed")
+        self.assertEqual(plan.automation_decision, "draft_only_review")
+        self.assertEqual(plan.human_review_status, "ready_for_review")
+
+    def test_manual_pressure_type_override_enables_pdpa_or_hia_reviewed_classification(self):
+        pdpa = o.plan_outreach(
+            {
+                "company_name": "Quiet Holdings",
+                "manual_pressure_type": "PDPA",
+                "website_content": "Singapore corporate website with a short homepage.",
+            }
+        )
+        self.assertEqual(pdpa.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(pdpa.classification["classification_review_status"], "reviewed")
+        self.assertEqual(pdpa.classification["primary_email_track"], "pdpa_safeguards")
+
+        hia = o.plan_outreach(
+            {
+                "company_name": "Quiet Clinic",
+                "manual_pressure_type": "HIA",
+                "website_content": "Singapore corporate website with a short homepage.",
+            }
+        )
+        self.assertEqual(hia.classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(hia.classification["hia_relevant"])
+        self.assertEqual(hia.classification["classification_review_status"], "reviewed")
 
     def test_email_2_uses_funding_claim_line_only(self):
         plan = o.plan_outreach(
@@ -1975,8 +2050,8 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         retried_patch = retried["patch"]
-        self.assertEqual(retried_patch["automation_decision"], "auto_skipped")
-        self.assertEqual(retried_patch["automation_decision_reason"], "weak_hia_and_pdpa_evidence")
+        self.assertEqual(retried_patch["automation_decision"], "draft_only_review")
+        self.assertEqual(retried_patch["automation_decision_reason"], "classification_unclear_manual_pdpa_or_hia_required")
 
     def test_weak_enrichment_retry_uses_worker_attempt_count_to_avoid_loop(self):
         row = {
@@ -2367,7 +2442,7 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service", "npo"})
-        self.assertIn(plan.classification["pressure_type"], {"pdpa_safeguards", "customer_trust"})
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertIn(plan.classification["data_type_signal"], {"resident_data", "beneficiary_data"})
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
         brief = plan.copy_brief
@@ -2492,7 +2567,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("Do not lead with HIA", weak_plan.copy_brief["hia_obligation_angle"])
                 self.assertIn("PDPA", weak_plan.emails["email_1"]["body"])
 
-    def test_generic_b2b_copy_brief_uses_customer_trust(self):
+    def test_generic_b2b_copy_brief_uses_pdpa_safeguards(self):
         plan = o.plan_outreach(
             {
                 "Id": 9,
@@ -2500,16 +2575,14 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "B2B SaaS outsourcing platform serving enterprise clients with customer data integrations and vendor dashboards.",
             }
         )
-        self.assertEqual(plan.classification["pressure_type"], "customer_trust")
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         brief = plan.copy_brief
-        self.assertIn("security evidence", brief["customer_trust_angle"])
-        self.assertIn("Customers may ask", brief["customer_trust_angle"])
-        self.assertEqual(brief["email_asset_offer"], "customer security evidence checklist")
-        self.assertRegex(brief["email_problem_statement"], r"security proof|customer review|customers")
-        self.assertIn("works with customers who may ask how user data, admin access and backups are controlled", plan.emails["email_1"]["body"])
-        self.assertIn("admin access", plan.emails["email_1"]["body"])
+        self.assertIn("safeguard evidence", brief["customer_trust_angle"])
+        self.assertEqual(brief["email_asset_offer"], "safeguards checklist")
+        self.assertIn("PDPA", brief["email_problem_statement"])
+        self.assertIn("PDPA", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
-        self.assertIn("common customer security question", plan.emails["email_3"]["body"])
+        self.assertIn("Cyber Essentials", plan.emails["email_3"]["body"])
         self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_copy_qa_mode_bypasses_sendable_email_but_never_send_ready(self):
@@ -3103,7 +3176,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Research lab for product testing and business testing.",
             }
         )
-        self.assertIn(generic.classification["pressure_type"], {"not_ready", "customer_trust"})
+        self.assertEqual(generic.classification["pressure_type"], "not_ready")
         self.assertNotEqual(generic.classification["hia_service_type_guess"], "diagnostic")
 
     def test_hia_small_clinic_email_2_uses_safe_starting_price(self):
@@ -3601,8 +3674,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Healthcare marketplace platform for enterprise clients handling customer data, vendor access and partner onboarding.",
             }
         )
-        self.assertEqual(classification["primary_email_track"], "customer_trust")
-        self.assertEqual(classification["pressure_type"], "customer_trust")
+        self.assertEqual(classification["primary_email_track"], "pdpa_safeguards")
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["classification_evidence_json"]["selected_track"], "customer_trust")
         self.assertIn("track_scores", classification["classification_evidence_json"])
         self.assertTrue(classification["classification_rejected_tracks_json"])
 

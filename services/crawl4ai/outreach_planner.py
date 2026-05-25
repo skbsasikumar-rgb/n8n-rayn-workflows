@@ -104,7 +104,7 @@ Return strict JSON:
   "sme_likelihood": "likely|possible|unlikely|unknown",
   "npo_likelihood": "likely|possible|unlikely|unknown",
   "charity_or_social_service_likelihood": "likely|possible|unlikely|unknown",
-  "pressure_type": "hia_regulatory|pdpa_safeguards|customer_trust|funding|not_ready",
+        "pressure_type": "hia_regulatory|pdpa_safeguards|not_ready",
   "pressure_reason": "",
   "outreach_trigger_signal": "",
   "outreach_trigger_source_url": "",
@@ -644,6 +644,61 @@ PERSONAL_DATA_TERMS = (
     "payment",
 )
 SENSITIVE_TERMS = ("patient", "health", "medical", "resident", "beneficiary", "student", "financial")
+
+EDUCATION_PDPA_TERMS = (
+    "academy",
+    "school",
+    "student",
+    "students",
+    "learner",
+    "learners",
+    "children",
+    "child",
+    "kids",
+    "youth",
+    "parent",
+    "parents",
+    "enrolment",
+    "enrollment",
+    "course",
+    "courses",
+    "class",
+    "classes",
+    "lesson",
+    "lessons",
+    "programme",
+    "program",
+    "training",
+    "coaching",
+)
+SPORTS_ACADEMY_PDPA_TERMS = (
+    "football academy",
+    "soccer academy",
+    "sports academy",
+    "football school",
+    "soccer school",
+    "football club academy",
+    "goalkeeping academy",
+    "youth football",
+    "junior football",
+    "kids football",
+    "children football",
+)
+EXPLICIT_CUSTOMER_TRUST_BUSINESS_TERMS = (
+    "enterprise",
+    "vendor",
+    "outsourcing",
+    "saas",
+    "software",
+    "managed service",
+    "consulting",
+    "professional services",
+    "procurement",
+    "customer review",
+    "security questionnaire",
+    "corporate customer",
+    "business customer",
+)
 
 STRONG_CUSTOMER_TRUST_TERMS = (
     "enterprise",
@@ -1265,7 +1320,7 @@ def infer_hia_clinic_size(row: dict[str, Any], classification: dict[str, Any], c
 def enrichment_quality(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[int, list[str]]:
     flags: list[str] = []
     score = 0
-    if classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards", "customer_trust"}:
+    if classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards"}:
         score += 2
     else:
         flags.append("no_supported_pressure")
@@ -1316,9 +1371,13 @@ def blocking_enrichment_flags(flags: list[str], classification: dict[str, Any], 
         "weak_service_evidence_needs_review",
     }
     result = [flag for flag in flags if flag in blocking]
-    if "missing_data_systems" in flags and (classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards", "customer_trust"} and score < 7):
+    if "missing_data_systems" in flags and (classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards"} and score < 7):
         result.append("missing_data_systems")
-    if classification.get("pressure_type") == "hia_regulatory" and classification.get("hia_service_type_guess") == "unknown":
+    if (
+        classification.get("pressure_type") == "hia_regulatory"
+        and classification.get("hia_service_type_guess") == "unknown"
+        and not classification.get("manual_classification_override")
+    ):
         result.append("no_hia_service_evidence")
     return list(dict.fromkeys(result))
 
@@ -1706,6 +1765,30 @@ def optometry_without_strong_clinical_evidence(text: str) -> bool:
     )
 
 
+def sports_academy_without_clinical_care(text: str) -> bool:
+    if not (
+        contains_any(text, SPORTS_ACADEMY_PDPA_TERMS)
+        or ("football" in text and contains_any(text, ("academy", "school", "training", "coaching", "youth", "kids", "children")))
+        or ("soccer" in text and contains_any(text, ("academy", "school", "training", "coaching", "youth", "kids", "children")))
+    ):
+        return False
+    clinical_care_terms = (
+        "clinic",
+        "medical clinic",
+        "patient",
+        "appointment",
+        "consultation",
+        "treatment",
+        "doctor",
+        "physiotherapy",
+        "sports medicine clinic",
+        "clinical assessment",
+        "case note",
+        "case-note",
+    )
+    return not contains_any(text, clinical_care_terms)
+
+
 def official_hia_service_type(service: str, text: str) -> str:
     service = compact(service)
     if service == "GP_OMS":
@@ -1797,6 +1880,19 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         )
         if value
     ).lower()
+    if sports_academy_without_clinical_care(primary_text):
+        return {
+            "hia_relevant": False,
+            "hia_relevance_score": 20,
+            "hia_confidence": "low",
+            "hia_scope_reason": "Sports/youth academy evidence without clinical patient-care evidence is not treated as HIA scope.",
+            "hia_service_type_guess": "unknown",
+            "hia_official_service_type": "",
+            "hia_official_service_label": "",
+            "hia_timeline_batch_guess": "unknown",
+            "hia_deadline_claim_safe": False,
+            "hia_disclaimer_needed": True,
+        }
     primary_gp = has_family_clinic_evidence(row, primary_text) or any(
         term in primary_text
         for term in (
@@ -2208,7 +2304,7 @@ def infer_data_signal(text: str, hia: dict[str, Any], entity: dict[str, Any]) ->
         if "resident" in text:
             return "resident_data", "high", "medium"
         return "beneficiary_data", "medium", "medium"
-    if "student" in text:
+    if has_education_pdpa_context(text):
         return "student_data", "medium", "medium"
     if "finance" in text or "payment" in text:
         return "financial_data", "high", "medium"
@@ -2227,7 +2323,34 @@ def is_data_protection_owner(row: dict[str, Any]) -> bool:
     return contains_any(contact_title_blob(row), DPO_TITLE_TERMS)
 
 
+def has_education_pdpa_context(text: str) -> bool:
+    return contains_any(text, EDUCATION_PDPA_TERMS) or contains_any(text, SPORTS_ACADEMY_PDPA_TERMS)
+
+
+def is_sports_youth_training_operator(text: str) -> bool:
+    if contains_any(text, SPORTS_ACADEMY_PDPA_TERMS):
+        return True
+    if contains_any(text, ("football", "soccer")) and (
+        contains_any(text, ("academy", "school", "training", "coaching", "youth", "kids", "children", "club"))
+        or re.search(r"\bfc\b", text)
+    ):
+        return True
+    if "sports school" in text or "sport school" in text:
+        return True
+    return False
+
+
+def is_education_operator_without_explicit_b2b_trust(text: str) -> bool:
+    if not has_education_pdpa_context(text):
+        return False
+    if is_sports_youth_training_operator(text):
+        return True
+    return not contains_any(text, EXPLICIT_CUSTOMER_TRUST_BUSINESS_TERMS)
+
+
 def has_customer_trust_pressure(text: str) -> bool:
+    if is_education_operator_without_explicit_b2b_trust(text):
+        return False
     if contains_any(text, STRONG_CUSTOMER_TRUST_TERMS):
         return True
     return any(term in text for term in ("recruitment", "hr", "education", "training")) and any(
@@ -2271,6 +2394,9 @@ def score_email_tracks(
     if entity.get("entity_type_guess") in {"charity", "social_service", "npo"} and data_type in {"beneficiary_data", "resident_data"}:
         personal_score += 7
     pdpa_reasons = [f"personal_intensity:{personal_intensity}", f"data_type:{data_type}"]
+    if has_education_pdpa_context(text):
+        personal_score = max(personal_score, 68)
+        pdpa_reasons.append("education_or_youth_data_context")
 
     dpo_score = personal_score + (22 if dpo_owner else 0)
     dpo_reasons = pdpa_reasons + (["contact_or_role_owner"] if dpo_owner else ["no_dpo_ops_owner_signal"])
@@ -2285,6 +2411,9 @@ def score_email_tracks(
         trust_reasons.append("b2b_terms")
     if personal_intensity in {"medium", "high"} and trust_score:
         trust_score += 8
+    if is_education_operator_without_explicit_b2b_trust(text):
+        trust_score = 0
+        trust_reasons = ["education_or_youth_operator_uses_pdpa_safeguards"]
 
     return {
         "hia_regulatory": {
@@ -2348,6 +2477,142 @@ def choose_email_track(track_scores: dict[str, dict[str, Any]]) -> tuple[str, st
         if track != primary
     ]
     return primary, secondary, rejected
+
+
+MANUAL_PRESSURE_TYPE_ALIASES = {
+    "hia": "hia_regulatory",
+    "hia_regulatory": "hia_regulatory",
+    "healthcare": "hia_regulatory",
+    "pdpa": "pdpa_safeguards",
+    "pdpa_safeguards": "pdpa_safeguards",
+    "personal_data": "pdpa_safeguards",
+}
+
+
+def normalize_manual_pressure_type(value: Any) -> str:
+    text = compact(value).lower().replace("-", "_").replace(" ", "_")
+    return MANUAL_PRESSURE_TYPE_ALIASES.get(text, "")
+
+
+def manual_pressure_type_for(row: dict[str, Any]) -> str:
+    manual = normalize_manual_pressure_type(row.get("manual_pressure_type"))
+    if manual:
+        return manual
+    if compact(row.get("classification_review_status")).lower() == "reviewed":
+        return normalize_manual_pressure_type(row.get("pressure_type"))
+    return ""
+
+
+def output_email_track(track: str, pressure_type: str) -> str:
+    if pressure_type == "hia_regulatory":
+        return "hia_regulatory"
+    if pressure_type == "pdpa_safeguards":
+        return "pdpa_safeguards"
+    return "not_ready"
+
+
+def apply_manual_pressure_override(row: dict[str, Any], classification: dict[str, Any]) -> None:
+    override = manual_pressure_type_for(row)
+    classification["manual_pressure_type"] = override
+    classification["manual_classification_override"] = bool(override)
+    if not override:
+        return
+
+    evidence = dict(classification.get("classification_evidence_json") or {})
+    evidence["manual_pressure_type"] = override
+    evidence["manual_pressure_source"] = "manual_pressure_type"
+    classification["classification_evidence_json"] = evidence
+    classification["classification_confidence"] = "high"
+    classification["campaign_track"] = override
+    classification["primary_email_track"] = override
+    classification["secondary_email_track"] = ""
+    classification["pressure_type"] = override
+    classification["recommended_first_cert"] = "Cyber Essentials"
+    classification["certification_fit_score"] = max(int(classification.get("certification_fit_score") or 0), 82)
+
+    if override == "hia_regulatory":
+        classification["regulatory_applicability"] = ["HIA", "PDPA"]
+        classification["pressure_reason"] = "Manual review selected HIA as the outreach pressure."
+        classification["outreach_trigger_signal"] = classification["pressure_reason"]
+        classification["outreach_trigger_confidence"] = "high"
+        classification["problem_area"] = "hia_readiness"
+        classification["problem_hypothesis"] = build_problem_hypothesis("hia_regulatory", classification.get("data_type_signal", "unknown"), "hia_readiness")
+        classification["value_asset_offer"] = "hia_readiness_map"
+        classification["hia_relevant"] = True
+        classification["hia_relevance_score"] = max(int(classification.get("hia_relevance_score") or 0), 75)
+        if compact(classification.get("hia_confidence")) == "low":
+            classification["hia_confidence"] = "medium"
+        classification["hia_scope_reason"] = compact(classification.get("hia_scope_reason")) or "Manual review selected HIA pressure type."
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = "PDPA may still be relevant, but HIA readiness is the primary pressure."
+        classification["recommended_cert_path"] = "Start with HIA readiness mapping, then use Cyber Essentials as a practical cybersecurity/data-security baseline."
+        classification["certification_reason"] = certification_reason("hia_regulatory")
+        classification["pdpa_safeguard_angle"] = "access_control"
+    else:
+        classification["regulatory_applicability"] = ["PDPA"]
+        classification["pressure_reason"] = "Manual review selected PDPA safeguards as the outreach pressure."
+        classification["outreach_trigger_signal"] = classification["pressure_reason"]
+        classification["outreach_trigger_confidence"] = "high"
+        classification["problem_area"] = "pdpa_safeguards"
+        if classification.get("data_type_signal") in {"", "unknown", None}:
+            classification["data_type_signal"] = "customer_data"
+        if classification.get("personal_data_intensity") in {"", "low", "unknown", None}:
+            classification["personal_data_intensity"] = "medium"
+        classification["problem_hypothesis"] = build_problem_hypothesis("pdpa_safeguards", classification.get("data_type_signal", "customer_data"), "pdpa_safeguards")
+        classification["value_asset_offer"] = "pdpa_safeguards_checklist"
+        classification["hia_relevant"] = False
+        classification["hia_relevance_score"] = 0
+        classification["hia_confidence"] = "low"
+        classification["hia_scope_reason"] = compact(classification.get("hia_scope_reason")) or "Manual review selected PDPA instead of HIA."
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = "Manual review selected PDPA safeguards; Cyber Essentials supports the cyber/data-security safeguards side."
+        classification["recommended_cert_path"] = "Use Cyber Essentials to support the cybersecurity safeguards and evidence side of PDPA readiness."
+        classification["certification_reason"] = certification_reason("pdpa_safeguards")
+        classification["pdpa_safeguard_angle"] = "cyber_essentials_baseline"
+
+    certification_evidence = dict(classification.get("certification_evidence_json") or {})
+    certification_evidence["pressure_type"] = override
+    certification_evidence["primary_email_track"] = override
+    certification_evidence["manual_pressure_type"] = override
+    classification["certification_evidence_json"] = certification_evidence
+
+
+def classification_review_reason_for(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    if classification.get("manual_classification_override"):
+        return ""
+    pressure = compact(classification.get("pressure_type"))
+    evidence = classification.get("classification_evidence_json") or {}
+    selected_track = compact(evidence.get("selected_track"))
+    data_type = compact(classification.get("data_type_signal"))
+    personal_intensity = compact(classification.get("personal_data_intensity"))
+
+    if pressure == "not_ready":
+        if selected_track == "customer_trust":
+            return "customer_trust_signal_without_clear_pdpa_or_hia_evidence"
+        return "classification_unclear_manual_pdpa_or_hia_required"
+    if pressure == "hia_regulatory":
+        if not compact(classification.get("hia_official_service_type")):
+            return "hia_requires_review_without_official_service_evidence"
+        if compact(classification.get("hia_confidence")) == "low":
+            return "hia_requires_review_low_confidence"
+        return ""
+    if pressure == "pdpa_safeguards":
+        if selected_track == "customer_trust" and personal_intensity not in {"medium", "high"} and data_type in {"", "unknown"}:
+            return "pdpa_requires_review_customer_trust_only"
+        if compact(classification.get("classification_confidence")) == "low":
+            return "pdpa_requires_review_weak_evidence"
+        return ""
+    return "classification_unclear_manual_pdpa_or_hia_required"
+
+
+def finalize_classification_review(row: dict[str, Any], classification: dict[str, Any]) -> None:
+    reason = classification_review_reason_for(row, classification)
+    if classification.get("manual_classification_override"):
+        classification["classification_review_status"] = "reviewed"
+        classification["classification_review_reason"] = ""
+        return
+    classification["classification_review_status"] = "review_needed" if reason else "not_needed"
+    classification["classification_review_reason"] = reason
 
 
 def healthcare_segment(classification: dict[str, Any]) -> str:
@@ -2524,12 +2789,20 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         recommended_first_cert = "Cyber Essentials"
         recommended_path = "Use Cyber Essentials to structure security evidence across IT, HR, vendors and operations; consider DPE/DPTM only when broader data-protection governance evidence supports it."
     elif primary_track == "customer_trust":
-        pressure_type = "customer_trust"
-        problem_area = "evidence_collection"
-        value_asset = "security_evidence_checklist"
-        trigger = f"Customers and partners may ask for reusable security evidence because the website indicates {trust_signal} activity."
-        recommended_first_cert = "Cyber Essentials"
-        recommended_path = "Use Cyber Essentials as the first reusable security-evidence baseline."
+        if personal_intensity in {"medium", "high"} or data_type != "unknown":
+            pressure_type = "pdpa_safeguards"
+            problem_area = "pdpa_safeguards"
+            value_asset = "pdpa_safeguards_checklist"
+            trigger = f"The organisation appears to handle {data_type.replace('_', ' ')} in a business context where reusable security evidence may be requested."
+            recommended_first_cert = "Cyber Essentials"
+            recommended_path = "Use Cyber Essentials to support the cybersecurity safeguards and evidence side of PDPA readiness."
+        else:
+            pressure_type = "not_ready"
+            problem_area = "unknown"
+            value_asset = "cyber_essentials_readiness_checklist"
+            trigger = ""
+            recommended_first_cert = "unknown"
+            recommended_path = "Do not generate outreach until stronger HIA or PDPA personal-data evidence is available."
     elif primary_track == "pdpa_safeguards":
         pressure_type = "pdpa_safeguards"
         problem_area = "pdpa_safeguards" if personal_intensity in {"medium", "high"} else "unknown"
@@ -2543,16 +2816,21 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         value_asset = "cyber_essentials_readiness_checklist"
         trigger = ""
         recommended_first_cert = "unknown"
-        recommended_path = "Do not generate outreach until stronger HIA, personal-data, DPO/ops, or customer-trust evidence is available."
+        recommended_path = "Do not generate outreach until stronger HIA or PDPA personal-data evidence is available."
+
+    primary_output_track = output_email_track(primary_track, pressure_type)
+    secondary_output_track = output_email_track(secondary_track, pressure_type) if secondary_track else ""
+    if secondary_output_track == primary_output_track:
+        secondary_output_track = ""
 
     trigger_confidence = "medium" if entity["entity_type_confidence"] in {"medium", "high"} else "low"
     if pressure_type == "hia_regulatory" and hia["hia_confidence"] == "high":
         trigger_confidence = "high"
-    elif primary_track in {"dpo_evidence", "pdpa_safeguards", "customer_trust"} and personal_intensity in {"medium", "high"}:
+    elif pressure_type == "pdpa_safeguards" and personal_intensity in {"medium", "high"}:
         trigger_confidence = "medium"
 
     certification_score = 82 if recommended_first_cert == "Cyber Essentials" and pressure_type != "not_ready" else 40
-    return {
+    classification = {
         **entity,
         "singapore_registered_guess": ".sg" in text or "singapore" in text,
         "uen_guess": "",
@@ -2562,8 +2840,8 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
             "terms": sorted({term for term in (*HEALTHCARE_TERMS, *NPO_TERMS, *SOCIAL_TERMS, *B2B_TERMS) if term in text})[:20],
         },
         "campaign_track": "dpo_evidence" if primary_track == "dpo_evidence" else pressure_type,
-        "primary_email_track": primary_track,
-        "secondary_email_track": secondary_track,
+        "primary_email_track": primary_output_track,
+        "secondary_email_track": secondary_output_track,
         "regulatory_applicability": (
             ["HIA", "PDPA"] if hia.get("hia_relevant") and hia.get("hia_official_service_type") else ["PDPA"] if personal_intensity in {"medium", "high"} else []
         ),
@@ -2591,7 +2869,7 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "problem_hypothesis": build_problem_hypothesis(pressure_type, data_type, problem_area),
         "value_asset_offer": value_asset,
         **hia,
-        "pdpa_relevant": pressure_type in {"pdpa_safeguards", "customer_trust"},
+        "pdpa_relevant": pressure_type == "pdpa_safeguards",
         "pdpa_reason": (
             "No strong personal-data pressure evidence found."
             if pressure_type == "not_ready"
@@ -2608,8 +2886,9 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         "certification_fit_score": certification_score,
         "certification_evidence_json": {
             "pressure_type": pressure_type,
-            "primary_email_track": primary_track,
-            "secondary_email_track": secondary_track,
+            "primary_email_track": primary_output_track,
+            "secondary_email_track": secondary_output_track,
+            "selected_track": primary_track,
             "data_type_signal": data_type,
             "track_scores": track_scores,
             "rejected_tracks": rejected_tracks,
@@ -2624,13 +2903,16 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         ],
         "confidence": trigger_confidence,
     }
+    apply_manual_pressure_override(row, classification)
+    finalize_classification_review(row, classification)
+    return classification
 
 
 def build_problem_hypothesis(pressure_type: str, data_type: str, problem_area: str) -> str:
+    if pressure_type == "customer_trust":
+        pressure_type = "pdpa_safeguards"
     if pressure_type == "hia_regulatory":
         return "The practical gap is likely mapping HIA cybersecurity/data-security duties into access, backup, patching, incident and evidence checks."
-    if pressure_type == "customer_trust":
-        return "The practical gap is likely reusable security evidence for customer or partner reviews."
     if pressure_type == "not_ready":
         return ""
     if problem_area == "evidence_collection":
@@ -2639,10 +2921,10 @@ def build_problem_hypothesis(pressure_type: str, data_type: str, problem_area: s
 
 
 def certification_reason(pressure_type: str) -> str:
+    if pressure_type == "customer_trust":
+        pressure_type = "pdpa_safeguards"
     if pressure_type == "hia_regulatory":
         return "Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness; it is not HIA compliance."
-    if pressure_type == "customer_trust":
-        return "Cyber Essentials gives a reusable baseline for access, assets, malware protection, patching, backup and incident readiness evidence."
     if pressure_type == "not_ready":
         return "No certification path should be pitched until stronger evidence is available."
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
@@ -2670,8 +2952,6 @@ def choose_variant(classification: dict[str, Any]) -> str:
         return "npo_social_service"
     if classification.get("campaign_track") == "dpo_evidence":
         return "dpo_evidence"
-    if classification["pressure_type"] == "customer_trust":
-        return "customer_trust"
     if classification["pressure_type"] == "not_ready":
         return "not_ready"
     return "pdpa_general"
@@ -2789,7 +3069,9 @@ def email_variant_track(classification: dict[str, Any]) -> str:
     if classification.get("campaign_track") == "dpo_evidence":
         return "dpo_evidence"
     pressure = compact(classification.get("pressure_type"))
-    if pressure in {"hia_regulatory", "pdpa_safeguards", "customer_trust"}:
+    if pressure == "customer_trust":
+        return "pdpa_safeguards"
+    if pressure in {"hia_regulatory", "pdpa_safeguards"}:
         return pressure
     return "not_ready"
 
@@ -6779,7 +7061,11 @@ def automation_decision_for(
             blockers = ["pressure_type_not_ready", "retry_deeper_healthcare_pages"] if healthcare_hint else ["pressure_type_not_ready"]
             reason = "healthcare_evidence_retry_once" if healthcare_hint else "weak_enrichment_retry_once"
             return "retry_enrichment_once", reason, blockers, False
-        return "auto_skipped", "weak_hia_and_pdpa_evidence", ["pressure_type_not_ready"], False
+        reason = classification.get("classification_review_reason") or "classification_unclear_manual_pdpa_or_hia_required"
+        return "draft_only_review", reason, ["pressure_type_not_ready", reason], False
+    if classification.get("classification_review_status") == "review_needed":
+        reason = classification.get("classification_review_reason") or "classification_review_needed"
+        return "draft_only_review", reason, [reason], False
     blocking_enrichment = blocking_enrichment_flags(enrichment_flags, classification, enrichment_score)
     blocking_copy = blocking_copy_brief_flags(copy_flags, classification, copy_brief)
     blockers = list(dict.fromkeys(severe_flags(flags) + blocking_enrichment + blocking_copy))
@@ -6901,7 +7187,12 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         human_review_status = "ready_for_review"
     else:
         human_review_status = "not_ready"
-    if classification["pressure_type"] == "not_ready" or not copy_brief_ready(classification, copy_brief):
+    if classification["pressure_type"] == "not_ready":
+        if classification.get("classification_review_status") == "review_needed" and decision == "draft_only_review":
+            human_review_status = "ready_for_review"
+        else:
+            human_review_status = "not_ready"
+    elif not copy_brief_ready(classification, copy_brief):
         human_review_status = "not_ready"
     return OutreachPlan(
         row_id=row.get("Id") or row.get("id") or "",
@@ -6971,6 +7262,9 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "secondary_email_track": c.get("secondary_email_track", ""),
         "regulatory_applicability": json_dumps(c.get("regulatory_applicability", [])),
         "classification_confidence": c.get("classification_confidence", ""),
+        "manual_pressure_type": c.get("manual_pressure_type", ""),
+        "classification_review_status": c.get("classification_review_status", ""),
+        "classification_review_reason": c.get("classification_review_reason", ""),
         "classification_evidence_json": json_dumps(c.get("classification_evidence_json", {})),
         "classification_rejected_tracks_json": json_dumps(c.get("classification_rejected_tracks_json", [])),
         "pressure_reason": c["pressure_reason"],

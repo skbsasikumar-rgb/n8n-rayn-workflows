@@ -10,9 +10,9 @@ This stage creates reviewable outreach drafts only. It must never send email. Th
 | --- | --- | --- | --- |
 | `hia_regulatory` | HIA relevance is medium/high for healthcare, clinic, pharmacy, diagnostic, allied health, hearing care, HIMS or NEHR-type rows. | "With HIA readiness becoming more urgent for healthcare providers..." | segment-specific readiness asset |
 | `pdpa_safeguards` | HIA is false/low and the organisation likely handles personal data. | PDPA is the legal responsibility; Cyber Essentials supports the security-safeguards evidence side. | segment-specific safeguards checklist |
-| `customer_trust` | B2B, vendor, SaaS, outsourcing, professional services, HR/recruitment with vendor/customer-proof evidence, or enterprise-facing row. | Customers may ask for reusable security evidence before sharing data. | segment-specific security evidence checklist |
-| `funding` | Funding is verified, confidence is high, and regulatory/trust pressure is weak. | Funding-specific route. | `funding_route_summary` |
-| `not_ready` | Missing trigger, weak evidence, blocked contact, unsubscribed/bounced/complained, or missing email when not in draft-only mode. | No send-ready email. | none |
+| `not_ready` | Missing trigger, weak evidence, unclear PDPA/HIA classification, blocked contact, unsubscribed/bounced/complained, or missing email when not in draft-only mode. | No send-ready email. | none |
+
+B2B, vendor, SaaS, outsourcing, professional services, HR/recruitment, school/sports academy, and enterprise-facing evidence is now handled as a PDPA safeguards sub-angle when personal-data evidence exists. If the row only has generic customer/procurement/security-proof language without clear PDPA or HIA evidence, the planner marks it for manual classification review instead of producing a send-ready row.
 
 Cyber Essentials is the default first formal route unless evidence supports HIA readiness first, Cyber Trust, DPE or DPTM. Cyber Essentials supports the cybersecurity safeguards and evidence side; it is not full PDPA or HIA compliance.
 
@@ -48,14 +48,14 @@ Example: American International Clinic Singapore should classify as `hia_regulat
 
 ## Master Outreach Tracks
 
-The planner now wires outreach around four buying pressures:
+The planner now writes only two final pressure categories: HIA regulatory readiness or PDPA safeguards. Some PDPA rows still use internal sub-angles for the email copy, such as DPO/operations evidence or B2B security-evidence proof, but those are not separate final `pressure_type` values.
 
 | Track | Use when | Core problem | Email 1 lead |
 | --- | --- | --- | --- |
 | Track A - HIA / healthcare | `hia_relevant = true` with medium/high confidence. | HIA is coming; in-scope providers need regulatory readiness, not a generic cyber pitch. | "HIA readiness becoming more urgent..." |
 | Track B - PDPA + Cyber Essentials safeguards | Non-HIA rows with medium/high personal-data intensity. | PDPA is the legal obligation; Cyber Essentials gives a practical way to structure and evidence the cybersecurity safeguards behind it. | "PDPA security safeguards..." |
-| Track C - DPO / data-protection owner | Selected contact title suggests DPO, compliance, privacy, operations, admin, HR or IT ownership. | Evidence often sits across operations, HR, IT and vendors; do not claim the person owns compliance unless title evidence is explicit. | "Data protection evidence..." |
-| Track D - Customer trust / procurement proof | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence. | Customers and partners may ask for reusable security proof before sharing data. | "Security evidence..." |
+| Track C - PDPA owner/evidence sub-angle | Selected contact title suggests DPO, compliance, privacy, operations, admin, HR or IT ownership. | Evidence often sits across operations, HR, IT and vendors; do not claim the person owns compliance unless title evidence is explicit. | "Data protection evidence..." |
+| Track D - PDPA B2B/security-evidence sub-angle | B2B, SaaS, outsourcing, education, finance, HR, recruitment, professional services, vendor or enterprise-facing evidence with personal-data signals. | Security proof is framed as evidence for PDPA safeguards, not as a separate customer-trust category. | "PDPA safeguards..." |
 
 Decision tree:
 
@@ -63,13 +63,13 @@ Decision tree:
 IF hia_relevant = true and hia_confidence is medium/high
   -> Track A: HIA regulatory readiness
 ELSE IF selected_contact_title contains DPO/compliance/privacy/operations/admin/HR
-  -> Track C: PDPA evidence owner
-ELSE IF business model indicates B2B/professional services/SaaS/outsourcing/vendor/procurement proof
-  -> Track D: customer trust / security evidence
+  -> Track C: PDPA evidence owner sub-angle
+ELSE IF business model indicates B2B/professional services/SaaS/outsourcing/vendor/procurement proof AND personal-data evidence exists
+  -> Track D: PDPA safeguards B2B/security-evidence sub-angle
 ELSE IF personal_data_intensity is medium/high
   -> Track B: PDPA + Cyber Essentials safeguards
 ELSE
-  -> not_ready; do not generate a usable sequence
+  -> review_needed/not_ready; do not generate a send-ready sequence until manual PDPA/HIA review
 ```
 
 Messaging hierarchy:
@@ -77,7 +77,7 @@ Messaging hierarchy:
 - HIA rows: HIA timeline / regulatory readiness, then health-information access and security, then Cyber Essentials as a first baseline, then funding support.
 - Non-HIA PDPA rows: PDPA personal-data responsibility, then practical safeguards and evidence, then Cyber Essentials as a recognised baseline for the security-safeguards side, then funding support.
 - DPO / ops rows: data-protection evidence ownership, then scattered evidence across IT/HR/vendors/operations, then Cyber Essentials as a structure for the security baseline.
-- B2B / trust rows: customer security proof, then scattered evidence, then Cyber Essentials as reusable baseline, then funding support.
+- B2B / security-evidence rows: PDPA safeguards first, then scattered evidence, then Cyber Essentials as the security-safeguards baseline, then funding support.
 
 Greeting rule:
 
@@ -91,12 +91,12 @@ Email variation is deterministic and comes from approved sentence-slot options i
 
 Sentence selection uses a stable SHA-256 seed based on `row_id/Id`, `campaign_id`, track, pressure type, email step and slot name. The selected track, segment, campaign id, selector and per-email slot choices are stored behind the scenes inside `email_sequence_json.sentence_slot_metadata`.
 
-The bank covers the four campaign tracks and segment-specific subject lines:
+The bank covers HIA, PDPA, and PDPA sub-angle tracks with segment-specific subject lines:
 
 - `hia_regulatory`: clinic, dental, specialist, pharmacy, hearing-care and care.
 - `pdpa_safeguards`: education, HR/recruitment, client data, customer data, care/NPO and general safeguards.
 - `dpo_evidence`: data-protection / operations evidence owner copy.
-- `customer_trust`: SaaS/customer evidence, vendor/supplier evidence and general B2B evidence.
+- B2B/security-evidence copy is treated as a PDPA safeguards sub-angle, not a separate final pressure category.
 
 The planner no longer rotates whole Email 1/2/3/4 A/B/C body templates. Each email step has one fixed structure:
 
@@ -129,7 +129,7 @@ Track spine:
 - HIA keeps the HIA pressure, patient/healthcare evidence problem, Cyber Essentials/CISOaaS route, and Email 2 endpoint/pricing check.
 - PDPA safeguards keeps PDPA as the legal responsibility and focuses on proving safeguards with Cyber Essentials as a practical baseline.
 - DPO/evidence keeps the proof-owner angle across HR, IT, vendors and operations.
-- Customer trust keeps reusable customer/security evidence for reviews and procurement checks.
+- B2B/security-evidence rows keep reusable proof for reviews and procurement checks, but only under `pdpa_safeguards`.
 
 Recommended value framing:
 
@@ -207,22 +207,23 @@ DPO / data-protection owner:
 - Use "often sits across operations, HR, IT and vendors" language.
 - Do not say the person is responsible for compliance unless the title clearly proves that.
 
-Customer trust / procurement proof:
+PDPA B2B / procurement proof:
 
 - SaaS/platform rows use customer security evidence around user data, admin access and backups.
 - Professional services rows use reusable security evidence before customers share data.
 - HR/recruitment B2B rows use candidate/employee data proof.
 - Outsourcing/vendor rows use supplier security evidence.
 - Education/training B2B rows use learner-data evidence.
+- These rows must still resolve to `pdpa_safeguards`; if personal-data evidence is unclear, route to manual classification review.
 
 - Use when the contact appears to own DPO, privacy, compliance, operations, admin or HR responsibilities.
 - Lead with evidence ownership, not cybersecurity.
 - The diagnostic should ask whether personal-data systems can be mapped to an owner, access list, vendor, backup process and incident contact.
 
-Customer trust:
+PDPA security-evidence angle:
 
-- Use when buyers, partners or enterprise customers likely ask security questions.
-- Position Cyber Essentials as reusable proof around assets, access control, malware protection, patching, backup and incident readiness.
+- Use when buyers, partners or enterprise customers likely ask security questions and the row also shows personal-data handling.
+- Position Cyber Essentials as the evidence structure for PDPA cyber/data-security safeguards around assets, access control, malware protection, patching, backup and incident readiness.
 - Lead with customer security evidence and trust, not PDPA compliance.
 
 ## Copy Brief Layer
@@ -540,7 +541,7 @@ LLM drift policy:
 Sree Narayana Mission:
 
 - expected entity: `npo`, `charity` or `social_service`, depending on evidence.
-- pressure: `pdpa_safeguards` or `customer_trust`, not HIA unless HIA evidence exists.
+- pressure: `pdpa_safeguards`, not HIA unless HIA evidence exists.
 - data signal: `resident_data` or `beneficiary_data`.
 - copy brief should mention resident, beneficiary, volunteer and staff data; PDPA safeguards; likely case/resident records, volunteer lists, backups and incident contacts; and a care-organisation checklist.
 - funding: Cyber Essentials support route only when verified_current.
@@ -567,6 +568,6 @@ Amazing Hearing Group:
 
 Generic B2B company:
 
-- expected pressure: `customer_trust`.
-- copy brief should mention customer security questions, reusable proof, customer/partner/business-contact data, CRM/email/file-share/vendor systems, and a security evidence checklist.
-- email angle: customers ask for evidence; Cyber Essentials creates reusable proof around access, updates, backups, malware protection and incident response.
+- expected pressure: `pdpa_safeguards` when the row shows customer/partner/business-contact data.
+- copy brief should mention PDPA safeguards, reusable proof, customer/partner/business-contact data, CRM/email/file-share/vendor systems, and a safeguards checklist.
+- email angle: PDPA safeguards first; Cyber Essentials creates reusable proof around access, updates, backups, malware protection and incident response.

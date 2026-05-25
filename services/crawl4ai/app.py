@@ -361,6 +361,12 @@ class OutreachPlanRequest(BaseModel):
     canonical_domain: Any = ""
     website_content: Any = ""
     source_urls: Any = ""
+    pressure_type: Any = ""
+    manual_pressure_type: Any = ""
+    classification_review_status: Any = ""
+    classification_review_reason: Any = ""
+    classification_review_notes: Any = ""
+    classification_reviewed_at: Any = ""
     status_reason: Any = ""
     last_stage: Any = ""
     services_detected: Any = Field(default_factory=list)
