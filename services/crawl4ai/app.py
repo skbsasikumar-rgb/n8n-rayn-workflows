@@ -1974,8 +1974,6 @@ def public_enrich_needs_browser_retry(result: dict[str, Any]) -> bool:
     validation_status = str(
         record.get("url_validation_status") or patch.get("url_validation_status") or ""
     ).strip()
-    if validation_status not in PUBLIC_ENRICH_BROWSER_RETRY_STATUSES:
-        return False
     crawl_status = str(record.get("crawl_status") or patch.get("last_stage") or "").strip()
     if crawl_status and crawl_status not in {"crawl_failed", "enrichment_error"}:
         return False
@@ -1989,6 +1987,10 @@ def public_enrich_needs_browser_retry(result: dict[str, Any]) -> bool:
         )
         if value
     )
+    if public_enrichment.proxy_retryable_error(error_text):
+        return True
+    if validation_status not in PUBLIC_ENRICH_BROWSER_RETRY_STATUSES:
+        return False
     return validation_status == "failed_redirect_loop" or public_enrichment.proxy_retryable_error(error_text)
 
 

@@ -543,6 +543,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("pathSegmentCount(url)", parse_code)
         self.assertIn("strongHostIdentity", parse_code)
         self.assertIn("textHasCompanyIdentity", parse_code)
+        self.assertIn("strongSearchIdentity", parse_code)
+        self.assertIn("pathSegmentCount(url) > 1", parse_code)
+        self.assertIn("parenAcronym", parse_code)
+        self.assertIn("whatclinic.com", parse_code)
+        self.assertIn("strongSearchIdentity(candidate, result, prepared)", parse_code)
+        self.assertIn("strongSearchIdentity(url, result, prepared)", parse_code)
         self.assertIn("const deepPath = pathSegmentCount(candidate) > 1", parse_code)
         self.assertIn("if (deepPath && !hostStrong && !hostedOfficial) continue", parse_code)
         self.assertIn("\\bhomepage\\b", parse_code)
@@ -557,6 +563,22 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("'singapore','clinic','group','health'", parse_code)
         self.assertIn("thirdPartyEditorialCandidate(candidate, prepared.company_name)", parse_code)
         self.assertIn("thirdPartyEditorialCandidate(url, prepared.company_name)", parse_code)
+
+    def test_public_enrichment_retries_browser_for_bad_gateway_static_fetch(self):
+        app_source = (Path(__file__).resolve().parents[1] / "services" / "crawl4ai" / "app.py").read_text()
+        enrichment_source = (
+            Path(__file__).resolve().parents[1] / "services" / "crawl4ai" / "public_web_enrichment.py"
+        ).read_text()
+        retry_fn = app_source[
+            app_source.index("def public_enrich_needs_browser_retry") : app_source.index("def run_public_enrich_fast_static")
+        ]
+        self.assertIn("public_enrichment.proxy_retryable_error(error_text)", retry_fn)
+        self.assertLess(
+            retry_fn.index("public_enrichment.proxy_retryable_error(error_text)"),
+            retry_fn.index("if validation_status not in PUBLIC_ENRICH_BROWSER_RETRY_STATUSES"),
+        )
+        self.assertIn('"http 502"', enrichment_source)
+        self.assertIn('"bad gateway"', enrichment_source)
 
     def test_url_picker_worker_rediscovery_excludes_previous_failed_domain(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
@@ -672,6 +694,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         get_url = get_node["parameters"]["url"]
         self.assertIn("RAYN_CONTACT_SEARCH_BATCH_LIMIT", get_url)
         self.assertIn("(contact_search_status,eq,pending)", get_url)
+        self.assertIn("RAYN_STALE_PROCESSING_MINUTES", get_url)
+        self.assertIn("(contact_search_status,eq,processing)", get_url)
+        self.assertIn("contact_search_started_at,lt", get_url)
         self.assertIn("(send_provider,neq,instantly)", get_url)
         self.assertIn("(instantly_sync_status,neq,synced)", get_url)
         self.assertIn("send_provider,send_status,sequence_status,instantly_sync_status", get_url)

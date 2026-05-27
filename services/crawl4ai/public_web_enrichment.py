@@ -1014,13 +1014,13 @@ def validation_variants(best_url_candidate: str) -> list[str]:
     parsed = urlsplit(best_url_candidate)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return []
-    https_url = url_with_scheme(best_url_candidate, "https")
-    http_url = url_with_scheme(best_url_candidate, "http")
-    variants = [https_url, http_url]
+    original_url = canonical_homepage_url(best_url_candidate) or best_url_candidate
+    alternate_scheme = "http" if parsed.scheme == "https" else "https"
+    variants = [original_url, url_with_scheme(best_url_candidate, alternate_scheme)]
     path = parsed.path or "/"
     if path != "/":
         root_url = urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
-        variants.extend([url_with_scheme(root_url, "https"), url_with_scheme(root_url, "http")])
+        variants.extend([canonical_homepage_url(root_url) or root_url, url_with_scheme(root_url, alternate_scheme)])
     return dedupe_strings(variants, limit=4)
 
 
@@ -1229,6 +1229,10 @@ def can_continue_after_url_validation_warning(
         return True
     if validation.url_validation_status == "failed_http_status":
         return validation.http_status in {401, 403, 429}
+    if validation.url_validation_status == "failed_request_error":
+        return "ssl_error" in validation.error.lower() or "certificate verify failed" in validation.error.lower()
+    if validation.url_validation_status == "failed_cross_domain_redirect":
+        return "github.io" in validation.error.lower()
     return False
 
 
@@ -3478,7 +3482,13 @@ def proxy_retryable_error(error_text: str) -> bool:
         for marker in (
             "http 403",
             "http 429",
+            "http 502",
             "http 503",
+            "http 504",
+            "bad gateway",
+            "gateway timeout",
+            "ssl_error",
+            "certificate verify failed",
             "forbidden",
             "too many requests",
             "cf-challenge",

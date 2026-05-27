@@ -833,6 +833,49 @@ class PublicWebEnrichmentTests(unittest.TestCase):
 
         self.assertTrue(p.can_continue_after_url_validation_warning(validation, normalization))
 
+    def test_url_validation_warning_allows_ssl_browser_retry(self):
+        normalization = p.NormalizationResult(
+            best_url="https://clinic.example/",
+            hostname="clinic.example",
+            registered_domain="clinic.example",
+        )
+        validation = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://clinic.example/",
+            http_status=0,
+            redirect_chain=[],
+            url_validation_status="failed_request_error",
+            error="ssl_error: certificate verify failed",
+        )
+
+        self.assertTrue(p.can_continue_after_url_validation_warning(validation, normalization))
+        self.assertTrue(p.proxy_retryable_error(validation.error))
+
+    def test_validation_variants_preserve_explicit_http_first(self):
+        self.assertEqual(
+            p.validation_variants("http://clinic.example/")[:2],
+            ["http://clinic.example/", "https://clinic.example/"],
+        )
+
+    def test_url_validation_warning_allows_github_pages_custom_domain_redirect(self):
+        normalization = p.NormalizationResult(
+            best_url="http://clinic.example/",
+            hostname="clinic.example",
+            registered_domain="clinic.example",
+        )
+        validation = p.UrlValidationResult(
+            best_url_candidate="http://clinic.example/",
+            best_url="http://clinic.example/",
+            http_status=301,
+            redirect_chain=[
+                {"url": "http://clinic.example/", "status": 301, "location": "https://owner.github.io/"}
+            ],
+            url_validation_status="failed_cross_domain_redirect",
+            error="redirect left the original registered domain: owner.github.io",
+        )
+
+        self.assertTrue(p.can_continue_after_url_validation_warning(validation, normalization))
+
     def test_url_validation_warning_rejects_cross_domain_and_not_found(self):
         normalization = p.NormalizationResult(
             best_url="https://clinic.example/",
