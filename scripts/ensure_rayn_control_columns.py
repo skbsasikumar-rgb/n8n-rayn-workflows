@@ -10,6 +10,7 @@ import psycopg
 
 CONTROL_COLUMNS = [
     "status_reason",
+    "manual_url_override",
     "run_id",
     "processing_started_at",
     "processing_finished_at",

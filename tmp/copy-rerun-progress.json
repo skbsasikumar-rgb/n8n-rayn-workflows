@@ -1,0 +1,27 @@
+{
+  "updatedAt": "2026-05-25T14:44:31.345Z",
+  "status": "done",
+  "total": 51,
+  "done": 51,
+  "currentIds": [],
+  "patchPath": "/Users/sasikumar/Documents/n8n/backups/nocodb-copy-rerun-resume-patches-20260525T142028Z.json",
+  "errors": [],
+  "final": {
+    "hiaMissing": [],
+    "pdpaOld": [],
+    "flagged": [
+      {
+        "Id": 52,
+        "company_name": "Alfa Medicus",
+        "flags": [
+          "clinic_profile_too_generic"
+        ]
+      }
+    ],
+    "sendReady": 54,
+    "autoSendEligible": 54,
+    "instantlyNotSynced": 54,
+    "llmEmail1": 42,
+    "llmEmail2": 42
+  }
+}

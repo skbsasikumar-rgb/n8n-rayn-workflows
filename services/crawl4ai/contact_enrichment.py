@@ -566,7 +566,46 @@ PUBLIC_EMAIL_DOMAINS = {
 }
 
 
-def email_domain_allowed_for_anymail_result(email: str, requested_domain: str, result: dict[str, Any]) -> bool:
+def domain_first_label(domain: str) -> str:
+    return compact(domain.partition(".")[0], 120).lower().replace("-", "")
+
+
+def company_acronym(value: str) -> str:
+    tokens = re.findall(r"[a-z0-9]+", compact(value).lower())
+    ignored = {
+        "singapore",
+        "pte",
+        "ltd",
+        "limited",
+        "llp",
+        "clinic",
+        "medical",
+        "dental",
+        "surgery",
+        "centre",
+        "center",
+        "health",
+        "healthcare",
+        "group",
+        "and",
+        "the",
+    }
+    meaningful = [token for token in tokens if token not in ignored]
+    return "".join(token[0] for token in meaningful)
+
+
+def company_alias_matches_email_domain(email_domain: str, company_name: str) -> bool:
+    label = domain_first_label(email_domain)
+    acronym = company_acronym(company_name)
+    return bool(label and acronym and len(acronym) >= 3 and label == acronym)
+
+
+def email_domain_allowed_for_anymail_result(
+    email: str,
+    requested_domain: str,
+    result: dict[str, Any],
+    company_name: str = "",
+) -> bool:
     email_domain = compact(email.partition("@")[2], 320).lower().removeprefix("www.")
     requested_domain = compact(requested_domain, 320).lower().removeprefix("www.")
     if not email_domain or not requested_domain:
@@ -575,14 +614,12 @@ def email_domain_allowed_for_anymail_result(email: str, requested_domain: str, r
         return True
     if email_domain in PUBLIC_EMAIL_DOMAINS or "." not in email_domain:
         return False
-    input_payload = result.get("input") if isinstance(result.get("input"), dict) else {}
-    input_domain = compact(input_payload.get("domain"), 320).lower().removeprefix("www.")
-    # Anymail can return a validated organisation alias domain for the requested company.
-    # Accept only provider-validated non-public domains tied to this exact request or
-    # to a person-level decision-maker response from the provider.
-    if input_domain == requested_domain:
+    # Anymail can return a validated organisation alias domain for the requested
+    # company, but accepting every provider-returned domain creates false positives
+    # such as unrelated healthcare groups. Allow only obvious company acronyms.
+    if company_alias_matches_email_domain(email_domain, company_name):
         return True
-    return bool(compact(result.get("person_full_name")) or compact(result.get("decision_maker_category")))
+    return False
 
 
 def normalize_company(value: str) -> str:
@@ -1426,10 +1463,10 @@ def result_email(result: dict[str, Any]) -> str:
     return ""
 
 
-def anymail_decision(result: dict[str, Any], domain: str) -> tuple[str, str]:
+def anymail_decision(result: dict[str, Any], domain: str, company_name: str = "") -> tuple[str, str]:
     status = compact(result.get("email_status"), 80).lower()
     email = compact(result.get("valid_email") or result.get("email"), 320).lower()
-    if status == "valid" and email_syntax_valid(email) and email_domain_allowed_for_anymail_result(email, domain, result):
+    if status == "valid" and email_syntax_valid(email) and email_domain_allowed_for_anymail_result(email, domain, result, company_name):
         return "sendable", email
     return "rejected", ""
 
@@ -2897,7 +2934,7 @@ def try_decision_maker_fallback(
     for result in validation.get("results", []):
         if not isinstance(result, dict):
             continue
-        decision, email = anymail_decision(result, domain)
+        decision, email = anymail_decision(result, domain, compact(payload.get("company_name")))
         candidate = decision_maker_candidate_from_result(result, domain)
         email_candidate = {
             "name": candidate.get("name", ""),
@@ -3706,7 +3743,7 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
         for result in validation.get("results", []):
             if not isinstance(result, dict):
                 continue
-            decision, email = anymail_decision(result, domain)
+            decision, email = anymail_decision(result, domain, compact(payload.get("company_name")))
             email_candidate["email"] = compact(result.get("email") or result.get("valid_email"), 320).lower()
             email_candidate["valid_email"] = email
             email_candidate["validation_result"] = result

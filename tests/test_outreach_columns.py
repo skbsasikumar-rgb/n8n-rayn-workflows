@@ -319,11 +319,11 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("status_reason", fields)
         self.assertIn("last_stage", fields)
 
-    def test_workflow_fetch_skips_existing_drafts_and_not_ready_rows(self):
+    def test_workflow_fetch_skips_planned_and_not_ready_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
-        self.assertIn("(email_1_subject,blank)", url_expr)
         self.assertIn("(automation_decision,blank)", url_expr)
+        self.assertNotIn("(email_1_subject,blank)", url_expr)
         self.assertNotIn("(contact_search_status,notblank)", url_expr)
         self.assertIn("(contact_search_status,eq,contact_not_found)", url_expr)
         self.assertIn("(contact_search_status,eq,failed)", url_expr)
@@ -336,7 +336,7 @@ class OutreachColumnContractTests(unittest.TestCase):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
         self.assertIn("~and(automation_decision,blank)", url_expr)
-        self.assertIn("~and(email_1_subject,blank)", url_expr)
+        self.assertNotIn("~and(email_1_subject,blank)", url_expr)
 
     def test_cold_email_workflow_is_deterministic_only(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
@@ -432,6 +432,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("automation_decision,automation_decision_reason", url_expr)
         self.assertIn("(status,eq,processing)", url_expr)
         self.assertIn("processing_started_at,lt", url_expr)
+        self.assertIn("(manual_url_override,notblank)", url_expr)
+        self.assertIn("(status_reason,eq,no_official_url_found)", url_expr)
+        self.assertIn("(send_provider,neq,instantly)", url_expr)
+        self.assertIn("(instantly_sync_status,neq,synced)", url_expr)
+        self.assertIn("send_provider,send_status,sequence_status,instantly_sync_status", url_expr)
+        self.assertIn("manual_url_override", url_expr)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
         self.assertIn("isRetryableFailure", js_code)
         self.assertIn("status === 'failed_retryable' || status === 'failed'", js_code)
@@ -439,6 +445,17 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("isWeakEnrichmentRetry", js_code)
         self.assertIn("automation_decision || '').trim() === 'retry_enrichment_once'", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
+        self.assertIn("isManualUrlOverride", js_code)
+        self.assertIn("isAlreadyInSendPipeline", js_code)
+        self.assertIn("provider === 'instantly'", js_code)
+        self.assertIn("syncStatus === 'synced'", js_code)
+        self.assertIn("if (isAlreadyInSendPipeline(row)) return false", js_code)
+        self.assertIn("manual_url_override: manualUrl", js_code)
+        self.assertIn("send_provider: String(row.send_provider || '').trim()", js_code)
+        self.assertIn("instantly_sync_status: String(row.instantly_sync_status || '').trim()", js_code)
+        self.assertIn("canonicalDomain(manualUrl)", js_code)
+        self.assertIn("startsWith('https://')", js_code)
+        self.assertNotIn("/^https?:///", js_code)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
 
     def test_url_picker_worker_claims_stamp_attempt_and_processing_times(self):
@@ -464,6 +481,10 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("email_1_subject: ''", body_expr)
         self.assertIn("email_2_body: ''", body_expr)
         self.assertIn("email_3_body: ''", body_expr)
+        self.assertIn("manual_url_override", body_expr)
+        self.assertIn("url_picked: manualUrl", body_expr)
+        self.assertIn("canonical_domain: manualDomain", body_expr)
+        self.assertIn("processing:crawl:manual_url_override", body_expr)
         self.assertIn("final_send_gate_passed: false", body_expr)
         self.assertIn("email_send_ready: false", body_expr)
 
@@ -504,16 +525,20 @@ class OutreachColumnContractTests(unittest.TestCase):
         ]["jsCode"]
         self.assertIn("thirdPartyEditorialCandidate", parse_code)
         self.assertIn("pathSegmentCount(url)", parse_code)
-        self.assertIn("oneTokenWeakTextHit", parse_code)
+        self.assertIn("strongHostIdentity", parse_code)
+        self.assertIn("textHasCompanyIdentity", parse_code)
         self.assertIn("const deepPath = pathSegmentCount(candidate) > 1", parse_code)
-        self.assertIn("if (deepPath && !hostIdentity && !acronymIdentity && !titleIdentity) continue", parse_code)
+        self.assertIn("if (deepPath && !hostStrong && !hostedOfficial) continue", parse_code)
         self.assertIn("\\bhomepage\\b", parse_code)
         self.assertNotIn("\\bhome\\b|\\bour\\s+clinic\\b", parse_code)
         self.assertIn("cosmeticsnews", parse_code)
         self.assertIn("acquisition", parse_code)
+        self.assertIn("wa.me", parse_code)
+        self.assertIn("chas.sg", parse_code)
+        self.assertIn("giving.sg", parse_code)
         self.assertIn("prospeo.io", parse_code)
         self.assertIn("businesstimes.com.sg", parse_code)
-        self.assertIn("'healthcare','company','services'", parse_code)
+        self.assertIn("'singapore','clinic','group','health'", parse_code)
         self.assertIn("thirdPartyEditorialCandidate(candidate, prepared.company_name)", parse_code)
         self.assertIn("thirdPartyEditorialCandidate(url, prepared.company_name)", parse_code)
 
@@ -535,8 +560,8 @@ class OutreachColumnContractTests(unittest.TestCase):
             "parameters"
         ]["jsCode"]
         self.assertIn("excluded_url_domain", build_code)
-        self.assertIn("carriedExcludedDomain", build_code)
-        self.assertIn("existingDomain", build_code)
+        self.assertIn("rediscoveryExcludedDomain", build_code)
+        self.assertIn("reason === 'skipped_url_validation_failed'", build_code)
         self.assertIn("-site:", build_code)
         self.assertIn("canonical_domain", build_code)
         self.assertIn("Retry rule: reject the previous failed domain", prepare_code)
@@ -631,6 +656,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         get_url = get_node["parameters"]["url"]
         self.assertIn("RAYN_CONTACT_SEARCH_BATCH_LIMIT", get_url)
         self.assertIn("(contact_search_status,eq,pending)", get_url)
+        self.assertIn("(send_provider,neq,instantly)", get_url)
+        self.assertIn("(instantly_sync_status,neq,synced)", get_url)
+        self.assertIn("send_provider,send_status,sequence_status,instantly_sync_status", get_url)
         self.assertIn("duplicate_validated_email_of_id", get_url)
         self.assertIn("&sort=Id", get_url)
 
@@ -878,8 +906,11 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         self.assertIn("email_3_body", js_code)
         self.assertIn("email_3_body_html", js_code)
         self.assertIn("skip_if_in_workspace", js_code)
+        self.assertIn("return candidates.map((row) =>", js_code)
+        self.assertNotIn("const row = candidates[0]", js_code)
         self.assertIn("send_provider: 'instantly'", result_node["parameters"]["jsCode"])
         self.assertIn("instantly_sync_status = 'synced'", result_node["parameters"]["jsCode"])
+        self.assertIn("json: { patches }", result_node["parameters"]["jsCode"])
         self.assertIn("providerAccountError", result_node["parameters"]["jsCode"])
         self.assertIn("provider_account_error", result_node["parameters"]["jsCode"])
         self.assertIn("insufficient balance", result_node["parameters"]["jsCode"])
@@ -906,9 +937,13 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         self.assertIn("email_3_subject", url_expr)
         self.assertIn("email_3_body", url_expr)
         prepare_node = next(node for node in workflow["nodes"] if node["name"] == "Prepare Instantly Lead")
+        patch_node = next(node for node in workflow["nodes"] if node["name"] == "Patch Instantly Sync Result")
+        self.assertIn("requestedLimit", url_expr)
+        self.assertIn("envLimit >= 5 ? envLimit : 25", url_expr)
         self.assertIn("duplicate_validated_email_of_id", prepare_node["parameters"]["jsCode"])
         self.assertIn("!text(row.email_3_subject)", prepare_node["parameters"]["jsCode"])
         self.assertIn("!text(row.email_3_body)", prepare_node["parameters"]["jsCode"])
+        self.assertIn("$json.patches", patch_node["parameters"]["jsonBody"])
 
     def test_review_approval_workflow_promotes_only_manually_approved_rows(self):
         workflow = json.loads(REVIEW_APPROVAL_WORKFLOW_PATH.read_text())

@@ -42,6 +42,14 @@ class OutreachPlannerTests(unittest.TestCase):
             self.assertNotRegex(body, r"(?im)^\s*SK\s*$")
             self.assertNotRegex(body, r"(?im)^\s*RAYN Secure\s*$")
 
+    def test_contact_greeting_title_cases_uppercase_person_name(self):
+        row = {"selected_contact_name": "DR SHARAD GOVIL"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Sharad")
+        self.assertEqual(o.email_greeting(row), "Hi Sharad,")
+        self.assertEqual(o.email_1_greeting(row), "Hi Sharad,")
+        self.assertEqual(o.followup_name_prefix(row, ","), "Sharad, ")
+
     def test_generic_cross_domain_contact_requires_review(self):
         row = {
             "company_name": "Prime Surgery",
@@ -82,6 +90,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertTrue(plan.classification["hia_relevant"])
+        self.assertIn("Health Information Act (HIA)", plan.emails["email_1"]["body"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
         self.assertIn("2027", plan.emails["email_1"]["body"])
         self.assertIn("We help", plan.emails["email_1"]["body"])
@@ -176,7 +185,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["email_hook_source"], "serper")
         self.assertIn("multi-location or group healthcare operation", plan.copy_brief["first_sentence_context"]["observation"])
         self.assertEqual(plan.emails["context_email_1"]["pressure_bridge"], plan.copy_brief["email_problem_statement"])
-        self.assertIn("HIA starting from 2027", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("Health Information Act (HIA) starting from 2027", plan.emails["context_email_1"]["pressure_bridge"])
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
 
@@ -443,6 +452,30 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Mission Medical Clinic", plan.emails["email_1"]["body"])
         self.assertNotIn("Mission (Hougang) Medical Clinic Pte Ltd", plan.emails["email_1"]["body"])
 
+    def test_email_display_company_name_humanizes_all_caps_and_long_names(self):
+        self.assertEqual(
+            o.email_display_company_name({"company_name": "AEVI SPORTS AND PHYSIOTHERAPY CENTRE"}),
+            "AEVI Sports and Physiotherapy Centre",
+        )
+        self.assertEqual(
+            o.email_display_company_name({"company_name": "Addictions Recovery Singapore | Drug and Alcohol Rehab Counselling"}),
+            "Addictions Recovery Singapore",
+        )
+        self.assertEqual(
+            o.email_display_company_name({"company_name": "Advanced Cell Therapy and Research Institute, Singapore (ACTRIS)"}),
+            "ACTRIS",
+        )
+        plan = o.plan_outreach(
+            {
+                "Id": 106,
+                "company_name": "AEVI SPORTS AND PHYSIOTHERAPY CENTRE",
+                "best_url": "https://aevi.example/",
+                "website_content": "Singapore physiotherapy centre providing sports injury rehabilitation, patient appointments and treatment notes.",
+            }
+        )
+        self.assertIn("AEVI Sports and Physiotherapy Centre", plan.emails["email_1"]["body"])
+        self.assertNotIn("AEVI SPORTS AND PHYSIOTHERAPY CENTRE", plan.emails["email_1"]["body"])
+
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
         plan = o.plan_outreach(
             {
@@ -485,9 +518,52 @@ class OutreachPlannerTests(unittest.TestCase):
                 ),
             }
         )
-        self.assertEqual(plan.classification["entity_type_guess"], "charity")
+        self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertFalse(plan.classification["hia_relevant"])
+
+    def test_cancer_prevention_charity_screening_without_clinic_stays_pdpa(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 304,
+                "company_name": "365 Cancer Prevention Society",
+                "website_content": (
+                    "365 Cancer Prevention Society is a non-profit social service agency in "
+                    "Singapore in support of cancer survivors and cancer prevention. "
+                    "Multi-Cancer Screening. Find support in our community on cancer self-care. "
+                    "Cancer fighters, caregivers and their loved ones can share stories, support "
+                    "one another, and be educated on how to prevent cancer."
+                ),
+            }
+        )
+        self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
+
+    def test_social_service_counselling_hia_scope_requires_review(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 305,
+                "company_name": "365 Cancer Prevention Society",
+                "website_content": (
+                    "365 Cancer Prevention Society is a non-profit social service agency. "
+                    "Our counselling services include talk therapy, art therapy and "
+                    "therapeutic support programs. Book an appointment, use the referral "
+                    "form for psychosocial services, and complete a mental health assessment."
+                ),
+                "validated_email": "alicia.ang@365cps.org.sg",
+            }
+        )
+        self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["classification_review_status"], "review_needed")
+        self.assertEqual(
+            plan.classification["classification_review_reason"],
+            "hia_requires_review_social_service_or_charity_scope",
+        )
+        self.assertEqual(plan.automation_decision, "draft_only_review")
 
     def test_long_term_care_can_be_social_entity_but_hia_pressure(self):
         plan = o.plan_outreach(
@@ -781,6 +857,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("personal-data safeguards checklist", plan.emails["email_1"]["body"])
         self.assertIn("personal-data safeguards checklist", plan.emails["email_2"]["body"])
         self.assertIn("PDPA", plan.emails["email_2"]["body"])
+        self.assertIn(o.EMAIL_2_PDPA_VALUE_PS, plan.emails["email_2"]["body"])
+        self.assertNotIn("priced near the lower end", plan.emails["email_2"]["body"])
         self.assertTrue(
             any(
                 phrase in plan.emails["email_2"]["body"]
@@ -791,6 +869,22 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("healthcare data safeguards", plan.emails["email_2"]["body"].lower())
         self.assertNotIn("structured approach to the pdpa legal obligations", plan.emails["email_2"]["body"].lower())
         self.assertNotIn("pdpa compliance framework", plan.emails["email_2"]["body"].lower())
+
+    def test_low_confidence_diagnostic_hint_does_not_flag_pdpa_track(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 1010,
+                "company_name": "1010Genome",
+                "website_content": (
+                    "Singapore company handling customer enquiries, client health-related testing enquiries, "
+                    "customer records and employee data."
+                ),
+                "hia_llm_review": {"hia_relevant": False, "hia_confidence": "low", "hia_service_type_guess": "diagnostic"},
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertNotIn("lab_classification_ambiguous", plan.quality_flags)
 
     def test_profile_copy_uses_service_type_before_incidental_specialist_terms(self):
         cases = [
@@ -1041,6 +1135,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
         self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
         self.assertIn("email_2_required_ps", captured)
+        self.assertEqual("Health Information Act (HIA)", captured["email_1_required_hia_phrase"])
         self.assertIn(o.EMAIL_2_VALUE_PS, plan.emails["email_2"]["body"])
         self.assertNotIn("llm_email_1_rewrite_used", plan.quality_flags)
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Ivan, saw that"))
@@ -1233,13 +1328,28 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertGreater(o.word_count(long_body), 95)
         self.assertIn("llm_email_2_rewrite_length", flags)
 
+    def test_hia_email_1_rewrite_requires_health_information_act_full_name(self):
+        body = (
+            "Hi Ivan, does Example Medical Clinic keep patient records across appointments and consultation notes?\n\n"
+            "If so, HIA starting from 2027 makes that trail the issue: access, vendors, backups and incident steps need evidence.\n\n"
+            "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.\n\n"
+            "Worth sending the HIA readiness map?"
+        )
+        flags = o.email_1_rewrite_static_flags(
+            body,
+            body,
+            {"pressure_type": "hia_regulatory"},
+        )
+
+        self.assertIn("llm_email_1_rewrite_missing_health_information_act_name", flags)
+
     def test_email_2_llm_rewrite_rejects_pdpa_obligation_overclaim(self):
         body = (
             "Hi Samuel,\n\n"
             "Cyber Essentials is a more structured approach to the PDPA legal obligations.\n\n"
             "For Example Pte Ltd, the useful check is whether that route fits the safeguards work.\n\n"
             "Worth sending the short map?\n\n"
-            + o.EMAIL_2_VALUE_PS
+            + o.EMAIL_2_PDPA_VALUE_PS
         )
         flags = o.email_2_rewrite_static_flags(
             body,
@@ -2204,19 +2314,22 @@ class OutreachPlannerTests(unittest.TestCase):
 
     def test_email_2_cta_is_own_paragraph_before_ps(self):
         cases = [
-            o.funding_email_2_body_fixed(
-                "Samuel - ",
-                "Based on the company profile, the Cyber Essentials support route appears worth checking.",
-                "",
+            (
+                o.funding_email_2_body_fixed(
+                    "Samuel - ",
+                    "Based on the company profile, the Cyber Essentials support route appears worth checking.",
+                    "",
+                ),
+                o.EMAIL_2_HIA_VALUE_PS,
             ),
-            o.value_fallback_body_fixed("Samuel - ", "safeguards checklist"),
-            o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False),
+            (o.value_fallback_body_fixed("Samuel - ", "safeguards checklist"), o.EMAIL_2_PDPA_VALUE_PS),
+            (o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False), o.EMAIL_2_HIA_VALUE_PS),
         ]
-        for body in cases:
+        for body, expected_ps in cases:
             with self.subTest(body=body):
                 paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
                 self.assertIn(len(paragraphs), {4, 5})
-                self.assertEqual(o.EMAIL_2_VALUE_PS, paragraphs[-1])
+                self.assertEqual(expected_ps, paragraphs[-1])
                 self.assertTrue(paragraphs[-2].endswith("?"))
                 self.assertLessEqual(len(paragraphs[-2].split()), 8)
 
@@ -2317,7 +2430,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(profile, plan.copy_brief["prospect_facing_signal"])
                 self.assertIn(records_question.lower(), paragraphs[0].lower())
                 self.assertNotIn("handling", paragraphs[0])
-                self.assertTrue(paragraphs[1].startswith("If so, HIA starting from 2027"))
+                self.assertTrue(paragraphs[1].startswith("If so, the Health Information Act (HIA) starting from 2027"))
                 self.assertRegex(paragraphs[1], r"that (data )?trail|that spread")
                 self.assertIn("Cyber Essentials", paragraphs[2])
                 self.assertRegex(paragraphs[2], r"that (records map|data trail|trail)")
@@ -2550,13 +2663,32 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("hearing test records", plan.emails["email_3"]["body"])
         self.assertIn("appointment details", plan.emails["email_3"]["body"])
         self.assertIn("device-related records", plan.emails["email_3"]["body"])
+        self.assertNotIn("eye clinic", plan.copy_brief["prospect_facing_signal"].lower())
+        self.assertNotIn("consultation notes", plan.emails["email_3"]["body"].lower())
         self.assertEqual(plan.copy_brief["email_asset_offer"], "hearing-care readiness map")
         self.assert_no_final_email_batch_or_signal_language(plan)
         self.assertIn("hearing tests", plan.copy_brief["data_systems_likely"])
         self.assertIn("device-related records", plan.copy_brief["data_systems_likely"])
+        provision_plan = o.plan_outreach(
+            {
+                "Id": 9,
+                "company_name": "Amazing Hearing Group",
+                "best_url": "https://amazinghearing.com.sg/",
+                "website_content": (
+                    "Receive a thorough hearing test and precise hearing aid fitting at our clinics across Singapore. "
+                    "Audiology specialists support hearing assessments and device fitting records. "
+                    "The provision of services includes appointment booking and patient records."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+        self.assertEqual(provision_plan.classification["hia_service_type_guess"], "hearing_care")
+        self.assertIn("hearing-care provider", provision_plan.copy_brief["prospect_facing_signal"])
+        self.assertNotIn("eye clinic", provision_plan.copy_brief["prospect_facing_signal"].lower())
+        self.assertNotIn("consultation notes", provision_plan.emails["email_3"]["body"].lower())
         weak_plan = o.plan_outreach(
             {
-                "Id": 8,
+                "Id": 10,
                 "company_name": "Amazing Hearing Group",
                 "website_content": "Singapore retailer offering hearing aid accessories and customer service.",
             }
@@ -3326,7 +3458,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("S$4,300", email2)
         self.assertNotIn("CISOaaS pricing", email2)
         self.assertIn("support route", email2.lower())
-        self.assertIn("priced near the lower end", email2)
+        self.assertNotIn("priced near the lower end", email2)
+        self.assertIn(o.EMAIL_2_PDPA_VALUE_PS, email2)
 
     def test_friendlier_deterministic_copy_style_keeps_track_spines(self):
         cases = [
@@ -3676,7 +3809,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(classification["primary_email_track"], "pdpa_safeguards")
         self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
-        self.assertEqual(classification["classification_evidence_json"]["selected_track"], "customer_trust")
+        self.assertEqual(classification["classification_evidence_json"]["selected_track"], "pdpa_safeguards")
         self.assertIn("track_scores", classification["classification_evidence_json"])
         self.assertTrue(classification["classification_rejected_tracks_json"])
 

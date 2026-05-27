@@ -2,6 +2,23 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-26
+
+Manual URL override for skipped URL discovery:
+
+- added `manual_url_override` as a control column so rows skipped with `status_reason=no_official_url_found` can be moved forward manually without changing the automatic URL picker.
+- updated [wf-worker.json](/Users/sasikumar/Documents/n8n/wf-worker.json) so enrichment can claim a skipped row when `manual_url_override` is filled, normalize URLs without a scheme to `https://...`, stamp the manual URL into `url_picked`, `best_url`, and `homepage_root_url`, then continue public enrichment.
+- installed the new column in production NocoDB metadata and the physical `leads` table; verification returned `physical=true` and `metadata=true`.
+- restarted Railway `nocodb` deployment `82b439f1-8c68-48d4-8e58-7f2eac4f02eb` so NocoDB refreshed its schema cache; data API verification for `fields=Id,manual_url_override` passed.
+- cleaned the live NocoDB leads grid by hiding backend/debug-only columns, reordering review/operator fields, and keeping `58` visible columns for URL override, status, contacts, classification, email QA, manual review, and Instantly state. Previous grid metadata was backed up to `backups/noco-view-cleanup/leads-grid-before-20260526T144334Z.json`.
+- updated live n8n worker workflow `BQEa6M2pKYmuEYMV` from the local export, preserved active state, and backed up the prior live workflow to `/tmp/n8n-workflow-BQEa6M2pKYmuEYMV-before-manual-url-override.json`.
+- fixed two live manual-override regressions found by row `3`: NocoDB rejected the first manual-override filter shape, and the enrichment item code contained a malformed URL-normalization regex. The live worker export was patched and re-imported after each fix, with backups at `/tmp/n8n-workflow-BQEa6M2pKYmuEYMV-before-manual-url-filter-fix.json` and `/tmp/n8n-workflow-BQEa6M2pKYmuEYMV-before-manual-url-syntax-fix.json`.
+- fixed the manual-override canonical-domain writeback so skipped rows resumed with `canonical_domain` populated; row `3` was backfilled to `365cps.org.sg` and then completed contact search with `alicia.ang@365cps.org.sg`.
+- tightened classification for charity/social-service rows that look like possible HIA but do not clearly prove a healthcare provider scope. Row `3` now lands in `classification_review_status=review_needed`, `automation_decision=draft_only_review`, `email_send_ready=false`, and `instantly_sync_status` remains blank.
+- deployed the stricter planner classifier to Railway service `n8n-rayn-workflows`; final live checks showed worker execution `37958` and planner execution `37961` succeeded after the fixes.
+- validation passed: `python3 -m pytest -q` (`377 passed`) and workflow JSON parse checks.
+- no emails were sent, and Instantly was not used.
+
 ## 2026-05-10
 
 Proxy-off scrape trial setup:
@@ -1283,3 +1300,19 @@ Cold email copy QA hardening:
 - finished the recovered rows through enrichment/contact/planner to avoid leaving live data half-reset: `292,296,304,320` completed; `306` reached `skipped_challenge_detected` on the Ashford site.
 - final 50-row state after URL recall recovery: `status={completed:45,skipped:5}`, `contact_search_status={contact_found:37,contact_not_found:8,pending:5}`, `automation_decision={auto_send_eligible:35,suppressed:8,auto_skipped:2,blank:5}`. Remaining skipped rows: `281,285,293,306,314`.
 - downstream note: URL recall is fixed, but the proof exposed separate non-URL issues that should not be mixed into this fix: `292` selected a WordPress system email (`comment-reply@wordpress.com`) during contact search, and `296` is non-healthcare but planner copy still treated it as healthcare/HIA.
+- `2026-05-25 23:40 +08`: fixed a live URL-picker regression where deterministic fallback accepted third-party pages as official websites.
+- hardened `wf-worker.json` URL parsing so company mentions in directories, partner/news pages, hosted profiles, job boards, messaging links, and path-only slugs no longer pass unless the domain carries real company identity or a clearly official hosted page is evidenced.
+- added bad-domain/path guards for observed failures including CHAS clinic locator, `wa.me`, Giving.sg/Glassdoor/job sites, and partner/article pages; strengthened host identity matching with distinctive company tokens and acronym checks.
+- added regression tests for the live failures: `1728 Dental Practice` now recovers `1728dental.com.sg` from a directory snippet, while `365 Cancer Prevention Society` on Icon, `Aare Urocare` on Beyond Medical, and `Aaria Rheumatology` on WhatsApp are rejected.
+- validation passed locally with `python3 -m pytest -q` (`369 passed`).
+- updated inactive live n8n workflow `BQEa6M2pKYmuEYMV` from `wf-worker.json`; new workflow version `ec3787d1-15f9-4c8b-8052-2b261c92d655`; previous live workflow backup saved under `backups/n8n-workflow-live/`.
+- reset the four bad live rows `2,3,6,7` to URL-discovery-ready state and cleared downstream contact/email/Instantly flags. Backup saved at `backups/noco-bad-url-reset/rows-2-3-6-7-20260525T160539Z.json`.
+- important follow-up: rows `3` and `6` had already synced bad leads to Instantly before the reset (`019e5fad-dad5-7e1a-a9a4-1542fec20a1e`, `019e5fae-e45c-7a51-850b-736dbab1a87d`). Instantly MCP timed out during verification, so those two leads should be removed or confirmed inactive in Instantly before enabling sends.
+- `2026-05-27 13:05 +08`: resumed production enrichment after the 5,225-row table load, but kept Instantly sending gated off.
+- Railway worker deployment `2026-05-27 03:43 UTC` reached `SUCCESS`; local validation passed with `python3 -m pytest -q` (`377 passed`).
+- fixed `RAYN Instantly Lead Sync v1` so `Prepare Instantly Lead` batches all candidates instead of only the first candidate; live workflow `24FKREgWNtoj6Wfp` remains inactive.
+- removed `customer_trust` from selectable planner tracks so new planner outputs select only HIA or PDPA-facing tracks.
+- added a worker safety guard in live `RAYN URL Picker Worker v1` so enrichment/contact fetches exclude rows already handed to Instantly: `(send_provider,neq,instantly)` and `(instantly_sync_status,neq,synced)`.
+- activated only the enrichment side: `RAYN Automation Controller v1`, `RAYN Review Approval v1`, `RAYN URL Picker Worker v1`, `RAYN Cold Email Planner v1`, alerts, and Instantly events. `RAYN Instantly Lead Sync v1` is inactive and Instantly campaign `04df49aa-ffe6-43d6-af33-f13e9e500934` is paused.
+- first kickoff succeeded via controller execution `37977`; contact worker execution `37980` accepted `3` row jobs and no new n8n execution errors appeared.
+- current send-side blocker before enabling Instantly: campaign still contains one existing lead for row `1` (`john@1010genome.com`, Instantly lead `019e677a-8389-7328-a62d-4eb36d46b356`) while Noco row `1` is inconsistent (`send_provider=instantly`, no validated email). Resolve that lead/row before activating lead sync or campaign sending.

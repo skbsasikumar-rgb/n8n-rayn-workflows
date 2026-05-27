@@ -556,6 +556,52 @@ def test_url_picker_fallback_rejects_partial_token_match():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_rejects_single_token_foreign_dot_com_without_singapore_evidence():
+    result = run_parse_url_pick(
+        "Aloha Dental",
+        [
+            {
+                "rank": 1,
+                "title": "Aloha Dental Clinic (@alohadentalsg) - Instagram",
+                "url": "https://www.instagram.com/alohadentalsg/",
+                "snippet": "Friendly dental clinic.",
+            },
+            {
+                "rank": 7,
+                "title": "Aloha Dental Center Aiea Dentist",
+                "url": "https://www.alohadentalcenterhi.com/",
+                "snippet": "Call (808)4840888. Text: (808)4271753 Email: alohadentalcenter@gmail.com.",
+            },
+            {
+                "rank": 10,
+                "title": "Aloha Dental Group",
+                "url": "https://alohadentalgroup.com/",
+                "snippet": "We provide dental care in a comfortable manner.",
+            },
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_accepts_single_token_dot_com_with_singapore_evidence():
+    result = run_parse_url_pick(
+        "Activex Physio",
+        [
+            {
+                "rank": 1,
+                "title": "Activex Physio Singapore",
+                "url": "https://activexphysio.com/",
+                "snippet": "Physiotherapy clinic in Singapore. Call +65 6812 3456.",
+            }
+        ],
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["url_picked"] == "https://activexphysio.com/"
+
+
 def test_url_picker_fallback_rejects_profile_slug():
     result = run_parse_url_pick(
         "ASIAN AMERICAN MEDICAL GROUP",
@@ -620,6 +666,86 @@ def test_url_picker_fallback_does_not_promote_listing_title_domain():
     assert result["url_picked"] == ""
 
 
+def test_url_picker_prefers_official_domain_found_in_directory_snippet():
+    result = run_parse_url_pick(
+        "1728 Dental Practice",
+        [
+            {
+                "rank": 1,
+                "title": "1728 DENTAL JURONG - Updated May 2026 - Phone Number - Yelp",
+                "url": "https://www.yelp.com/biz/1728-dental-jurong-singapore",
+                "snippet": "Visit Website. http://www.1728dental.com.sg.",
+            },
+            {
+                "rank": 7,
+                "title": "1728 Dental Practice - CHAS Clinic Locator",
+                "url": "https://www.chas.sg/clinic-locator",
+                "snippet": "Clinic listing for 1728 Dental Practice.",
+            },
+        ],
+    )
+
+    assert result["status"] == "url_picked"
+    assert result["canonical_domain"] == "1728dental.com.sg"
+
+
+def test_url_picker_rejects_partner_article_that_mentions_company_name():
+    result = run_parse_url_pick(
+        "365 Cancer Prevention Society",
+        [
+            {
+                "rank": 1,
+                "title": "Singapore's 365 Cancer Prevention Society and Icon Cancer Centre sign MOU",
+                "url": "https://iconcancercentre.sg/en/singapores-365-cancer-prevention-society-and-icon-cancer-centre-sign-mou-to-extend-collaboration-in-fight-against-cancer/",
+                "snippet": "Icon Cancer Centre and 365 Cancer Prevention Society announced a collaboration.",
+            }
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_unrelated_medical_group_profile_page():
+    result = run_parse_url_pick(
+        "Aare Urocare",
+        [
+            {
+                "rank": 5,
+                "title": "Dr Fiona Wu - Beyond Medical Group",
+                "url": "https://beyondmedical.com.sg/team/urologist-dr-fiona-wu/",
+                "snippet": "Dr Fiona Wu is part of Aare Urocare.",
+            },
+            {
+                "rank": 6,
+                "title": "Dr Fiona Wu - Singapore - Thomson Medical",
+                "url": "https://www.thomsonmedical.com/find-an-expert/dr-fiona-wu",
+                "snippet": "Specialist profile.",
+            },
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
+def test_url_picker_rejects_whatsapp_link_even_when_company_named():
+    result = run_parse_url_pick(
+        "Aaria Rheumatology",
+        [
+            {
+                "rank": 1,
+                "title": "Aaria Rheumatology",
+                "url": "https://wa.me/aariatheumatology",
+                "snippet": "Contact Aaria Rheumatology on WhatsApp.",
+            }
+        ],
+    )
+
+    assert result["status"] == "skipped"
+    assert result["url_picked"] == ""
+
+
 def test_url_discovery_requests_ten_serper_results():
     workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
     node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
@@ -641,6 +767,48 @@ console.log(JSON.stringify(result.json));
     assert result["serper_query"] == "Bridgepoint Health Singapore"
 
 
+def test_url_discovery_query_does_not_exclude_stale_domain_on_clean_reset():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
+    script = f"""
+const nodeCode = {json.dumps(node["parameters"]["jsCode"])};
+const $json = {{
+  company_name: "Affinity Medical Clinic",
+  canonical_domain: "affinitysurgery.com",
+  status: "",
+  status_reason: "reset_bad_url_pick:url_picker_guard_20260525"
+}};
+const result = new Function('$json', nodeCode)($json);
+console.log(JSON.stringify(result.json));
+"""
+    output = subprocess.check_output(["node", "-e", script], text=True)
+    result = json.loads(output)
+
+    assert result["serper_query"] == "Affinity Medical Clinic Singapore"
+    assert result["excluded_url_domain"] == ""
+
+
+def test_url_discovery_query_excludes_domain_only_for_url_rediscovery():
+    workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
+    node = next(entry for entry in workflow["nodes"] if entry["name"] == "Build URL Discovery Query")
+    script = f"""
+const nodeCode = {json.dumps(node["parameters"]["jsCode"])};
+const $json = {{
+  company_name: "Affinity Medical Clinic",
+  canonical_domain: "affinitysurgery.com",
+  status: "skipped",
+  status_reason: "skipped_url_validation_failed"
+}};
+const result = new Function('$json', nodeCode)($json);
+console.log(JSON.stringify(result.json));
+"""
+    output = subprocess.check_output(["node", "-e", script], text=True)
+    result = json.loads(output)
+
+    assert result["serper_query"] == "Affinity Medical Clinic Singapore -site:affinitysurgery.com"
+    assert result["excluded_url_domain"] == "affinitysurgery.com"
+
+
 def test_url_picker_prompt_requires_blank_when_unclear():
     workflow = json.loads((ROOT / "wf-worker.json").read_text(encoding="utf-8"))
     node = next(entry for entry in workflow["nodes"] if entry["name"] == "Prepare URL Discovery Pick")
@@ -651,6 +819,7 @@ def test_url_picker_prompt_requires_blank_when_unclear():
     assert "Accept close official-name variants" in prompt_code
     assert "Accept a hosted official site such as WordPress" in prompt_code
     assert "Prefer a normal company-owned domain over hosted landing pages" in prompt_code
+    assert "reject overseas .com results" in prompt_code
 
 
 def test_url_picker_prompt_node_compiles():
@@ -670,6 +839,9 @@ def test_url_pick_patch_clears_homepage_root_on_skip():
 
     assert "homepage_root_url: operatingRootUrl" in parse_node["parameters"]["jsCode"]
     assert "homepage_root_url: $json.homepage_root_url" in patch_node["parameters"]["jsonBody"]
+    assert "company_homepage_name: ''" in patch_node["parameters"]["jsonBody"]
+    assert "operating_company_root_name: ''" in patch_node["parameters"]["jsonBody"]
+    assert "notes: ''" in patch_node["parameters"]["jsonBody"]
 
 
 def test_dedupe_never_skips_lower_id_for_higher_id_match():

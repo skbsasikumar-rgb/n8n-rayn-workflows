@@ -447,6 +447,70 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.validated_email, "devendran@snm.org.sg")
         self.assertEqual(result.selected_contact_name, "S Devendran")
 
+    def test_decision_maker_fallback_rejects_unrelated_email_domain(self):
+        payload = {
+            "Id": 314,
+            "company_name": "A.D.S Clinic",
+            "company_homepage_name": "A.D.S Clinic",
+            "canonical_domain": "a-d-s-clinic.com",
+            "best_url": "https://a-d-s-clinic.com/",
+            "website_content": "A.D.S Clinic provides healthcare services.",
+            "site_fast_path_only": True,
+        }
+
+        def fake_anymail(candidate, domain):
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [{"email_status": "not_found", "input": {"domain": domain, "full_name": candidate.name}}],
+                "mx_exists": True,
+            }
+
+        def fake_decision_maker(domain, company_name=""):
+            return {
+                "configured": True,
+                "enabled": True,
+                "error": "",
+                "provider": "anymail_finder_decision_maker",
+                "categories": ["operations"],
+                "results": [
+                    {
+                        "decision_maker_category": "operations",
+                        "email": "patrick.dillon@hcahealthcare.com",
+                        "email_status": "valid",
+                        "person_full_name": "Pat Dillon",
+                        "person_job_title": "CIO",
+                        "valid_email": "patrick.dillon@hcahealthcare.com",
+                        "input": {"domain": domain},
+                    }
+                ],
+            }
+
+        with patch.dict(
+            os.environ,
+            {"CONTACT_PREFLIGHT_LLM_ENABLED": "false", "CONTACT_COMPANY_EMAIL_FALLBACK_ENABLED": "false"},
+            clear=False,
+        ), patch.object(c, "validate_anymail_person", side_effect=fake_anymail), patch.object(
+            c, "validate_anymail_decision_maker", side_effect=fake_decision_maker
+        ):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(result.contact_search_status, "contact_not_found")
+        self.assertEqual(result.validated_email, "")
+        decision, email = c.anymail_decision(
+            {
+                "email_status": "valid",
+                "valid_email": "patrick.dillon@hcahealthcare.com",
+                "decision_maker_category": "operations",
+                "person_full_name": "Pat Dillon",
+            },
+            "a-d-s-clinic.com",
+            "A.D.S Clinic",
+        )
+        self.assertEqual(decision, "rejected")
+        self.assertEqual(email, "")
+
     def test_company_email_fallback_runs_after_person_lookup_miss(self):
         payload = {
             "Id": 123,

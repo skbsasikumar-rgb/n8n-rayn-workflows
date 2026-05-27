@@ -252,7 +252,7 @@ Rules:
 - Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 lightly ties back to the earlier note.
 - Email 3 will carry the final close-loop SaaS/LMS point, so do not overload Email 2.
 - Keep the same recipient addressing style from each deterministic email.
-- Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA/customer-trust track, and support-route caution.
+- Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA track, and support-route caution.
 - You may improve flow and make it sound human. You may not change the meaning.
 - Use "We", not "RAYN".
 - Use simple words and short sentences.
@@ -266,7 +266,8 @@ Email 1 rules:
 - Paragraph 2: problem / why now. Link it back to paragraph 1 with "that data", "that proof", "that trail", or similar plain wording.
 - Paragraph 3: Cyber Essentials as a practical path, baseline, evidence map, or route. For HIA, this paragraph must say we map/help map it into a Cyber Essentials route for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security.
 - Paragraph 4: tiny CTA only.
-- For HIA, mention HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
+- For HIA, Email 1 must spell out Health Information Act (HIA) before later using HIA. Keep HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
+- If payload email_1_required_hia_phrase is not empty, copy that exact phrase once in Email 1, preferably in paragraph 2. Do not shorten it to HIA only.
 - Prefer 55-75 words. Hard limit: Email 1 under 95 words.
 
 Email 2 rules:
@@ -283,8 +284,9 @@ Email 2 rules:
 - Keep each non-p.s. paragraph short. Do not merge the useful check, HIA route/scope, and sizing/support line into one long paragraph.
 - Keep the CTA in its own short paragraph before the p.s.
 - Keep the main body to 3 or 4 short paragraphs before the p.s.
-- Keep this p.s. exactly as written:
-  p.s. We are usually priced near the lower end; scope includes evidence prep, certification support, and the SaaS/LMS platform.
+- Keep the p.s. exactly as the payload field email_2_required_ps.
+- Treat email_2_required_ps as immutable: copy it once, exactly, as the last paragraph. Do not paraphrase it, split it, add another p.s., or move it earlier.
+- For PDPA/DPO/non-HIA tracks, do not use a price-focused p.s.; do not mention pricing, cost, endpoint count, funding, urgency, or "priced near the lower end".
 - Prefer 65-90 words including the p.s. Hard limit: Email 2 under 95 words.
 - If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
@@ -787,16 +789,128 @@ LOCATION_HINTS = {
 }
 
 
+COMPANY_NAME_CONNECTORS = {
+    "and",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "with",
+}
+
+COMPANY_NAME_ACRONYMS = {
+    "AEVI",
+    "AI",
+    "API",
+    "CCTV",
+    "CRM",
+    "CT",
+    "DNA",
+    "EHR",
+    "EMR",
+    "ENT",
+    "GP",
+    "HIA",
+    "HR",
+    "IT",
+    "LMS",
+    "MRI",
+    "PDPA",
+    "SEO",
+    "SMS",
+}
+
+
+def parenthetical_acronym(name: str) -> str:
+    for candidate in reversed(re.findall(r"\(([A-Z0-9&.-]{2,12})\)", name)):
+        compacted = re.sub(r"[^A-Z0-9]", "", candidate.upper())
+        if 2 <= len(compacted) <= 10:
+            return candidate.upper()
+    return ""
+
+
+def is_mostly_uppercase_name(name: str) -> bool:
+    letters = [char for char in name if char.isalpha()]
+    if not letters:
+        return False
+    return sum(1 for char in letters if char.isupper()) / len(letters) >= 0.82
+
+
+def titlecase_company_token(token: str, *, first: bool = False) -> str:
+    if not re.search(r"[A-Za-z]", token):
+        return token
+    if "-" in token:
+        return "-".join(titlecase_company_token(part, first=first and index == 0) for index, part in enumerate(token.split("-")))
+
+    clean = re.sub(r"[^A-Za-z0-9&.]", "", token)
+    upper = clean.upper()
+    lower = token.lower()
+    if lower in COMPANY_NAME_CONNECTORS and not first:
+        return lower
+    if re.fullmatch(r"(?:[A-Z]\.){2,}", clean):
+        return token
+    if upper in COMPANY_NAME_ACRONYMS or (first and re.fullmatch(r"[A-Z0-9&.]{2,4}", clean)):
+        return token.upper()
+    return lower[:1].upper() + lower[1:]
+
+
+def humanize_uppercase_company_name(name: str) -> str:
+    if not is_mostly_uppercase_name(name):
+        return name
+    word_index = 0
+    parts: list[str] = []
+    for part in re.split(r"(\s+)", name):
+        if part.isspace() or not part:
+            parts.append(part)
+            continue
+        parts.append(titlecase_company_token(part, first=word_index == 0))
+        if re.search(r"[A-Za-z]", part):
+            word_index += 1
+    return "".join(parts)
+
+
+def shorten_display_company_name(name: str, acronym: str = "") -> str:
+    name = compact(name)
+    if not name:
+        return name
+    if acronym and (len(name) > 52 or len(name.split()) >= 6):
+        return acronym
+
+    if len(name) > 58:
+        without_singapore = re.sub(r",?\s+\bSingapore\b\.?$", "", name, flags=re.I).strip(" ,-")
+        if len(without_singapore) >= 8:
+            name = without_singapore
+
+    if len(name) > 68:
+        words = name.split()
+        candidate = " ".join(words[:5]).strip(" ,-")
+        if len(candidate) >= 10:
+            return candidate
+    return name
+
+
 def email_display_company_name(row: dict[str, Any] | str) -> str:
     raw = row if isinstance(row, str) else row.get("company_name") or row.get("company_homepage_name")
     name = compact(raw)
     if not name:
         return "your organisation"
+    name = name.replace("_", " ")
+    acronym = parenthetical_acronym(name)
+    name = re.split(r"\s*[|•]\s*", name, maxsplit=1)[0]
     name = re.sub(r"\b(?:pte\.?\s*ltd\.?|private\s+limited|limited|ltd\.?|llp|llc|inc\.?)\b\.?", "", name, flags=re.I)
     name = re.sub(r"\s+", " ", name).strip(" ,-")
 
     def strip_location_parentheses(match: re.Match[str]) -> str:
-        inner = compact(match.group(1)).lower()
+        inner_raw = compact(match.group(1))
+        if acronym and inner_raw.upper() == acronym:
+            return " "
+        inner = inner_raw.lower()
         if inner in LOCATION_HINTS or (len(inner.split()) <= 3 and not re.search(r"\b(?:group|clinic|medical|health|care)\b", inner)):
             return " "
         return match.group(0)
@@ -805,6 +919,8 @@ def email_display_company_name(row: dict[str, Any] | str) -> str:
     name = re.sub(r"\s+@\s+[A-Za-z][A-Za-z .'-]{1,40}$", "", name)
     name = re.sub(r"\s+-\s+[A-Za-z][A-Za-z .'-]{1,40}$", "", name)
     name = re.sub(r"\s+", " ", name).strip(" ,-")
+    name = humanize_uppercase_company_name(name)
+    name = shorten_display_company_name(name, acronym)
     return name or compact(raw) or "your organisation"
 
 
@@ -1153,7 +1269,7 @@ def value_fallback_email_2(
         subject = fallback_subjects[subject_key]
         subject_options = list(fallback_subjects.values())
     slots = non_hia_email_2_sentence_slots(row, classification or {}, sentence_slots, asset_name) if classification is not None else {}
-    body = value_fallback_body_fixed(prefix, asset_name, slots)
+    body = value_fallback_body_fixed(prefix, asset_name, slots, email_2_required_ps(classification))
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": subject_options,
@@ -1413,11 +1529,29 @@ def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
     return "Hello team,"
 
 
+def title_case_contact_name_part(value: str) -> str:
+    token = compact(value)
+    if not token:
+        return ""
+    if not any(ch.isalpha() for ch in token):
+        return token
+    if not token.isupper():
+        return token
+
+    def fix_word(match: re.Match[str]) -> str:
+        word = match.group(0)
+        if len(word) == 1:
+            return word.upper()
+        return word[0].upper() + word[1:].lower()
+
+    return re.sub(r"[A-Za-z]+", fix_word, token)
+
+
 def first_name_from_contact(name: str) -> str:
     parts = [part for part in compact(name).replace(".", " ").split() if part]
     while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
         parts.pop(0)
-    return parts[0] if parts else "there"
+    return title_case_contact_name_part(parts[0]) if parts else "there"
 
 
 def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
@@ -1478,7 +1612,7 @@ def hia_window_label(classification: dict[str, Any]) -> str:
 
 
 def hia_problem_prefix(classification: dict[str, Any]) -> str:
-    return "With HIA readiness becoming more urgent for healthcare providers,"
+    return "With Health Information Act (HIA) readiness becoming more urgent for healthcare providers,"
 
 
 def trim_text(value: Any) -> str:
@@ -1686,7 +1820,21 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
     if service == "retail_pharmacy":
         return "pharmacy" in company or "pharmacy" in text or "pharmacist" in text
     if service == "long_term_care":
-        return contains_any(text, ("nursing home", "community hospital", "home care", "caregiver", "palliative", "hospice", "resident care"))
+        return contains_any(
+            text,
+            (
+                "nursing home",
+                "community hospital",
+                "home care",
+                "long-term care provider",
+                "long term care provider",
+                "palliative",
+                "hospice",
+                "resident",
+                "residents",
+                "resident care",
+            ),
+        )
     if service == "outpatient_renal_dialysis":
         return "dialysis" in text or "kidney care" in text or "renal" in text
     if service == "ambulatory_surgical_centre":
@@ -1714,6 +1862,55 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
             ),
         ) and care_evidence
     return False
+
+
+def social_charity_without_clinical_hia_evidence(
+    entity: dict[str, Any],
+    hia: dict[str, Any],
+    text: str,
+) -> bool:
+    if entity.get("entity_type_guess") not in {"charity", "npo", "social_service"}:
+        return False
+    service = compact(hia.get("hia_service_type_guess"))
+    if service not in {"GP_OMS", "specialist_OMS", "diagnostic", "long_term_care"}:
+        return False
+    social_support_terms = (
+        "charity",
+        "ipc",
+        "non-profit",
+        "non profit",
+        "social service agency",
+        "beneficiaries",
+        "volunteers",
+        "caregivers",
+        "survivors",
+        "community",
+        "support one another",
+    )
+    clinical_provider_terms = (
+        "medical clinic",
+        "specialist clinic",
+        "clinic appointment",
+        "clinic appointments",
+        "doctor",
+        "doctors",
+        "physician",
+        "physicians",
+        "oncologist",
+        "oncology clinic",
+        "nurse",
+        "nursing",
+        "patient care",
+        "patient records",
+        "patient reports",
+        "consultation",
+        "consultations",
+        "treatment records",
+        "clinical laboratory",
+        "medical laboratory",
+        "radiology",
+    )
+    return contains_any(text, social_support_terms) and not contains_any(text, clinical_provider_terms)
 
 
 def healthcare_supplier_without_patient_care(text: str) -> bool:
@@ -2443,13 +2640,12 @@ def choose_email_track(track_scores: dict[str, dict[str, Any]]) -> tuple[str, st
     thresholds = {
         "hia_regulatory": 70,
         "dpo_evidence": 70,
-        "customer_trust": 65,
         "pdpa_safeguards": 50,
     }
     candidates = [
         (track, int(data.get("score") or 0))
         for track, data in track_scores.items()
-        if data.get("eligible") and int(data.get("score") or 0) >= thresholds[track]
+        if track in thresholds and data.get("eligible") and int(data.get("score") or 0) >= thresholds[track]
     ]
     if not candidates:
         rejected = [
@@ -2467,7 +2663,7 @@ def choose_email_track(track_scores: dict[str, dict[str, Any]]) -> tuple[str, st
             if track != primary
         ]
         return primary, secondary, rejected
-    priority = {"hia_regulatory": 4, "dpo_evidence": 3, "customer_trust": 2, "pdpa_safeguards": 1}
+    priority = {"hia_regulatory": 3, "dpo_evidence": 2, "pdpa_safeguards": 1}
     candidates.sort(key=lambda item: (item[1], priority[item[0]]), reverse=True)
     primary = candidates[0][0]
     secondary = next((track for track, _score in candidates[1:] if track != primary), "")
@@ -2595,6 +2791,10 @@ def classification_review_reason_for(row: dict[str, Any], classification: dict[s
             return "hia_requires_review_without_official_service_evidence"
         if compact(classification.get("hia_confidence")) == "low":
             return "hia_requires_review_low_confidence"
+        if compact(classification.get("entity_type_guess")) in {"charity", "npo", "social_service"} and compact(
+            classification.get("hia_service_type_guess")
+        ) in {"GP_OMS", "specialist_OMS", "diagnostic", "allied_health"}:
+            return "hia_requires_review_social_service_or_charity_scope"
         return ""
     if pressure == "pdpa_safeguards":
         if selected_track == "customer_trust" and personal_intensity not in {"medium", "high"} and data_type in {"", "unknown"}:
@@ -2762,6 +2962,19 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
             "hia_relevance_score": min(int(hia.get("hia_relevance_score") or 0), 36),
             "hia_confidence": "low",
             "hia_scope_reason": "Optometry/visioncare evidence without ophthalmology, surgical, patient-treatment or referral evidence is not treated as HIA scope.",
+            "hia_service_type_guess": "unknown",
+            "hia_official_service_type": "",
+            "hia_official_service_label": "",
+            "hia_timeline_batch_guess": "unknown",
+            "hia_deadline_claim_safe": False,
+        }
+    if social_charity_without_clinical_hia_evidence(entity, hia, text):
+        hia = {
+            **hia,
+            "hia_relevant": False,
+            "hia_relevance_score": min(int(hia.get("hia_relevance_score") or 0), 36),
+            "hia_confidence": "low",
+            "hia_scope_reason": "Charity or social-service evidence without concrete clinical-provider terms is not treated as HIA scope.",
             "hia_service_type_guess": "unknown",
             "hia_official_service_type": "",
             "hia_official_service_label": "",
@@ -2937,7 +3150,7 @@ def first_name_from_contact(row: dict[str, Any] | str) -> str:
     parts = [part for part in name.replace(".", " ").split() if part]
     while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
         parts.pop(0)
-    return parts[0] if parts else ""
+    return title_case_contact_name_part(parts[0]) if parts else ""
 
 
 def choose_variant(classification: dict[str, Any]) -> str:
@@ -3416,10 +3629,25 @@ def hia_email_1_cyber_data_security_paragraph_ok(body: str) -> bool:
     return all(term in mechanism for term in ("hia", "cyber essentials", "cyber", "data", "security"))
 
 
-EMAIL_2_VALUE_PS = (
+def hia_email_1_names_health_information_act(body: str) -> bool:
+    return bool(re.search(r"\bHealth Information Act\s*\(HIA\)", body, re.I))
+
+
+EMAIL_2_HIA_VALUE_PS = (
     "p.s. We are usually priced near the lower end; scope includes evidence prep, "
     "certification support, and the SaaS/LMS platform."
 )
+EMAIL_2_PDPA_VALUE_PS = (
+    "p.s. We are authorized and appointed by the CSA as a CISOaaS Consultant; "
+    "our SaaS/LMS supports certification, renewal, procedures and training."
+)
+EMAIL_2_VALUE_PS = EMAIL_2_HIA_VALUE_PS
+
+
+def email_2_required_ps(classification: dict[str, Any] | None = None) -> str:
+    if classification and classification.get("pressure_type") == "hia_regulatory":
+        return EMAIL_2_HIA_VALUE_PS
+    return EMAIL_2_PDPA_VALUE_PS
 
 EMAIL_3_PLATFORM_LINE = (
     "If it becomes useful later, the SaaS/LMS platform helps teams get certified, "
@@ -3427,7 +3655,8 @@ EMAIL_3_PLATFORM_LINE = (
 )
 
 
-def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> str:
+def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str, ps: str | None = None) -> str:
+    ps = ps or EMAIL_2_HIA_VALUE_PS
     first_line = followup_sentence(prefix, "just tying this back to my earlier note.")
     claim_line = compact(f"{funding_line}{caveat}")
     second_line = (
@@ -3441,7 +3670,7 @@ def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str) -> s
         f"{second_line}\n\n"
         f"{fit_line}\n\n"
         "Worth sending the short map?\n\n"
-        f"{EMAIL_2_VALUE_PS}"
+        f"{ps}"
     )
 
 
@@ -3477,12 +3706,13 @@ def hia_pricing_email_2_body(
         f"{check_line}\n\n"
         f"{scope_line}\n\n"
         f"{cta}\n\n"
-        f"{EMAIL_2_VALUE_PS}"
+        f"{EMAIL_2_HIA_VALUE_PS}"
     )
 
 
-def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str] | None = None) -> str:
+def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str] | None = None, ps: str | None = None) -> str:
     slots = slots or {}
+    ps = ps or EMAIL_2_PDPA_VALUE_PS
     first_line = followup_sentence(
         prefix,
         slots.get("opening_line") or "just tying this back to my earlier note.",
@@ -3499,7 +3729,7 @@ def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str
         f"{second_line}\n\n"
         f"{fit_line}\n\n"
         f"{cta}\n\n"
-        f"{EMAIL_2_VALUE_PS}"
+        f"{ps}"
     )
 
 
@@ -3565,15 +3795,15 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
     }
     if track == "hia_regulatory":
         problem_options = {
-            "hia_messy_evidence": "If so, HIA starting from 2027 makes that trail the issue: access, vendors, backups and incident steps need evidence.",
-            "hia_getting_closer": "If so, HIA starting from 2027 makes that harder to leave informal: access, vendors, backups and incident ownership need evidence.",
-            "hia_prep_access_backup": "If so, HIA starting from 2027 means proving who can access those records, where backups sit, which vendors touch them and who owns incident steps.",
-            "hia_readiness_evidence": "If so, HIA starting from 2027 makes the messy part evidence around that trail.",
-            "hia_real_for_providers": "If so, HIA starting from 2027 makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
+            "hia_messy_evidence": "If so, the Health Information Act (HIA) starting from 2027 makes that trail the issue: access, vendors, backups and incident steps need evidence.",
+            "hia_getting_closer": "If so, the Health Information Act (HIA) starting from 2027 makes that harder to leave informal: access, vendors, backups and incident ownership need evidence.",
+            "hia_prep_access_backup": "If so, the Health Information Act (HIA) starting from 2027 means proving who can access those records, where backups sit, which vendors touch them and who owns incident steps.",
+            "hia_readiness_evidence": "If so, the Health Information Act (HIA) starting from 2027 makes the messy part evidence around that trail.",
+            "hia_real_for_providers": "If so, the Health Information Act (HIA) starting from 2027 makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
             "decent_cyber_data_baseline": "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.",
-            "practical_cyber_data_baseline": "We help map that records map into a practical Cyber Essentials route for the HIA cyber/data-security side.",
+            "practical_cyber_data_baseline": "We help map that trail into a practical Cyber Essentials route for the HIA cyber/data-security side.",
             "controls_evidence_baseline": "We help map that trail into a Cyber Essentials evidence route for the HIA cyber/data-security side.",
         }
     elif track == "dpo_evidence":
@@ -4702,7 +4932,7 @@ def specialist_subtype(text: str) -> str:
         "pain" in text and "clinic" in text
     ):
         return "pain"
-    if any(term in text for term in ("ophthalmology", "ophthalmologist", "vision", "cataract", "retina", "lasik", "optometry", "eye clinic")):
+    if re.search(r"\b(?:ophthalmology|ophthalmologist|vision|cataract|retina|lasik|optometry)\b|eye clinic", text):
         return "eye"
     if any(term in text for term in ("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser")):
         return "dermatology"
@@ -4915,15 +5145,15 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     ):
         guess = "allied_health"
         add_evidence("allied-health or physiotherapy terms")
+    elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
+        guess = "hearing_care"
+        add_evidence("hearing-care terms")
     elif service_type == "specialist_OMS" or (has_specialist and not has_gp):
         guess = "specialist_led"
         add_evidence("specialist-led care terms")
     elif service_type == "retail_pharmacy" or any(term in source_l for term in ("pharmacy", "pharmacist", "compounding", "dispensing")):
         guess = "pharmacy"
         add_evidence("pharmacy or compounding terms")
-    elif service_type == "hearing_care" or any(term in source_l for term in ("hearing care", "hearing aid", "audiology", "hearing test", "device fitting")):
-        guess = "hearing_care"
-        add_evidence("hearing-care terms")
     elif structure == "solo_gp" and (service_type == "GP_OMS" or has_gp):
         guess = "solo_gp"
         add_evidence("solo GP/outpatient evidence")
@@ -5733,7 +5963,7 @@ def generate_email_sequence(
         email3_body = ""
         email4_body = ""
     elif classification["pressure_type"] == "hia_regulatory":
-        lead = "With HIA readiness becoming more urgent for healthcare providers"
+        lead = "With Health Information Act (HIA) readiness becoming more urgent for healthcare providers"
         segment = healthcare_segment(classification)
         email1_subject = "HIA readiness"
         email2_subject = "Re: HIA readiness"
@@ -5814,14 +6044,24 @@ def generate_email_sequence(
                 email2_subject = "HIA / cyber funding"
                 email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = funding_email_2_body_fixed(followup_prefix, funding_line, caveat)
+            email2_body = funding_email_2_body_fixed(
+                followup_prefix,
+                funding_line,
+                caveat,
+                email_2_required_ps(classification),
+            )
         else:
             fallback_subjects = {"A": "support route", "B": "funding fit", "C": "cost check"}
             subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
             email2_subject = fallback_subjects[subject_key]
             email2_subject_options = list(fallback_subjects.values())
             email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset)
-            email2_body = value_fallback_body_fixed(followup_prefix, asset, email2_slots)
+            email2_body = value_fallback_body_fixed(
+                followup_prefix,
+                asset,
+                email2_slots,
+                email_2_required_ps(classification),
+            )
             fallback_email2 = {"chosen_subject": email2_subject, "subject_options": email2_subject_options, "body": email2_body}
             email2_subject = fallback_email2["chosen_subject"]
             email2_subject_options = fallback_email2["subject_options"]
@@ -5932,7 +6172,8 @@ def email_1_rewrite_payload(
         "approved_cta": compact(copy_brief.get("email_cta")),
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
-        "email_2_required_ps": EMAIL_2_VALUE_PS,
+        "email_1_required_hia_phrase": "Health Information Act (HIA)" if classification.get("pressure_type") == "hia_regulatory" else "",
+        "email_2_required_ps": email_2_required_ps(classification),
         "email_2_target_words": "65-90",
         "email_2_hard_max_words": 95,
         "email_2_required_shape": "4 or 5 short paragraphs: tie-back opener, route/check, optional fit line, CTA alone, exact p.s.",
@@ -6003,6 +6244,8 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
     if any(phrase in body_l for phrase in AI_GIVEAWAY_PHRASES):
         flags.append("llm_email_1_rewrite_ai_phrase")
     if classification.get("pressure_type") == "hia_regulatory":
+        if not hia_email_1_names_health_information_act(body):
+            flags.append("llm_email_1_rewrite_missing_health_information_act_name")
         hia_pos = body_l.find("hia")
         ce_pos = body_l.find("cyber essentials")
         if hia_pos < 0 or hia_pos > 400 or (ce_pos >= 0 and hia_pos > ce_pos):
@@ -6018,19 +6261,22 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
     flags: list[str] = []
     body_l = compact(body).lower()
     paragraphs = [compact(part) for part in body.split("\n\n") if compact(part)]
+    required_ps = email_2_required_ps(classification)
     if not body or word_count(body) > 95:
         flags.append("llm_email_2_rewrite_length")
     if len(paragraphs) < 4:
         flags.append("llm_email_2_rewrite_paragraph_shape")
     if any(len(part.split()) > 42 for part in paragraphs[:-1]):
         flags.append("llm_email_2_rewrite_long_paragraph")
-    if EMAIL_2_VALUE_PS not in body:
+    if required_ps not in body:
         flags.append("llm_email_2_rewrite_missing_value_ps")
     ps_lines = [compact(line) for line in body.splitlines() if compact(line).lower().startswith("p.s.")]
     if re.search(r"\bP\.S\.\s*\d", body):
         flags.append("llm_email_2_rewrite_broken_ps")
-    if body.count(EMAIL_2_VALUE_PS) != 1 or ps_lines != [EMAIL_2_VALUE_PS]:
+    if body.count(required_ps) != 1 or ps_lines != [required_ps]:
         flags.append("llm_email_2_rewrite_changed_value_ps")
+    if classification.get("pressure_type") != "hia_regulatory" and EMAIL_2_HIA_VALUE_PS in body:
+        flags.append("llm_email_2_rewrite_wrong_track_ps")
     if "from the site" in body_l:
         flags.append("llm_email_2_rewrite_from_site")
     if "rayn" in body_l:
@@ -6382,7 +6628,7 @@ def enforce_funding_claim_email(
     prefix = email_comma_greeting(row)
     subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
     caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = funding_email_2_body_fixed(prefix, claim, caveat)
+    body = funding_email_2_body_fixed(prefix, claim, caveat, email_2_required_ps(classification))
     emails = {**emails}
     emails["email_2"] = {
         "subject_options": list(email2.get("subject_options") or [subject]),
@@ -6544,6 +6790,8 @@ def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_
     price_present = "s$4,300" in body_l or "s$4300" in body_l
     cisaas_pricing_present = "cisaas pricing" in body_l or "endpoint-based" in body_l
     if classification.get("pressure_type") != "hia_regulatory":
+        if "priced near the lower end" in body_l:
+            flags.append("non_hia_price_focused_ps")
         if price_present or cisaas_pricing_present:
             flags.append("non_hia_pricing_claim")
         return flags
@@ -6825,6 +7073,8 @@ def evaluate_email_strategy(
             flags.append("clinic_profile_missing_for_hia")
         if clinic_profile_too_generic(copy_brief):
             flags.append("clinic_profile_too_generic")
+        if not hia_email_1_names_health_information_act(email1):
+            flags.append("email_1_missing_health_information_act_name")
         if email_1_missing_clinic_profile(email1, copy_brief):
             flags.append("email_1_missing_clinic_profile")
         if not hia_email_1_cyber_data_security_paragraph_ok(email1):
@@ -6837,7 +7087,11 @@ def evaluate_email_strategy(
         flags.append("asset_offer_too_generic_for_segment")
     if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
         flags.append("hearing_care_missing_trigger")
-    if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
+    if (
+        classification.get("pressure_type") == "hia_regulatory"
+        and classification.get("hia_service_type_guess") == "diagnostic"
+        and classification.get("hia_confidence") == "low"
+    ):
         flags.append("lab_classification_ambiguous")
     funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
     hia_pricing = hia_pricing_active(classification, copy_brief)
@@ -6958,7 +7212,11 @@ def quality_gate(
             flags.append("asset_offer_too_generic_for_segment")
         if classification.get("hia_service_type_guess") == "hearing_care" and not compact(copy_brief.get("prospect_facing_signal")):
             flags.append("hearing_care_missing_trigger")
-        if classification.get("hia_service_type_guess") == "diagnostic" and classification.get("hia_confidence") == "low":
+        if (
+            classification.get("pressure_type") == "hia_regulatory"
+            and classification.get("hia_service_type_guess") == "diagnostic"
+            and classification.get("hia_confidence") == "low"
+        ):
             flags.append("lab_classification_ambiguous")
         flags.extend(evaluate_email_strategy(row, classification, funding, emails, copy_brief))
 
@@ -6993,6 +7251,7 @@ SEVERE_EMAIL_FLAGS = {
     "email_contains_hia_batch_wording",
     "email_1_too_generic",
     "email_1_missing_clinic_profile",
+    "email_1_missing_health_information_act_name",
     "email_2_missing_funding_claim_line",
     "email_2_not_funding_only",
     "hia_pricing_missing_endpoint_caveat",
@@ -7000,6 +7259,7 @@ SEVERE_EMAIL_FLAGS = {
     "hia_pricing_percentage_missing_caveat",
     "hia_pricing_group_exact_price_claim",
     "hia_pricing_forbidden_funding_claim",
+    "non_hia_price_focused_ps",
     "non_hia_pricing_claim",
     "generic_inbox_wrong_greeting",
     "cyber_essentials_equals_pdpa_compliance",
@@ -7574,6 +7834,7 @@ def patch_with_email_sequence(
         "clinic_profile_missing_for_hia",
         "clinic_profile_too_generic",
         "email_1_missing_clinic_profile",
+        "email_1_missing_health_information_act_name",
         "email_1_missing_hia_cyber_data_security_mechanism",
         "asset_offer_too_generic_for_segment",
         "hearing_care_missing_trigger",

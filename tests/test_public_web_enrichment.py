@@ -627,12 +627,18 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertNotIn("'processing') : 'skipped'", parse_code)
         self.assertIn("status,eq,url_picked", enrichment_url)
         self.assertIn("status,eq,processing", enrichment_url)
+        self.assertIn("manual_url_override,notblank", enrichment_url)
+        self.assertIn("status_reason,eq,no_official_url_found", enrichment_url)
+        self.assertIn("manual_url_override", enrichment_url)
         self.assertIn("retry_failed", enrichment_url)
         self.assertIn("status,eq,failed_retryable", enrichment_url)
         self.assertIn("retry_eligible,eq,true", enrichment_url)
         self.assertIn("isStaleProcessing(row)", rows_to_enrichment_code)
         self.assertIn("status === 'url_picked'", rows_to_enrichment_code)
         self.assertIn("status === 'failed_retryable'", rows_to_enrichment_code)
+        self.assertIn("isManualUrlOverride", rows_to_enrichment_code)
+        self.assertIn("normalizeManualUrl", rows_to_enrichment_code)
+        self.assertIn("manual_url_override: manualUrl", rows_to_enrichment_code)
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
 
     def test_workflow_keeps_sparse_successes_completed(self):
