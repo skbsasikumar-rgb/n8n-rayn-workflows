@@ -479,6 +479,77 @@ CLINICAL_CARE_EVIDENCE_TERMS = (
     "health record",
     "health records",
 )
+NON_HCSA_STANDALONE_ALLIED_TERMS = (
+    "physio",
+    "physiotherapy",
+    "physiotherapist",
+    "physiotherapists",
+    "podiatry",
+    "podiatrist",
+    "podiatrists",
+    "psychology",
+    "psychologist",
+    "psychologists",
+    "clinical psychologist",
+    "psychotherapy",
+    "psychotherapist",
+    "psychotherapists",
+    "counselling",
+    "counseling",
+    "counsellor",
+    "counsellors",
+    "counselor",
+    "counselors",
+    "mental health",
+    "mental-health",
+    "audiology",
+    "audiologist",
+    "audiologists",
+    "hearing care",
+    "hearing test",
+    "hearing assessment",
+    "tcm",
+    "traditional chinese medicine",
+    "chiropractic",
+    "chiropractor",
+    "cam clinic",
+    "complementary and alternative medicine",
+)
+HCSA_LICENSE_EVIDENCE_TERMS = (
+    "hcsa",
+    "healthcare services act",
+    "licensed healthcare service",
+    "licensed healthcare services",
+    "licensable healthcare service",
+    "licensable healthcare services",
+    "licensed medical clinic",
+    "licensed clinic",
+    "moh-licensed",
+    "moh licensed",
+    "licensed by moh",
+    "moh licence",
+    "moh license",
+    "licensee under the healthcare services act",
+    "outpatient medical service licensee",
+    "outpatient medical service licence",
+    "outpatient dental service licensee",
+    "outpatient dental service licence",
+)
+MEDICAL_DOCTOR_CLINIC_EVIDENCE_TERMS = (
+    "psychiatrist",
+    "psychiatrists",
+    "psychiatry",
+    "medical doctor",
+    "medical doctors",
+    "registered medical practitioner",
+    "registered medical practitioners",
+    "doctor-led",
+    "doctor led",
+    "general practitioner",
+    "family physician",
+    "physician",
+    "physicians",
+)
 WEAK_SPECIALIST_HIA_TERMS = (
     "optometry",
     "optometrist",
@@ -515,6 +586,16 @@ SPECIALIST_SERVICE_TERMS = (
     "ivf",
     "assisted reproduction",
     "reproductive medicine",
+    "gynaecology",
+    "gynaecologist",
+    "gynecology",
+    "gynecologist",
+    "obstetric",
+    "obstetrics",
+    "obstetrician",
+    "women's clinic",
+    "womens clinic",
+    "clinic for women",
     "oncology",
     "radiation",
     "endocrinology",
@@ -541,6 +622,8 @@ SPECIALIST_SERVICE_TERMS = (
     "anaesthesia",
     "spine pain",
     "injections",
+    "psychiatry",
+    "psychiatrist",
     "ophthalmology",
     "ophthalmologist",
     "cataract",
@@ -1836,32 +1919,64 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
             ),
         )
     if service == "outpatient_renal_dialysis":
-        return "dialysis" in text or "kidney care" in text or "renal" in text
+        return has_renal_dialysis_service_evidence(text)
     if service == "ambulatory_surgical_centre":
         return "ambulatory surgical" in text or "day surgery" in text or ("surgery" in text and care_evidence)
     if service == "hearing_care":
-        return has_hearing_care_evidence(text) and care_evidence
+        return has_hcsa_or_medical_doctor_clinic_evidence(f"{company} {text}") and has_hearing_care_evidence(text) and care_evidence
     if service == "allied_health":
-        return contains_any(
-            text,
-            (
-                "physiotherapist",
-                "physiotherapy",
-                "podiatrist",
-                "podiatry",
-                "clinical psychologist",
-                "psychology",
-                "psychologist",
-                "psychotherapy",
-                "counselling",
-                "counseling",
-                "mental-health clinic",
-                "mental health clinic",
-                "audiologist",
-                "rehabilitation",
-            ),
-        ) and care_evidence
+        return (
+            has_hcsa_or_medical_doctor_clinic_evidence(f"{company} {text}")
+            and contains_any(text, NON_HCSA_STANDALONE_ALLIED_TERMS + ("rehabilitation",))
+            and care_evidence
+        )
     return False
+
+
+def has_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
+    if contains_any(text, HCSA_LICENSE_EVIDENCE_TERMS):
+        return True
+    clinic_context = contains_any(
+        text,
+        (
+            "clinic",
+            "medical clinic",
+            "specialist clinic",
+            "outpatient",
+            "patient",
+            "appointment",
+            "consultation",
+            "treatment",
+        ),
+    )
+    return clinic_context and contains_any(text, MEDICAL_DOCTOR_CLINIC_EVIDENCE_TERMS)
+
+
+def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: str = "") -> bool:
+    service = compact(service)
+    if service and service not in {"allied_health", "hearing_care"}:
+        return False
+    blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
+    if not contains_any(blob, NON_HCSA_STANDALONE_ALLIED_TERMS):
+        return False
+    return not has_hcsa_or_medical_doctor_clinic_evidence(blob)
+
+
+def force_non_hcsa_allied_pdpa(hia: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **hia,
+        "hia_relevant": False,
+        "hia_relevance_score": min(int(hia.get("hia_relevance_score") or 0), 36),
+        "hia_confidence": "low",
+        "hia_scope_reason": (
+            "Standalone counselling, psychology, allied-health, hearing-care, TCM or CAM evidence without HCSA licence, "
+            "licensed-clinic, medical-doctor or psychiatrist evidence is treated as PDPA safeguards, not HIA."
+        ),
+        "hia_official_service_type": "",
+        "hia_official_service_label": "",
+        "hia_timeline_batch_guess": "unknown",
+        "hia_deadline_claim_safe": False,
+    }
 
 
 def social_charity_without_clinical_hia_evidence(
@@ -2017,6 +2132,8 @@ def official_hia_service_type(service: str, text: str) -> str:
             return "contingency_care_service"
         return ""
     if service in {"allied_health", "hearing_care"}:
+        if not has_hcsa_or_medical_doctor_clinic_evidence(text):
+            return ""
         clinical_allied = any(
             term in text
             for term in (
@@ -2108,7 +2225,7 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "virtual consultation",
         )
     )
-    primary_dental = has_dental_service_evidence(company) or (has_dental_service_evidence(primary_text) and not primary_gp)
+    primary_dental = has_dental_service_evidence(company)
     primary_allied = any(
         term in primary_text
         for term in (
@@ -2146,12 +2263,24 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "ivf",
             "assisted reproduction",
             "reproductive medicine",
+            "gynaecology",
+            "gynaecologist",
+            "gynecology",
+            "gynecologist",
+            "obstetric",
+            "obstetrics",
+            "obstetrician",
+            "women's clinic",
+            "womens clinic",
+            "clinic for women",
             "oncology",
             "orthopaedic",
             "endocrinology",
             "neurology",
             "neurosurgery",
             "neuroscience",
+            "psychiatry",
+            "psychiatrist",
         )
     )
     weak_specialist_only = contains_any(primary_text, WEAK_SPECIALIST_HIA_TERMS) and not contains_any(
@@ -2174,6 +2303,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
     )
     if weak_specialist_only:
         primary_specialist = False
+    if not primary_dental:
+        primary_dental = has_dental_service_evidence(primary_text) and not primary_gp and not primary_specialist
     primary_diagnostic = has_strong_diagnostic_lab_evidence(primary_text) or any(
         term in primary_text for term in ("clinical laboratory", "diagnostic lab", "diagnostic laboratory", "medical laboratory", "genetic test", "genetic testing", "dna test", "pharmacogen")
     )
@@ -2182,7 +2313,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         and not primary_allied
         and any(term in primary_text for term in ("acute hospital", "community hospital", "hospital services", "inpatient"))
     )
-    primary_renal = "renal dialysis" in primary_text or "dialysis" in primary_text
+    primary_long_term = contains_any(primary_text, LONG_TERM_CARE_TERMS)
+    primary_renal = has_renal_dialysis_service_evidence(primary_text)
     primary_ambulatory_surgical = "ambulatory surgical" in primary_text or "day surgery" in primary_text
     primary_hearing = has_hearing_care_evidence(primary_text) or contains_any(
         primary_text,
@@ -2203,6 +2335,16 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "fertility",
             "ivf",
             "reproductive",
+            "gynaecology",
+            "gynaecologist",
+            "gynecology",
+            "gynecologist",
+            "obstetric",
+            "obstetrics",
+            "obstetrician",
+            "women's clinic",
+            "womens clinic",
+            "clinic for women",
             "oncology",
             "dermatology",
             "orthopaedic",
@@ -2214,6 +2356,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neurology",
             "neurosurgery",
             "neuroscience",
+            "psychiatry",
+            "psychiatrist",
         )
     )
     if healthcare_supplier or non_clinical_product_lab:
@@ -2224,12 +2368,14 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "diagnostic"
     elif primary_hospital:
         service = "hospital"
-    elif primary_renal:
-        service = "outpatient_renal_dialysis"
     elif primary_ambulatory_surgical:
         service = "ambulatory_surgical_centre"
     elif primary_gp:
         service = "GP_OMS"
+    elif primary_long_term:
+        service = "long_term_care"
+    elif primary_renal:
+        service = "outpatient_renal_dialysis"
     elif primary_hearing:
         service = "hearing_care"
     elif primary_specialist and specialist_name_evidence:
@@ -2252,14 +2398,14 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "retail_pharmacy"
     elif has_hearing_care_evidence(text) or "audiology" in text:
         service = "hearing_care"
-    elif "renal dialysis" in text or "dialysis" in text:
-        service = "outpatient_renal_dialysis"
     elif has_family_clinic_evidence(row, text) and not has_strong_diagnostic_lab_evidence(text):
         service = "GP_OMS"
     elif contains_any(text, DIGITAL_HEALTH_CARE_TERMS):
         service = "GP_OMS"
     elif contains_any(text, LONG_TERM_CARE_TERMS):
         service = "long_term_care"
+    elif has_renal_dialysis_service_evidence(text):
+        service = "outpatient_renal_dialysis"
     elif "aesthetic" in text and has_clinic_word(text) and ("doctor" in text or "medical" in text):
         service = "GP_OMS"
     elif primary_specialist:
@@ -2298,7 +2444,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "unknown"
     if optometry_without_strong_clinical_evidence(primary_text):
         service = "unknown"
-    official_service = official_hia_service_type(service, text)
+    non_hcsa_allied_scope = standalone_non_hcsa_allied_scope(row, f"{primary_text} {text}", service)
+    official_service = "" if non_hcsa_allied_scope else official_hia_service_type(service, text)
     concrete_hia_evidence = bool(official_service) and (has_concrete_hia_evidence(row, text, service) or bool(batch_override))
     if official_service or service in HIA_BATCH_BY_SERVICE or batch_override:
         score = max(score + 24, 45)
@@ -2343,6 +2490,8 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         "hia_scope_reason": (
             "Website evidence indicates a healthcare service type that may fall under HIA health-information, cybersecurity and data-security duties."
             if hia_relevant
+            else "Standalone counselling/psychology/allied-health or hearing-care evidence lacks HCSA licence, licensed-clinic, medical-doctor or psychiatrist evidence, so HIA is not assumed."
+            if non_hcsa_allied_scope
             else "Healthcare/HIA scope evidence is weak."
         ),
         "hia_service_type_guess": service,
@@ -2366,6 +2515,8 @@ def should_review_hia_with_llm(row: dict[str, Any], text: str, hia: dict[str, An
         return False
     if review:
         return True
+    if standalone_non_hcsa_allied_scope(row, text, compact(hia.get("hia_service_type_guess"))):
+        return False
     if hia.get("hia_confidence") == "high":
         return False
     if hia.get("hia_relevant") and hia.get("hia_service_type_guess") in HIA_BATCH_BY_SERVICE:
@@ -2394,10 +2545,12 @@ HIA_LLM_REVIEW_PROMPT = """You classify ambiguous Singapore healthcare scope for
 Use only provided evidence. Return strict JSON only. Do not invent facts.
 
 Rules:
+- HIA relevance requires evidence that the prospect is a current HCSA licensee or clearly provides a currently licensable HCSA service. Clinical-sounding activity alone is not enough.
 - If it clearly matches one official HIA service type, set hia_relevant true.
 - Official HIA service types are: Outpatient Medical Service (GP), Outpatient Medical Service (Specialist), Outpatient Dental, Acute Hospital, Nursing Home, Ambulatory Surgical Centre, Community Hospital, Contingency Care Service, Assisted Reproduction, Clinical Laboratory, Outpatient Renal Dialysis, Retail Pharmacy, Radiology Laboratory, Nuclear Medicine Service.
 - If it is only wellness, beauty, aesthetics, optometry retail, product retail, training, media, holdings/group activity, or generic care language without clinical patient-care evidence, set hia_relevant false.
-- For hearing-care, audiology, physiotherapy, podiatry, psychology, optometry, or other allied-health evidence, set hia_relevant true only when evidence shows clinical patient care such as appointments, assessments, treatment, patient records or case notes.
+- Standalone counselling, psychology, psychotherapy, physiotherapy, podiatry, hearing-care, audiology, TCM, CAM, or other allied-health evidence should be hia_relevant false unless the evidence also shows HCSA licence, a licensed medical clinic, medical doctors, psychiatrists, or another official HCSA service.
+- A location inside a medical centre, medical suite, hospital building or clinic directory is not HCSA licence evidence by itself.
 - Return a service type only when evidence supports it.
 - Use medium/high confidence only when evidence quotes are concrete.
 
@@ -2850,6 +3003,25 @@ def has_dental_service_evidence(text: str) -> bool:
     return "braces" in text and any(term in text for term in ("teeth", "tooth", "aligner", "dental", "orthodont"))
 
 
+def has_renal_dialysis_service_evidence(text: str) -> bool:
+    if contains_any(
+        text,
+        (
+            "renal dialysis centre",
+            "renal dialysis center",
+            "dialysis centre",
+            "dialysis center",
+            "kidney dialysis",
+            "renal clinic",
+            "nephrology",
+        ),
+    ):
+        return True
+    if not ("renal dialysis" in text or "dialysis" in text):
+        return False
+    return not contains_any(text, LONG_TERM_CARE_TERMS)
+
+
 def has_clinical_lab_evidence(text: str) -> bool:
     return any(
         term in text
@@ -2892,7 +3064,7 @@ def has_strong_diagnostic_lab_evidence(text: str) -> bool:
 
 def has_family_clinic_evidence(row: dict[str, Any], text: str) -> bool:
     company = compact(row.get("company_name")).lower()
-    return "family clinic" in company or "family clinic" in text or "family medicine" in text
+    return "family clinic" in company or "family clinic" in text or ("family medicine" in text and has_clinic_word(text))
 
 
 def should_use_serper_for_hia_adjudication(
@@ -2955,6 +3127,8 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
         hia_review = call_hia_llm_review(row, hia)
     if should_review_hia_with_llm(row, text, hia):
         hia = apply_hia_llm_review(hia, hia_review)
+    if standalone_non_hcsa_allied_scope(row, f"{text} {compact(hia.get('hia_scope_reason'))}", compact(hia.get("hia_service_type_guess"))):
+        hia = force_non_hcsa_allied_pdpa(hia)
     if optometry_without_strong_clinical_evidence(text):
         hia = {
             **hia,
@@ -3296,6 +3470,8 @@ def email_variant_segment(row: dict[str, Any], classification: dict[str, Any], c
     service = compact(classification.get("hia_service_type_guess"))
     text = lower_blob(row)
     if track == "hia_regulatory":
+        if service == "specialist_OMS":
+            return "specialist"
         if profile == "dental" or service == "dental":
             return "dental"
         if profile == "pharmacy" or service == "retail_pharmacy":
@@ -5108,7 +5284,7 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif service_type == "hospital" or official_service == "acute_hospital" or "hospital" in company.lower():
         guess = "hospital"
         add_evidence("hospital service terms")
-    elif service_type == "dental" or (has_dental_service_evidence(primary_source_l) and not has_gp):
+    elif service_type == "dental" or (service_type != "specialist_OMS" and has_dental_service_evidence(primary_source_l) and not has_gp):
         guess = "dental"
         add_evidence("dental terms")
     elif primary_aesthetic:

@@ -126,6 +126,28 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.classification["hia_service_type_guess"], "dental")
         self.assertNotIn("dental clinic", plan.emails["email_1"]["body"].lower())
 
+    def test_specialist_service_wins_over_incidental_dental_mentions(self):
+        plan = o.plan_outreach(
+            {
+                "Id": 103,
+                "company_name": "A Clinic For Women",
+                "best_url": "https://aclinicforwomen.com.sg/",
+                "website_content": (
+                    "Gynaecologist and obstetrics clinic in Singapore providing fertility care, pregnancy care, "
+                    "women's health consultations, patient appointments and treatment records. The doctor's "
+                    "biography mentions medical and dental doctors in a previous education programme."
+                ),
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(plan.copy_brief["clinic_profile_guess"], "specialist_led")
+        self.assertNotIn("dental", plan.emails["email_1"]["chosen_subject"].lower())
+        self.assertNotIn("dental", plan.emails["email_3"]["chosen_subject"].lower())
+        self.assertNotIn("dental", plan.emails["email_1"]["body"].lower())
+        self.assertNotIn("dental", plan.emails["email_3"]["body"].lower())
+
     def test_strong_website_context_does_not_call_serper(self):
         original = o.fetch_serper_company_context
 
@@ -542,7 +564,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(plan.classification["hia_relevant"])
         self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
 
-    def test_social_service_counselling_hia_scope_requires_review(self):
+    def test_social_service_counselling_without_hcsa_license_stays_pdpa(self):
         plan = o.plan_outreach(
             {
                 "Id": 305,
@@ -557,13 +579,36 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
-        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
-        self.assertEqual(plan.classification["classification_review_status"], "review_needed")
-        self.assertEqual(
-            plan.classification["classification_review_reason"],
-            "hia_requires_review_social_service_or_charity_scope",
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["hia_official_service_type"], "")
+        self.assertEqual(plan.classification["regulatory_applicability"], ["PDPA"])
+        self.assertEqual(plan.classification["classification_review_status"], "not_needed")
+        self.assertEqual(plan.automation_decision, "auto_send_eligible")
+
+    def test_standalone_counselling_medical_suites_location_is_not_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 214,
+                "company_name": "Counseling Perspective",
+                "best_url": "https://www.counselingperspective.com/",
+                "website_content": (
+                    "Counseling Perspective is a centre for counselling in Singapore. "
+                    "Therapists and counsellors provide counselling, psychotherapy, appointments "
+                    "and mental health assessments."
+                ),
+                "_serper_context_text": (
+                    "Find a Therapist in Singapore. Counseling Perspective is a center for counseling in Singapore. "
+                    "Listing mentions Medical Suites."
+                ),
+            }
         )
-        self.assertEqual(plan.automation_decision, "draft_only_review")
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+        self.assertEqual(classification["classification_review_status"], "not_needed")
 
     def test_long_term_care_can_be_social_entity_but_hia_pressure(self):
         plan = o.plan_outreach(
@@ -692,7 +737,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertFalse(classification["hia_relevant"])
         self.assertEqual(classification["hia_official_service_type"], "")
 
-    def test_ambiguous_allied_health_uses_serper_before_hia_decision(self):
+    def test_ambiguous_allied_health_uses_serper_but_stays_pdpa_without_hcsa(self):
         original_fetch = o.fetch_serper_company_context
         original_key = os.environ.get("SERPER_API_KEY")
         os.environ["SERPER_API_KEY"] = "test-key"
@@ -734,10 +779,11 @@ class OutreachPlannerTests(unittest.TestCase):
                 os.environ["SERPER_API_KEY"] = original_key
 
         self.assertEqual(calls, [("A Plus Physio", "hia_regulatory")])
-        self.assertEqual(classification["pressure_type"], "hia_regulatory")
-        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(classification["hia_relevant"])
         self.assertEqual(classification["hia_service_type_guess"], "allied_health")
-        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
         evidence = classification["classification_evidence_json"]
         self.assertEqual(evidence["hia_serper_context"]["source"], "serper")
 
@@ -754,9 +800,10 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(classification["hia_relevant"])
         self.assertEqual(classification["hia_service_type_guess"], "allied_health")
-        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+        self.assertEqual(classification["hia_official_service_type"], "")
 
     def test_optometry_serper_context_still_does_not_become_hia_without_ophthalmology(self):
         classification = o.classify_row(
@@ -786,25 +833,28 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Sports physiotherapy clinic with physiotherapists, appointments, patient rehabilitation records and personalised care.",
                 "clinic",
                 "allied_health",
+                "pdpa_safeguards",
             ),
             (
                 "Foundation Healthcare Holdings",
                 "Multi-specialty private healthcare group with cardiology, urology, diagnostic radiology and patient specialist appointments.",
                 "healthcare_provider",
                 "specialist_OMS",
+                "hia_regulatory",
             ),
             (
                 "Care IVFc",
                 "Fertility and IVF clinic offering assisted reproduction appointments and patient treatment records.",
                 "clinic",
                 "specialist_OMS",
+                "hia_regulatory",
             ),
         ]
-        for company, website_content, entity_type, service_type in cases:
+        for company, website_content, entity_type, service_type, pressure_type in cases:
             with self.subTest(company=company):
                 classification = o.classify_row({"company_name": company, "website_content": website_content})
                 self.assertEqual(classification["entity_type_guess"], entity_type)
-                self.assertEqual(classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(classification["pressure_type"], pressure_type)
                 self.assertEqual(classification["hia_service_type_guess"], service_type)
                 self.assertNotEqual(classification["entity_type_guess"], "social_service")
 
@@ -899,6 +949,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "allied_health",
                 "allied-health provider offering physiotherapy or treatment support",
                 "orthopaedic",
+                "pdpa_safeguards",
             ),
             (
                 {
@@ -908,12 +959,13 @@ class OutreachPlannerTests(unittest.TestCase):
                 "specialist_OMS",
                 "specialist-led heart/cardiology clinic",
                 "psychology / mental-health",
+                "hia_regulatory",
             ),
         ]
-        for row, service_type, expected, forbidden in cases:
+        for row, service_type, expected, forbidden, pressure_type in cases:
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
-                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["pressure_type"], pressure_type)
                 self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
                 self.assertIn(expected, plan.copy_brief.get("clinic_profile_phrase") or plan.copy_brief["prospect_facing_signal"])
                 self.assertNotIn(forbidden, plan.emails["email_1"]["body"])
@@ -2265,6 +2317,41 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("fertility", plan.copy_brief["clinic_profile_phrase"].lower())
         self.assertNotIn("no_hia_service_evidence", patch["automation_blockers_json"])
 
+    def test_womens_clinic_bio_dental_mentions_do_not_force_dental_service(self):
+        row = {
+            "company_name": "A Clinic For Women",
+            "website_content": (
+                "A Clinic For Women was founded by Dr Chua Yang. Obstetric and gynaecological consultation, "
+                "fertility evaluation and treatment, antenatal diagnosis, health screening and ultrasound scan services. "
+                "Her volunteer organisation includes medical and dental doctors overseas."
+            ),
+            "validated_email": "drchuayang@aclinicforwomen.com.sg",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertNotEqual(plan.classification["hia_official_service_type"], "outpatient_dental")
+        self.assertNotIn("dental", plan.emails["email_1"]["body"].lower())
+        self.assertNotIn("dental", plan.emails["email_3"]["body"].lower())
+
+    def test_home_care_with_home_dialysis_service_list_is_not_renal_dialysis_profile(self):
+        row = {
+            "company_name": "Active Global Respite Care",
+            "website_content": (
+                "Caregivers in Singapore. Subsidised home care, senior care centres, live-in caregivers, "
+                "private nursing, home medical, physio therapist and home dialysis support for elderly clients. "
+                "Patient care at home includes family contacts, caregiver records and care notes."
+            ),
+            "validated_email": "elizabeth@example.com",
+        }
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+        self.assertEqual(plan.classification["hia_service_type_guess"], "long_term_care")
+        self.assertNotEqual(plan.classification["hia_official_service_type"], "outpatient_renal_dialysis")
+        self.assertNotIn("renal dialysis", plan.emails["email_1"]["body"].lower())
+
     def test_family_clinic_evidence_overrides_weak_long_term_care_terms(self):
         row = {
             "company_name": "AMK Family Clinic",
@@ -2337,10 +2424,10 @@ class OutreachPlannerTests(unittest.TestCase):
         plan = o.plan_outreach(
             {
                 "Id": 1337,
-                "company_name": "Art Play Psychotherapy",
+                "company_name": "Mind Psychiatry Clinic",
                 "selected_contact_name": "Natalie Kang",
                 "validated_email": "natalie@example.com",
-                "website_content": "Psychotherapy and counselling clinic with assessment, case-note records, appointments and mental-health support.",
+                "website_content": "Psychiatry specialist clinic with psychiatrists, medical doctors, patient appointments, mental-health assessments and case-note records.",
             },
             programmes=[verified_program()],
         )
@@ -2372,16 +2459,6 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Aesthetic medical clinic with doctors, treatments, consultation, appointments and patient services.",
                 "expected": "consultation records, treatment notes, appointment details, clinic email, vendor systems and backups",
             },
-            {
-                "company_name": "A Plus Physio",
-                "website_content": "Physiotherapy clinic with appointments, treatment plans, exercise-plan records and patient care.",
-                "expected": "appointment, treatment and exercise-plan records",
-            },
-            {
-                "company_name": "Asia Psychology Centre",
-                "website_content": "Psychology and mental-health clinic with appointments, assessments, case-note records and patient care.",
-                "expected": "appointment, assessment and case-note records",
-            },
         ]
         for row in cases:
             with self.subTest(company=row["company_name"]):
@@ -2391,22 +2468,37 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("incident", plan.emails["email_3"]["body"])
                 self.assertNotIn("email_3_missing_hia_segment_terms", plan.quality_flags)
                 self.assertNotIn("email_3_not_hia_segment_diagnostic_shape", plan.quality_flags)
+        for row in (
+            {
+                "company_name": "A Plus Physio",
+                "website_content": "Physiotherapy clinic with appointments, treatment plans, exercise-plan records and patient care.",
+            },
+            {
+                "company_name": "Asia Psychology Centre",
+                "website_content": "Psychology and mental-health clinic with appointments, assessments, case-note records and patient care.",
+            },
+        ):
+            with self.subTest(company=row["company_name"]):
+                plan = o.plan_outreach(row, programmes=[verified_program()])
+                self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+                self.assertFalse(plan.classification["hia_relevant"])
+                self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
 
     def test_hia_email_1_links_question_pressure_mechanism_and_cta(self):
         cases = [
             (
                 {
-                    "company_name": "Mind Wellness",
+                    "company_name": "Mind Psychiatry Clinic",
                     "selected_contact_name": "Nisha Tan",
                     "website_content": (
-                        "Psychology and mental-health clinic with counselling appointments, mental health assessments, "
-                        "case-note records, patient care, psychologists, therapy appointments, care notes, staff access, "
+                        "Psychiatry specialist clinic with psychiatrists, medical doctors, counselling appointments, "
+                        "mental health assessments, case-note records, patient care, care notes, staff access, "
                         "vendor systems and incident-response workflows. "
                     )
                     * 4,
                 },
-                "psychology / mental-health provider",
-                "does Mind Wellness keep patient records across appointment, assessment, and case-note records?",
+                "specialist-led clinic",
+                "does Mind Psychiatry Clinic keep patient records across consultation notes, patient reports, treatment records, and vendor systems?",
             ),
             (
                 {
@@ -2653,22 +2745,20 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertIn(plan.classification["entity_type_guess"], {"healthcare_provider", "private_company"})
-        self.assertTrue(plan.classification["hia_relevant"])
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["regulatory_applicability"], ["PDPA"])
         self.assertIn(plan.classification["data_type_signal"], {"patient_data", "health_information", "customer_data"})
         self.assertEqual(plan.classification["hia_service_type_guess"], "hearing_care")
-        self.assertNotEqual(plan.classification["pressure_type"], "not_ready")
-        self.assertIn("health information", plan.copy_brief["personal_data_handled_guess"])
-        self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.copy_brief["prospect_facing_signal"])
-        self.assertIn("HIA", plan.emails["email_1"]["body"])
-        self.assertIn("hearing test records", plan.emails["email_3"]["body"])
-        self.assertIn("appointment details", plan.emails["email_3"]["body"])
-        self.assertIn("device-related records", plan.emails["email_3"]["body"])
+        self.assertEqual(plan.classification["hia_official_service_type"], "")
+        self.assertIn("appointment", plan.copy_brief["personal_data_handled_guess"])
+        self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.copy_brief["clinic_profile_phrase"])
+        self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
+        self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
         self.assertNotIn("eye clinic", plan.copy_brief["prospect_facing_signal"].lower())
-        self.assertNotIn("consultation notes", plan.emails["email_3"]["body"].lower())
-        self.assertEqual(plan.copy_brief["email_asset_offer"], "hearing-care readiness map")
+        self.assertEqual(plan.copy_brief["email_asset_offer"], "personal-data safeguards checklist")
         self.assert_no_final_email_batch_or_signal_language(plan)
-        self.assertIn("hearing tests", plan.copy_brief["data_systems_likely"])
-        self.assertIn("device-related records", plan.copy_brief["data_systems_likely"])
+        self.assertIn("appointments", plan.copy_brief["data_systems_likely"])
         provision_plan = o.plan_outreach(
             {
                 "Id": 9,
@@ -2683,7 +2773,8 @@ class OutreachPlannerTests(unittest.TestCase):
             programmes=[verified_program()],
         )
         self.assertEqual(provision_plan.classification["hia_service_type_guess"], "hearing_care")
-        self.assertIn("hearing-care provider", provision_plan.copy_brief["prospect_facing_signal"])
+        self.assertEqual(provision_plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertIn("hearing-care provider", provision_plan.copy_brief["clinic_profile_phrase"])
         self.assertNotIn("eye clinic", provision_plan.copy_brief["prospect_facing_signal"].lower())
         self.assertNotIn("consultation notes", provision_plan.emails["email_3"]["body"].lower())
         weak_plan = o.plan_outreach(
@@ -2941,13 +3032,6 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Aesthetic medical clinic in Singapore with doctors, treatments, consultation and patient services.",
                 },
                 "medical/aesthetic clinic with doctor-led consultations",
-            ),
-            (
-                {
-                    "company_name": "Amazing Hearing Group",
-                    "website_content": "Hearing care provider offering audiology, hearing tests, hearing aids and patient appointments.",
-                },
-                "hearing-care provider offering hearing tests, hearing aids and audiology support",
             ),
             (
                 {
@@ -3211,6 +3295,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "GP_OMS",
                 "a family clinic offering GP-style consultations",
                 "heart/cardiology",
+                "hia_regulatory",
             ),
             (
                 "AO Psychology",
@@ -3218,6 +3303,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "allied_health",
                 "a psychology / mental-health provider",
                 "heart/cardiology",
+                "pdpa_safeguards",
             ),
             (
                 "Appletree Medical",
@@ -3225,6 +3311,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "GP_OMS",
                 "a multi-location clinic group",
                 "heart/cardiology",
+                "hia_regulatory",
             ),
             (
                 "Arden Endocrinology Specialist Clinic",
@@ -3232,6 +3319,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "specialist_OMS",
                 "a specialist-led endocrinology clinic",
                 "allied-health",
+                "hia_regulatory",
             ),
             (
                 "Asia Diagnostics Group",
@@ -3239,6 +3327,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "diagnostic",
                 "a diagnostic / laboratory provider",
                 "dental",
+                "hia_regulatory",
             ),
             (
                 "Asia Digestive Associates",
@@ -3246,14 +3335,16 @@ class OutreachPlannerTests(unittest.TestCase):
                 "specialist_OMS",
                 "specialist-led gastroenterology and digestive care",
                 "heart/cardiology",
+                "hia_regulatory",
             ),
         ]
-        for company, content, service, expected_phrase, forbidden_phrase in cases:
+        for company, content, service, expected_phrase, forbidden_phrase, pressure_type in cases:
             with self.subTest(company=company):
                 plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
-                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["pressure_type"], pressure_type)
                 self.assertEqual(plan.classification["hia_service_type_guess"], service)
-                self.assertIn(expected_phrase, plan.copy_brief["prospect_facing_signal"])
+                profile_text = f"{plan.copy_brief['prospect_facing_signal']} {plan.copy_brief.get('clinic_profile_phrase', '')}"
+                self.assertIn(expected_phrase, profile_text)
                 self.assertNotIn(forbidden_phrase, plan.emails["email_1"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -3580,6 +3671,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "allied_health",
                 "allied-health provider offering physiotherapy or treatment support",
                 "appointment, treatment and exercise-plan records",
+                "pdpa_safeguards",
             ),
             (
                 {
@@ -3591,6 +3683,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "allied_health",
                 "psychology / mental-health provider",
                 "appointment, assessment and case-note records",
+                "pdpa_safeguards",
             ),
             (
                 {
@@ -3602,6 +3695,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "long_term_care",
                 "nursing home",
                 "resident, patient, family, staff and care records",
+                "hia_regulatory",
             ),
             (
                 {
@@ -3612,17 +3706,23 @@ class OutreachPlannerTests(unittest.TestCase):
                 "specialist_OMS",
                 "provides specialist-led gastroenterology and digestive care",
                 "consultation notes, patient reports, procedure-related records",
+                "hia_regulatory",
             ),
         ]
-        for row, service_type, signal, diagnostic in cases:
+        for row, service_type, signal, diagnostic, pressure_type in cases:
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
-                self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
+                self.assertEqual(plan.classification["pressure_type"], pressure_type)
                 self.assertEqual(plan.classification["hia_service_type_guess"], service_type)
-                self.assertIn(signal.replace("provides ", "provide "), plan.copy_brief["prospect_facing_signal"])
+                profile_text = f"{plan.copy_brief['prospect_facing_signal']} {plan.copy_brief.get('clinic_profile_phrase', '')}"
+                self.assertIn(signal.replace("provides ", "provide "), profile_text)
                 self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
-                self.assertIn("HIA", plan.emails["email_1"]["body"])
-                self.assertIn(diagnostic, plan.emails["email_3"]["body"])
+                if pressure_type == "hia_regulatory":
+                    self.assertIn("HIA", plan.emails["email_1"]["body"])
+                    self.assertIn(diagnostic, plan.emails["email_3"]["body"])
+                else:
+                    self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
+                    self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
                 self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
 
     def test_dental_and_pharmacy_hia_batches(self):
@@ -3686,15 +3786,15 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn("HIA", classification["regulatory_applicability"])
                 self.assertIn("PDPA", classification["regulatory_applicability"])
 
-    def test_clinical_allied_health_can_map_to_official_hia_service(self):
+    def test_clinical_allied_health_needs_hcsa_or_doctor_evidence_for_hia_service(self):
         cases = [
             (
                 "Example Physio Clinic",
-                "Physiotherapy clinic with patient appointments, assessments, treatment plans and rehabilitation records.",
+                "HCSA licensed healthcare service offering physiotherapy appointments, assessments, treatment plans and rehabilitation records.",
             ),
             (
                 "Example Hearing Centre",
-                "Audiology clinic with hearing tests, hearing assessments, patient appointments and device fitting records.",
+                "HCSA licensed healthcare service offering audiology hearing tests, hearing assessments, patient appointments and device fitting records.",
             ),
         ]
         for company, website_content in cases:
@@ -3706,6 +3806,30 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
                 self.assertIn("HIA", classification["regulatory_applicability"])
                 self.assertIn("PDPA", classification["regulatory_applicability"])
+
+    def test_standalone_allied_health_without_hcsa_license_stays_pdpa(self):
+        cases = [
+            (
+                "Example Physio Clinic",
+                "Physiotherapy clinic with patient appointments, assessments, treatment plans and rehabilitation records.",
+            ),
+            (
+                "Example Hearing Centre",
+                "Audiology clinic with hearing tests, hearing assessments, patient appointments and device fitting records.",
+            ),
+            (
+                "Example Psychology Centre",
+                "Psychology clinic with counselling appointments, assessments, patient case notes and psychotherapy.",
+            ),
+        ]
+        for company, website_content in cases:
+            with self.subTest(company=company):
+                classification = o.classify_row({"company_name": company, "website_content": website_content})
+                self.assertEqual(classification["primary_email_track"], "pdpa_safeguards")
+                self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+                self.assertFalse(classification["hia_relevant"])
+                self.assertEqual(classification["hia_official_service_type"], "")
+                self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
 
     def test_retail_or_wellness_allied_context_is_not_hia(self):
         cases = [
@@ -3831,8 +3955,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     "hia_relevant": True,
                     "hia_confidence": "medium",
                     "hia_service_type_guess": "hearing_care",
-                    "hia_scope_reason": "Evidence shows hearing tests and appointments.",
-                    "evidence": [{"quote": "hearing tests, appointments", "source_field": "website_content", "reason": "healthcare service evidence"}],
+                    "hia_scope_reason": "Evidence shows an HCSA licensed medical clinic with medical doctors offering hearing tests and appointments.",
+                    "evidence": [{"quote": "HCSA licensed medical clinic with medical doctors offering hearing tests and appointments", "source_field": "website_content", "reason": "licensed-clinic service evidence"}],
                 },
             }
         )

@@ -417,6 +417,18 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("excluded_url_domain: excludedUrlDomain(row)", js_code)
         self.assertIn("isStaleProcessing(row)", js_code)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", js_code)
+        claim_node = next(node for node in workflow["nodes"] if node["name"] == "Claim Discovery Row")
+        claim_body = claim_node["parameters"]["jsonBody"]
+        self.assertIn("new Date().toISOString()", claim_body)
+        self.assertNotIn("$now.toISO()", claim_body)
+
+    def test_url_picker_openrouter_guard_only_checks_error_shaped_payloads(self):
+        workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
+        parse_node = next(node for node in workflow["nodes"] if node["name"] == "Parse URL Pick")
+        js_code = parse_node["parameters"]["jsCode"]
+        self.assertIn("const providerFailure = response.error", js_code)
+        self.assertIn("providerFailure && providerAccountError(providerFailure)", js_code)
+        self.assertNotIn("providerAccountError(response)", js_code)
 
     def test_url_picker_worker_picks_retryable_and_stale_enrichment_rows(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
@@ -438,6 +450,10 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("(instantly_sync_status,neq,synced)", url_expr)
         self.assertIn("send_provider,send_status,sequence_status,instantly_sync_status", url_expr)
         self.assertIn("manual_url_override", url_expr)
+        claim_node = next(node for node in workflow["nodes"] if node["name"] == "Claim Enrichment Row")
+        claim_body = claim_node["parameters"]["jsonBody"]
+        self.assertIn("new Date().toISOString()", claim_body)
+        self.assertNotIn("$now.toISO()", claim_body)
         self.assertIn("RAYN_STALE_PROCESSING_MINUTES", url_expr)
         self.assertIn("isRetryableFailure", js_code)
         self.assertIn("status === 'failed_retryable' || status === 'failed'", js_code)
