@@ -610,6 +610,121 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
         self.assertEqual(classification["classification_review_status"], "not_needed")
 
+    def test_llm_reason_cannot_self_validate_standalone_counselling_as_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 230,
+                "company_name": "Addictions Recovery Singapore | Drug and Alcohol Rehab Counselling",
+                "best_url": "https://addictionsrecovery.sg/",
+                "website_content": (
+                    "Private addiction counselling and recovery centre in Singapore. "
+                    "Counsellors, psychologists and recovery coaches provide psychotherapy, "
+                    "appointments, relapse prevention and mental health support. "
+                    "We do not prescribe medication, and medical review can be recommended "
+                    "where appropriate. We are not a psychiatrist clinic or HCSA licensee."
+                ),
+                "hia_llm_review": {
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM says this is a licensed medical clinic.",
+                    "hia_service_type_guess": "allied_health",
+                    "hia_official_service_type": "outpatient_medical_specialist",
+                    "hia_timeline_batch_guess": "Batch 2 - Sep 2028",
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
+    def test_llm_cannot_relabel_standalone_counselling_as_specialist_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 232,
+                "company_name": "Private Addiction Counselling",
+                "best_url": "https://addiction.example/",
+                "website_content": (
+                    "Private addiction counselling, psychotherapy, relapse prevention, "
+                    "mental health support, appointments and recovery coaching. "
+                    "The team lists counsellors and psychologists, not a medical clinic."
+                ),
+                "hia_llm_review": {
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM says this is a specialist outpatient medical service.",
+                    "hia_service_type_guess": "specialist_OMS",
+                    "hia_official_service_type": "outpatient_medical_specialist",
+                    "hia_timeline_batch_guess": "Batch 1 - Sep 2027",
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
+    def test_standalone_addiction_counselling_with_medical_referral_language_stays_pdpa(self):
+        classification = o.classify_row(
+            {
+                "Id": 233,
+                "company_name": "Addictions Recovery Singapore | Drug and Alcohol Rehab Counselling",
+                "best_url": "https://addictionsrecovery.sg/",
+                "website_content": (
+                    "Private addiction counselling and recovery centre in Singapore. "
+                    "Counsellors, psychologists and recovery coaches provide counselling, "
+                    "psychotherapy, addiction treatment, relapse prevention, home visits and "
+                    "mental health support. Drug addiction articles mention dental issues, "
+                    "medical referral when necessary, and doctors as external support, but "
+                    "the service does not state HCSA licence, medical doctors or psychiatrists."
+                ),
+                "hia_llm_review": {
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM says this is an outpatient medical specialist provider.",
+                    "hia_service_type_guess": "allied_health",
+                    "hia_official_service_type": "outpatient_medical_specialist",
+                    "hia_timeline_batch_guess": "Batch 2 - Sep 2028",
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
+    def test_llm_reason_cannot_self_validate_standalone_physio_as_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 231,
+                "company_name": "AEVI SPORTS AND PHYSIOTHERAPY CENTRE",
+                "best_url": "https://aeviphysio.com/",
+                "website_content": (
+                    "Sports physiotherapy clinic in Singapore providing physiotherapy, "
+                    "sports massage, rehabilitation, strength conditioning and appointments. "
+                    "The process can start from a doctor's consultation or a consultation "
+                    "with one of our therapists. The team lists physiotherapists and trainers, "
+                    "not medical doctors or HCSA licensees."
+                ),
+                "hia_llm_review": {
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM says this is a licensed medical clinic.",
+                    "hia_service_type_guess": "allied_health",
+                    "hia_official_service_type": "outpatient_medical_specialist",
+                    "hia_timeline_batch_guess": "Batch 2 - Sep 2028",
+                },
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(classification["hia_service_type_guess"], "allied_health")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
     def test_long_term_care_can_be_social_entity_but_hia_pressure(self):
         plan = o.plan_outreach(
             {
@@ -3950,7 +4065,10 @@ class OutreachPlannerTests(unittest.TestCase):
         classification = o.classify_row(
             {
                 "company_name": "Example Hearing Group",
-                "website_content": "Hearing care centre with hearing tests, appointments and device fitting records.",
+                "website_content": (
+                    "Hearing care centre with hearing tests, appointments and device fitting records. "
+                    "The site states it is an HCSA licensed medical clinic with medical doctors."
+                ),
                 "hia_llm_review": {
                     "hia_relevant": True,
                     "hia_confidence": "medium",

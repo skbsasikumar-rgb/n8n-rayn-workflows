@@ -515,6 +515,27 @@ NON_HCSA_STANDALONE_ALLIED_TERMS = (
     "cam clinic",
     "complementary and alternative medicine",
 )
+STANDALONE_COUNSELLING_PSYCHOLOGY_TERMS = (
+    "addiction counselling",
+    "addiction counseling",
+    "private addiction counselling",
+    "private addiction counseling",
+    "counselling",
+    "counseling",
+    "counsellor",
+    "counsellors",
+    "counselor",
+    "counselors",
+    "psychology",
+    "psychologist",
+    "psychologists",
+    "psychotherapy",
+    "psychotherapist",
+    "mental health counselling",
+    "mental health counseling",
+    "recovery coach",
+    "recovery coaches",
+)
 HCSA_LICENSE_EVIDENCE_TERMS = (
     "hcsa",
     "healthcare services act",
@@ -549,6 +570,27 @@ MEDICAL_DOCTOR_CLINIC_EVIDENCE_TERMS = (
     "family physician",
     "physician",
     "physicians",
+)
+ALLIED_HCSA_DOCTOR_EVIDENCE_TERMS = (
+    "psychiatrist",
+    "psychiatrists",
+    "psychiatry",
+    "medical doctor",
+    "medical doctors",
+    "registered medical practitioner",
+    "registered medical practitioners",
+    "doctor-led",
+    "doctor led",
+    "general practitioner",
+    "family physician",
+)
+ALLIED_HCSA_CLINIC_EVIDENCE_TERMS = (
+    "medical clinic",
+    "specialist clinic",
+    "psychiatry clinic",
+    "psychiatric clinic",
+    "doctor-led clinic",
+    "doctor led clinic",
 )
 WEAK_SPECIALIST_HIA_TERMS = (
     "optometry",
@@ -1730,6 +1772,30 @@ def contains_any(text: str, terms: tuple[str, ...]) -> bool:
     return any(term in text for term in terms)
 
 
+def evidence_term_is_negated(text: str, index: int) -> bool:
+    prefix = text[max(0, index - 80) : index]
+    clause = re.split(r"[\n.;:!?]", prefix)[-1]
+    return bool(
+        re.search(
+            r"\b(?:no|not|without|non)\b|non[-\s]*$|\b(?:do|does|did|are|is|was|were)\s+not\b",
+            clause,
+        )
+    )
+
+
+def contains_positive_evidence_term(text: str, terms: tuple[str, ...]) -> bool:
+    for term in terms:
+        start = 0
+        while True:
+            index = text.find(term, start)
+            if index < 0:
+                break
+            if not evidence_term_is_negated(text, index):
+                return True
+            start = index + max(1, len(term))
+    return False
+
+
 def evidence_count(text: str, terms: tuple[str, ...]) -> int:
     return sum(1 for term in terms if term in text)
 
@@ -1934,7 +2000,7 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
 
 
 def has_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
-    if contains_any(text, HCSA_LICENSE_EVIDENCE_TERMS):
+    if contains_positive_evidence_term(text, HCSA_LICENSE_EVIDENCE_TERMS):
         return True
     clinic_context = contains_any(
         text,
@@ -1949,17 +2015,58 @@ def has_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
             "treatment",
         ),
     )
-    return clinic_context and contains_any(text, MEDICAL_DOCTOR_CLINIC_EVIDENCE_TERMS)
+    return clinic_context and contains_positive_evidence_term(text, MEDICAL_DOCTOR_CLINIC_EVIDENCE_TERMS)
+
+
+def has_allied_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
+    if contains_positive_evidence_term(text, HCSA_LICENSE_EVIDENCE_TERMS):
+        return True
+    if not contains_positive_evidence_term(text, ALLIED_HCSA_DOCTOR_EVIDENCE_TERMS):
+        return False
+    return contains_positive_evidence_term(text, ALLIED_HCSA_CLINIC_EVIDENCE_TERMS) or contains_positive_evidence_term(
+        text,
+        (
+            "medical doctors",
+            "registered medical practitioners",
+            "psychiatrists",
+        ),
+    )
 
 
 def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: str = "") -> bool:
     service = compact(service)
-    if service and service not in {"allied_health", "hearing_care"}:
+    if service and service not in {"allied_health", "hearing_care", "GP_OMS", "specialist_OMS", "unknown"}:
         return False
     blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
     if not contains_any(blob, NON_HCSA_STANDALONE_ALLIED_TERMS):
         return False
-    return not has_hcsa_or_medical_doctor_clinic_evidence(blob)
+    if service in {"GP_OMS", "specialist_OMS"} and contains_any(blob, SPECIFIC_SPECIALIST_SERVICE_TERMS):
+        return False
+    return not has_allied_hcsa_or_medical_doctor_clinic_evidence(blob)
+
+
+def standalone_counselling_psychology_without_hcsa(row: dict[str, Any], text: str) -> bool:
+    blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
+    if not contains_any(blob, STANDALONE_COUNSELLING_PSYCHOLOGY_TERMS):
+        return False
+    if contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS):
+        return False
+    if contains_positive_evidence_term(
+        blob,
+        (
+            "psychiatrist",
+            "psychiatrists",
+            "psychiatry",
+            "medical doctor",
+            "medical doctors",
+            "registered medical practitioner",
+            "registered medical practitioners",
+            "doctor-led",
+            "doctor led",
+        ),
+    ):
+        return False
+    return True
 
 
 def force_non_hcsa_allied_pdpa(hia: dict[str, Any]) -> dict[str, Any]:
@@ -2132,7 +2239,7 @@ def official_hia_service_type(service: str, text: str) -> str:
             return "contingency_care_service"
         return ""
     if service in {"allied_health", "hearing_care"}:
-        if not has_hcsa_or_medical_doctor_clinic_evidence(text):
+        if not has_allied_hcsa_or_medical_doctor_clinic_evidence(text):
             return ""
         clinical_allied = any(
             term in text
@@ -2444,7 +2551,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "unknown"
     if optometry_without_strong_clinical_evidence(primary_text):
         service = "unknown"
-    non_hcsa_allied_scope = standalone_non_hcsa_allied_scope(row, f"{primary_text} {text}", service)
+    counselling_non_hcsa_scope = standalone_counselling_psychology_without_hcsa(row, f"{primary_text} {text}")
+    if counselling_non_hcsa_scope:
+        service = "allied_health"
+    non_hcsa_allied_scope = counselling_non_hcsa_scope or standalone_non_hcsa_allied_scope(row, f"{primary_text} {text}", service)
     official_service = "" if non_hcsa_allied_scope else official_hia_service_type(service, text)
     concrete_hia_evidence = bool(official_service) and (has_concrete_hia_evidence(row, text, service) or bool(batch_override))
     if official_service or service in HIA_BATCH_BY_SERVICE or batch_override:
@@ -2601,7 +2711,7 @@ def call_hia_llm_review(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, A
         return None
 
 
-def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None) -> dict[str, Any]:
+def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None, evidence_text: str = "") -> dict[str, Any]:
     if not isinstance(review, dict):
         return hia
     confidence = str(review.get("hia_confidence") or "low").strip().lower()
@@ -2624,7 +2734,7 @@ def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None) -> 
     }
     if service not in valid_services:
         service = "unknown"
-    official_service = official_hia_service_type(service, f"{hia.get('hia_scope_reason', '')} {compact(review.get('hia_scope_reason'))}".lower())
+    official_service = official_hia_service_type(service, compact(evidence_text).lower())
     relevant = bool(review.get("hia_relevant")) and bool(official_service)
     batch = HIA_BATCH_BY_OFFICIAL_SERVICE.get(official_service) or HIA_BATCH_BY_SERVICE.get(service, "unknown")
     reason = compact(review.get("hia_scope_reason")) or hia.get("hia_scope_reason", "")
@@ -2912,7 +3022,11 @@ def apply_manual_pressure_override(row: dict[str, Any], classification: dict[str
         classification["hia_relevant"] = False
         classification["hia_relevance_score"] = 0
         classification["hia_confidence"] = "low"
-        classification["hia_scope_reason"] = compact(classification.get("hia_scope_reason")) or "Manual review selected PDPA instead of HIA."
+        classification["hia_scope_reason"] = "Manual review selected PDPA instead of HIA."
+        classification["hia_official_service_type"] = ""
+        classification["hia_official_service_label"] = ""
+        classification["hia_timeline_batch_guess"] = "unknown"
+        classification["hia_deadline_claim_safe"] = False
         classification["pdpa_relevant"] = True
         classification["pdpa_reason"] = "Manual review selected PDPA safeguards; Cyber Essentials supports the cyber/data-security safeguards side."
         classification["recommended_cert_path"] = "Use Cyber Essentials to support the cybersecurity safeguards and evidence side of PDPA readiness."
@@ -3126,8 +3240,10 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     if not hia_review and hia_llm_enabled() and should_review_hia_with_llm(row, text, hia):
         hia_review = call_hia_llm_review(row, hia)
     if should_review_hia_with_llm(row, text, hia):
-        hia = apply_hia_llm_review(hia, hia_review)
-    if standalone_non_hcsa_allied_scope(row, f"{text} {compact(hia.get('hia_scope_reason'))}", compact(hia.get("hia_service_type_guess"))):
+        hia = apply_hia_llm_review(hia, hia_review, text)
+    if standalone_non_hcsa_allied_scope(row, text, compact(hia.get("hia_service_type_guess"))):
+        hia = force_non_hcsa_allied_pdpa(hia)
+    if standalone_counselling_psychology_without_hcsa(row, text):
         hia = force_non_hcsa_allied_pdpa(hia)
     if optometry_without_strong_clinical_evidence(text):
         hia = {
