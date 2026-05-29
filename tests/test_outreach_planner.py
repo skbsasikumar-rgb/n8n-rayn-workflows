@@ -46,9 +46,86 @@ class OutreachPlannerTests(unittest.TestCase):
         row = {"selected_contact_name": "DR SHARAD GOVIL"}
 
         self.assertEqual(o.first_name_from_contact(row), "Sharad")
-        self.assertEqual(o.email_greeting(row), "Hi Sharad,")
-        self.assertEqual(o.email_1_greeting(row), "Hi Sharad,")
-        self.assertEqual(o.followup_name_prefix(row, ","), "Sharad, ")
+        self.assertEqual(o.email_greeting(row), "Hi Dr Govil,")
+        self.assertEqual(o.email_1_greeting(row), "Hi Dr Govil,")
+        self.assertEqual(o.followup_name_prefix(row, ","), "Dr Govil, ")
+
+    def test_contact_greeting_uses_indian_name_after_initial(self):
+        row = {"selected_contact_name": "S Devendran"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Devendran")
+        self.assertEqual(o.email_greeting(row), "Hi Devendran,")
+
+    def test_doctor_greeting_uses_indian_surname_after_initial(self):
+        row = {"selected_contact_name": "Dr S Devendran"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Devendran")
+        self.assertEqual(o.email_greeting(row), "Hi Dr Devendran,")
+
+    def test_contact_greeting_handles_chinese_family_first_name(self):
+        row = {"selected_contact_name": "Tan Wei Ming"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Wei Ming")
+        self.assertEqual(o.email_greeting(row), "Hi Wei Ming,")
+
+    def test_doctor_greeting_handles_chinese_family_name(self):
+        row = {"selected_contact_name": "Dr Tan Wei Ming"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Wei Ming")
+        self.assertEqual(o.email_greeting(row), "Hi Dr Tan,")
+
+    def test_doctor_greeting_from_contact_role(self):
+        row = {"selected_contact_name": "Aaron Tan", "selected_contact_role": "Doctor"}
+
+        self.assertEqual(o.first_name_from_contact(row), "Aaron")
+        self.assertEqual(o.email_greeting(row), "Hi Dr Tan,")
+
+    def test_doctor_greeting_from_serper_context_only_when_evidenced(self):
+        row = {
+            "selected_contact_name": "Aaron Tan",
+            "company_name": "Example Clinic",
+            "_contact_doctor_context_text": "Example Clinic profile for Dr Aaron Tan, family physician.",
+        }
+
+        self.assertEqual(o.email_greeting(row), "Hi Dr Tan,")
+
+    def test_doctor_greeting_does_not_guess_from_clinic_only(self):
+        row = {
+            "selected_contact_name": "Aaron Tan",
+            "company_name": "Example Clinic",
+            "website_content": "Example Clinic has doctors and appointment forms.",
+        }
+
+        self.assertEqual(o.email_greeting(row), "Hi Aaron,")
+
+    def test_serper_doctor_lookup_verifies_same_person_and_company(self):
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "organic": [
+                        {
+                            "title": "Dr Aaron Tan - Example Clinic",
+                            "link": "https://exampleclinic.sg/dr-aaron-tan",
+                            "snippet": "Dr Aaron Tan is a family physician at Example Clinic.",
+                        }
+                    ]
+                }
+
+        row = {
+            "selected_contact_name": "Aaron Tan",
+            "company_name": "Example Clinic",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "Example Clinic provides medical consultations.",
+        }
+
+        with patch.dict(os.environ, {"SERPER_API_KEY": "test-key"}, clear=False), patch.object(o.requests, "post", return_value=FakeResponse()) as post:
+            augmented = o.add_contact_doctor_context_if_needed(row, {"pressure_type": "hia_regulatory"})
+
+        self.assertTrue(post.called)
+        self.assertTrue(augmented["_contact_doctor_verified"])
+        self.assertEqual(o.email_greeting(augmented), "Hi Dr Tan,")
 
     def test_generic_cross_domain_contact_requires_review(self):
         row = {
@@ -2972,7 +3049,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["email_4"]["body"].startswith("Ivan, "))
         self.assertFalse(plan.emails["email_4"]["body"].startswith("Ivan - "))
 
-    def test_named_doctor_contact_uses_person_first_name(self):
+    def test_named_doctor_contact_uses_doctor_surname_greeting(self):
         plan = o.plan_outreach(
             {
                 "company_name": "American International Clinic Singapore",
@@ -2982,7 +3059,7 @@ class OutreachPlannerTests(unittest.TestCase):
             },
             programmes=[verified_program()],
         )
-        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Paul,"))
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hi Dr Zakowich,"))
         self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
 
     def test_blank_selected_contact_uses_team_greeting_and_keeps_company_observation(self):

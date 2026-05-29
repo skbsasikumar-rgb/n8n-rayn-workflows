@@ -252,6 +252,7 @@ Rules:
 - Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 lightly ties back to the earlier note.
 - Email 3 will carry the final close-loop SaaS/LMS point, so do not overload Email 2.
 - Keep the same recipient addressing style from each deterministic email.
+- Keep the exact greeting implied by payload.recipient_greeting. Do not add, remove, or guess "Dr".
 - Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA track, and support-route caution.
 - You may improve flow and make it sound human. You may not change the meaning.
 - Use "We", not "RAYN".
@@ -1322,13 +1323,192 @@ NON_PERSON_CONTACT_NAME_TERMS = {
     "team",
 }
 
+CONTACT_HONORIFIC_TITLES = {"dr", "doctor", "mr", "mrs", "ms", "miss", "mdm", "prof"}
+
+CHINESE_FAMILY_NAMES = {
+    "ang",
+    "chan",
+    "chang",
+    "cheah",
+    "cheang",
+    "chee",
+    "chen",
+    "cheong",
+    "chia",
+    "chiam",
+    "chong",
+    "choo",
+    "chua",
+    "chung",
+    "foo",
+    "gan",
+    "goh",
+    "han",
+    "heng",
+    "ho",
+    "koh",
+    "kuan",
+    "kwan",
+    "lam",
+    "lau",
+    "lee",
+    "leong",
+    "lim",
+    "lin",
+    "loh",
+    "low",
+    "lum",
+    "ng",
+    "ong",
+    "poon",
+    "sim",
+    "soh",
+    "tan",
+    "tay",
+    "teo",
+    "thng",
+    "toh",
+    "wong",
+    "woo",
+    "yeo",
+}
+
+WESTERN_GIVEN_NAME_HINTS = {
+    "aaron",
+    "alice",
+    "andrew",
+    "angela",
+    "anthony",
+    "ben",
+    "benjamin",
+    "carol",
+    "catherine",
+    "chris",
+    "christopher",
+    "daniel",
+    "david",
+    "dora",
+    "edmund",
+    "edward",
+    "elizabeth",
+    "emily",
+    "eric",
+    "eugene",
+    "george",
+    "gerald",
+    "grace",
+    "greg",
+    "ivan",
+    "jack",
+    "james",
+    "jane",
+    "jason",
+    "jennifer",
+    "john",
+    "jonathan",
+    "joyce",
+    "kelly",
+    "kenneth",
+    "kevin",
+    "michael",
+    "nicholas",
+    "olivia",
+    "paul",
+    "peter",
+    "rebecca",
+    "richard",
+    "robert",
+    "samuel",
+    "sarah",
+    "steven",
+    "susan",
+    "thomas",
+    "timothy",
+    "victor",
+    "vincent",
+    "william",
+}
+
+DOCTOR_ROLE_TERMS = (
+    "doctor",
+    "medical doctor",
+    "physician",
+    "family physician",
+    "general practitioner",
+    "gp",
+    "surgeon",
+    "dental surgeon",
+    "dentist",
+    "orthodontist",
+    "endodontist",
+    "periodontist",
+    "prosthodontist",
+    "psychiatrist",
+    "anaesthetist",
+    "anesthetist",
+    "cardiologist",
+    "dermatologist",
+    "gastroenterologist",
+    "gynaecologist",
+    "gynecologist",
+    "oncologist",
+    "ophthalmologist",
+    "orthopaedic",
+    "orthopedic",
+    "paediatrician",
+    "pediatrician",
+    "radiologist",
+    "rheumatologist",
+    "urologist",
+    "medical director",
+    "clinical director",
+    "resident physician",
+    "senior physician",
+    "consultant physician",
+    "consultant surgeon",
+)
+
+DOCTOR_SEARCH_TERMS = (
+    "dr",
+    "doctor",
+    "physician",
+    "surgeon",
+    "dentist",
+    "specialist",
+    "consultant",
+    "medical director",
+    "clinician",
+)
+
+CLINIC_DOCTOR_LOOKUP_TERMS = (
+    "clinic",
+    "medical",
+    "dental",
+    "doctor",
+    "doctors",
+    "surgery",
+    "surgeon",
+    "specialist",
+    "hospital",
+    "healthcare",
+    "orthopaedic",
+    "orthopedic",
+    "aesthetic",
+    "cardiology",
+    "dermatology",
+    "gastro",
+    "women",
+    "paediatric",
+    "pediatric",
+)
+
 
 def valid_person_contact_name(name: Any) -> bool:
     text = compact(name)
     if not text or "@" in text or "/" in text:
         return False
     parts = [part.lower() for part in re.findall(r"[a-z]+", text.lower()) if part]
-    parts = [part for part in parts if part not in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}]
+    parts = [part for part in parts if part not in CONTACT_HONORIFIC_TITLES]
     if not parts or len(parts) > 5:
         return False
     if any(part in NON_PERSON_CONTACT_NAME_TERMS for part in parts):
@@ -1647,13 +1827,6 @@ def advisory_copy_brief_flags(flags: list[str], classification: dict[str, Any], 
     return list(dict.fromkeys(advisory))
 
 
-def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
-    name = compact(row.get("selected_contact_name"))
-    if valid_person_contact_name(name):
-        return f"Hi {first_name_from_contact(name)},"
-    return "Hello team,"
-
-
 def title_case_contact_name_part(value: str) -> str:
     token = compact(value)
     if not token:
@@ -1672,18 +1845,163 @@ def title_case_contact_name_part(value: str) -> str:
     return re.sub(r"[A-Za-z]+", fix_word, token)
 
 
-def first_name_from_contact(name: str) -> str:
-    parts = [part for part in compact(name).replace(".", " ").split() if part]
-    while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
+def contact_name_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return compact(value.get("selected_contact_name"))
+    return compact(value)
+
+
+def raw_contact_name_parts(value: Any) -> list[str]:
+    text = contact_name_text(value)
+    parts = [part.strip("-'’") for part in re.findall(r"[A-Za-z][A-Za-z.'’-]*", text) if part.strip("-'’")]
+    while parts and parts[0].lower().strip(".") in CONTACT_HONORIFIC_TITLES:
         parts.pop(0)
-    return title_case_contact_name_part(parts[0]) if parts else "there"
+    return parts
+
+
+def clean_contact_name_parts(value: Any) -> list[str]:
+    return [title_case_contact_name_part(part.strip(".")) for part in raw_contact_name_parts(value)]
+
+
+def is_initial_name_part(value: str) -> bool:
+    token = re.sub(r"[^A-Za-z]", "", value or "")
+    return len(token) == 1
+
+
+def has_chinese_family_first_shape(parts: list[str]) -> bool:
+    if len(parts) < 2:
+        return False
+    first = re.sub(r"[^A-Za-z]", "", parts[0]).lower()
+    second = re.sub(r"[^A-Za-z]", "", parts[1]).lower()
+    if first not in CHINESE_FAMILY_NAMES:
+        return False
+    return second not in WESTERN_GIVEN_NAME_HINTS
+
+
+def first_name_from_contact(name: Any) -> str:
+    parts = clean_contact_name_parts(name)
+    if not parts:
+        return "there"
+    if is_initial_name_part(parts[0]) and len(parts) > 1:
+        remaining = [part for part in parts[1:] if not is_initial_name_part(part)]
+        return " ".join(remaining[:2]) if remaining else title_case_contact_name_part(parts[-1])
+    if has_chinese_family_first_shape(parts):
+        return " ".join(parts[1:3])
+    return title_case_contact_name_part(parts[0])
+
+
+def doctor_family_name_from_contact(name: Any) -> str:
+    parts = clean_contact_name_parts(name)
+    if not parts:
+        return ""
+    if is_initial_name_part(parts[0]) and len(parts) > 1:
+        non_initial = [part for part in parts[1:] if not is_initial_name_part(part)]
+        return title_case_contact_name_part(non_initial[-1]) if non_initial else ""
+    if has_chinese_family_first_shape(parts):
+        return title_case_contact_name_part(parts[0])
+    if len(parts) >= 2:
+        return title_case_contact_name_part(parts[-1])
+    return title_case_contact_name_part(parts[0])
+
+
+def contact_name_has_doctor_title(name: Any) -> bool:
+    return bool(re.match(r"^\s*(?:dr|doctor)\.?\s+", contact_name_text(name), flags=re.I))
+
+
+def contact_role_indicates_doctor(row: dict[str, Any]) -> bool:
+    blob = contact_title_blob(row)
+    if not blob:
+        return False
+    if re.search(r"\bdr\.?\b", blob):
+        return True
+    return any(re.search(rf"\b{re.escape(term)}\b", blob) for term in DOCTOR_ROLE_TERMS)
+
+
+def compact_name_for_search(parts: list[str]) -> str:
+    return " ".join(re.sub(r"[^A-Za-z]", "", part).lower() for part in parts if re.sub(r"[^A-Za-z]", "", part))
+
+
+def person_identifiers_for_doctor_search(name: Any) -> list[str]:
+    raw_parts = raw_contact_name_parts(name)
+    if not raw_parts:
+        return []
+    cleaned = [re.sub(r"[^A-Za-z]", "", part).lower() for part in raw_parts if re.sub(r"[^A-Za-z]", "", part)]
+    identifiers: list[str] = []
+    full = " ".join(cleaned)
+    if full:
+        identifiers.append(full)
+    if cleaned and len(cleaned) > 1 and len(cleaned[0]) == 1:
+        rest = " ".join(cleaned[1:])
+        if rest:
+            identifiers.append(rest)
+    family = doctor_family_name_from_contact(name).lower()
+    if family and len(family) >= 3:
+        identifiers.append(family)
+    return list(dict.fromkeys(identifiers))
+
+
+def doctor_evidence_text(row: dict[str, Any]) -> str:
+    parts = [
+        row.get("website_content", ""),
+        row.get("leadership_or_team_signals", ""),
+        row.get("contact_info_detected", ""),
+        row.get("_serper_context_text", ""),
+        row.get("_contact_doctor_context_text", ""),
+        row.get("selected_contact_title", ""),
+        row.get("selected_contact_role", ""),
+    ]
+    return compact(" ".join(compact(part) for part in parts)).lower()
+
+
+def text_links_person_to_doctor(row: dict[str, Any], text: str) -> bool:
+    name = contact_name_text(row)
+    if not valid_person_contact_name(name):
+        return False
+    normalized = re.sub(r"[^a-z0-9]+", " ", compact(text).lower())
+    if not normalized:
+        return False
+    identifiers = [identifier for identifier in person_identifiers_for_doctor_search(name) if len(identifier) >= 3]
+    for identifier in identifiers:
+        for match in re.finditer(rf"\b{re.escape(identifier)}\b", normalized):
+            window = normalized[max(0, match.start() - 140) : match.end() + 140]
+            if any(re.search(rf"\b{re.escape(term)}\b", window) for term in DOCTOR_SEARCH_TERMS):
+                return True
+    family = doctor_family_name_from_contact(name).lower()
+    return bool(family and re.search(rf"\bdr\s+{re.escape(family)}\b", normalized))
+
+
+def contact_is_doctor(row: dict[str, Any]) -> bool:
+    name = contact_name_text(row)
+    if not valid_person_contact_name(name):
+        return False
+    if row.get("_contact_doctor_verified") is True:
+        return True
+    if contact_name_has_doctor_title(name):
+        return True
+    if contact_role_indicates_doctor(row):
+        return True
+    return text_links_person_to_doctor(row, doctor_evidence_text(row))
+
+
+def contact_greeting_label(row: dict[str, Any]) -> str:
+    name = contact_name_text(row)
+    if not valid_person_contact_name(name):
+        return ""
+    if contact_is_doctor(row):
+        family_name = doctor_family_name_from_contact(name)
+        return f"Dr {family_name}" if family_name else "Doctor"
+    return first_name_from_contact(name)
+
+
+def email_greeting(row: dict[str, Any], company: str | None = None) -> str:
+    label = contact_greeting_label(row)
+    if label:
+        return f"Hi {label},"
+    return "Hello team,"
 
 
 def email_1_greeting(row: dict[str, Any], company: str | None = None) -> str:
-    name = compact(row.get("selected_contact_name"))
-    if valid_person_contact_name(name):
-        return f"Hi {first_name_from_contact(name)},"
-    return "Hello team,"
+    return email_greeting(row, company)
 
 
 def email_greeting_type(row: dict[str, Any]) -> str:
@@ -1693,20 +2011,19 @@ def email_greeting_type(row: dict[str, Any]) -> str:
 
 
 def email_comma_greeting(row: dict[str, Any], company: str | None = None) -> str:
-    name = compact(row.get("selected_contact_name"))
-    if valid_person_contact_name(name):
-        return f"Hi {first_name_from_contact(name)},"
+    label = contact_greeting_label(row)
+    if label:
+        return f"Hi {label},"
     return "Hello team,"
 
 
 def followup_name_prefix(row: dict[str, Any], separator: str = "-") -> str:
-    name = compact(row.get("selected_contact_name"))
-    if not valid_person_contact_name(name):
+    label = contact_greeting_label(row)
+    if not label:
         return ""
-    first = first_name_from_contact(name)
     if separator == ",":
-        return f"{first}, "
-    return f"{first} {separator} "
+        return f"{label}, "
+    return f"{label} {separator} "
 
 
 def followup_sentence(prefix: str, sentence: str) -> str:
@@ -3433,16 +3750,6 @@ def certification_reason(pressure_type: str) -> str:
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
 
 
-def first_name_from_contact(row: dict[str, Any] | str) -> str:
-    name = compact(row.get("selected_contact_name") if isinstance(row, dict) else row)
-    if not name:
-        return ""
-    parts = [part for part in name.replace(".", " ").split() if part]
-    while parts and parts[0].lower() in {"dr", "mr", "mrs", "ms", "miss", "mdm", "prof"}:
-        parts.pop(0)
-    return title_case_contact_name_part(parts[0]) if parts else ""
-
-
 def choose_variant(classification: dict[str, Any]) -> str:
     service = classification.get("hia_service_type_guess", "")
     if classification["pressure_type"] == "hia_regulatory":
@@ -4803,6 +5110,116 @@ def fetch_serper_company_context(row: dict[str, Any], classification: dict[str, 
         weak_context["queries_tried"] = list(queries_tried)
         return weak_context
     return {"source": "serper", "used": False, "reason": "no_results", "query": queries_tried[-1] if queries_tried else "", "queries_tried": queries_tried, "evidence": []}
+
+
+def clinic_context_for_doctor_lookup(row: dict[str, Any], classification: dict[str, Any]) -> bool:
+    if classification.get("pressure_type") == "hia_regulatory":
+        return True
+    text = " ".join(
+        compact(part).lower()
+        for part in (
+            row.get("company_name", ""),
+            row.get("company_homepage_name", ""),
+            row.get("best_url", ""),
+            row.get("url_picked", ""),
+            row.get("website_content", ""),
+            row.get("services_detected", ""),
+        )
+    )
+    return contains_any(text, CLINIC_DOCTOR_LOOKUP_TERMS)
+
+
+def contact_doctor_serper_queries(row: dict[str, Any]) -> list[str]:
+    name = contact_name_text(row)
+    company = compact(row.get("company_name") or row.get("company_homepage_name"))
+    domain = host_from_url(row.get("best_url") or row.get("url_picked"))
+    queries = []
+    if name and company:
+        queries.append(compact(f'"{name}" "{company}" doctor Singapore'))
+        queries.append(compact(f'"{name}" "{company}" Dr OR physician OR surgeon OR dentist'))
+    if name and domain:
+        queries.append(compact(f'site:{domain} "{name}" doctor OR Dr OR physician OR surgeon OR dentist'))
+    return list(dict.fromkeys(query for query in queries if query))
+
+
+def fetch_contact_doctor_serper_context(row: dict[str, Any], limit: int = 5) -> dict[str, Any]:
+    if not serper_context_enabled():
+        return {"source": "serper", "used": False, "reason": "serper_disabled_or_key_missing", "evidence": []}
+    queries = contact_doctor_serper_queries(row)
+    if not queries:
+        return {"source": "serper", "used": False, "reason": "missing_contact_or_company", "evidence": []}
+    queries_tried: list[str] = []
+    for query in queries:
+        queries_tried.append(query)
+        try:
+            response = requests.post(
+                "https://google.serper.dev/search",
+                headers={"X-API-KEY": os.getenv("SERPER_API_KEY", "").strip(), "Content-Type": "application/json"},
+                json={"q": query, "num": limit},
+                timeout=max(4, int(os.getenv("OUTREACH_SERPER_TIMEOUT_SECONDS", "8"))),
+            )
+            payload: Any = response.json()
+            if response.status_code >= 400:
+                return {
+                    "source": "serper",
+                    "used": False,
+                    "reason": compact(payload.get("message") if isinstance(payload, dict) else "") or f"HTTP {response.status_code}",
+                    "query": query,
+                    "queries_tried": queries_tried,
+                    "evidence": [],
+                }
+        except requests.Timeout:
+            return {"source": "serper", "used": False, "reason": "timeout", "query": query, "queries_tried": queries_tried, "evidence": []}
+        except (requests.RequestException, ValueError) as exc:
+            return {"source": "serper", "used": False, "reason": compact(str(exc), 180), "query": query, "queries_tried": queries_tried, "evidence": []}
+
+        organic = payload.get("organic") if isinstance(payload, dict) else []
+        evidence: list[dict[str, str]] = []
+        for item in organic if isinstance(organic, list) else []:
+            if not isinstance(item, dict):
+                continue
+            title = compact(item.get("title"))
+            link = compact(item.get("link"))
+            snippet = compact(item.get("snippet"))
+            if not title and not snippet:
+                continue
+            evidence.append({"title": title[:140], "link": link[:220], "snippet": snippet[:260]})
+            if len(evidence) >= limit:
+                break
+        if evidence:
+            return {"source": "serper", "used": True, "reason": "ok", "query": query, "queries_tried": queries_tried, "evidence": evidence}
+    return {"source": "serper", "used": False, "reason": "no_results", "query": queries_tried[-1] if queries_tried else "", "queries_tried": queries_tried, "evidence": []}
+
+
+def contact_doctor_context_text(context: dict[str, Any]) -> str:
+    evidence = context.get("evidence") if isinstance(context, dict) else []
+    lines = []
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict):
+            continue
+        lines.append(" ".join(compact(item.get(key)) for key in ("title", "snippet", "link")))
+    return compact(" ".join(lines))
+
+
+def add_contact_doctor_context_if_needed(row: dict[str, Any], classification: dict[str, Any]) -> dict[str, Any]:
+    name = contact_name_text(row)
+    if not valid_person_contact_name(name):
+        return row
+    if contact_is_doctor(row):
+        return row
+    if not clinic_context_for_doctor_lookup(row, classification):
+        return row
+    if os.getenv("OUTREACH_CONTACT_DOCTOR_SERPER_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return row
+    context = fetch_contact_doctor_serper_context(row)
+    if not context.get("used"):
+        return row
+    context_text = contact_doctor_context_text(context)
+    augmented = dict(row)
+    augmented["_contact_doctor_search_context"] = context
+    augmented["_contact_doctor_context_text"] = context_text
+    augmented["_contact_doctor_verified"] = text_links_person_to_doctor(augmented, context_text)
+    return augmented
 
 
 def preclassification_serper_pressure(row: dict[str, Any]) -> str:
@@ -6445,6 +6862,7 @@ def email_1_rewrite_payload(
     return {
         "company_name": email_display_company_name(row),
         "first_name": first_name_from_contact(compact(row.get("selected_contact_name"))),
+        "recipient_greeting": email_greeting(row),
         "selected_contact_title": compact(row.get("selected_contact_title") or row.get("selected_contact_role")),
         "track": email_variant_track(classification),
         "pressure_type": classification.get("pressure_type", ""),
@@ -7683,6 +8101,7 @@ def infer_decision_maker_role(row: dict[str, Any]) -> str:
 def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> OutreachPlan:
     row = add_preclassification_company_context(row)
     classification = classify_row(row)
+    row = add_contact_doctor_context_if_needed(row, classification)
     funding = match_programmes({**row, **classification}, programmes=programmes)
     copy_brief = build_copy_brief(row, classification, funding)
     copy_brief = apply_company_context_search(row, classification, copy_brief)
