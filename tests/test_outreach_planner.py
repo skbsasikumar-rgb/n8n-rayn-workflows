@@ -3851,7 +3851,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
         self.assertEqual(plan.classification["hia_service_type_guess"], "long_term_care")
-        self.assertRegex(plan.copy_brief["clinic_profile_phrase"], r"(long-term care|home-care|caregiver) provider")
+        self.assertRegex(plan.copy_brief["clinic_profile_phrase"], r"(long-term care|home-care|caregiver) provider|nursing home")
         self.assertNotEqual(plan.copy_brief["clinic_profile_phrase"], "a healthcare provider")
         self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
@@ -4194,6 +4194,10 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Example Psychology Centre",
                 "Psychology clinic with counselling appointments, assessments, patient case notes and psychotherapy.",
             ),
+            (
+                "Royal Chinese Medicine",
+                "Traditional Chinese Medicine clinic offering acupuncture, tuina, pain management, fertility support, appointments and treatment plans.",
+            ),
         ]
         for company, website_content in cases:
             with self.subTest(company=company):
@@ -4203,6 +4207,23 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertFalse(classification["hia_relevant"])
                 self.assertEqual(classification["hia_official_service_type"], "")
                 self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
+    def test_generic_charity_elder_support_does_not_become_hia_contingency_care(self):
+        classification = o.classify_row(
+            {
+                    "company_name": "Yong-en Care Centre",
+                    "website_content": (
+                        "Registered charity supporting elderly, disadvantaged individuals, children, youth and families. "
+                        "Provides family support, home care coordination, caregiver workshops, community programmes, referrals and casework."
+                    ),
+                }
+            )
+
+        self.assertEqual(classification["primary_email_track"], "pdpa_safeguards")
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
 
     def test_retail_or_wellness_allied_context_is_not_hia(self):
         cases = [

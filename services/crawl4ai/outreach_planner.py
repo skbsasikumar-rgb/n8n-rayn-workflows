@@ -511,10 +511,16 @@ NON_HCSA_STANDALONE_ALLIED_TERMS = (
     "hearing test",
     "hearing assessment",
     "tcm",
+    "chinese medicine",
     "traditional chinese medicine",
+    "acupuncture",
+    "tuina",
+    "cupping",
     "chiropractic",
     "chiropractor",
     "cam clinic",
+    "complementary medicine",
+    "alternative medicine",
     "complementary and alternative medicine",
 )
 STANDALONE_COUNSELLING_PSYCHOLOGY_TERMS = (
@@ -2447,6 +2453,8 @@ def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: st
     blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
     if not contains_any(blob, NON_HCSA_STANDALONE_ALLIED_TERMS):
         return False
+    if contains_any(blob, ("tcm", "chinese medicine", "traditional chinese medicine", "acupuncture", "tuina", "cupping", "chiropractic", "complementary medicine", "alternative medicine")):
+        return not contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS)
     if service in {"GP_OMS", "specialist_OMS"} and contains_any(blob, SPECIFIC_SPECIALIST_SERVICE_TERMS):
         return False
     if strong_specialist_clinic_scope(row, text):
@@ -2661,9 +2669,16 @@ def official_hia_service_type(service: str, text: str) -> str:
     if service == "long_term_care":
         if "nursing home" in text:
             return "nursing_home"
+        if ("long-term care provider" in text or "long term care provider" in text) and (
+            "resident" in text or "residents" in text or "patient records" in text
+        ):
+            return "nursing_home"
         if "community hospital" in text:
             return "community_hospital"
-        if "contingency care" in text or "home care" in text or "caregiver" in text:
+        if "contingency care" in text or (
+            "home care" in text
+            and contains_any(text, ("patient care", "patients", "home nursing", "private nursing", "nursing"))
+        ):
             return "contingency_care_service"
         return ""
     if service in {"allied_health", "hearing_care"}:
@@ -3221,6 +3236,11 @@ def infer_data_signal(text: str, hia: dict[str, Any], entity: dict[str, Any]) ->
         return "health_information", "high", "high"
     if hia["hia_relevant"]:
         return "patient_data", "high", "high"
+    if contains_any(text, NON_HCSA_STANDALONE_ALLIED_TERMS) and contains_any(
+        text,
+        ("appointment", "appointments", "assessment", "assessments", "treatment", "treatments", "patient", "client"),
+    ):
+        return "health_information", "medium", "medium"
     if entity["entity_type_guess"] in {"charity", "social_service", "npo"}:
         if "resident" in text:
             return "resident_data", "high", "medium"
