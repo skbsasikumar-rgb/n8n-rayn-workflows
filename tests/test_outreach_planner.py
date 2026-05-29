@@ -145,6 +145,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Cyber Essentials certified", patch["email_service_line"])
         self.assertIn("safeguards checklist", patch["email_cta_line"])
         self.assertIn('"email_track":"pdpa"', patch["email_1_placeholders_json"])
+        self.assertIn("PDPA is the legal obligation", patch["email_2_check_line"])
+        self.assertIn("CISOaaS", patch["email_2_ps_line"])
+        self.assertIn('"email_2_track":"pdpa"', patch["email_2_placeholders_json"])
+        self.assertIn("SaaS/LMS platform", patch["email_3_platform_line"])
+        self.assertIn('"email_3_track":"pdpa"', patch["email_3_placeholders_json"])
 
     def test_doctor_greeting_from_serper_context_only_when_evidenced(self):
         row = {
@@ -2807,6 +2812,9 @@ class OutreachPlannerTests(unittest.TestCase):
         email2_paragraphs = [part.strip() for part in plan.emails["email_2"]["body"].split("\n\n") if part.strip()]
         self.assertIn(len(email2_paragraphs), {4, 5})
         self.assertTrue(all(len(part.split()) <= 42 for part in email2_paragraphs[:-1]))
+        self.assertEqual(email2_paragraphs[0], "Hi Natalie,")
+        self.assertIn("email_2_placeholders", plan.copy_brief)
+        self.assertIn("email_3_placeholders", plan.copy_brief)
         self.assertNotIn("Natalie -", plan.emails["email_2"]["body"])
         self.assertNotIn("Natalie -", plan.emails["email_3"]["body"])
 

@@ -274,6 +274,7 @@ Email 1 rules:
 
 Email 2 rules:
 - This is the second touch, not the final close.
+- Use the resolved fields in payload.email_2_placeholders. Do not create new placeholder values or add new business logic.
 - Keep the same proper greeting from the deterministic email, for example "Hi Samuel," or "Hello team,".
 - Do not use first-name dash openings such as "Samuel - ".
 - Open by tying back to the earlier note, not by restarting the pitch.
@@ -4592,6 +4593,142 @@ EMAIL_3_PLATFORM_LINE = (
 )
 
 
+def email_2_body_from_placeholders(placeholders: dict[str, Any]) -> str:
+    tieback_and_check = compact(
+        f"{compact(placeholders.get('email_2_tieback_line'))} {compact(placeholders.get('email_2_check_line'))}"
+    )
+    parts = [
+        compact(placeholders.get("email_2_greeting_line")),
+        tieback_and_check,
+        compact(placeholders.get("email_2_route_line")),
+        compact(placeholders.get("email_2_cta_line")),
+        compact(placeholders.get("email_2_ps_line")),
+    ]
+    return "\n\n".join(part for part in parts if part)
+
+
+def email_3_body_from_placeholders(placeholders: dict[str, Any]) -> str:
+    parts = [
+        compact(placeholders.get("email_3_greeting_line")),
+        compact(placeholders.get("email_3_close_loop_line")),
+        compact(placeholders.get("email_3_route_line")),
+        compact(placeholders.get("email_3_platform_line")),
+        compact(placeholders.get("email_3_cta_line")),
+    ]
+    return "\n\n".join(part for part in parts if part)
+
+
+def email_2_sizing_line(pricing_mode: str) -> str:
+    if pricing_mode == "small_clinic_starting_price":
+        return "For smaller clinics, scope still depends on route and endpoint count."
+    if pricing_mode == "group_or_larger_sizing_needed":
+        return "For group setups, scope depends on route and endpoint count."
+    return "For smaller clinics, scope still depends on route and endpoint count."
+
+
+def build_hia_email_2_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    slots: dict[str, str],
+    pricing_mode: str,
+    funding_safe: bool,
+) -> dict[str, Any]:
+    route_line = slots.get("route_line") or (
+        "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side."
+    )
+    sizing_line = email_2_sizing_line(pricing_mode)
+    if funding_safe and slots.get("conditional_funding"):
+        sizing_line = compact(f"{sizing_line} {slots['conditional_funding']}")
+    placeholders = {
+        "email_2_greeting_line": email_greeting(row),
+        "email_2_track": email_track_placeholder(classification),
+        "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "email_2_tieback_line": sentence_after_standalone_greeting(
+            slots.get("opening_line") or "just tying this back to my earlier note."
+        ),
+        "email_2_check_line": slots.get("check_line")
+        or "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles.",
+        "email_2_route_line": compact(f"{route_line} {sizing_line}"),
+        "email_2_cta_line": slots.get("cta") or "Worth sending the short map?",
+        "email_2_ps_line": EMAIL_2_HIA_VALUE_PS,
+    }
+    return placeholders
+
+
+def build_funding_email_2_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    funding_line: str,
+    caveat: str,
+    ps: str | None = None,
+) -> dict[str, Any]:
+    claim_line = compact(f"{funding_line}{caveat}")
+    route_line = (
+        f"Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response. {claim_line}"
+        if claim_line
+        else "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
+    )
+    return {
+        "email_2_greeting_line": email_greeting(row),
+        "email_2_track": email_track_placeholder(classification),
+        "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "email_2_tieback_line": "Just tying this back to my earlier note.",
+        "email_2_check_line": route_line,
+        "email_2_route_line": "The useful check is whether that route fits, and what evidence or team training needs to stay current.",
+        "email_2_cta_line": "Worth sending the short map?",
+        "email_2_ps_line": ps or email_2_required_ps(classification),
+    }
+
+
+def build_value_fallback_email_2_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    asset_name: str,
+    slots: dict[str, str],
+    ps: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "email_2_greeting_line": email_greeting(row),
+        "email_2_track": email_track_placeholder(classification),
+        "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "email_2_tieback_line": sentence_after_standalone_greeting(
+            slots.get("opening_line") or "just tying this back to my earlier note."
+        ),
+        "email_2_check_line": slots.get("second_line")
+        or "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response.",
+        "email_2_route_line": slots.get("fit_line")
+        or f"The useful check is whether that support route fits the {asset_name}, and what evidence or team training needs to stay current.",
+        "email_2_cta_line": slots.get("cta") or "Worth sending the short map?",
+        "email_2_ps_line": ps or email_2_required_ps(classification),
+    }
+
+
+def build_email_3_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    slots: dict[str, str],
+) -> dict[str, Any]:
+    if classification.get("pressure_type") == "hia_regulatory":
+        route_line = slots.get("route_line") or (
+            "For HIA, the Cyber Essentials work still comes back to systems, evidence and team training on the HIA cyber/data-security side."
+        )
+    else:
+        route_line = slots.get("route_line") or "If Cyber Essentials is not the right next step now, no worries."
+    return {
+        "email_3_greeting_line": email_greeting(row),
+        "email_3_track": email_track_placeholder(classification),
+        "email_3_mode": compact(copy_brief.get("email_3_mode") or copy_brief.get("email_2_mode")),
+        "email_3_close_loop_line": sentence_after_standalone_greeting(slots.get("close_line") or "closing the loop here."),
+        "email_3_route_line": route_line,
+        "email_3_platform_line": slots.get("value_line") or EMAIL_3_PLATFORM_LINE,
+        "email_3_cta_line": slots.get("cta") or "Worth keeping this for later?",
+    }
+
+
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str, ps: str | None = None) -> str:
     ps = ps or EMAIL_2_HIA_VALUE_PS
     first_line = followup_sentence(prefix, "just tying this back to my earlier note.")
@@ -4830,8 +4967,8 @@ def hia_email_2_sentence_slots(
             2,
             "route_line",
             {
-                "hia_cyber_data_route": "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side.",
-                "hia_side_scope": "That keeps the Cyber Essentials route tied to the HIA cyber/data-security side, not a generic checklist.",
+                "hia_cyber_data_route": "That clarifies the Cyber Essentials work needed on the HIA cyber/data-security side.",
+                "hia_side_scope": "That keeps Cyber Essentials tied to the HIA cyber/data-security side, not a generic checklist.",
                 "hia_evidence_route": "That is the practical route into Cyber Essentials for the HIA cyber/data-security side.",
             },
         ),
@@ -4952,9 +5089,9 @@ def hia_email_2_sentence_slots(
             2,
             "conditional_funding",
             {
-                "route_applies_70": "If the route applies, 70% support can reduce the outlay.",
-                "route_applies_funding": "If the route applies, funding can reduce the outlay.",
-                "programme_confirmation_support": "Subject to programme confirmation, support can reduce the upfront cost.",
+                "route_applies_70": "70% support can reduce cost if the route applies.",
+                "route_applies_funding": "Funding can reduce cost if the route applies.",
+                "programme_confirmation_support": "Programme confirmation can reduce upfront cost.",
             },
         )
     return slots
@@ -7086,7 +7223,9 @@ def generate_email_sequence(
         email1_body = email_1_body_from_placeholders(email1_placeholders)
         records = hia_email_1_records(row, classification, copy_brief) if classification["pressure_type"] == "hia_regulatory" else ""
         email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
-        email3_body = email_3_close_loop_body_fixed(followup_prefix, classification, email3_slots)
+        email3_placeholders = build_email_3_placeholders(row, classification, copy_brief, email3_slots)
+        copy_brief["email_3_placeholders"] = email3_placeholders
+        email3_body = email_3_body_from_placeholders(email3_placeholders)
         if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
             hia_pricing_subjects = {"A": "HIA funding route", "B": "support route", "C": "cost check"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
@@ -7098,12 +7237,15 @@ def generate_email_sequence(
                 sentence_slots,
                 funding_claim_send_safe(funding, copy_brief, classification),
             )
-            email2_body = hia_pricing_email_2_body(
-                followup_prefix,
+            email2_placeholders = build_hia_email_2_placeholders(
+                row,
+                classification,
+                copy_brief,
+                email2_slots,
                 compact(copy_brief.get("pricing_email_2_mode")) or "endpoint_sizing_needed",
                 funding_claim_send_safe(funding, copy_brief, classification),
-                email2_slots,
             )
+            email2_body = email_2_body_from_placeholders(email2_placeholders)
         elif funding_claim_send_safe(funding, copy_brief, classification):
             subject_key, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
             funding_line = funding.funding_claim_line
@@ -7111,27 +7253,34 @@ def generate_email_sequence(
                 email2_subject = "HIA / cyber funding"
                 email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
             caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_body = funding_email_2_body_fixed(
-                followup_prefix,
+            email2_placeholders = build_funding_email_2_placeholders(
+                row,
+                classification,
+                copy_brief,
                 funding_line,
                 caveat,
                 email_2_required_ps(classification),
             )
+            email2_body = email_2_body_from_placeholders(email2_placeholders)
         else:
             fallback_subjects = {"A": "support route", "B": "funding fit", "C": "cost check"}
             subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
             email2_subject = fallback_subjects[subject_key]
             email2_subject_options = list(fallback_subjects.values())
             email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset)
-            email2_body = value_fallback_body_fixed(
-                followup_prefix,
+            email2_placeholders = build_value_fallback_email_2_placeholders(
+                row,
+                classification,
+                copy_brief,
                 asset,
                 email2_slots,
                 email_2_required_ps(classification),
             )
+            email2_body = email_2_body_from_placeholders(email2_placeholders)
             fallback_email2 = {"chosen_subject": email2_subject, "subject_options": email2_subject_options, "body": email2_body}
             email2_subject = fallback_email2["chosen_subject"]
             email2_subject_options = fallback_email2["subject_options"]
+        copy_brief["email_2_placeholders"] = email2_placeholders
         email3_subject = diagnostic_subject
         _, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
         email4_slots = email_4_sentence_slots(row, classification, sentence_slots, asset)
@@ -7239,6 +7388,8 @@ def email_1_rewrite_payload(
         "approved_mechanism": compact(copy_brief.get("email_mechanism_statement")),
         "approved_cta": compact(copy_brief.get("email_cta")),
         "email_1_placeholders": copy_brief.get("email_1_placeholders", {}),
+        "email_2_placeholders": copy_brief.get("email_2_placeholders", {}),
+        "email_3_placeholders": copy_brief.get("email_3_placeholders", {}),
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
         "email_1_required_hia_phrase": "Health Information Act (HIA)" if classification.get("pressure_type") == "hia_regulatory" else "",
@@ -8568,6 +8719,8 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     b = plan.copy_brief
     e = plan.emails
     p = b.get("email_1_placeholders") if isinstance(b.get("email_1_placeholders"), dict) else {}
+    p2 = b.get("email_2_placeholders") if isinstance(b.get("email_2_placeholders"), dict) else {}
+    p3 = b.get("email_3_placeholders") if isinstance(b.get("email_3_placeholders"), dict) else {}
     patch_emails = suppress_followup_emails(e)
     visible_quality_flags = plan.quality_flags
     visible_severe_flags = plan.severe_email_flags
@@ -8690,6 +8843,17 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_cta_line": p.get("email_cta_line", ""),
         "email_role_frame": p.get("email_role_frame", ""),
         "email_1_placeholders_json": json_dumps(p),
+        "email_2_tieback_line": p2.get("email_2_tieback_line", ""),
+        "email_2_check_line": p2.get("email_2_check_line", ""),
+        "email_2_route_line": p2.get("email_2_route_line", ""),
+        "email_2_cta_line": p2.get("email_2_cta_line", ""),
+        "email_2_ps_line": p2.get("email_2_ps_line", ""),
+        "email_2_placeholders_json": json_dumps(p2),
+        "email_3_close_loop_line": p3.get("email_3_close_loop_line", ""),
+        "email_3_route_line": p3.get("email_3_route_line", ""),
+        "email_3_platform_line": p3.get("email_3_platform_line", ""),
+        "email_3_cta_line": p3.get("email_3_cta_line", ""),
+        "email_3_placeholders_json": json_dumps(p3),
         "decision_maker_role_guess": infer_decision_maker_role(row),
         "outreach_variant": choose_variant(c),
         "email_1_subject": patch_emails["email_1"]["chosen_subject"],
