@@ -2316,6 +2316,26 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
     return False
 
 
+def has_confirmed_hia_scope_evidence(
+    row: dict[str, Any],
+    text: str,
+    service: str = "",
+    official_service: str = "",
+) -> bool:
+    service = compact(service)
+    official_service = compact(official_service) or official_hia_service_type(service, text)
+    if not service or not official_service:
+        return False
+    blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
+    if contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS):
+        return True
+    if service == "retail_pharmacy":
+        return contains_any(blob, ("retail pharmacy", "pharmacy", "pharmacist"))
+    if service in {"allied_health", "hearing_care"}:
+        return has_concrete_hia_evidence(row, blob, service) and has_allied_hcsa_or_medical_doctor_clinic_evidence(blob)
+    return has_concrete_hia_evidence(row, blob, service)
+
+
 def has_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
     if contains_positive_evidence_term(text, HCSA_LICENSE_EVIDENCE_TERMS):
         return True
@@ -2395,6 +2415,23 @@ def force_non_hcsa_allied_pdpa(hia: dict[str, Any]) -> dict[str, Any]:
         "hia_scope_reason": (
             "Standalone counselling, psychology, allied-health, hearing-care, TCM or CAM evidence without HCSA licence, "
             "licensed-clinic, medical-doctor or psychiatrist evidence is treated as PDPA safeguards, not HIA."
+        ),
+        "hia_official_service_type": "",
+        "hia_official_service_label": "",
+        "hia_timeline_batch_guess": "unknown",
+        "hia_deadline_claim_safe": False,
+    }
+
+
+def force_unconfirmed_hia_scope_pdpa(hia: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **hia,
+        "hia_relevant": False,
+        "hia_relevance_score": min(int(hia.get("hia_relevance_score") or 0), 36),
+        "hia_confidence": "low",
+        "hia_scope_reason": (
+            "HIA track requires HCSA licence evidence, retail-pharmacy scope, or a clearly current licensable "
+            "healthcare service. Without that, the row is treated as PDPA if personal-data evidence is present."
         ),
         "hia_official_service_type": "",
         "hia_official_service_label": "",
@@ -2873,7 +2910,9 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
         service = "allied_health"
     non_hcsa_allied_scope = counselling_non_hcsa_scope or standalone_non_hcsa_allied_scope(row, f"{primary_text} {text}", service)
     official_service = "" if non_hcsa_allied_scope else official_hia_service_type(service, text)
-    concrete_hia_evidence = bool(official_service) and (has_concrete_hia_evidence(row, text, service) or bool(batch_override))
+    concrete_hia_evidence = bool(official_service) and (
+        has_confirmed_hia_scope_evidence(row, text, service, official_service) or bool(batch_override)
+    )
     if official_service or service in HIA_BATCH_BY_SERVICE or batch_override:
         score = max(score + 24, 45)
     name_blob = " ".join((company, compact(row.get("company_homepage_name")).lower()))
@@ -2944,10 +2983,14 @@ def should_review_hia_with_llm(row: dict[str, Any], text: str, hia: dict[str, An
         return True
     if standalone_non_hcsa_allied_scope(row, text, compact(hia.get("hia_service_type_guess"))):
         return False
-    if hia.get("hia_confidence") == "high":
+    service = compact(hia.get("hia_service_type_guess"))
+    official_service = compact(hia.get("hia_official_service_type"))
+    if hia.get("hia_confidence") == "high" and has_confirmed_hia_scope_evidence(row, text, service, official_service):
         return False
-    if hia.get("hia_relevant") and hia.get("hia_service_type_guess") in HIA_BATCH_BY_SERVICE:
-        return False
+    if hia.get("hia_relevant"):
+        return True
+    if row.get("_serper_context_text") and (service not in {"", "unknown"} or contains_any(text, AMBIGUOUS_HIA_TERMS)):
+        return True
     return contains_any(text, AMBIGUOUS_HIA_TERMS)
 
 
@@ -2955,9 +2998,13 @@ def hia_review_payload(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, An
     return {
         "company_name": row.get("company_name", ""),
         "website_url": row.get("best_url") or row.get("url_picked") or "",
+        "manual_url_override": row.get("manual_url_override", ""),
         "company_homepage_name": row.get("company_homepage_name", ""),
         "industry_guess": row.get("industry_guess", ""),
         "website_content": compact(row.get("website_content"))[:7000],
+        "serper_context_text": compact(row.get("_serper_context_text"))[:3500],
+        "preclassification_search_context": row.get("_preclassification_company_context") or {},
+        "hia_search_context": row.get("_hia_serper_context") or {},
         "services_detected": row.get("services_detected", ""),
         "locations_detected": row.get("locations_detected", ""),
         "leadership_or_team_signals": row.get("leadership_or_team_signals", ""),
@@ -2968,24 +3015,29 @@ def hia_review_payload(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, An
     }
 
 
-HIA_LLM_REVIEW_PROMPT = """You classify ambiguous Singapore healthcare scope for HIA outreach.
+HIA_LLM_REVIEW_PROMPT = """You classify Singapore outreach routing for HIA, PDPA, or no outreach.
 Use only provided evidence. Return strict JSON only. Do not invent facts.
 
 Rules:
-- HIA relevance requires evidence that the prospect is a current HCSA licensee or clearly provides a currently licensable HCSA service. Clinical-sounding activity alone is not enough.
-- If it clearly matches one official HIA service type, set hia_relevant true.
+- Route to hia_regulatory only when evidence shows the prospect is a current HCSA licensee, a retail pharmacy, or clearly provides a currently licensable healthcare service covered by HIA. Clinical-sounding activity alone is not enough.
+- Route to pdpa_safeguards when the organisation likely collects, uses, stores or discloses identifiable personal data but HCSA/HIA scope is not confirmed.
+- Route to not_ready only when the evidence is too thin for outreach or there is no realistic personal-data handling signal.
+- If it clearly matches one official HIA service type, set hia_relevant true and route hia_regulatory.
 - Official HIA service types are: Outpatient Medical Service (GP), Outpatient Medical Service (Specialist), Outpatient Dental, Acute Hospital, Nursing Home, Ambulatory Surgical Centre, Community Hospital, Contingency Care Service, Assisted Reproduction, Clinical Laboratory, Outpatient Renal Dialysis, Retail Pharmacy, Radiology Laboratory, Nuclear Medicine Service.
 - If it is only wellness, beauty, aesthetics, optometry retail, product retail, training, media, holdings/group activity, or generic care language without clinical patient-care evidence, set hia_relevant false.
-- Standalone counselling, psychology, psychotherapy, physiotherapy, podiatry, hearing-care, audiology, TCM, CAM, or other allied-health evidence should be hia_relevant false unless the evidence also shows HCSA licence, a licensed medical clinic, medical doctors, psychiatrists, or another official HCSA service.
+- Standalone counselling, psychology, psychotherapy, physiotherapy, podiatry, hearing-care, audiology, TCM, CAM, or other allied-health evidence should be hia_relevant false and route pdpa_safeguards unless the evidence also shows HCSA licence, a licensed medical clinic, medical doctors, psychiatrists, or another official HCSA service.
 - A location inside a medical centre, medical suite, hospital building or clinic directory is not HCSA licence evidence by itself.
+- Use Serper/search context if present. If website_content is thin and search context is absent or inconclusive, prefer not_ready over guessing HIA.
 - Return a service type only when evidence supports it.
 - Use medium/high confidence only when evidence quotes are concrete.
 
 Return:
 {
+  "route": "hia_regulatory|pdpa_safeguards|not_ready",
   "hia_relevant": false,
   "hia_confidence": "low|medium|high",
   "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|outpatient_renal_dialysis|ambulatory_surgical_centre|unknown",
+  "personal_data_likelihood": "none|low|medium|high",
   "hia_scope_reason": "",
   "evidence": [{"quote": "", "source_field": "", "reason": ""}],
   "human_review_required": true
@@ -3028,7 +3080,12 @@ def call_hia_llm_review(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, A
         return None
 
 
-def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None, evidence_text: str = "") -> dict[str, Any]:
+def apply_hia_llm_review(
+    hia: dict[str, Any],
+    review: dict[str, Any] | None,
+    evidence_text: str = "",
+    row: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not isinstance(review, dict):
         return hia
     confidence = str(review.get("hia_confidence") or "low").strip().lower()
@@ -3053,6 +3110,12 @@ def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None, evi
         service = "unknown"
     official_service = official_hia_service_type(service, compact(evidence_text).lower())
     relevant = bool(review.get("hia_relevant")) and bool(official_service)
+    route = compact(review.get("route") or review.get("classification_route")).lower().replace("-", "_").replace(" ", "_")
+    if route in {"pdpa", "pdpa_safeguards", "not_ready", "none", "nothing", "no_outreach"}:
+        relevant = False
+    if relevant and not has_confirmed_hia_scope_evidence(row or {}, compact(evidence_text).lower(), service, official_service):
+        relevant = False
+        official_service = ""
     batch = HIA_BATCH_BY_OFFICIAL_SERVICE.get(official_service) or HIA_BATCH_BY_SERVICE.get(service, "unknown")
     reason = compact(review.get("hia_scope_reason")) or hia.get("hia_scope_reason", "")
     return {
@@ -3068,6 +3131,7 @@ def apply_hia_llm_review(hia: dict[str, Any], review: dict[str, Any] | None, evi
         "hia_deadline_claim_safe": relevant and batch != "unknown" and confidence in {"medium", "high"},
         "hia_disclaimer_needed": True,
         "hia_llm_review_status": "applied",
+        "hia_llm_route": route,
         "hia_llm_review_json": review,
     }
 
@@ -3557,7 +3621,7 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     if not hia_review and hia_llm_enabled() and should_review_hia_with_llm(row, text, hia):
         hia_review = call_hia_llm_review(row, hia)
     if should_review_hia_with_llm(row, text, hia):
-        hia = apply_hia_llm_review(hia, hia_review, text)
+        hia = apply_hia_llm_review(hia, hia_review, text, row)
     if standalone_non_hcsa_allied_scope(row, text, compact(hia.get("hia_service_type_guess"))):
         hia = force_non_hcsa_allied_pdpa(hia)
     if standalone_counselling_psychology_without_hcsa(row, text):
@@ -3588,6 +3652,13 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
             "hia_timeline_batch_guess": "unknown",
             "hia_deadline_claim_safe": False,
         }
+    if hia.get("hia_relevant") and not has_confirmed_hia_scope_evidence(
+        row,
+        text,
+        compact(hia.get("hia_service_type_guess")),
+        compact(hia.get("hia_official_service_type")),
+    ):
+        hia = force_unconfirmed_hia_scope_pdpa(hia)
     data_type, personal_intensity, sensitive_likelihood = infer_data_signal(text, hia, entity)
     dpo_owner = is_data_protection_owner(row)
     trust_signal = business_model_trust_signal(text)
@@ -5029,7 +5100,7 @@ def serper_company_context_queries(row: dict[str, Any], classification: dict[str
     site = compact(row.get("best_url") or row.get("url_picked"))
     pressure = compact(classification.get("pressure_type"))
     base_terms = {
-        "hia_regulatory": "Singapore healthcare clinic services locations",
+        "hia_regulatory": "Singapore HCSA licensee healthcare clinic patient appointments services",
         "pdpa_safeguards": "Singapore services personal data operations",
         "customer_trust": "Singapore company services clients security",
     }.get(pressure, "Singapore company services")

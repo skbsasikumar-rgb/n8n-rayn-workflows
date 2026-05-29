@@ -773,6 +773,67 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(classification["hia_official_service_type"], "")
         self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
 
+    def test_explicit_hcsa_outpatient_medical_scope_routes_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 234,
+                "company_name": "Example Family Clinic",
+                "best_url": "https://familyclinic.example/",
+                "website_content": (
+                    "Example Family Clinic is a licensed medical clinic under the Healthcare Services Act "
+                    "(HCSA), providing outpatient doctor consultations, patient appointments and treatment."
+                ),
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "GP_OMS")
+        self.assertEqual(classification["regulatory_applicability"], ["HIA", "PDPA"])
+
+    def test_llm_cannot_promote_health_consultancy_without_hcsa_or_patient_care_to_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 235,
+                "company_name": "Health Analytics Advisory",
+                "best_url": "https://healthanalytics.example/",
+                "website_content": (
+                    "Singapore consultancy for healthcare analytics workshops, vendor reports, "
+                    "client enquiries and employee data. The company does not provide patient care, "
+                    "doctor consultations, a licensed clinic, or HCSA services."
+                ),
+                "hia_llm_review": {
+                    "route": "hia_regulatory",
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM says healthcare analytics is a specialist medical service.",
+                    "hia_service_type_guess": "specialist_OMS",
+                    "hia_official_service_type": "outpatient_medical_specialist",
+                    "hia_timeline_batch_guess": "Batch 2 - Sep 2028",
+                },
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertEqual(classification["hia_official_service_type"], "")
+        self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
+
+    def test_no_personal_data_signal_routes_not_ready_not_pdpa_or_hia(self):
+        classification = o.classify_row(
+            {
+                "Id": 236,
+                "company_name": "Quiet Equipment Page",
+                "best_url": "https://quiet-equipment.example/",
+                "website_content": "Static information page with machine specifications, model numbers and public opening hours.",
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "not_ready")
+        self.assertFalse(classification["hia_relevant"])
+        self.assertFalse(classification["pdpa_relevant"])
+        self.assertEqual(classification["regulatory_applicability"], [])
+
     def test_llm_reason_cannot_self_validate_standalone_physio_as_hia(self):
         classification = o.classify_row(
             {
