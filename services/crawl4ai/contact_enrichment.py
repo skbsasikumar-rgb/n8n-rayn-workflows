@@ -162,6 +162,13 @@ NOISE_NAME_WORDS = {
     "trainer",
     "treatments",
     "ltd",
+    "lab",
+    "laboratory",
+    "laboratories",
+    "overview",
+    "research",
+    "cell",
+    "biology",
     "ceo",
     "cto",
     "ciso",
@@ -750,6 +757,28 @@ def probable_human_name(name: str) -> bool:
     if len(parts) <= 2 and any(part in {"bank", "clinic", "group", "centre", "center"} for part in lowered):
         return False
     return True
+
+
+def transient_provider_error(value: Any) -> bool:
+    text = compact(value, 240).lower().replace("_", " ").replace("-", " ")
+    return any(
+        marker in text
+        for marker in (
+            "timeout",
+            "timed out",
+            "rate limit",
+            "too many requests",
+            "connection reset",
+            "connection aborted",
+            "socket hang up",
+            "econnreset",
+            "etimedout",
+            "temporarily unavailable",
+            "service unavailable",
+            "gateway timeout",
+            "bad gateway",
+        )
+    )
 
 
 def weak_third_party_source(url: str) -> bool:
@@ -2919,6 +2948,9 @@ def try_decision_maker_fallback(
             email_validation_evidence=evidence,
         )
     if validation.get("error"):
+        if transient_provider_error(validation.get("error")):
+            email_validation_evidence.update(evidence)
+            return None
         return ContactResult(
             row_id=row_id,
             contact_search_status="failed",
@@ -3038,6 +3070,9 @@ def try_company_email_fallback(
             email_validation_evidence=evidence,
         )
     if validation.get("error"):
+        if transient_provider_error(validation.get("error")):
+            email_validation_evidence.update(evidence)
+            return None
         return ContactResult(
             row_id=row_id,
             contact_search_status="failed",
@@ -3722,6 +3757,13 @@ def enrich_contact(payload: dict[str, Any], validate_email: bool = True) -> Cont
                 email_validation_evidence=validation_evidence,
             )
         if validation.get("error"):
+            if transient_provider_error(validation.get("error")):
+                candidate_summary["status"] = "provider_transient_error"
+                candidate_summary["decision"] = "retryable_provider_error"
+                email_candidates[0]["status"] = "provider_transient_error"
+                email_candidates[0]["decision"] = "retryable_provider_error"
+                validation_evidence["transient_provider_error_count"] = int(validation_evidence.get("transient_provider_error_count") or 0) + 1
+                continue
             return ContactResult(
                 row_id=row_id,
                 contact_search_status="failed",

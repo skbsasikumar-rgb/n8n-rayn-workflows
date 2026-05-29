@@ -310,6 +310,68 @@ class ContactCandidateVerifierTests(unittest.TestCase):
         self.assertEqual(result.selected_contact_name, "Jane Tan")
         self.assertEqual(result.email_validation_provider, "anymail_finder")
 
+    def test_probable_human_name_rejects_lab_page_labels(self):
+        for value in ["Lab Overview", "Cell Biology", "Retinal Research", "Research Laboratory"]:
+            self.assertFalse(c.probable_human_name(value))
+        self.assertTrue(c.probable_human_name("Su Xinyi"))
+
+    def test_enrich_contact_continues_after_anymail_timeout(self):
+        payload = {
+            "Id": 123,
+            "company_name": "Example Clinic",
+            "company_homepage_name": "Example Clinic",
+            "canonical_domain": "exampleclinic.sg",
+            "best_url": "https://exampleclinic.sg/",
+            "website_content": "Jane Tan, Operations Manager, Example Clinic\nJohn Lim, Operations Manager, Example Clinic",
+            "site_fast_path_only": True,
+        }
+        calls = []
+
+        def fake_anymail(candidate, domain):
+            calls.append(candidate.name)
+            if candidate.name == "Jane Tan":
+                return {
+                    "configured": True,
+                    "error": "timeout",
+                    "provider": "anymail_finder",
+                    "results": [],
+                    "attempt_count": 2,
+                    "mx_exists": None,
+                }
+            return {
+                "configured": True,
+                "error": "",
+                "provider": "anymail_finder",
+                "results": [
+                    {
+                        "email_status": "valid",
+                        "valid_email": "john.lim@exampleclinic.sg",
+                        "email": "john.lim@exampleclinic.sg",
+                        "input": {"domain": domain, "full_name": candidate.name},
+                    }
+                ],
+                "mx_exists": True,
+            }
+
+        with patch.dict(
+            os.environ,
+            {
+                "CONTACT_PREFLIGHT_LLM_ENABLED": "false",
+                "ANYMAILFINDER_DECISION_MAKER_FALLBACK_ENABLED": "false",
+                "CONTACT_COMPANY_EMAIL_FALLBACK_ENABLED": "false",
+            },
+            clear=False,
+        ), patch.object(c, "validate_anymail_person", side_effect=fake_anymail):
+            result = c.enrich_contact(payload, validate_email=True)
+
+        self.assertEqual(calls, ["Jane Tan", "John Lim"])
+        self.assertEqual(result.contact_search_status, "contact_found")
+        self.assertEqual(result.contact_search_reason, "sendable_person_specific_email_found")
+        self.assertEqual(result.selected_contact_name, "John Lim")
+        self.assertEqual(result.validated_email, "john.lim@exampleclinic.sg")
+        self.assertEqual(result.email_validation_evidence["transient_provider_error_count"], 1)
+        self.assertEqual(result.email_candidates[0]["decision"], "retryable_provider_error")
+
     def test_decision_maker_category_order_matches_anymail_values(self):
         with patch.dict(os.environ, {}, clear=False):
             self.assertEqual(c.configured_decision_maker_categories(), ["ceo", "it", "operations", "hr", "marketing"])
