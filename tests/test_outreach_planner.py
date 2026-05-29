@@ -225,6 +225,53 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("dental", plan.emails["email_1"]["body"].lower())
         self.assertNotIn("dental", plan.emails["email_3"]["body"].lower())
 
+    def test_llm_review_does_not_overwrite_confirmed_specialist_clinic_scope(self):
+        classification = o.classify_row(
+            {
+                "Id": 104,
+                "company_name": "ACME Orthopaedics",
+                "best_url": "https://acmeortho.example/",
+                "website_content": (
+                    "Trusted orthopaedic clinic in Singapore providing specialist care for adults "
+                    "and paediatric patients. Consult our orthopaedic specialists for diagnosis and treatment. "
+                    "Swift appointment booking, insurance and Medisave claimable. Dr Zackary administers "
+                    "treatment including surgery, injections and recovery care."
+                ),
+                "hia_llm_review": {
+                    "route": "pdpa_safeguards",
+                    "hia_relevant": True,
+                    "hia_confidence": "high",
+                    "hia_scope_reason": "LLM incorrectly treated this as allied health only.",
+                    "hia_service_type_guess": "allied_health",
+                },
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+
+    def test_specialist_surgery_clinic_not_downgraded_by_incidental_allied_terms(self):
+        classification = o.classify_row(
+            {
+                "Id": 105,
+                "company_name": "ACME Orthopaedics",
+                "best_url": "https://acmeortho.example/",
+                "website_content": (
+                    "Orthopaedic clinic in Singapore providing specialist care for adults and paediatric patients. "
+                    "Senior consultant orthopaedic surgeon provides diagnosis, treatment, surgery, joint injections, "
+                    "Medisave claimable procedures, appointments and recovery care. The site also mentions "
+                    "physiotherapy and counselling support after surgery."
+                ),
+            }
+        )
+
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_specialist")
+
     def test_strong_website_context_does_not_call_serper(self):
         original = o.fetch_serper_company_context
 

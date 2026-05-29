@@ -2316,6 +2316,22 @@ def has_concrete_hia_evidence(row: dict[str, Any], text: str, service: str) -> b
     return False
 
 
+def explicitly_denies_hia_scope(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:do|does|did|are|is|was|were)\s+not\s+(?:provide|offer|operate|state|have)\b.{0,160}\b"
+            r"(?:hcsa|licensed clinic|licensed medical clinic|medical clinic|patient care|doctor consultations?|"
+            r"clinical services?|healthcare services?)\b",
+            text,
+        )
+        or re.search(
+            r"\bwithout\b.{0,120}\b(?:hcsa|licensed clinic|licensed medical clinic|medical doctors?|"
+            r"patient care|clinical services?)\b",
+            text,
+        )
+    )
+
+
 def has_confirmed_hia_scope_evidence(
     row: dict[str, Any],
     text: str,
@@ -2327,6 +2343,8 @@ def has_confirmed_hia_scope_evidence(
     if not service or not official_service:
         return False
     blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
+    if explicitly_denies_hia_scope(blob):
+        return False
     if contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS):
         return True
     if service == "retail_pharmacy":
@@ -2370,6 +2388,35 @@ def has_allied_hcsa_or_medical_doctor_clinic_evidence(text: str) -> bool:
     )
 
 
+def strong_specialist_clinic_scope(row: dict[str, Any], text: str) -> bool:
+    company = compact(row.get("company_name")).lower()
+    homepage = compact(row.get("company_homepage_name")).lower()
+    blob = f"{company} {homepage} {text}"
+    if not contains_any(blob, SPECIFIC_SPECIALIST_SERVICE_TERMS):
+        return False
+    if not contains_any(
+        blob,
+        (
+            "specialist clinic",
+            "orthopaedic clinic",
+            "women's clinic",
+            "womens clinic",
+            "clinic for women",
+            "surgeon",
+            "surgery",
+            "gynaecologist",
+            "gynecologist",
+            "obstetrician",
+            "consultant",
+            "dr ",
+            "doctor",
+            "medisave",
+        ),
+    ):
+        return False
+    return contains_any(blob, ("patient", "appointment", "consultation", "treatment", "surgery", "medisave", "insurance"))
+
+
 def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: str = "") -> bool:
     service = compact(service)
     if service and service not in {"allied_health", "hearing_care", "GP_OMS", "specialist_OMS", "unknown"}:
@@ -2379,12 +2426,16 @@ def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: st
         return False
     if service in {"GP_OMS", "specialist_OMS"} and contains_any(blob, SPECIFIC_SPECIALIST_SERVICE_TERMS):
         return False
+    if strong_specialist_clinic_scope(row, text):
+        return False
     return not has_allied_hcsa_or_medical_doctor_clinic_evidence(blob)
 
 
 def standalone_counselling_psychology_without_hcsa(row: dict[str, Any], text: str) -> bool:
     blob = f"{compact(row.get('company_name')).lower()} {compact(row.get('company_homepage_name')).lower()} {text}"
     if not contains_any(blob, STANDALONE_COUNSELLING_PSYCHOLOGY_TERMS):
+        return False
+    if strong_specialist_clinic_scope(row, text):
         return False
     if contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS):
         return False
@@ -2977,15 +3028,21 @@ def hia_llm_enabled() -> bool:
 
 def should_review_hia_with_llm(row: dict[str, Any], text: str, hia: dict[str, Any]) -> bool:
     review = row.get("hia_llm_review")
+    service = compact(hia.get("hia_service_type_guess"))
+    official_service = compact(hia.get("hia_official_service_type"))
+    if (
+        hia.get("hia_relevant")
+        and compact(hia.get("hia_confidence")) in {"medium", "high"}
+        and service not in {"allied_health", "hearing_care"}
+        and not (has_hearing_care_evidence(text) and service != "hearing_care")
+        and has_confirmed_hia_scope_evidence(row, text, service, official_service)
+    ):
+        return False
     if review and hia.get("hia_confidence") == "high" and hia.get("hia_relevant") and not review.get("hia_relevant"):
         return False
     if review:
         return True
     if standalone_non_hcsa_allied_scope(row, text, compact(hia.get("hia_service_type_guess"))):
-        return False
-    service = compact(hia.get("hia_service_type_guess"))
-    official_service = compact(hia.get("hia_official_service_type"))
-    if hia.get("hia_confidence") == "high" and has_confirmed_hia_scope_evidence(row, text, service, official_service):
         return False
     if hia.get("hia_relevant"):
         return True
