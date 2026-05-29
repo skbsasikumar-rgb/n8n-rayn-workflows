@@ -2026,8 +2026,22 @@ def followup_name_prefix(row: dict[str, Any], separator: str = "-") -> str:
     return f"{label} {separator} "
 
 
+def generic_greeting_stands_alone(prefix: str) -> bool:
+    normalized = compact(prefix).lower()
+    if normalized in {"hello team,", "hi team,", "good day,"}:
+        return True
+    return bool(re.fullmatch(r"hi .+ team,", normalized))
+
+
+def sentence_after_standalone_greeting(sentence: str) -> str:
+    text = compact(sentence)
+    return text[:1].upper() + text[1:] if text else ""
+
+
 def followup_sentence(prefix: str, sentence: str) -> str:
     text = compact(sentence)
+    if generic_greeting_stands_alone(prefix):
+        return f"{prefix}\n\n{sentence_after_standalone_greeting(text)}"
     if prefix.endswith("- ") and text:
         text = text[:1].lower() + text[1:]
     elif prefix.endswith(",") and text:
@@ -4345,11 +4359,16 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
             observation = f"Looks like {company_name} {description}."
     else:
         observation = f"{opener} {bridge}"
-    return f"{greeting} {observation_after_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+    observation = observation_after_greeting(observation)
+    if generic_greeting_stands_alone(greeting):
+        return f"{greeting}\n\n{sentence_after_standalone_greeting(observation)}\n\n{problem}\n\n{mechanism}\n\n{cta}"
+    return f"{greeting} {observation}\n\n{problem}\n\n{mechanism}\n\n{cta}"
 
 
 def hia_email_1_cyber_data_security_paragraph_ok(body: str) -> bool:
     paragraphs = [compact(part).lower() for part in body.split("\n\n") if compact(part)]
+    if paragraphs and generic_greeting_stands_alone(paragraphs[0]):
+        paragraphs = paragraphs[1:]
     if len(paragraphs) < 3:
         return False
     mechanism = paragraphs[2]
@@ -4465,6 +4484,8 @@ def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None 
     opener = slots.get("diagnostic_opener") or "Simple check:"
     gap_line = slots.get("gap_line") or "If any of those are unclear, that is usually where the cleanup starts."
     cta = slots.get("cta") or "Worth sending the checklist?"
+    if generic_greeting_stands_alone(prefix):
+        return f"{prefix}\n\n{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
     return f"{prefix}{opener} {diagnostic}\n\n{gap_line}\n\n{cta}"
 
 
@@ -4487,6 +4508,8 @@ def email_3_close_loop_body_fixed(
 
 
 def close_loop_body_fixed(prefix: str, close_loop_line: str) -> str:
+    if generic_greeting_stands_alone(prefix):
+        return f"{prefix}\n\n{sentence_after_standalone_greeting(close_loop_line)}"
     if prefix.endswith(", ") and close_loop_line:
         close_loop_line = close_loop_line[:1].lower() + close_loop_line[1:]
     return f"{prefix}{close_loop_line}"

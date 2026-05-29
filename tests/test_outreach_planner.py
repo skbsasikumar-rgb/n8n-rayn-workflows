@@ -80,6 +80,22 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(o.first_name_from_contact(row), "Aaron")
         self.assertEqual(o.email_greeting(row), "Hi Dr Tan,")
 
+    def test_generic_greeting_uses_own_paragraph(self):
+        self.assertEqual(
+            o.followup_sentence("Hello team,", "just tying this back to my earlier note."),
+            "Hello team,\n\nJust tying this back to my earlier note.",
+        )
+        self.assertEqual(
+            o.close_loop_body_fixed("Hi team,", "closing the loop here."),
+            "Hi team,\n\nClosing the loop here.",
+        )
+
+    def test_named_greeting_keeps_followup_sentence_inline(self):
+        self.assertEqual(
+            o.followup_sentence("Hi Natalie,", "linking this back to the HIA readiness map."),
+            "Hi Natalie, linking this back to the HIA readiness map.",
+        )
+
     def test_doctor_greeting_from_serper_context_only_when_evidenced(self):
         row = {
             "selected_contact_name": "Aaron Tan",
@@ -1787,8 +1803,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_problem_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_mechanism_statement"], plan.emails["email_1"]["body"])
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
-                email1_first = plan.emails["email_1"]["body"].splitlines()[0]
-                self.assertRegex(email1_first, r", (?:I noticed|saw that|looks like|had a quick look at|for |does )")
+                email1_lines = [line for line in plan.emails["email_1"]["body"].splitlines() if line.strip()]
+                email1_first = email1_lines[1] if o.generic_greeting_stands_alone(email1_lines[0]) else email1_lines[0]
+                self.assertRegex(email1_first, r"(?:, |^)(?:I noticed|saw that|looks like|had a quick look at|For |for |Does |does )")
                 self.assertNotIn("from the site", email1_first.lower())
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
@@ -2404,7 +2421,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("does Amaris B. Clinic keep patient records across", patch["email_1_body"])
+        self.assertIn("Does Amaris B. Clinic keep patient records across", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -2595,7 +2612,8 @@ class OutreachPlannerTests(unittest.TestCase):
             "validated_email": "team@example.com",
         }
         plan = o.plan_outreach(row, programmes=[verified_program()])
-        first_sentence = plan.emails["email_1"]["body"].split("\n\n", 1)[0]
+        paragraphs = [paragraph for paragraph in plan.emails["email_1"]["body"].split("\n\n") if paragraph.strip()]
+        first_sentence = paragraphs[1] if o.generic_greeting_stands_alone(paragraphs[0]) else paragraphs[0]
 
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.copy_brief["clinic_profile_guess"], "specialist_led")
@@ -2686,7 +2704,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "Based on the company profile, the Cyber Essentials support route appears worth checking for Example Clinic.",
             "\n\nThis is subject to programme confirmation.",
         )
-        self.assertIn("just tying this back to my earlier note", body)
+        self.assertIn("Just tying this back to my earlier note", body)
         self.assertIn("practical baseline for access, backups, updates, malware protection and incident response", body)
         self.assertIn("evidence or team training needs to stay current", body)
         self.assertIn("p.s. We are usually priced near the lower end", body)
@@ -3180,10 +3198,11 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
+        self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,\n\n"))
         self.assertIn("Acme Services", plan.emails["email_1"]["body"])
         self.assertNotIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
-        self.assertTrue(plan.emails["email_2"]["body"].startswith("Hello team,"))
-        self.assertTrue(plan.emails["email_3"]["body"].startswith("Hello team,"))
+        self.assertTrue(plan.emails["email_2"]["body"].startswith("Hello team,\n\n"))
+        self.assertTrue(plan.emails["email_3"]["body"].startswith("Hello team,\n\n"))
         self.assertFalse(plan.emails["email_4"]["body"].lower().startswith(("hi ", "hello ")))
 
     def test_generic_contactus_email_does_not_invent_first_name(self):
@@ -3908,6 +3927,8 @@ class OutreachPlannerTests(unittest.TestCase):
                     self.assertNotIn(phrase, blob)
                 for index in range(1, 5):
                     paragraphs = [paragraph for paragraph in plan.emails[f"email_{index}"]["body"].split("\n\n") if paragraph.strip()]
+                    if paragraphs and o.generic_greeting_stands_alone(paragraphs[0]):
+                        paragraphs = paragraphs[1:]
                     max_paragraphs = 5 if index == 2 else 4
                     self.assertLessEqual(len(paragraphs), max_paragraphs)
                 self.assertEqual(plan.emails["style_metadata"]["human_email_style"], "short_plain_low_cta")
