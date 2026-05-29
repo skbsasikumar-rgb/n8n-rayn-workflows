@@ -4552,9 +4552,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "hia_real_for_providers": "If so, the Health Information Act (HIA) starting from 2027 makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
         }
         mechanism_options = {
-            "decent_cyber_data_baseline": "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.",
-            "practical_cyber_data_baseline": "We help map that trail into a practical Cyber Essentials route for the HIA cyber/data-security side.",
-            "controls_evidence_baseline": "We help map that trail into a Cyber Essentials evidence route for the HIA cyber/data-security side.",
+            "decent_cyber_data_baseline": "We help map that trail into Cyber Essentials certification for the HIA cyber/data-security side: gap assessment, documentation and evidence trail.",
+            "practical_cyber_data_baseline": "We help map that trail into Cyber Essentials certification for the HIA cyber/data-security side: gap assessment, documentation and evidence trail.",
+            "controls_evidence_baseline": "We help turn that into a Cyber Essentials evidence route for the HIA cyber/data-security side: gap assessment, documentation and evidence trail.",
         }
     elif track == "dpo_evidence":
         problem_options = {
@@ -4563,9 +4563,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "intent_vs_proof": "The issue is usually not intent. It is proving the trail around that data.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and evidence trail for the security-safeguards side.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
         }
     elif track == "customer_trust":
         problem_options = {
@@ -4574,9 +4574,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "reusable_security_evidence": "The useful thing is having that proof ready before customers ask.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help turn that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and reusable evidence trail.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
         }
     else:
         problem_options = {
@@ -4585,9 +4585,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how that data is protected day to day.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help map that into a Cyber Essentials baseline for access, backups, updates, malware controls and incident response.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials evidence set.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials for the security-safeguards side.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and evidence trail for the security-safeguards side.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
         }
     return {
         "observation_opener": choose_sentence_slot(row, classification, metadata, "email_1", 1, "observation_opener", observation_opener_options),
@@ -6609,7 +6609,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         asset = segment_asset(row, classification, clinic_profile)
         cta = hia_email_1_cta(row, classification, asset)
         problem = hia_problem_statement(row, classification, clinic_profile)
-        mechanism = "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side."
+        mechanism = "We help map that trail into Cyber Essentials certification for the HIA cyber/data-security side: gap assessment, documentation and evidence trail."
         profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
         if clinic_profile.get("clinic_profile_guess") == "specialist_led" and "gastroenterology and digestive care" in profile_phrase:
             signal = f"{company} appears to provide specialist-led gastroenterology and digestive care."
