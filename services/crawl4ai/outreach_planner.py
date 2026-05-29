@@ -262,11 +262,12 @@ Rules:
 - Avoid: dive into, unleash, game-changing, revolutionary, transformative, leverage, optimize, unlock potential, unlock the secrets.
 
 Email 1 rules:
-- Use 4 short paragraphs separated by blank lines.
-- Paragraph 1: greeting plus a specific company hook, preferably a question if the approved context is concrete.
-- Paragraph 2: problem / why now. Link it back to paragraph 1 with "that data", "that proof", "that trail", or similar plain wording.
-- Paragraph 3: Cyber Essentials as a practical path, baseline, evidence map, or route. For HIA, this paragraph must say we map/help map it into a Cyber Essentials route for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security.
-- Paragraph 4: tiny CTA only.
+- Use the resolved fields in payload.email_1_placeholders. Do not create new placeholder values.
+- Use 4 or 5 short paragraphs separated by blank lines: greeting alone, context line, Cyber Essentials service line, optional approved funding line, tiny CTA only.
+- Paragraph 1 must be exactly the approved greeting line.
+- Paragraph 2 must keep the approved context/data-type meaning.
+- Paragraph 3 must keep Cyber Essentials as the practical certification path. For HIA, this paragraph must say we map/help map it into Cyber Essentials certification for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security.
+- Final paragraph is the CTA only.
 - For HIA, Email 1 must spell out Health Information Act (HIA) before later using HIA. Keep HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
 - If payload email_1_required_hia_phrase is not empty, copy that exact phrase once in Email 1, preferably in paragraph 2. Do not shorten it to HIA only.
 - Prefer 55-75 words. Hard limit: Email 1 under 95 words.
@@ -2031,6 +2032,14 @@ def generic_greeting_stands_alone(prefix: str) -> bool:
     if normalized in {"hello team,", "hi team,", "good day,"}:
         return True
     return bool(re.fullmatch(r"hi .+ team,", normalized))
+
+
+def standalone_greeting_line(prefix: str) -> bool:
+    normalized = compact(prefix).lower()
+    return bool(
+        generic_greeting_stands_alone(prefix)
+        or re.fullmatch(r"(?:hi|hello) [^,]{1,60},", normalized)
+    )
 
 
 def sentence_after_standalone_greeting(sentence: str) -> str:
@@ -4329,6 +4338,166 @@ def build_email_1_chain(
     }
 
 
+def email_track_placeholder(classification: dict[str, Any]) -> str:
+    track = email_variant_track(classification)
+    if track == "hia_regulatory":
+        return "hia"
+    if track in {"pdpa_safeguards", "dpo_evidence"}:
+        return "pdpa"
+    return "not_ready"
+
+
+def email_specialty_placeholder(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    if classification.get("pressure_type") == "hia_regulatory":
+        profile_phrase = compact(copy_brief.get("clinic_profile_phrase"))
+        if profile_phrase:
+            return re.sub(r"^(?:an?|the)\s+", "", profile_phrase, flags=re.I)
+        subtype = specialist_subtype(primary_profile_source_text(row))
+        if subtype:
+            return subtype.replace("_", " ")
+        return compact(classification.get("hia_service_type_guess")).replace("_", " ")
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "data-protection / operations contact route"
+    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    if signal and not generic_personalisation_signal(signal):
+        description = email_1_signal_description(copy_brief)
+        if description and description.lower() not in {"the organisation", "unknown"}:
+            return description[:180]
+    segment = email_variant_segment(row, classification, copy_brief).replace("_", " ")
+    if segment == "care":
+        return "care/community-service"
+    if segment and segment != "general":
+        return segment
+    return compact(row.get("industry_guess") or copy_brief.get("business_model_guess") or "organisation")
+
+
+def email_data_type_placeholder(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    if classification.get("pressure_type") == "hia_regulatory":
+        return hia_email_1_records(row, classification, copy_brief)
+    examples = compact(copy_brief.get("sensitive_data_examples"))
+    if examples and examples.lower() not in {"unknown", "personal data"}:
+        return examples
+    personal_data = compact(copy_brief.get("personal_data_handled_guess"))
+    if personal_data and personal_data.lower() != "unknown":
+        return personal_data
+    signal = compact(classification.get("data_type_signal")).replace("_", " ")
+    return signal or "personal data"
+
+
+def email_context_line_placeholder(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    data_type: str,
+) -> str:
+    company = email_display_company_name(row)
+    data = compact(data_type).rstrip(".")
+    if classification.get("pressure_type") == "hia_regulatory":
+        records = short_record_list(data, 3)
+        specialty = compact(copy_brief.get("clinic_profile_phrase") or email_specialty_placeholder(row, classification, copy_brief))
+        lead = f"For {specialty}, " if specialty else ""
+        return (
+            f"{lead}{records} at {company} are exactly the health information the Health Information Act (HIA) targets: "
+            "access, backups, vendors and incident response need documented evidence from 2027."
+        )
+    descriptor = data if data != "personal data" else "personal data"
+    specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
+    lead = f"For {specialty}, " if specialty and specialty != "organisation" else ""
+    return (
+        f"{lead}{descriptor[:1].lower() + descriptor[1:]} raises a PDPA safeguards question: "
+        "PDPA is the legal responsibility, and the hard part is usually proving safeguards - "
+        f"whether {company} can evidence access, backups, updates and incident response."
+    )
+
+
+def email_service_line_placeholder(classification: dict[str, Any]) -> str:
+    if classification.get("pressure_type") == "hia_regulatory":
+        return (
+            "We help map that into Cyber Essentials certification for the HIA cyber/data-security side: "
+            "gap assessment, documentation and evidence trail."
+        )
+    return (
+        "We help organisations get Cyber Essentials certified: gap assessment, documentation and "
+        "evidence trail for the security-safeguards side."
+    )
+
+
+def email_funding_line_placeholder(
+    funding: FundingMatch,
+    copy_brief: dict[str, Any],
+    classification: dict[str, Any],
+) -> str:
+    if not funding_claim_send_safe(funding, copy_brief, classification):
+        return ""
+    line = compact(funding.funding_claim_line)
+    if "70%" in line and ("ciso" in line.lower() or "cisoaas" in line.lower()):
+        return "Eligible SMEs can get up to 70% CISOaaS co-funding, subject to eligibility."
+    return ""
+
+
+def email_cta_line_placeholder(classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    if classification.get("pressure_type") == "hia_regulatory":
+        return compact(copy_brief.get("email_cta")) or "Can I send the HIA readiness map?"
+    existing = compact(copy_brief.get("email_cta"))
+    if existing:
+        return existing
+    segment = email_variant_segment({}, classification, copy_brief)
+    if segment == "care":
+        return "Worth sending the care-organisation safeguards checklist?"
+    return "Worth sending the personal-data safeguards checklist?"
+
+
+def email_role_frame_placeholder(row: dict[str, Any], classification: dict[str, Any]) -> str:
+    if classification.get("pressure_type") == "hia_regulatory":
+        if contact_is_doctor(row):
+            return "The reputational and regulatory exposure of a documented gap at a clinical practice is significant."
+        return "The reputational and regulatory exposure of a documented gap is significant."
+    return "The obligation is operational, not just a policy document."
+
+
+def build_email_1_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    copy_brief: dict[str, Any],
+    email1_chain: dict[str, Any],
+) -> dict[str, Any]:
+    greeting_label = contact_greeting_label(row) or "team"
+    greeting_line = email_greeting(row)
+    data_type = email_data_type_placeholder(row, classification, copy_brief)
+    context_line = email_context_line_placeholder(row, classification, copy_brief, data_type)
+    source_url = compact(email1_chain.get("source_url") or copy_brief.get("email_personalisation_source_url") or first_source_url(row))
+    placeholders = {
+        "recipient_salutation": greeting_label,
+        "email_greeting_line": greeting_line,
+        "company_display_name": email_display_company_name(row),
+        "email_track": email_track_placeholder(classification),
+        "funding_program": compact(funding.primary_funding_program),
+        "hia_batch_deadline": compact(classification.get("hia_timeline_batch_guess")),
+        "email_specialty": email_specialty_placeholder(row, classification, copy_brief),
+        "email_data_type": data_type,
+        "email_context_line": context_line,
+        "email_context_confidence": compact(email1_chain.get("confidence")) or "medium",
+        "email_context_source_url": source_url,
+        "email_service_line": email_service_line_placeholder(classification),
+        "email_funding_line": email_funding_line_placeholder(funding, copy_brief, classification),
+        "email_cta_line": email_cta_line_placeholder(classification, copy_brief),
+        "email_role_frame": email_role_frame_placeholder(row, classification),
+    }
+    return placeholders
+
+
+def email_1_body_from_placeholders(placeholders: dict[str, Any]) -> str:
+    parts = [
+        compact(placeholders.get("email_greeting_line")),
+        compact(placeholders.get("email_context_line")),
+        compact(placeholders.get("email_service_line")),
+        compact(placeholders.get("email_funding_line")),
+        compact(placeholders.get("email_cta_line")),
+    ]
+    return "\n\n".join(part for part in parts if part)
+
+
 def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[str, str], problem: str, mechanism: str, cta: str) -> str:
     opener = slots.get("observation_opener") or "I noticed"
     bridge = company_observation_bridge(company, noticed, slots.get("company_type_bridge") or "looks_like")
@@ -4367,11 +4536,13 @@ def email_1_body_fixed(greeting: str, company: str, noticed: str, slots: dict[st
 
 def hia_email_1_cyber_data_security_paragraph_ok(body: str) -> bool:
     paragraphs = [compact(part).lower() for part in body.split("\n\n") if compact(part)]
-    if paragraphs and generic_greeting_stands_alone(paragraphs[0]):
+    standalone_greeting = paragraphs and standalone_greeting_line(paragraphs[0])
+    if standalone_greeting:
         paragraphs = paragraphs[1:]
-    if len(paragraphs) < 3:
+    mechanism_index = 1 if standalone_greeting else 2
+    if len(paragraphs) <= mechanism_index:
         return False
-    mechanism = paragraphs[2]
+    mechanism = paragraphs[mechanism_index]
     return all(term in mechanism for term in ("hia", "cyber essentials", "cyber", "data", "security"))
 
 
@@ -6868,15 +7039,31 @@ def generate_email_sequence(
         copy_brief["first_sentence_context"] = email1_chain["first_sentence_context"]
         copy_brief["email_hook_context"] = email1_chain["email_hook_context"]
         copy_brief["email_hook"] = problem
-        copy_brief["email_problem_statement"] = problem
-        copy_brief["email_mechanism_statement"] = mechanism
         hook_override, hook_style = email_1_first_sentence_override(row, classification, copy_brief, company)
         email1_slots["first_sentence_override"] = hook_override
         copy_brief["email_1_hook_style"] = hook_style
-        email1_body = email_1_body_fixed(email1_greeting, company, noticed, email1_slots, problem, mechanism, cta)
-        if classification["pressure_type"] == "hia_regulatory" and word_count(email1_body) > 85 and len(company) > 45:
-            short_noticed = noticed.replace(company, "your clinic", 1)
-            email1_body = email_1_body_fixed(email1_greeting, "your clinic", short_noticed, email1_slots, problem, mechanism, cta)
+        email1_placeholders = build_email_1_placeholders(row, classification, funding, copy_brief, email1_chain)
+        copy_brief["email_1_placeholders"] = email1_placeholders
+        copy_brief["email_personalisation_signal"] = email1_placeholders["email_context_line"]
+        copy_brief["email_problem_statement"] = email1_placeholders["email_context_line"]
+        copy_brief["email_mechanism_statement"] = email1_placeholders["email_service_line"]
+        copy_brief["email_cta"] = email1_placeholders["email_cta_line"]
+        copy_brief["email_hook"] = email1_placeholders["email_context_line"]
+        email1_chain = {
+            **email1_chain,
+            "observation": email1_placeholders["email_context_line"],
+            "pressure_bridge": email1_placeholders["email_context_line"],
+            "mechanism": email1_placeholders["email_service_line"],
+            "cta": email1_placeholders["email_cta_line"],
+            "placeholders": email1_placeholders,
+        }
+        copy_brief["email_1_chain"] = email1_chain
+        copy_brief["email_hook_context"] = {
+            **email1_chain["email_hook_context"],
+            "specific_hook": email1_placeholders["email_context_line"],
+            "data_pressure": email1_placeholders["email_data_type"],
+        }
+        email1_body = email_1_body_from_placeholders(email1_placeholders)
         records = hia_email_1_records(row, classification, copy_brief) if classification["pressure_type"] == "hia_regulatory" else ""
         email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
         email3_body = email_3_close_loop_body_fixed(followup_prefix, classification, email3_slots)
@@ -7031,6 +7218,7 @@ def email_1_rewrite_payload(
         "approved_problem": compact(copy_brief.get("email_problem_statement")),
         "approved_mechanism": compact(copy_brief.get("email_mechanism_statement")),
         "approved_cta": compact(copy_brief.get("email_cta")),
+        "email_1_placeholders": copy_brief.get("email_1_placeholders", {}),
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
         "email_1_required_hia_phrase": "Health Information Act (HIA)" if classification.get("pressure_type") == "hia_regulatory" else "",
@@ -7516,9 +7704,10 @@ def email_1_reflects_signal(body: str, signal: str, copy_brief: dict[str, Any]) 
         return True
     hook_style = compact(copy_brief.get("email_1_hook_style"))
     if hook_style.startswith("question_") or hook_style == "careful_weak_context":
-        first = compact(body.split("\n\n", 1)[0])
+        paragraphs = [compact(part) for part in body.split("\n\n") if compact(part)]
+        first = paragraphs[1] if paragraphs and standalone_greeting_line(paragraphs[0]) and len(paragraphs) > 1 else (paragraphs[0] if paragraphs else "")
         first = re.sub(r"^(hi [^,]{1,60},|hello team,)\s*", "", first, flags=re.I)
-        return bool((first and "?" in first) or first.lower().startswith(("looks like", "for ")))
+        return bool((first and "?" in first) or first.lower().startswith(("looks like", "for ", "with ")))
     return False
 
 
@@ -7854,12 +8043,12 @@ def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) 
             positions.append(-1)
             continue
         position = body_l.find(phrase[: min(len(phrase), 80)])
-        if index == 0 and position < 0:
-            profile_phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
-            if profile_phrase:
-                position = body_l.find(profile_phrase)
-            if position < 0 and email_1_reflects_signal(body, signal, copy_brief):
+        if index == 0:
+            if email_1_reflects_signal(body, signal, copy_brief):
                 position = 0
+            profile_phrase = compact(copy_brief.get("clinic_profile_phrase")).lower()
+            if position < 0 and profile_phrase:
+                position = body_l.find(profile_phrase)
         positions.append(position)
     if any(pos < 0 for pos in positions):
         return False
@@ -8358,6 +8547,7 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
     f = plan.funding
     b = plan.copy_brief
     e = plan.emails
+    p = b.get("email_1_placeholders") if isinstance(b.get("email_1_placeholders"), dict) else {}
     patch_emails = suppress_followup_emails(e)
     visible_quality_flags = plan.quality_flags
     visible_severe_flags = plan.severe_email_flags
@@ -8464,6 +8654,22 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_asset_offer": b["email_asset_offer"],
         "email_cta": b["email_cta"],
         "email_angle_reason": b["email_angle_reason"],
+        "recipient_salutation": p.get("recipient_salutation", ""),
+        "email_greeting_line": p.get("email_greeting_line", ""),
+        "company_display_name": p.get("company_display_name", ""),
+        "email_track": p.get("email_track", ""),
+        "funding_program": p.get("funding_program", ""),
+        "hia_batch_deadline": p.get("hia_batch_deadline", ""),
+        "email_specialty": p.get("email_specialty", ""),
+        "email_data_type": p.get("email_data_type", ""),
+        "email_context_line": p.get("email_context_line", ""),
+        "email_context_confidence": p.get("email_context_confidence", ""),
+        "email_context_source_url": p.get("email_context_source_url", ""),
+        "email_service_line": p.get("email_service_line", ""),
+        "email_funding_line": p.get("email_funding_line", ""),
+        "email_cta_line": p.get("email_cta_line", ""),
+        "email_role_frame": p.get("email_role_frame", ""),
+        "email_1_placeholders_json": json_dumps(p),
         "decision_maker_role_guess": infer_decision_maker_role(row),
         "outreach_variant": choose_variant(c),
         "email_1_subject": patch_emails["email_1"]["chosen_subject"],

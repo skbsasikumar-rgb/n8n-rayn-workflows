@@ -96,6 +96,56 @@ class OutreachPlannerTests(unittest.TestCase):
             "Hi Natalie, linking this back to the HIA readiness map.",
         )
 
+    def test_email_1_uses_resolved_placeholders(self):
+        row = {
+            "Id": 991,
+            "company_name": "Soon Diabetes Thyroid And Endocrine Clinic",
+            "selected_contact_name": "Dr Soon",
+            "selected_contact_role": "Medical Doctor",
+            "website_content": (
+                "Singapore specialist endocrinology clinic with doctors, diabetes care, thyroid care, "
+                "appointments, referrals, patient reports and vendor systems. "
+            )
+            * 4,
+        }
+
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+        body = plan.emails["email_1"]["body"]
+        placeholders = plan.copy_brief["email_1_placeholders"]
+
+        self.assertTrue(body.startswith("Hi Dr Soon,\n\n"))
+        self.assertEqual(placeholders["recipient_salutation"], "Dr Soon")
+        self.assertEqual(placeholders["email_track"], "hia")
+        self.assertIn("Health Information Act (HIA)", placeholders["email_context_line"])
+        self.assertIn("HIA cyber/data-security", placeholders["email_service_line"])
+        self.assertIn(placeholders["email_context_line"], body)
+        self.assertIn(placeholders["email_service_line"], body)
+        self.assertIn(placeholders["email_cta_line"], body)
+
+    def test_email_1_placeholder_patch_fields_are_stored(self):
+        result = o.plan_and_patch(
+            {
+                "Id": 992,
+                "company_name": "Autism Partnership Singapore",
+                "selected_contact_name": "Wilkson Tan",
+                "validated_email": "wilkson@example.com",
+                "website_content": (
+                    "Singapore autism therapy provider with ABA therapy, child assessments, appointments, "
+                    "family contact records and care plans. "
+                )
+                * 4,
+            },
+            programmes=[verified_program()],
+        )
+        patch = result["patch"]
+
+        self.assertEqual(patch["recipient_salutation"], "Wilkson")
+        self.assertEqual(patch["email_track"], "pdpa")
+        self.assertIn("PDPA", patch["email_context_line"])
+        self.assertIn("Cyber Essentials certified", patch["email_service_line"])
+        self.assertIn("safeguards checklist", patch["email_cta_line"])
+        self.assertIn('"email_track":"pdpa"', patch["email_1_placeholders_json"])
+
     def test_doctor_greeting_from_serper_context_only_when_evidenced(self):
         row = {
             "selected_contact_name": "Aaron Tan",
@@ -347,7 +397,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["email_hook_source"], "serper")
         self.assertIn("multi-location or group healthcare operation", plan.copy_brief["first_sentence_context"]["observation"])
         self.assertEqual(plan.emails["context_email_1"]["pressure_bridge"], plan.copy_brief["email_problem_statement"])
-        self.assertIn("Health Information Act (HIA) starting from 2027", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("Health Information Act (HIA) targets", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("email_context_line", plan.emails["context_email_1"]["placeholders"])
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
 
@@ -2421,7 +2472,9 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("Does Amaris B. Clinic keep patient records across", patch["email_1_body"])
+        self.assertIn("Amaris B. Clinic", patch["email_1_body"])
+        self.assertIn("Health Information Act (HIA) targets", patch["email_1_body"])
+        self.assertIn("consultation records", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -2838,12 +2891,11 @@ class OutreachPlannerTests(unittest.TestCase):
                 paragraphs = plan.emails["email_1"]["body"].split("\n\n")
                 self.assertEqual(len(paragraphs), 4)
                 self.assertIn(profile, plan.copy_brief["prospect_facing_signal"])
-                self.assertIn(records_question.lower(), paragraphs[0].lower())
-                self.assertNotIn("handling", paragraphs[0])
-                self.assertTrue(paragraphs[1].startswith("If so, the Health Information Act (HIA) starting from 2027"))
-                self.assertRegex(paragraphs[1], r"that (data )?trail|that spread")
+                self.assertTrue(o.standalone_greeting_line(paragraphs[0]))
+                self.assertIn("Health Information Act (HIA) targets", paragraphs[1])
+                self.assertRegex(paragraphs[1].lower(), r"consultation|appointment|imaging|records")
                 self.assertIn("Cyber Essentials", paragraphs[2])
-                self.assertRegex(paragraphs[2], r"that (records map|data trail|trail)")
+                self.assertIn("HIA cyber/data-security", paragraphs[2])
                 self.assertIn("HIA readiness map?", paragraphs[3])
                 self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
