@@ -150,6 +150,78 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("up to 70% subsidised under CSA's CISOaaS government grant", paragraphs[2])
         self.assertEqual(paragraphs[-1], "Can I send the HIA readiness checklist?")
 
+    def test_hia_email_1_uses_documented_evidence_style_from_tier2(self):
+        extracted = {
+            "specialty": "cardiology centre",
+            "data_type": "cardiac investigation records, arrhythmia treatments, and device implant histories",
+            "website_detail_consequence": (
+                "HIA targets exactly the patient data you hold - access logs, vendor NDAs, backups, "
+                "and MOH incident reporting all need documented evidence from 2027"
+            ),
+            "confidence": "high",
+            "source_url": "https://cardio.example/",
+            "evidence": [{"quote": "cardiac investigations and arrhythmia treatment", "source_field": "website_content"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            plan = o.plan_outreach(
+                {
+                    "Id": 995,
+                    "company_name": "Example Cardiology Centre",
+                    "website_content": (
+                        "Singapore cardiology specialist clinic with doctors managing cardiac investigations, "
+                        "arrhythmia treatments, device implants, appointments and patient records. "
+                    )
+                    * 4,
+                },
+                programmes=[verified_program()],
+            )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what cardiology clinics need documented")
+        self.assertIn("Health Information Act (HIA) targets exactly the patient data you hold", body)
+        self.assertIn("access logs, vendor NDAs, backups", body)
+        self.assertIn("MOH incident reporting", body)
+        self.assertIn("Can I send the HIA readiness checklist?", body)
+
+    def test_pdpa_email_1_uses_higher_evidence_bar_style_from_tier2(self):
+        extracted = {
+            "specialty": "physiotherapy practice",
+            "data_type": "injury assessments, treatment histories, and rehabilitation progress records",
+            "website_detail_consequence": (
+                "Injury assessments, treatment histories, and rehabilitation progress records are exactly the kind "
+                "of personal data PDPA sets a higher evidence bar for - and for a physio practice, the obligation "
+                "goes beyond having a privacy policy"
+            ),
+            "confidence": "high",
+            "source_url": "https://physio.example/",
+            "evidence": [{"quote": "injury assessment and rehab", "source_field": "website_content"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            plan = o.plan_outreach(
+                {
+                    "Id": 996,
+                    "company_name": "TSquared Physio",
+                    "selected_contact_name": "Afshan Khan",
+                    "website_content": (
+                        "Singapore physiotherapy practice offering injury assessments, treatment history reviews, "
+                        "rehabilitation progress tracking, appointments and patient records. "
+                    )
+                    * 4,
+                },
+                programmes=[verified_program()],
+            )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "PDPA - what TSquared Physio needs to be able to show")
+        self.assertTrue(body.startswith("Hi Afshan,\n\n"))
+        self.assertIn("PDPA sets a higher evidence bar", body)
+        self.assertIn("goes beyond having a privacy policy", body)
+        self.assertIn("Worth sending the personal data safeguards checklist?", body)
+
     def test_tier2_llm_extracts_and_stores_email_1_context(self):
         extracted = {
             "specialty": "endocrinology",
@@ -786,8 +858,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertTrue(plan.classification["pdpa_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
-        self.assertIn("hard part is usually proving safeguards", plan.emails["email_1"]["body"])
+        self.assertIn("evidence bar", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("We help", plan.emails["email_1"]["body"])
         self.assertNotIn("Cyber Essentials makes", plan.emails["email_1"]["body"])
@@ -1307,7 +1378,7 @@ class OutreachPlannerTests(unittest.TestCase):
                         "primary eye care, glasses, opticians, appointments and customer enquiries."
                     ),
                 },
-                "personal-data safeguards checklist",
+                "personal data safeguards checklist",
                 ("specialist-led eye clinic", "education data checklist", "student/enrolment systems"),
             ),
             (
@@ -1316,7 +1387,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Online TCM retail store with healthcare products, customer orders, e-commerce, email and enquiries.",
                     "hia_llm_review": {"hia_relevant": False, "hia_confidence": "low", "hia_service_type_guess": "unknown"},
                 },
-                "personal-data safeguards checklist",
+                "personal data safeguards checklist",
                 ("gastroenterology", "specialist-led clinic", "education data checklist"),
             ),
         ]
@@ -1343,7 +1414,7 @@ class OutreachPlannerTests(unittest.TestCase):
         plan = o.plan_outreach(row, programmes=[verified_program()])
 
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
-        self.assertIn("personal-data safeguards checklist", plan.emails["email_1"]["body"])
+        self.assertIn("personal data safeguards checklist", plan.emails["email_1"]["body"])
         self.assertIn("personal-data safeguards checklist", plan.emails["email_2"]["body"])
         self.assertIn("PDPA", plan.emails["email_2"]["body"])
         self.assertIn(o.EMAIL_2_PDPA_VALUE_PS, plan.emails["email_2"]["body"])
@@ -1448,7 +1519,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
                 self.assertIn(profile, plan.emails["email_1"]["body"])
                 self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
-                self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+                self.assertIn("evidence bar", plan.emails["email_1"]["body"])
                 self.assertNotIn("PDPA compliant", plan.emails["email_1"]["body"])
 
     def test_sports_academy_uses_pdpa_safeguards_not_customer_trust(self):
@@ -1466,7 +1537,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(plan.classification["data_type_signal"], "student_data")
         self.assertEqual(o.email_variant_track(plan.classification), "pdpa_safeguards")
-        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+        self.assertIn("evidence bar", plan.emails["email_1"]["body"])
         self.assertNotIn("customer security", plan.emails["email_1"]["body"].lower())
         self.assertNotIn("customer trust", plan.copy_brief["customer_trust_angle"].lower())
 
@@ -1531,7 +1602,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "pdpa_general")
-        self.assertIn(plan.emails["email_1"]["chosen_subject"], {"data safeguards", "safeguards checklist", "data evidence"})
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "PDPA - what Vendor Platform needs to be able to show")
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_3"]["body"])
@@ -3100,7 +3171,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("care/community-service", plan.emails["email_1"]["body"])
         self.assertIn("beneficiary, volunteer, donor and staff data", plan.emails["email_1"]["body"])
         self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
-        self.assertIn("PDPA is the legal responsibility", plan.emails["email_1"]["body"])
+        self.assertIn("evidence bar", plan.emails["email_1"]["body"])
         self.assertIn("beneficiary", plan.emails["email_3"]["body"])
         self.assertIn("beneficiary", brief["personal_data_handled_guess"])
         self.assertIn("volunteer", brief["personal_data_handled_guess"])
@@ -3732,7 +3803,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
         self.assertIn("a specialist-led rheumatology clinic", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("consultation notes, treatment records, referrals, appointment details", plan.emails["email_3"]["body"])
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "specialist clinic readiness")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what rheumatology clinics need documented")
         self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_heart_and_generic_specialist_words_do_not_override_better_clinic_routes(self):

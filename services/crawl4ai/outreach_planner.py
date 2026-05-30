@@ -265,8 +265,9 @@ Email 1 rules:
 - Use the resolved fields in payload.email_1_placeholders. Do not create new placeholder values.
 - Use 4 or 5 short paragraphs separated by blank lines: greeting alone, context line, Cyber Essentials service line, optional approved funding line, tiny CTA only.
 - Paragraph 1 must be exactly the approved greeting line.
-- Paragraph 2 must keep the approved context/data-type meaning.
-- For HIA, paragraph 2 should keep this shape: service mix + patient records + Health Information Act (HIA) from 2027. Do not replace it with a generic evidence-map sentence.
+- Paragraph 2 must keep the approved context/data-type meaning and read like a specific risk/evidence sentence, not a generic compliance sentence.
+- For HIA, paragraph 2 should keep this shape: provider/service mix + patient data/records + Health Information Act (HIA) from 2027 + documented evidence. Keep access logs, vendor NDAs, backups, and MOH incident reporting if they are already present.
+- For PDPA, paragraph 2 should keep this shape: specific personal-data type + higher PDPA evidence bar + obligation beyond a privacy policy or higher-than-assumed scrutiny. Do not mention HIA.
 - Paragraph 3 must keep Cyber Essentials as the practical certification path. For HIA, this paragraph must say we help the provider type get Cyber Essentials certified for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security. If an approved funding line is present, keep it in this paragraph.
 - Final paragraph is the CTA only.
 - For HIA, Email 1 must spell out Health Information Act (HIA) before later using HIA. Keep HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
@@ -3155,12 +3156,12 @@ Task:
 For HIA:
 - specialty should be the service area, e.g. "GP clinic", "endocrinology", "breast surgery", "dental clinic".
 - data_type should name the records, e.g. "diabetes and thyroid records", "oncology treatment records", "patient appointment and consultation records".
-- website_detail_consequence should connect the data to HIA, e.g. "the records your clinic holds are exactly the kind of health information HIA targets".
+- website_detail_consequence should be one email-ready clause/sentence connecting the data to HIA evidence, e.g. "the patient data you hold is exactly what the Health Information Act (HIA) targets - access logs, vendor NDAs, backups, and MOH incident reporting all need documented evidence from 2027".
 
 For PDPA:
 - specialty should be the operating context, e.g. "ABA therapy", "football academy", "charity operations".
 - data_type should name the personal data, e.g. "children's therapy records", "student and parent records", "beneficiary and volunteer records".
-- website_detail_consequence should connect the data to PDPA safeguards, not HIA.
+- website_detail_consequence should be one email-ready clause/sentence connecting the data to PDPA safeguards, e.g. "children's therapy records and autism assessments sit at the higher end of PDPA sensitivity - the evidence bar for organisations handling them is higher than most assume".
 
 Return:
 {
@@ -4471,11 +4472,14 @@ def deterministic_website_detail_consequence(
 ) -> str:
     data = safe_tier2_text(data_type, 220)
     if classification.get("pressure_type") == "hia_regulatory":
-        return "the patient records you hold are exactly the kind of health information the Health Information Act (HIA) targets from 2027"
+        return (
+            "the patient records you hold are exactly what the Health Information Act (HIA) targets - "
+            "access logs, vendor NDAs, backups and MOH reporting need documented evidence from 2027"
+        )
     if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
         if data and data != "personal data":
-            return f"PDPA is the legal responsibility, and the hard part is usually proving safeguards around {data}: access, backups, updates and incident response need evidence"
-        return "PDPA is the legal responsibility, and the hard part is usually proving safeguards around the personal data you hold"
+            return f"{data} sit at the higher end of PDPA sensitivity - the safeguards evidence bar for organisations handling them is higher than most assume"
+        return "the personal data you hold falls under PDPA safeguards - the evidence bar is higher than most assume"
     return ""
 
 
@@ -4599,6 +4603,20 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
     return sanitized
 
 
+def lower_first_for_clause(value: str) -> str:
+    text = compact(value)
+    if not text:
+        return ""
+    first = text.split(None, 1)[0].strip(" ,")
+    if text.startswith("Health Information Act"):
+        return text
+    if first.isupper() and len(first) > 1:
+        return text
+    if first in {"HIA", "PDPA", "MOH", "CSA"}:
+        return text
+    return text[:1].lower() + text[1:]
+
+
 def indefinite_phrase(label: str) -> str:
     text = compact(label)
     if not text or re.match(r"^(?:an?|the)\s+", text, re.I):
@@ -4680,6 +4698,76 @@ def hia_provider_label_for_service(classification: dict[str, Any]) -> str:
     return "healthcare providers"
 
 
+def hia_subject_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    text = primary_profile_source_text(row)
+    specialty = compact(email_specialty_placeholder(row, classification, copy_brief)).lower()
+    combined = f"{text} {specialty}"
+    service_type = compact(classification.get("hia_service_type_guess"))
+    if "cardiology" in combined or "cardiac" in combined:
+        return "cardiology clinics"
+    if "urology" in combined or "prostate" in combined or "bladder" in combined:
+        return "urology specialist clinics"
+    if "orthopaedic" in combined or "orthopedic" in combined or "spine" in combined:
+        return "orthopaedic clinics"
+    if "endocrin" in combined or "diabetes" in combined or "thyroid" in combined:
+        return "endocrinology clinics"
+    if "oncology" in combined or "cancer" in combined:
+        return "oncology clinics"
+    if service_type == "specialist_OMS":
+        subtype = compact(specialist_subtype(text).replace("_", " "))
+        return f"{subtype} clinics" if subtype else "specialist clinics"
+    if service_type == "GP_OMS":
+        return "GP clinics"
+    if service_type == "dental":
+        return "dental clinics"
+    if service_type == "diagnostic":
+        return "diagnostic providers"
+    if service_type == "retail_pharmacy":
+        return "pharmacies"
+    if service_type == "hearing_care":
+        return "hearing-care providers"
+    if service_type == "long_term_care":
+        return "long-term care providers"
+    return hia_provider_label_for_service(classification)
+
+
+def pdpa_subject_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[str, bool]:
+    company = email_display_company_name(row)
+    if company and company != "your organisation" and len(company) <= 34:
+        return company, False
+    specialty = compact(email_specialty_placeholder(row, classification, copy_brief)).lower()
+    text = primary_profile_source_text(row)
+    combined = f"{text} {specialty}"
+    if "counselling" in combined or "counseling" in combined or "psychology" in combined or "psychotherapy" in combined:
+        return "counselling practices", True
+    if "physio" in combined or "rehabilitation" in combined:
+        return "physiotherapy practices", True
+    if "football" in combined or "academy" in combined or "sports" in combined:
+        return "sports academies", True
+    if "autism" in combined or "aba" in combined or "therapy" in combined:
+        return "therapy providers", True
+    if "education" in combined or "student" in combined or "tuition" in combined:
+        return "education providers", True
+    return "organisations", True
+
+
+def email_1_subject_from_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    placeholders: dict[str, Any],
+) -> str:
+    if classification.get("campaign_track") == "dpo_evidence":
+        return "data protection evidence"
+    if compact(placeholders.get("email_track")) == "hia":
+        return f"HIA 2027 - what {hia_subject_segment(row, classification, copy_brief)} need documented"
+    if compact(placeholders.get("email_track")) == "pdpa":
+        segment, plural = pdpa_subject_segment(row, classification, copy_brief)
+        verb = "need" if plural else "needs"
+        return f"PDPA - what {segment} {verb} to be able to show"
+    return compact(placeholders.get("email_subject")) or "readiness checklist"
+
+
 def email_context_line_placeholder(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -4696,7 +4784,9 @@ def email_context_line_placeholder(
             sentence = consequence
             if not sentence.endswith("."):
                 sentence = f"{sentence}."
-            return f"For {company}, {service_mix}, {sentence[:1].lower() + sentence[1:]}"
+            if sentence.startswith("Health Information Act"):
+                sentence = f"the {sentence}"
+            return f"For {company}, {service_mix}, {lower_first_for_clause(sentence)}"
         return (
             f"For {company}, {service_mix}, the patient records you hold span multiple demographics and sensitivity levels - "
             "exactly what the Health Information Act (HIA) targets from 2027."
@@ -4711,8 +4801,10 @@ def email_context_line_placeholder(
         sentence = consequence
         if not sentence.endswith("."):
             sentence = f"{sentence}."
+        if compact(tier2.get("source")) == "llm" and "PDPA" in sentence:
+            return sentence
         if lead and not sentence.startswith(("PDPA", "HIA")):
-            sentence = sentence[:1].lower() + sentence[1:]
+            sentence = lower_first_for_clause(sentence)
         return f"{lead}{sentence}"
     return (
         f"{lead}{descriptor[:1].lower() + descriptor[1:]} raises a PDPA safeguards question: "
@@ -4725,12 +4817,12 @@ def email_service_line_placeholder(classification: dict[str, Any]) -> str:
     if classification.get("pressure_type") == "hia_regulatory":
         provider_label = hia_provider_label_for_service(classification)
         return (
-            f"We help {provider_label} get Cyber Essentials certified for the HIA cyber/data-security side: "
-            "gap assessment, documentation and evidence trail."
+            f"We help {provider_label} get Cyber Essentials certified for the HIA cyber/data-security side - "
+            "gap assessment, documentation, and evidence trail."
         )
     return (
-        "We help organisations get Cyber Essentials certified: gap assessment, documentation and "
-        "evidence trail for the security-safeguards side."
+        "We help organisations get Cyber Essentials certified - gap assessment, documentation, "
+        "and evidence trail."
     )
 
 
@@ -4752,11 +4844,11 @@ def email_cta_line_placeholder(classification: dict[str, Any], copy_brief: dict[
         return "Can I send the HIA readiness checklist?"
     existing = compact(copy_brief.get("email_cta"))
     if existing:
-        return existing
+        return existing.replace("personal-data safeguards", "personal data safeguards")
     segment = email_variant_segment({}, classification, copy_brief)
     if segment == "care":
         return "Worth sending the care-organisation safeguards checklist?"
-    return "Worth sending the personal-data safeguards checklist?"
+    return "Worth sending the personal data safeguards checklist?"
 
 
 def email_role_frame_placeholder(row: dict[str, Any], classification: dict[str, Any]) -> str:
@@ -7503,6 +7595,8 @@ def generate_email_sequence(
         copy_brief["email_1_hook_style"] = hook_style
         email1_placeholders = build_email_1_placeholders(row, classification, funding, copy_brief, email1_chain)
         copy_brief["email_1_placeholders"] = email1_placeholders
+        email1_subject = email_1_subject_from_placeholders(row, classification, copy_brief, email1_placeholders)
+        email1_subject_options = list(dict.fromkeys([email1_subject, *email1_subject_options]))[:4]
         copy_brief["email_personalisation_signal"] = email1_placeholders["email_context_line"]
         copy_brief["email_problem_statement"] = email1_placeholders["email_context_line"]
         copy_brief["email_mechanism_statement"] = email1_placeholders["email_service_line"]
