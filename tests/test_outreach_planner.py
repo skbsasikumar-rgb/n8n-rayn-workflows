@@ -142,9 +142,9 @@ class OutreachPlannerTests(unittest.TestCase):
         paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
 
         self.assertEqual(paragraphs[0], "Hi Dr Lim,")
-        self.assertIn("For Example GP Clinic, a GP clinic covering family health, expatriate care, and health screening", paragraphs[1])
+        self.assertIn("For a GP clinic managing patient appointments, consultation notes, and screening records", paragraphs[1])
         self.assertIn("Health Information Act (HIA)", paragraphs[1])
-        self.assertIn("from 2027", paragraphs[1])
+        self.assertIn("documented evidence from 2027", paragraphs[1])
         self.assertIn("We help outpatient clinics get Cyber Essentials certified", paragraphs[2])
         self.assertIn("HIA cyber/data-security side", paragraphs[2])
         self.assertIn("up to 70% subsidised under CSA's CISOaaS government grant", paragraphs[2])
@@ -221,6 +221,64 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("PDPA sets a higher evidence bar", body)
         self.assertIn("goes beyond having a privacy policy", body)
         self.assertIn("Worth sending the personal data safeguards checklist?", body)
+
+    def test_hia_rheumatology_email_leads_with_data_risk_not_business_description(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Aaria Rheumatology",
+                "company_homepage_name": "Aaria Rheumatology",
+                "website_content": (
+                    "Rheumatology clinic with doctors treating arthritis, lupus, autoimmune disease and long-term "
+                    "chronic conditions. Aesthetic and skin terms may appear elsewhere on the page."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what rheumatology clinics need documented")
+        self.assertIn("For a rheumatology clinic managing long-term autoimmune and chronic condition records", body)
+        self.assertNotIn("covering chronic-condition care", body)
+        self.assertNotIn("skin and aesthetic treatments", body)
+        self.assertIn("Health Information Act (HIA) targets exactly the patient data", body)
+
+    def test_hia_urology_subject_and_body_use_same_specialty_snapshot(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Aare Urocare",
+                "company_homepage_name": "AARE UROCARE",
+                "website_content": (
+                    "Urology specialist clinic for prostate, bladder, kidney cancer and men's reproductive health. "
+                    "The clinic manages appointments, consultation notes and patient records."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what urology specialist clinics need documented")
+        self.assertIn("For a urology specialist clinic managing prostate, bladder, kidney, and men's reproductive health records", body)
+        self.assertNotIn("dermatology", body.lower())
+        self.assertNotIn("skin and aesthetic", body.lower())
+
+    def test_pdpa_genomic_email_uses_high_sensitivity_family_risk(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "1010Genome",
+                "selected_contact_name": "John Taylor",
+                "website_content": (
+                    "Singapore company providing next generation sequencing and bioinformatics data analysis services handling genomic, "
+                    "genetic, ancestry and disease predisposition information."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "PDPA - what 1010Genome needs to be able to show")
+        self.assertIn("Genomic and genetic data is among the most sensitive personal data categories under PDPA", body)
+        self.assertIn("family's health predispositions", body)
+        self.assertNotIn("appointment, enquiry, customer and staff records", body)
 
     def test_pdpa_tier2_context_can_rescue_generic_counselling_copy_brief(self):
         extracted = {
@@ -842,7 +900,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Singapore medical clinic providing doctor consultations, appointment booking and patient treatment services.",
             }
         )
-        self.assertIn("Mission Medical Clinic", plan.emails["email_1"]["body"])
+        self.assertIn("For a GP clinic managing patient appointments", plan.emails["email_1"]["body"])
         self.assertNotIn("Mission (Hougang) Medical Clinic Pte Ltd", plan.emails["email_1"]["body"])
 
     def test_email_display_company_name_humanizes_all_caps_and_long_names(self):
@@ -2666,9 +2724,9 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
-        self.assertIn("Amaris B. Clinic", patch["email_1_body"])
+        self.assertIn("For a GP clinic managing patient appointments", patch["email_1_body"])
         self.assertIn("Health Information Act (HIA) targets", patch["email_1_body"])
-        self.assertIn("patient records", patch["email_1_body"])
+        self.assertIn("patient data", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")

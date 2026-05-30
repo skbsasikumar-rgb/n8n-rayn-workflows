@@ -3271,6 +3271,8 @@ def infer_data_signal(text: str, hia: dict[str, Any], entity: dict[str, Any]) ->
         return "health_information", "high", "high"
     if hia["hia_relevant"]:
         return "patient_data", "high", "high"
+    if contains_any(text, ("genomic", "genetic", "genome", "sequencing", "bioinformatics", "dna test", "genetic testing")):
+        return "health_information", "high", "high"
     if contains_any(text, NON_HCSA_STANDALONE_ALLIED_TERMS) and contains_any(
         text,
         ("appointment", "appointments", "assessment", "assessments", "treatment", "treatments", "patient", "client"),
@@ -4260,7 +4262,7 @@ def hia_record_spread_list(records: str) -> str:
 
 def email_1_hook_context_strength(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
     search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
-    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal"))
     if search_context.get("used") and not generic_personalisation_signal(signal):
         return "strong"
     if email_context_website_weak(row, copy_brief, classification):
@@ -4271,7 +4273,7 @@ def email_1_hook_context_strength(row: dict[str, Any], classification: dict[str,
 
 
 def email_1_signal_description(copy_brief: dict[str, Any], fallback: str = "") -> str:
-    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal"))
     signal = re.sub(
         r"^[^.]{1,120}\s+(appears to be|appears to provide|appears to handle|operates|handles|provides|works with|has)\s+",
         r"\1 ",
@@ -4435,7 +4437,7 @@ def email_specialty_placeholder(row: dict[str, Any], classification: dict[str, A
         return compact(classification.get("hia_service_type_guess")).replace("_", " ")
     if classification.get("campaign_track") == "dpo_evidence":
         return "data-protection / operations contact route"
-    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal"))
     if signal and not generic_personalisation_signal(signal):
         description = email_1_signal_description(copy_brief)
         if description and description.lower() not in {"the organisation", "unknown"}:
@@ -4788,6 +4790,75 @@ def hia_subject_segment(row: dict[str, Any], classification: dict[str, Any], cop
     return hia_provider_label_for_service(classification)
 
 
+def hia_subject_segment_from_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    placeholders: dict[str, Any],
+) -> str:
+    specialty = compact(placeholders.get("email_specialty")).lower()
+    data_type = compact(placeholders.get("email_data_type")).lower()
+    text = primary_profile_source_text(row)
+    combined = f"{specialty} {data_type} {text}"
+    if "cardiology" in combined or "cardiac" in combined:
+        return "cardiology clinics"
+    if "urology" in combined or "urocare" in combined or "prostate" in combined or "bladder" in combined:
+        return "urology specialist clinics"
+    if "rheumatology" in combined or "arthritis" in combined or "lupus" in combined or "autoimmune" in combined:
+        return "rheumatology clinics"
+    if "orthopaedic" in combined or "orthopedic" in combined or "spine" in combined:
+        return "orthopaedic clinics"
+    if "endocrin" in combined or "diabetes" in combined or "thyroid" in combined:
+        return "endocrinology clinics"
+    if "oncology" in combined or "cancer" in combined:
+        return "oncology clinics"
+    return hia_subject_segment(row, classification, {"email_tier2_context": {"specialty": specialty}})
+
+
+def hia_email_1_context_lead(row: dict[str, Any], classification: dict[str, Any], data_type: str) -> str:
+    text = primary_profile_source_text(row)
+    data = safe_tier2_text(data_type, 180).rstrip(".")
+    subtype = specialist_subtype(text)
+    service_type = compact(classification.get("hia_service_type_guess"))
+    if subtype == "rheumatology":
+        return "For a rheumatology clinic managing long-term autoimmune and chronic condition records"
+    if subtype == "urology":
+        return "For a urology specialist clinic managing prostate, bladder, kidney, and men's reproductive health records"
+    if subtype == "cardiology":
+        return "For a cardiology centre managing cardiac investigation records, arrhythmia treatments, and device implant histories"
+    if subtype == "orthopaedic":
+        return "For a spine and orthopaedic centre managing surgical records across scoliosis, spinal fractures, and tumour cases"
+    if subtype == "endocrinology":
+        return "For an endocrinology clinic managing diabetes, thyroid, and long-term condition records"
+    if subtype == "oncology":
+        return "For a specialist clinic managing oncology treatment records, patient reports, and vendor systems"
+    if service_type == "dental":
+        return "For a dental clinic managing patient appointments, imaging files, and dental records"
+    if service_type == "GP_OMS":
+        return "For a GP clinic managing patient appointments, consultation notes, and screening records"
+    provider = hia_provider_label_for_service(classification).rstrip("s")
+    if data and data != "patient records, appointment details, consultation notes, clinic email, vendor systems":
+        return f"For {indefinite_phrase(provider)} managing {data}"
+    return f"For {indefinite_phrase(provider)} managing patient records"
+
+
+def hia_email_1_context_line_from_data(row: dict[str, Any], classification: dict[str, Any], data_type: str) -> str:
+    lead = hia_email_1_context_lead(row, classification, data_type)
+    return (
+        f"{lead}, the Health Information Act (HIA) targets exactly the patient data you hold - "
+        "access logs, vendor NDAs, backups, and MOH incident reporting all need documented evidence from 2027."
+    )
+
+
+def pdpa_high_sensitivity_context_line(row: dict[str, Any], data_type: str) -> str:
+    text = primary_profile_source_text(row)
+    if any(term in text for term in ("genomic", "genetic", "genome", "sequencing", "bioinformatics")):
+        return (
+            "Genomic and genetic data is among the most sensitive personal data categories under PDPA - "
+            "a breach does not just expose one person, it can expose their family's health predispositions."
+        )
+    return ""
+
+
 def pdpa_subject_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[str, bool]:
     company = email_display_company_name(row)
     if company and company != "your organisation" and len(company) <= 34:
@@ -4817,7 +4888,7 @@ def email_1_subject_from_placeholders(
     if classification.get("campaign_track") == "dpo_evidence":
         return "data protection evidence"
     if compact(placeholders.get("email_track")) == "hia":
-        return f"HIA 2027 - what {hia_subject_segment(row, classification, copy_brief)} need documented"
+        return f"HIA 2027 - what {hia_subject_segment_from_placeholders(row, classification, placeholders)} need documented"
     if compact(placeholders.get("email_track")) == "pdpa":
         segment, plural = pdpa_subject_segment(row, classification, copy_brief)
         verb = "need" if plural else "needs"
@@ -4836,19 +4907,20 @@ def email_context_line_placeholder(
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
     consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
     if classification.get("pressure_type") == "hia_regulatory":
-        service_mix = hia_service_mix_placeholder(row, classification, copy_brief)
+        if compact(tier2.get("source")) != "llm":
+            return hia_email_1_context_line_from_data(row, classification, data)
         if consequence:
             sentence = consequence
             if not sentence.endswith("."):
                 sentence = f"{sentence}."
             if sentence.startswith("Health Information Act"):
                 sentence = f"the {sentence}"
-            return f"For {company}, {service_mix}, {lower_first_for_clause(sentence)}"
-        return (
-            f"For {company}, {service_mix}, the patient records you hold span multiple demographics and sensitivity levels - "
-            "exactly what the Health Information Act (HIA) targets from 2027."
-        )
+            return f"{hia_email_1_context_lead(row, classification, data)}, {lower_first_for_clause(sentence)}"
+        return hia_email_1_context_line_from_data(row, classification, data)
     descriptor = data if data != "personal data" else "personal data"
+    high_sensitivity = pdpa_high_sensitivity_context_line(row, descriptor)
+    if high_sensitivity:
+        return high_sensitivity
     specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
     if specialty and specialty != "organisation":
         lead = f"For {company}, {specialty}, "
@@ -4901,7 +4973,9 @@ def email_cta_line_placeholder(classification: dict[str, Any], copy_brief: dict[
         return "Can I send the HIA readiness checklist?"
     existing = compact(copy_brief.get("email_cta"))
     if existing:
-        return existing.replace("personal-data safeguards", "personal data safeguards")
+        normalized = existing.replace("personal-data safeguards", "personal data safeguards")
+        normalized = re.sub(r"\bsending the safeguards checklist\b", "sending the personal data safeguards checklist", normalized, flags=re.I)
+        return normalized
     segment = email_variant_segment({}, classification, copy_brief)
     if segment == "care":
         return "Worth sending the care-organisation safeguards checklist?"
@@ -6557,6 +6631,8 @@ def specialist_subtype(text: str) -> str:
         return "endocrinology"
     if any(term in text for term in ("rheumatology", "rheumatologist", "arthritis", "lupus")):
         return "rheumatology"
+    if any(term in text for term in ("urology", "urologist", "urocare", "prostate", "bladder", "kidney cancer", "men's reproductive", "mens reproductive")):
+        return "urology"
     if any(term in text[:700] for term in ("surgery", "surgeon", "surgical", "thoracic")):
         return "surgery"
     if any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
@@ -6975,6 +7051,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
             return "consultation notes, patient reports, procedure-related records, vendor systems"
         if subtype == "rheumatology":
             return "consultation notes, treatment records, referrals, appointment details and vendor systems"
+        if subtype == "urology":
+            return "prostate, bladder, kidney and men's reproductive health records, consultation notes and appointment details"
         if subtype == "oncology":
             return "oncology/radiation treatment records, patient reports, vendor systems"
         if subtype == "endocrinology":
@@ -8664,7 +8742,7 @@ def email_3_is_diagnostic(body: str, copy_brief: dict[str, Any], classification:
 
 def email_1_starts_with_target_structure(body: str, copy_brief: dict[str, Any]) -> bool:
     body_l = compact(body).lower()
-    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal")).lower()
+    signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal")).lower()
     problem = compact(copy_brief.get("email_problem_statement")).lower()
     mechanism = compact(copy_brief.get("email_mechanism_statement")).lower()
     cta = compact(copy_brief.get("email_cta")).lower()
@@ -8732,7 +8810,7 @@ def evaluate_email_strategy(
     email1 = emails["email_1"]["body"]
     email2 = emails["email_2"]["body"]
     email3 = (emails.get("email_3") or {}).get("body", "")
-    signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+    signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal"))
 
     if not signal or not email_1_reflects_signal(email1, signal, copy_brief):
         flags.append("email_1_missing_specific_signal")
@@ -8864,7 +8942,7 @@ def quality_gate(
             if not compact(copy_brief.get(field)):
                 flags.append(f"missing_copy_brief:{field}")
         email1_body = emails["email_1"]["body"]
-        prospect_signal = compact(copy_brief.get("prospect_facing_signal") or copy_brief.get("email_personalisation_signal"))
+        prospect_signal = compact(copy_brief.get("email_personalisation_signal") or copy_brief.get("prospect_facing_signal"))
         if prospect_signal and not email_1_reflects_signal(email1_body, prospect_signal, copy_brief):
             flags.append("email_1_missing_specific_signal")
         if generic_personalisation_signal(copy_brief.get("email_personalisation_signal", "")):
