@@ -3142,6 +3142,38 @@ Return:
 """
 
 
+EMAIL_TIER2_EXTRACTION_PROMPT = """You extract reusable cold-email placeholders from Singapore prospect evidence.
+Use only the provided website_content and Serper/search context. Return strict JSON only.
+
+Task:
+- Extract the prospect-specific service/specialty, data type, and one consequence line.
+- Do not decide HIA vs PDPA. The route is already provided.
+- Do not invent services, diagnoses, data types, funding, deadlines, or regulatory scope.
+- Keep values short and usable inside an email sentence.
+- If evidence is thin, return conservative generic values and confidence low.
+
+For HIA:
+- specialty should be the service area, e.g. "GP clinic", "endocrinology", "breast surgery", "dental clinic".
+- data_type should name the records, e.g. "diabetes and thyroid records", "oncology treatment records", "patient appointment and consultation records".
+- website_detail_consequence should connect the data to HIA, e.g. "the records your clinic holds are exactly the kind of health information HIA targets".
+
+For PDPA:
+- specialty should be the operating context, e.g. "ABA therapy", "football academy", "charity operations".
+- data_type should name the personal data, e.g. "children's therapy records", "student and parent records", "beneficiary and volunteer records".
+- website_detail_consequence should connect the data to PDPA safeguards, not HIA.
+
+Return:
+{
+  "specialty": "",
+  "data_type": "",
+  "website_detail_consequence": "",
+  "confidence": "low|medium|high",
+  "source_url": "",
+  "evidence": [{"quote": "", "source_field": "", "reason": ""}]
+}
+"""
+
+
 def call_hia_llm_review(row: dict[str, Any], hia: dict[str, Any]) -> dict[str, Any] | None:
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
@@ -4369,7 +4401,29 @@ def email_track_placeholder(classification: dict[str, Any]) -> str:
     return "not_ready"
 
 
+def safe_tier2_text(value: Any, limit: int = 180) -> str:
+    text = compact(value)
+    if not text:
+        return ""
+    text = re.sub(r"[\r\n]+", " ", text)
+    text = text.strip(" -:;,.")
+    return text[:limit]
+
+
+def email_tier2_extraction_enabled(row: dict[str, Any]) -> bool:
+    if truthy(row.get("disable_llm_humaniser")) or truthy(row.get("disable_llm_humanizer")) or truthy(row.get("disable_llm_rewrite")):
+        return False
+    if truthy(row.get("skip_openrouter")):
+        return False
+    if os.getenv("OUTREACH_EMAIL_TIER2_LLM_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+
+
 def email_specialty_placeholder(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    if safe_tier2_text(tier2.get("specialty")):
+        return safe_tier2_text(tier2.get("specialty"))
     if classification.get("pressure_type") == "hia_regulatory":
         profile_phrase = compact(copy_brief.get("clinic_profile_phrase"))
         if profile_phrase:
@@ -4394,6 +4448,9 @@ def email_specialty_placeholder(row: dict[str, Any], classification: dict[str, A
 
 
 def email_data_type_placeholder(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    if safe_tier2_text(tier2.get("data_type"), 220):
+        return safe_tier2_text(tier2.get("data_type"), 220)
     if classification.get("pressure_type") == "hia_regulatory":
         return hia_email_1_records(row, classification, copy_brief)
     examples = compact(copy_brief.get("sensitive_data_examples"))
@@ -4404,6 +4461,142 @@ def email_data_type_placeholder(row: dict[str, Any], classification: dict[str, A
         return personal_data
     signal = compact(classification.get("data_type_signal")).replace("_", " ")
     return signal or "personal data"
+
+
+def deterministic_website_detail_consequence(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    data_type: str,
+) -> str:
+    data = safe_tier2_text(data_type, 220)
+    if classification.get("pressure_type") == "hia_regulatory":
+        return "the patient records you hold are exactly the kind of health information the Health Information Act (HIA) targets from 2027"
+    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+        if data and data != "personal data":
+            return f"PDPA is the legal responsibility, and the hard part is usually proving safeguards around {data}: access, backups, updates and incident response need evidence"
+        return "PDPA is the legal responsibility, and the hard part is usually proving safeguards around the personal data you hold"
+    return ""
+
+
+def tier2_extraction_payload(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
+    search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
+    return {
+        "company_name": email_display_company_name(row),
+        "website_url": row.get("best_url") or row.get("url_picked") or row.get("manual_url_override") or "",
+        "email_track": email_track_placeholder(classification),
+        "pressure_type": classification.get("pressure_type", ""),
+        "entity_type_guess": classification.get("entity_type_guess", ""),
+        "hia_service_type_guess": classification.get("hia_service_type_guess", ""),
+        "data_type_signal": classification.get("data_type_signal", ""),
+        "industry_guess": row.get("industry_guess", ""),
+        "website_content": compact(row.get("website_content"))[:5000],
+        "services_detected": row.get("services_detected", ""),
+        "structured_data_detected": row.get("structured_data_detected", ""),
+        "serper_context_text": compact(row.get("_serper_context_text"))[:2500],
+        "company_context_search": search_context,
+        "deterministic_specialty": email_specialty_placeholder_no_tier2(row, classification, copy_brief),
+        "deterministic_data_type": email_data_type_placeholder_no_tier2(row, classification, copy_brief),
+    }
+
+
+def call_email_tier2_extraction_llm(payload: dict[str, Any]) -> dict[str, Any] | None:
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": os.getenv("OUTREACH_EMAIL_TIER2_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")).strip(),
+                "temperature": float(os.getenv("OUTREACH_EMAIL_TIER2_TEMPERATURE", "0")),
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": EMAIL_TIER2_EXTRACTION_PROMPT},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                ],
+            },
+            timeout=float(os.getenv("OUTREACH_EMAIL_TIER2_TIMEOUT_SECONDS", "18")),
+        )
+        raise_for_openrouter_account_error(response, "email Tier 2 extraction")
+        response.raise_for_status()
+        choices = response.json().get("choices") or []
+        content = choices[0].get("message", {}).get("content", "") if choices else ""
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except ProviderAccountError:
+        raise
+    except Exception:
+        return None
+
+
+def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    specialty = safe_tier2_text(value.get("specialty")) or fallback.get("specialty", "")
+    data_type = safe_tier2_text(value.get("data_type"), 220) or fallback.get("data_type", "")
+    consequence = safe_tier2_text(value.get("website_detail_consequence"), 260) or fallback.get("website_detail_consequence", "")
+    confidence = compact(value.get("confidence")).lower()
+    if confidence not in {"low", "medium", "high"}:
+        confidence = fallback.get("confidence", "medium")
+    source_url = safe_tier2_text(value.get("source_url"), 240) or fallback.get("source_url", "")
+    evidence = value.get("evidence") if isinstance(value.get("evidence"), list) else fallback.get("evidence", [])
+    return {
+        "specialty": specialty,
+        "data_type": data_type,
+        "website_detail_consequence": consequence,
+        "confidence": confidence,
+        "source_url": source_url,
+        "evidence": evidence[:5] if isinstance(evidence, list) else [],
+        "source": compact(value.get("source")) or fallback.get("source", "deterministic"),
+    }
+
+
+def email_specialty_placeholder_no_tier2(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    local_copy = {k: v for k, v in copy_brief.items() if k != "email_tier2_context"}
+    return email_specialty_placeholder(row, classification, local_copy)
+
+
+def email_data_type_placeholder_no_tier2(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    local_copy = {k: v for k, v in copy_brief.items() if k != "email_tier2_context"}
+    return email_data_type_placeholder(row, classification, local_copy)
+
+
+def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
+    specialty = email_specialty_placeholder_no_tier2(row, classification, copy_brief)
+    data_type = email_data_type_placeholder_no_tier2(row, classification, copy_brief)
+    fallback = {
+        "specialty": safe_tier2_text(specialty),
+        "data_type": safe_tier2_text(data_type, 220),
+        "website_detail_consequence": deterministic_website_detail_consequence(row, classification, copy_brief, data_type),
+        "confidence": "medium",
+        "source_url": compact(copy_brief.get("email_personalisation_source_url") or first_source_url(row)),
+        "evidence": [],
+        "source": "deterministic",
+    }
+    if not email_tier2_extraction_enabled(row):
+        return fallback
+    extracted = call_email_tier2_extraction_llm(tier2_extraction_payload(row, classification, copy_brief))
+    if not isinstance(extracted, dict):
+        return {**fallback, "source": "deterministic_llm_unavailable"}
+    sanitized = sanitize_email_tier2_context({**extracted, "source": "llm"}, fallback)
+    if email_track_placeholder(classification) == "hia":
+        consequence_l = sanitized["website_detail_consequence"].lower()
+        if "hia" not in consequence_l and "health information act" not in consequence_l:
+            sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
+            sanitized["confidence"] = "medium"
+        elif not re.search(r"\bHealth Information Act\s*\(HIA\)", sanitized["website_detail_consequence"], re.I):
+            sanitized["website_detail_consequence"] = re.sub(
+                r"\bHIA\b",
+                "Health Information Act (HIA)",
+                sanitized["website_detail_consequence"],
+                count=1,
+                flags=re.I,
+            )
+    if email_track_placeholder(classification) == "pdpa" and "hia" in sanitized["website_detail_consequence"].lower():
+        sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
+        sanitized["confidence"] = "medium"
+    return sanitized
 
 
 def indefinite_phrase(label: str) -> str:
@@ -4495,15 +4688,32 @@ def email_context_line_placeholder(
 ) -> str:
     company = email_display_company_name(row)
     data = compact(data_type).rstrip(".")
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
     if classification.get("pressure_type") == "hia_regulatory":
         service_mix = hia_service_mix_placeholder(row, classification, copy_brief)
+        if consequence:
+            sentence = consequence
+            if not sentence.endswith("."):
+                sentence = f"{sentence}."
+            return f"For {company}, {service_mix}, {sentence[:1].lower() + sentence[1:]}"
         return (
             f"For {company}, {service_mix}, the patient records you hold span multiple demographics and sensitivity levels - "
             "exactly what the Health Information Act (HIA) targets from 2027."
         )
     descriptor = data if data != "personal data" else "personal data"
     specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
-    lead = f"For {specialty}, " if specialty and specialty != "organisation" else ""
+    if specialty and specialty != "organisation":
+        lead = f"For {company}, {specialty}, "
+    else:
+        lead = f"For {company}, "
+    if consequence:
+        sentence = consequence
+        if not sentence.endswith("."):
+            sentence = f"{sentence}."
+        if lead and not sentence.startswith(("PDPA", "HIA")):
+            sentence = sentence[:1].lower() + sentence[1:]
+        return f"{lead}{sentence}"
     return (
         f"{lead}{descriptor[:1].lower() + descriptor[1:]} raises a PDPA safeguards question: "
         "PDPA is the legal responsibility, and the hard part is usually proving safeguards - "
@@ -4569,6 +4779,7 @@ def build_email_1_placeholders(
     data_type = email_data_type_placeholder(row, classification, copy_brief)
     context_line = email_context_line_placeholder(row, classification, copy_brief, data_type)
     source_url = compact(email1_chain.get("source_url") or copy_brief.get("email_personalisation_source_url") or first_source_url(row))
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
     placeholders = {
         "recipient_salutation": greeting_label,
         "email_greeting_line": greeting_line,
@@ -4579,8 +4790,11 @@ def build_email_1_placeholders(
         "email_specialty": email_specialty_placeholder(row, classification, copy_brief),
         "email_data_type": data_type,
         "email_context_line": context_line,
-        "email_context_confidence": compact(email1_chain.get("confidence")) or "medium",
-        "email_context_source_url": source_url,
+        "email_context_confidence": compact(tier2.get("confidence") or email1_chain.get("confidence")) or "medium",
+        "email_context_source_url": compact(tier2.get("source_url")) or source_url,
+        "website_detail_consequence": compact(tier2.get("website_detail_consequence")),
+        "email_tier2_source": compact(tier2.get("source")) or "deterministic",
+        "email_tier2_extraction_json": json_dumps(tier2) if tier2 else "",
         "email_service_line": email_service_line_placeholder(classification),
         "email_funding_line": email_funding_line_placeholder(funding, copy_brief, classification),
         "email_cta_line": email_cta_line_placeholder(classification, copy_brief),
@@ -7209,6 +7423,8 @@ def generate_email_sequence(
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     copy_brief = copy_brief or build_copy_brief(row, classification, funding)
+    if not isinstance(copy_brief.get("email_tier2_context"), dict):
+        copy_brief["email_tier2_context"] = build_email_tier2_context(row, classification, copy_brief)
     company = email_display_company_name(row)
     greeting = email_greeting(row, company)
     email1_greeting = email_1_greeting(row, company)
@@ -8703,6 +8919,7 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     funding = match_programmes({**row, **classification}, programmes=programmes)
     copy_brief = build_copy_brief(row, classification, funding)
     copy_brief = apply_company_context_search(row, classification, copy_brief)
+    copy_brief["email_tier2_context"] = build_email_tier2_context(row, classification, copy_brief)
     mode = email_3_mode_for(funding, copy_brief, classification)
     copy_brief["email_2_mode"] = mode
     copy_brief["funding_followup_mode"] = mode
@@ -8925,6 +9142,9 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_context_line": p.get("email_context_line", ""),
         "email_context_confidence": p.get("email_context_confidence", ""),
         "email_context_source_url": p.get("email_context_source_url", ""),
+        "website_detail_consequence": p.get("website_detail_consequence", ""),
+        "email_tier2_source": p.get("email_tier2_source", ""),
+        "email_tier2_extraction_json": p.get("email_tier2_extraction_json", ""),
         "email_service_line": p.get("email_service_line", ""),
         "email_funding_line": p.get("email_funding_line", ""),
         "email_cta_line": p.get("email_cta_line", ""),

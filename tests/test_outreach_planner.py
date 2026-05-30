@@ -150,6 +150,45 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("up to 70% subsidised under CSA's CISOaaS government grant", paragraphs[2])
         self.assertEqual(paragraphs[-1], "Can I send the HIA readiness checklist?")
 
+    def test_tier2_llm_extracts_and_stores_email_1_context(self):
+        extracted = {
+            "specialty": "endocrinology",
+            "data_type": "diabetes and thyroid records",
+            "website_detail_consequence": "the records your clinic holds are exactly the kind of health information HIA targets",
+            "confidence": "high",
+            "source_url": "https://soon.example/",
+            "evidence": [{"quote": "diabetes and thyroid care", "source_field": "website_content", "reason": "specific service"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            result = o.plan_and_patch(
+                {
+                    "Id": 994,
+                    "company_name": "Soon Diabetes Thyroid And Endocrine Clinic",
+                    "selected_contact_name": "Dr Soon",
+                    "selected_contact_role": "Medical Doctor",
+                    "validated_email": "dr@soon.example",
+                    "best_url": "https://soon.example/",
+                    "website_content": (
+                        "Singapore specialist endocrinology clinic with doctors, diabetes care, thyroid care, "
+                        "appointments, referrals, patient reports and vendor systems. "
+                    )
+                    * 4,
+                },
+                programmes=[],
+            )
+        patch_payload = result["patch"]
+
+        self.assertEqual(patch_payload["email_specialty"], "endocrinology")
+        self.assertEqual(patch_payload["email_data_type"], "diabetes and thyroid records")
+        self.assertIn("records your clinic holds", patch_payload["website_detail_consequence"])
+        self.assertEqual(patch_payload["email_context_confidence"], "high")
+        self.assertEqual(patch_payload["email_context_source_url"], "https://soon.example/")
+        self.assertEqual(patch_payload["email_tier2_source"], "llm")
+        self.assertIn('"specialty":"endocrinology"', patch_payload["email_tier2_extraction_json"])
+        self.assertIn("records your clinic holds", patch_payload["email_1_body"])
+
     def test_email_1_placeholder_patch_fields_are_stored(self):
         result = o.plan_and_patch(
             {
