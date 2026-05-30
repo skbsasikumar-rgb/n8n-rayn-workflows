@@ -222,6 +222,42 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("goes beyond having a privacy policy", body)
         self.assertIn("Worth sending the personal data safeguards checklist?", body)
 
+    def test_pdpa_tier2_context_can_rescue_generic_counselling_copy_brief(self):
+        extracted = {
+            "specialty": "counselling and psychology practice",
+            "data_type": "client mental health records, appointment and enquiry details",
+            "website_detail_consequence": (
+                "mental health therapy and family counselling records are highly sensitive under the PDPA - "
+                "the evidence bar for handling such data is higher than it is for general business information"
+            ),
+            "confidence": "medium",
+            "source_url": "",
+            "evidence": [{"quote": "psychotherapy, mental health support, family counselling", "source_field": "website_content"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            plan = o.plan_outreach(
+                {
+                    "Id": 997,
+                    "company_name": "Example Counselling Practice",
+                    "validated_email": "hello@example-counselling.test",
+                    "website_content": (
+                        "Singapore counselling and psychology practice with therapists, psychotherapy, "
+                        "mental health support, family counselling, appointment enquiries and client records. "
+                    )
+                    * 4,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertNotEqual(plan.emails["email_1"]["chosen_subject"], "not ready")
+        self.assertIn("Mental health therapy", plan.emails["email_1"]["body"])
+        self.assertNotIn("\n\nmental health", plan.emails["email_1"]["body"])
+        self.assertIn("Worth sending the personal data safeguards checklist?", plan.emails["email_1"]["body"])
+        self.assertEqual(plan.quality_flags, [])
+
     def test_tier2_llm_extracts_and_stores_email_1_context(self):
         extracted = {
             "specialty": "endocrinology",
@@ -1904,6 +1940,21 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         self.assertIn("llm_email_1_rewrite_missing_health_information_act_name", flags)
+
+    def test_email_1_llm_rewrite_rejects_lowercase_paragraph_start(self):
+        body = (
+            "Hello team,\n\n"
+            "client therapy records sit at the higher end of PDPA sensitivity.\n\n"
+            "We help organisations get Cyber Essentials certified - gap assessment, documentation, and evidence trail.\n\n"
+            "Worth sending the personal data safeguards checklist?"
+        )
+        flags = o.email_1_rewrite_static_flags(
+            body,
+            body,
+            {"pressure_type": "pdpa_safeguards"},
+        )
+
+        self.assertIn("llm_email_1_rewrite_lowercase_paragraph_start", flags)
 
     def test_email_2_llm_rewrite_rejects_pdpa_obligation_overclaim(self):
         body = (

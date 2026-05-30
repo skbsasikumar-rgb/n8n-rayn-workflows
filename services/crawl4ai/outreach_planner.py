@@ -4536,10 +4536,29 @@ def call_email_tier2_extraction_llm(payload: dict[str, Any]) -> dict[str, Any] |
         return None
 
 
+def clean_tier2_consequence_text(value: str) -> str:
+    text = safe_tier2_text(value, 260)
+    text = text.replace("—", "-").replace("–", "-")
+    text = re.sub(r"\bnon-negotiable\b", "needed", text, flags=re.I)
+    text = re.sub(
+        r"\bfall(?:s)? under Health Information Act \(HIA\)\b",
+        "is exactly what the Health Information Act (HIA) targets",
+        text,
+        flags=re.I,
+    )
+    text = re.sub(
+        r"\bfall(?:s)? under HIA\b",
+        "is exactly what the Health Information Act (HIA) targets",
+        text,
+        flags=re.I,
+    )
+    return compact(text)
+
+
 def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     specialty = safe_tier2_text(value.get("specialty")) or fallback.get("specialty", "")
     data_type = safe_tier2_text(value.get("data_type"), 220) or fallback.get("data_type", "")
-    consequence = safe_tier2_text(value.get("website_detail_consequence"), 260) or fallback.get("website_detail_consequence", "")
+    consequence = clean_tier2_consequence_text(value.get("website_detail_consequence")) or fallback.get("website_detail_consequence", "")
     confidence = compact(value.get("confidence")).lower()
     if confidence not in {"low", "medium", "high"}:
         confidence = fallback.get("confidence", "medium")
@@ -4603,6 +4622,33 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
     return sanitized
 
 
+def apply_email_tier2_context_to_copy_brief(
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+) -> dict[str, Any]:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
+    data_type = safe_tier2_text(tier2.get("data_type"), 220)
+    if not consequence:
+        return copy_brief
+
+    updated = {**copy_brief}
+    if compact(tier2.get("source")) == "llm":
+        updated["prospect_facing_signal"] = consequence
+    if not compact(updated.get("email_personalisation_signal")) or generic_personalisation_signal(updated.get("email_personalisation_signal", "")):
+        updated["email_personalisation_signal"] = consequence
+        updated["prospect_facing_signal"] = consequence
+    if not compact(updated.get("email_problem_statement")) or generic_personalisation_signal(updated.get("email_problem_statement", "")):
+        updated["email_problem_statement"] = consequence
+    if data_type and not compact(updated.get("personal_data_handled_guess")):
+        updated["personal_data_handled_guess"] = data_type
+    if not compact(updated.get("email_mechanism_statement")):
+        updated["email_mechanism_statement"] = email_service_line_placeholder(classification)
+    if not compact(updated.get("email_cta")):
+        updated["email_cta"] = email_cta_line_placeholder(classification, updated)
+    return updated
+
+
 def lower_first_for_clause(value: str) -> str:
     text = compact(value)
     if not text:
@@ -4615,6 +4661,17 @@ def lower_first_for_clause(value: str) -> str:
     if first in {"HIA", "PDPA", "MOH", "CSA"}:
         return text
     return text[:1].lower() + text[1:]
+
+
+def upper_first_for_sentence(value: str) -> str:
+    text = compact(value)
+    if not text:
+        return ""
+    first = re.sub(r"^[\"'([{\s]+", "", text)
+    if first[:1].islower():
+        offset = text.find(first)
+        return text[:offset] + first[:1].upper() + first[1:]
+    return text
 
 
 def indefinite_phrase(label: str) -> str:
@@ -4802,7 +4859,7 @@ def email_context_line_placeholder(
         if not sentence.endswith("."):
             sentence = f"{sentence}."
         if compact(tier2.get("source")) == "llm" and "PDPA" in sentence:
-            return sentence
+            return upper_first_for_sentence(sentence)
         if lead and not sentence.startswith(("PDPA", "HIA")):
             sentence = lower_first_for_clause(sentence)
         return f"{lead}{sentence}"
@@ -7851,8 +7908,14 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_1_rewrite_changed_greeting")
     if not body or word_count(body) > 95:
         flags.append("llm_email_1_rewrite_length")
-    if len([part for part in body.split("\n\n") if compact(part)]) < 4:
+    paragraphs = [compact(part) for part in body.split("\n\n") if compact(part)]
+    if len(paragraphs) < 4:
         flags.append("llm_email_1_rewrite_paragraph_shape")
+    for paragraph in paragraphs[1:]:
+        first = re.sub(r"^[\"'([{\s]+", "", paragraph)
+        if first[:1].islower():
+            flags.append("llm_email_1_rewrite_lowercase_paragraph_start")
+            break
     if "from the site" in body_l:
         flags.append("llm_email_1_rewrite_from_site")
     if "rayn" in body_l:
@@ -9014,6 +9077,7 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     copy_brief = build_copy_brief(row, classification, funding)
     copy_brief = apply_company_context_search(row, classification, copy_brief)
     copy_brief["email_tier2_context"] = build_email_tier2_context(row, classification, copy_brief)
+    copy_brief = apply_email_tier2_context_to_copy_brief(classification, copy_brief)
     mode = email_3_mode_for(funding, copy_brief, classification)
     copy_brief["email_2_mode"] = mode
     copy_brief["funding_followup_mode"] = mode
