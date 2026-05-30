@@ -266,7 +266,8 @@ Email 1 rules:
 - Use 4 or 5 short paragraphs separated by blank lines: greeting alone, context line, Cyber Essentials service line, optional approved funding line, tiny CTA only.
 - Paragraph 1 must be exactly the approved greeting line.
 - Paragraph 2 must keep the approved context/data-type meaning.
-- Paragraph 3 must keep Cyber Essentials as the practical certification path. For HIA, this paragraph must say we map/help map it into Cyber Essentials certification for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security.
+- For HIA, paragraph 2 should keep this shape: service mix + patient records + Health Information Act (HIA) from 2027. Do not replace it with a generic evidence-map sentence.
+- Paragraph 3 must keep Cyber Essentials as the practical certification path. For HIA, this paragraph must say we help the provider type get Cyber Essentials certified for the HIA cyber/data-security side; wording can vary, but keep HIA, Cyber Essentials, cyber and data security. If an approved funding line is present, keep it in this paragraph.
 - Final paragraph is the CTA only.
 - For HIA, Email 1 must spell out Health Information Act (HIA) before later using HIA. Keep HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
 - If payload email_1_required_hia_phrase is not empty, copy that exact phrase once in Email 1, preferably in paragraph 2. Do not shorten it to HIA only.
@@ -4405,6 +4406,87 @@ def email_data_type_placeholder(row: dict[str, Any], classification: dict[str, A
     return signal or "personal data"
 
 
+def indefinite_phrase(label: str) -> str:
+    text = compact(label)
+    if not text or re.match(r"^(?:an?|the)\s+", text, re.I):
+        return text
+    first = text.split()[0]
+    if first.upper() in {"ENT", "IVF", "MRI", "ECG"}:
+        return f"an {text}"
+    if first[:1].lower() in {"a", "e", "i", "o", "u"}:
+        return f"an {text}"
+    return f"a {text}"
+
+
+def hia_service_mix_placeholder(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
+    text = primary_profile_source_text(row)
+    service_type = compact(classification.get("hia_service_type_guess"))
+    profile_guess = compact(copy_brief.get("clinic_profile_guess"))
+    if profile_guess in {"solo_gp", "family_gp", "multi_doctor_gp"} or service_type == "GP_OMS":
+        base = "GP clinic"
+    elif service_type == "specialist_OMS":
+        subtype = specialist_subtype(text).replace("_", " ")
+        base = f"{subtype} clinic" if subtype else "specialist clinic"
+    elif service_type == "dental":
+        base = "dental clinic"
+    elif service_type == "diagnostic":
+        base = "diagnostic provider"
+    elif service_type == "retail_pharmacy":
+        base = "pharmacy"
+    elif service_type == "hearing_care":
+        base = "hearing-care provider"
+    elif service_type == "long_term_care":
+        base = "long-term care provider"
+    else:
+        specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
+        base = specialty or "healthcare provider"
+    service_terms = [
+        (("family health", "family medicine", "family clinic"), "family health"),
+        (("expatriate", "expat"), "expatriate care"),
+        (("health screening", "screening package", "medical screening"), "health screening"),
+        (("chronic", "diabetes", "hypertension", "thyroid"), "chronic-condition care"),
+        (("vaccination", "immunisation", "immunization"), "vaccinations"),
+        (("women's health", "womens health", "gynaecology", "gynecology"), "women's health"),
+        (("men's health", "mens health"), "men's health"),
+        (("travel medicine", "travel health"), "travel medicine"),
+        (("oncology", "radiation"), "oncology care"),
+        (("fertility", "ivf", "reproductive"), "fertility care"),
+        (("skin", "dermatology", "aesthetic"), "skin and aesthetic treatments"),
+        (("hearing test", "audiology", "hearing aid"), "hearing tests"),
+        (("home care", "caregiver", "nursing"), "care services"),
+    ]
+    if service_type == "dental":
+        service_terms.append((("dental", "orthodont", "braces", "implant"), "dental care"))
+    detected: list[str] = []
+    for terms, label in service_terms:
+        if any(term in text for term in terms) and label not in detected:
+            detected.append(label)
+        if len(detected) >= 3:
+            break
+    if detected:
+        return f"{indefinite_phrase(base)} covering {sentence_join(detected[:3])}"
+    return indefinite_phrase(base)
+
+
+def hia_provider_label_for_service(classification: dict[str, Any]) -> str:
+    service_type = compact(classification.get("hia_service_type_guess"))
+    if service_type == "GP_OMS":
+        return "outpatient clinics"
+    if service_type == "specialist_OMS":
+        return "specialist clinics"
+    if service_type == "dental":
+        return "dental clinics"
+    if service_type == "diagnostic":
+        return "diagnostic providers"
+    if service_type == "retail_pharmacy":
+        return "pharmacies"
+    if service_type == "hearing_care":
+        return "hearing-care providers"
+    if service_type == "long_term_care":
+        return "long-term care providers"
+    return "healthcare providers"
+
+
 def email_context_line_placeholder(
     row: dict[str, Any],
     classification: dict[str, Any],
@@ -4414,12 +4496,10 @@ def email_context_line_placeholder(
     company = email_display_company_name(row)
     data = compact(data_type).rstrip(".")
     if classification.get("pressure_type") == "hia_regulatory":
-        records = short_record_list(data, 3)
-        specialty = compact(copy_brief.get("clinic_profile_phrase") or email_specialty_placeholder(row, classification, copy_brief))
-        lead = f"For {specialty}, " if specialty else ""
+        service_mix = hia_service_mix_placeholder(row, classification, copy_brief)
         return (
-            f"{lead}{records} at {company} are exactly the health information the Health Information Act (HIA) targets: "
-            "access, backups, vendors and incident response need documented evidence from 2027."
+            f"For {company}, {service_mix}, the patient records you hold span multiple demographics and sensitivity levels - "
+            "exactly what the Health Information Act (HIA) targets from 2027."
         )
     descriptor = data if data != "personal data" else "personal data"
     specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
@@ -4433,8 +4513,9 @@ def email_context_line_placeholder(
 
 def email_service_line_placeholder(classification: dict[str, Any]) -> str:
     if classification.get("pressure_type") == "hia_regulatory":
+        provider_label = hia_provider_label_for_service(classification)
         return (
-            "We help map that into Cyber Essentials certification for the HIA cyber/data-security side: "
+            f"We help {provider_label} get Cyber Essentials certified for the HIA cyber/data-security side: "
             "gap assessment, documentation and evidence trail."
         )
     return (
@@ -4452,13 +4533,13 @@ def email_funding_line_placeholder(
         return ""
     line = compact(funding.funding_claim_line)
     if "70%" in line and ("ciso" in line.lower() or "cisoaas" in line.lower()):
-        return "Eligible SMEs can get up to 70% CISOaaS co-funding, subject to eligibility."
+        return "The consultancy is up to 70% subsidised under CSA's CISOaaS government grant."
     return ""
 
 
 def email_cta_line_placeholder(classification: dict[str, Any], copy_brief: dict[str, Any]) -> str:
     if classification.get("pressure_type") == "hia_regulatory":
-        return compact(copy_brief.get("email_cta")) or "Can I send the HIA readiness map?"
+        return "Can I send the HIA readiness checklist?"
     existing = compact(copy_brief.get("email_cta"))
     if existing:
         return existing
@@ -4509,11 +4590,16 @@ def build_email_1_placeholders(
 
 
 def email_1_body_from_placeholders(placeholders: dict[str, Any]) -> str:
+    service_line = compact(placeholders.get("email_service_line"))
+    funding_line = compact(placeholders.get("email_funding_line"))
+    if compact(placeholders.get("email_track")) == "hia" and service_line and funding_line:
+        service_line = compact(f"{service_line} {funding_line}")
+        funding_line = ""
     parts = [
         compact(placeholders.get("email_greeting_line")),
         compact(placeholders.get("email_context_line")),
-        compact(placeholders.get("email_service_line")),
-        compact(placeholders.get("email_funding_line")),
+        service_line,
+        funding_line,
         compact(placeholders.get("email_cta_line")),
     ]
     return "\n\n".join(part for part in parts if part)
@@ -7968,10 +8054,11 @@ def email_1_missing_clinic_profile(body: str, copy_brief: dict[str, Any]) -> boo
         "hospital": ("hospital", "patient", "clinical records"),
         "healthcare_group": ("healthcare holding", "group organisation", "institutional healthcare"),
         "elder_daycare": ("day-care provider", "elder/client care", "elder care"),
+        "long_term_care": ("long-term care", "resident", "caregiver", "care provider"),
         "allied_health": ("allied-health", "physiotherapy", "treatment support"),
         "mental_health": ("psychology", "mental-health", "assessment"),
         "hearing_care": ("hearing-care", "hearing test", "audiology"),
-        "nursing_home": ("nursing home", "resident", "patient care", "care records"),
+        "nursing_home": ("nursing home", "long-term care", "resident", "patient care", "care records"),
         "community_hospital": ("community hospital", "patient", "discharge records"),
     }
     return not any(term in body_l for term in equivalents.get(profile_guess, ()))
