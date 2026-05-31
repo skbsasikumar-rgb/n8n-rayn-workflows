@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import json
+from pathlib import Path
+import re
+import time
 from typing import Any
+from urllib.request import Request, urlopen
 
 
 CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
 VERIFIED_CURRENT = "verified_current"
+NCSS_MEMBER_DIRECTORY_URL = "https://maps.gov.sg/ncss-members"
+NCSS_TSS_SOURCE_URL = "https://www.ncss.gov.sg/grants/organisation-development/transformation-sustainability-scheme/"
+NCSS_MEMBERSHIP_SOURCE_URL = "https://www.ncss.gov.sg/about-us/ncss-membership/"
+NCSS_MEMBER_SNAPSHOT_PATH = Path(__file__).with_name("ncss_members_snapshot.json")
+_NCSS_MEMBER_CACHE: dict[str, Any] = {"loaded_at": 0.0, "members": {}}
 
 
 @dataclass
@@ -25,6 +35,7 @@ class FundingProgram:
     exact_claim_text: str = ""
     use_in_email_when: str = ""
     do_not_claim_when: str = ""
+    requires_ncss_member: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -65,6 +76,39 @@ class FundingMatch:
 
 
 PROGRAMMES: list[FundingProgram] = [
+    FundingProgram(
+        programme_id="ncss_tss_member_digitalisation_support",
+        programme_name="NCSS Transformation Sustainability Scheme (TSS)",
+        framework_or_regime="NCSS TSS",
+        relevant_entity_types=["npo", "charity", "social_service"],
+        relevant_industries=["all", "social_service"],
+        benefit_summary=(
+            "NCSS TSS supports eligible social service agencies for consultancy, digital projects, "
+            "and project implementation support."
+        ),
+        email_safe_claim_template=(
+            "The NCSS member directory lists {{company_name}}; the Transformation Sustainability Scheme "
+            "appears worth checking for eligible consultancy or digitalisation support, subject to programme requirements."
+        ),
+        do_not_claim=["guaranteed funding", "automatic eligibility", "full cost covered"],
+        official_source_urls=[NCSS_TSS_SOURCE_URL, NCSS_MEMBERSHIP_SOURCE_URL, NCSS_MEMBER_DIRECTORY_URL],
+        last_checked="2026-05-31",
+        verification_status=VERIFIED_CURRENT,
+        exact_claim_allowed_in_email=True,
+        exact_claim_text=(
+            "NCSS states TSS funding is available to social service agencies across three components, "
+            "at up to 80% co-funding."
+        ),
+        use_in_email_when=(
+            "Only when the organisation has an exact or high-confidence normalised match in the NCSS "
+            "member directory and appears to be an NPO, charity, or social-service agency."
+        ),
+        do_not_claim_when=(
+            "The organisation is not found in the NCSS member directory, "
+            "or membership evidence cannot be fetched."
+        ),
+        requires_ncss_member=True,
+    ),
     FundingProgram(
         programme_id="csa_cyber_essentials_first_cert_support",
         programme_name="Cyber Essentials first successful certification support",
@@ -199,6 +243,112 @@ def normalize(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
 
 
+def normalize_member_key(value: Any) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"https?://", "", text)
+    text = re.sub(r"\bwww\.", "", text)
+    text = re.sub(r"\.(?:org|com|net|sg)(?:\.sg)?\b", " ", text)
+    text = re.sub(r"\b(?:pte|ltd|limited|society|singapore|the|company|co)\b", " ", text)
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def candidate_member_names(row: dict[str, Any]) -> list[str]:
+    values = [
+        row.get("company_name"),
+        row.get("company_homepage_name"),
+        row.get("parent_company"),
+    ]
+    website = str(row.get("website_content") or "")
+    heading = re.search(r"^\s*#\s+([^\n#]{2,140})", website, re.M)
+    if heading:
+        title = heading.group(1).strip()
+        values.extend([title, re.split(r"\s*[|\u2013-]\s*", title, maxsplit=1)[0]])
+    for key in ("best_url", "url_picked", "manual_url_override"):
+        url = str(row.get(key) or "")
+        host = re.sub(r"^https?://", "", url).split("/", 1)[0].lower()
+        if host:
+            values.extend([host, host.split(".")[0]])
+    candidates: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text:
+            continue
+        if text not in candidates:
+            candidates.append(text)
+    return candidates
+
+
+def extract_ncss_member_names(html: str) -> list[str]:
+    start = html.find('\\"mapMarkers\\"')
+    segment = html[start:] if start >= 0 else html
+    names: list[str] = []
+    for raw in re.findall(r'\\"name\\":\\"(.*?)\\"', segment):
+        try:
+            name = json.loads(f'"{raw}"')
+        except Exception:
+            name = raw.encode("utf-8").decode("unicode_escape", errors="ignore")
+        if "\\u" in name:
+            name = name.encode("utf-8").decode("unicode_escape", errors="ignore")
+        name = str(name).strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def fetch_ncss_member_directory(ttl_seconds: int = 24 * 60 * 60) -> dict[str, str]:
+    now = time.time()
+    cached = _NCSS_MEMBER_CACHE.get("members")
+    if cached and now - float(_NCSS_MEMBER_CACHE.get("loaded_at") or 0) < ttl_seconds:
+        return dict(cached)
+    members: dict[str, str] = {}
+    try:
+        request = Request(NCSS_MEMBER_DIRECTORY_URL, headers={"User-Agent": "rayn-outreach-planner/1.0"})
+        with urlopen(request, timeout=15) as response:
+            html = response.read().decode("utf-8", errors="replace")
+        members = member_key_map(extract_ncss_member_names(html))
+    except Exception:
+        members = {}
+    if len(members) < 400:
+        members = member_key_map(load_ncss_member_snapshot())
+    _NCSS_MEMBER_CACHE["loaded_at"] = now
+    _NCSS_MEMBER_CACHE["members"] = members
+    return dict(members)
+
+
+def member_key_map(names: list[str]) -> dict[str, str]:
+    members: dict[str, str] = {}
+    for name in names:
+        key = normalize_member_key(name)
+        if key:
+            members.setdefault(key, name)
+    return members
+
+
+def load_ncss_member_snapshot() -> list[str]:
+    try:
+        payload = json.loads(NCSS_MEMBER_SNAPSHOT_PATH.read_text())
+    except Exception:
+        return []
+    members = payload.get("members") if isinstance(payload, dict) else []
+    if not isinstance(members, list):
+        return []
+    return [str(name).strip() for name in members if str(name).strip()]
+
+
+def ncss_member_match(row: dict[str, Any]) -> dict[str, str] | None:
+    try:
+        members = fetch_ncss_member_directory()
+    except Exception:
+        return None
+    for candidate in candidate_member_names(row):
+        key = normalize_member_key(candidate)
+        if len(key) < 3 and key != "4s":
+            continue
+        if key in members:
+            return {"name": members[key], "source_url": NCSS_MEMBER_DIRECTORY_URL, "basis": f"directory_match:{candidate}"}
+    return None
+
+
 def confidence_at_least(value: str, minimum: str) -> bool:
     return CONFIDENCE_ORDER.get(normalize(value), 0) >= CONFIDENCE_ORDER.get(minimum, 0)
 
@@ -244,9 +394,22 @@ def match_programmes(row: dict[str, Any], programmes: list[FundingProgram] | Non
     hia_relevant = bool(row.get("hia_relevant"))
     hia_confidence = normalize(row.get("hia_confidence", "low"))
     recommended_first_cert = str(row.get("recommended_first_cert") or "Cyber Essentials")
+    ncss_lookup_attempted = False
+    ncss_match: dict[str, str] | None = None
+
+    def get_ncss_match() -> dict[str, str] | None:
+        nonlocal ncss_lookup_attempted, ncss_match
+        if not ncss_lookup_attempted:
+            ncss_match = ncss_member_match(row)
+            ncss_lookup_attempted = True
+        return ncss_match
 
     if entity_type == "unknown" or not confidence_at_least(entity_confidence, "medium"):
-        possible = [program.to_dict() for program in programmes if entity_type == "unknown" or entity_matches(program, entity_type)]
+        possible = [
+            program.to_dict()
+            for program in programmes
+            if not program.requires_ncss_member and (entity_type == "unknown" or entity_matches(program, entity_type))
+        ]
         return FundingMatch(
             funding_status="needs_review",
             funding_relevant=bool(possible),
@@ -265,6 +428,8 @@ def match_programmes(row: dict[str, Any], programmes: list[FundingProgram] | Non
         if not entity_matches(program, entity_type):
             continue
         if not industry_matches(program, row):
+            continue
+        if program.requires_ncss_member and not get_ncss_match():
             continue
         if program.framework_or_regime == "HIA readiness" and not (hia_relevant and confidence_at_least(hia_confidence, "medium")):
             continue
@@ -288,7 +453,8 @@ def match_programmes(row: dict[str, Any], programmes: list[FundingProgram] | Non
     primary = candidates[0]
     verified = primary.verification_status == VERIFIED_CURRENT
     exact_allowed = primary.exact_claim_allowed_in_email and primary.exact_claim_text
-    claim = render_claim(primary, company_name)
+    claim_company_name = ncss_match["name"] if primary.requires_ncss_member and ncss_match else company_name
+    claim = render_claim(primary, claim_company_name)
     if exact_allowed:
         claim = f"{claim} {primary.exact_claim_text}".strip()
     status = "verified_match" if verified else "possible_match"
@@ -297,13 +463,33 @@ def match_programmes(row: dict[str, Any], programmes: list[FundingProgram] | Non
         funding_status=status,
         funding_relevant=True,
         primary_funding_program=primary.programme_name,
-        matched=[primary.to_dict()] if verified else [],
+        matched=[
+            {
+                **primary.to_dict(),
+                **(
+                    {
+                        "ncss_member_name": ncss_match["name"],
+                        "ncss_member_source_url": ncss_match["source_url"],
+                        "ncss_member_match_basis": ncss_match["basis"],
+                    }
+                    if primary.requires_ncss_member and ncss_match
+                    else {}
+                ),
+            }
+        ] if verified else [],
         possible=[] if verified else [program.to_dict() for program in candidates],
         funding_eligibility_basis=(
             f"Entity profile is {entity_type}; programme source status is {primary.verification_status}."
+            + (f" NCSS member directory match: {ncss_match['name']}." if primary.requires_ncss_member and ncss_match else "")
         ),
         funding_claim_line=claim if verified else "Funding route needs human review before use.",
-        funding_cta_asset="hia_support_route_summary" if primary.framework_or_regime == "HIA readiness" else "funding_route_summary",
+        funding_cta_asset=(
+            "hia_support_route_summary"
+            if primary.framework_or_regime == "HIA readiness"
+            else "ncss_tss_route_summary"
+            if primary.framework_or_regime == "NCSS TSS"
+            else "funding_route_summary"
+        ),
         funding_confidence=confidence,
         funding_last_checked_at=primary.last_checked or "",
         funding_source_urls=primary.official_source_urls,

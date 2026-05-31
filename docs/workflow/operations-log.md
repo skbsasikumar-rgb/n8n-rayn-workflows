@@ -2,6 +2,18 @@
 
 Use this file to record rebuild progress and decisions.
 
+## 2026-05-31
+
+NCSS funding route:
+
+- added `NCSS Transformation Sustainability Scheme (TSS)` as a member-gated funding route in [services/crawl4ai/funding_programs.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/funding_programs.py); HIA/PDPA remain the pressure tracks, while NCSS only changes the funding line.
+- gated the 80% NCSS claim behind an official NCSS member-directory match from `https://maps.gov.sg/ncss-members`; rows not found in the directory fall back to the existing Cyber Essentials/CISOaaS funding logic.
+- added [services/crawl4ai/ncss_members_snapshot.json](/Users/sasikumar/Documents/n8n/services/crawl4ai/ncss_members_snapshot.json) as a 502-member official snapshot fallback so Railway can still classify NCSS funding when live directory fetches are unavailable.
+- updated [services/crawl4ai/outreach_planner.py](/Users/sasikumar/Documents/n8n/services/crawl4ai/outreach_planner.py) so verified NCSS rows use a cautious 80% TSS funding sentence in generated emails.
+- validation passed: `python3 -m pytest -q` (`432 passed`).
+- deployed Railway service `n8n-rayn-workflows` deployment `c53f5a6c-12b1-4b73-a55a-b2cee32727fc`; `/health` returned 200, positive NCSS smoke matched `365 Cancer Prevention Society`, and negative smoke did not produce an 80% NCSS line.
+- no NocoDB rows were modified, no emails were sent, and Instantly was not used.
+
 ## 2026-05-26
 
 Manual URL override for skipped URL discovery:

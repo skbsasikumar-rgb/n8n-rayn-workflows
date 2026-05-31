@@ -1,6 +1,15 @@
 import unittest
+from unittest.mock import patch
 
-from services.crawl4ai.funding_programs import FundingProgram, PROGRAMMES, match_programmes
+from services.crawl4ai import funding_programs as funding_module
+from services.crawl4ai.funding_programs import (
+    FundingProgram,
+    PROGRAMMES,
+    extract_ncss_member_names,
+    fetch_ncss_member_directory,
+    match_programmes,
+    normalize_member_key,
+)
 
 
 def verified_cyber_essentials() -> FundingProgram:
@@ -98,6 +107,99 @@ class FundingProgramTests(unittest.TestCase):
         self.assertIn("up to 70% co-funding", match.funding_claim_line)
         self.assertIn("subject to programme confirmation", match.funding_claim_line)
         self.assertFalse(match.funding_human_review_required)
+
+    def test_extract_ncss_member_names_from_maps_html(self):
+        html = (
+            r'\"mapMarkers\":[{\"name\":\"365 CANCER PREVENTION SOCIETY\"},'
+            r'{\"name\":\"4S\"},{\"name\":\"CARITAS HUMANITARIAN AID \\u0026 RELIEF INITIATIVES\"}]'
+        )
+
+        names = extract_ncss_member_names(html)
+
+        self.assertEqual(
+            names,
+            [
+                "365 CANCER PREVENTION SOCIETY",
+                "4S",
+                "CARITAS HUMANITARIAN AID & RELIEF INITIATIVES",
+            ],
+        )
+
+    @patch("services.crawl4ai.funding_programs.load_ncss_member_snapshot")
+    @patch("services.crawl4ai.funding_programs.urlopen")
+    def test_ncss_directory_fetch_falls_back_to_snapshot(self, urlopen, load_snapshot):
+        funding_module._NCSS_MEMBER_CACHE = {"loaded_at": 0.0, "members": {}}
+        urlopen.side_effect = OSError("blocked")
+        load_snapshot.return_value = ["4S"]
+
+        members = fetch_ncss_member_directory(ttl_seconds=0)
+
+        self.assertEqual(members[normalize_member_key("4S")], "4S")
+
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_ncss_member_gets_verified_tss_80_percent_claim(self, fetch_directory):
+        fetch_directory.return_value = {
+            normalize_member_key("365 CANCER PREVENTION SOCIETY"): "365 CANCER PREVENTION SOCIETY",
+        }
+
+        match = match_programmes(
+            {
+                "company_name": "365 Cancer Prevention Society",
+                "entity_type_guess": "social_service",
+                "entity_type_confidence": "high",
+                "recommended_first_cert": "Cyber Essentials",
+                "website_content": "charity social service cancer support beneficiaries Singapore",
+            },
+            programmes=PROGRAMMES,
+        )
+
+        self.assertEqual(match.funding_status, "verified_match")
+        self.assertEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertIn("up to 80% co-funding", match.funding_claim_line)
+        self.assertFalse(match.funding_human_review_required)
+        self.assertEqual(match.matched[0]["ncss_member_name"], "365 CANCER PREVENTION SOCIETY")
+        self.assertIn("maps.gov.sg/ncss-members", match.matched[0]["ncss_member_source_url"])
+
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_ncss_track_requires_directory_match(self, fetch_directory):
+        fetch_directory.return_value = {
+            normalize_member_key("Unrelated Social Service Agency"): "Unrelated Social Service Agency",
+        }
+
+        match = match_programmes(
+            {
+                "company_name": "Not In NCSS Directory",
+                "entity_type_guess": "social_service",
+                "entity_type_confidence": "high",
+                "recommended_first_cert": "Cyber Essentials",
+                "website_content": "charity social service beneficiaries Singapore",
+            },
+            programmes=PROGRAMMES,
+        )
+
+        self.assertNotEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertNotIn("80%", match.funding_claim_line)
+
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_ncss_member_match_uses_website_heading_for_domain_company(self, fetch_directory):
+        fetch_directory.return_value = {normalize_member_key("4S"): "4S"}
+
+        match = match_programmes(
+            {
+                "company_name": "4s.org.sg",
+                "company_homepage_name": "Enhancing Senior Well-Being",
+                "entity_type_guess": "social_service",
+                "entity_type_confidence": "high",
+                "best_url": "https://4s.org.sg/",
+                "recommended_first_cert": "Cyber Essentials",
+                "website_content": "# 4S | Enhancing Senior Well-Being\nSocial service support for seniors.",
+            },
+            programmes=PROGRAMMES,
+        )
+
+        self.assertEqual(match.funding_status, "verified_match")
+        self.assertEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertEqual(match.matched[0]["ncss_member_name"], "4S")
 
 
 if __name__ == "__main__":

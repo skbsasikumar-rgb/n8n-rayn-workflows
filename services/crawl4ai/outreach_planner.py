@@ -5040,6 +5040,15 @@ def email_funding_line_placeholder(
     line = compact(funding.funding_claim_line)
     if "70%" in line and ("ciso" in line.lower() or "cisoaas" in line.lower()):
         return "The consultancy is up to 70% subsidised under CSA's CISOaaS government grant."
+    if "80%" in line and (
+        "ncss" in line.lower()
+        or "transformation sustainability" in line.lower()
+        or "tss" in line.lower()
+    ):
+        return (
+            "NCSS TSS can support eligible social-service consultancy or digitalisation work at "
+            "up to 80% co-funding, subject to programme requirements."
+        )
     return ""
 
 

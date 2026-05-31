@@ -2811,6 +2811,36 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("HIA readiness map", matched.emails["email_2"]["body"])
         self.assertNotIn("S$4,300 before funding", matched.emails["email_2"]["body"])
 
+    def test_email_funding_line_placeholder_handles_ncss_80_percent_claim(self):
+        funding = FundingMatch(
+            funding_status="verified_match",
+            funding_relevant=True,
+            primary_funding_program="NCSS Transformation Sustainability Scheme (TSS)",
+            matched=[
+                {
+                    "verification_status": "verified_current",
+                    "exact_claim_allowed_in_email": True,
+                }
+            ],
+            funding_claim_line=(
+                "NCSS states TSS funding is available to social service agencies across three components, "
+                "at up to 80% co-funding."
+            ),
+            funding_confidence="high",
+        )
+
+        self.assertEqual(
+            o.email_funding_line_placeholder(
+                funding,
+                {"funding_claim_safe": True},
+                {"entity_type_confidence": "high"},
+            ),
+            (
+                "NCSS TSS can support eligible social-service consultancy or digitalisation work at "
+                "up to 80% co-funding, subject to programme requirements."
+            ),
+        )
+
     def test_send_readiness_distinguishes_gate_from_draft_mode(self):
         row = {
             "company_name": "Acme Services Pte Ltd",
