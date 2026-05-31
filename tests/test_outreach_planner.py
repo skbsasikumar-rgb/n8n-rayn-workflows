@@ -340,6 +340,34 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("physio practice", body)
         self.assertNotIn("rehabilitation progress records", body)
 
+    def test_social_service_serper_hcsa_context_does_not_create_hia(self):
+        row = {
+            "company_name": "4s.org.sg",
+            "company_homepage_name": "Enhancing Senior Well-Being",
+            "website_content": (
+                "Social service agency enhancing senior well-being through active ageing, care and support "
+                "for destitute seniors. The organisation manages beneficiaries, family contacts, volunteers "
+                "and donation records. "
+            )
+            * 3,
+            "_serper_context_text": (
+                "HCSA allows regulation of allied health services if needed. "
+                "4S explores services for seniors through active ageing, care and support."
+            ),
+            "_hia_serper_context": {
+                "used": True,
+                "evidence": [
+                    {"title": "1. Overview - Healthcare Services Act (HCSA)", "link": "https://www.hcsa.gov.sg/about-us/1-about-us/"},
+                    {"title": "4S - Singapore", "link": "https://4s.org.sg/"},
+                ],
+            },
+        }
+
+        plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+
     def test_hia_dermatology_subject_does_not_become_oncology_from_skin_cancer(self):
         plan = o.plan_outreach(
             {

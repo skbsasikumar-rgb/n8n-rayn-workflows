@@ -2535,7 +2535,7 @@ def social_charity_without_clinical_hia_evidence(
     if entity.get("entity_type_guess") not in {"charity", "npo", "social_service"}:
         return False
     service = compact(hia.get("hia_service_type_guess"))
-    if service not in {"GP_OMS", "specialist_OMS", "diagnostic", "long_term_care"}:
+    if service not in {"GP_OMS", "specialist_OMS", "diagnostic", "long_term_care", "allied_health"}:
         return False
     social_support_terms = (
         "charity",
@@ -2555,14 +2555,13 @@ def social_charity_without_clinical_hia_evidence(
         "specialist clinic",
         "clinic appointment",
         "clinic appointments",
-        "doctor",
-        "doctors",
-        "physician",
-        "physicians",
+        "licensed medical clinic",
+        "licensed clinic",
+        "medical doctor",
+        "medical doctors",
         "oncologist",
         "oncology clinic",
-        "nurse",
-        "nursing",
+        "nursing home",
         "patient care",
         "patient records",
         "patient reports",
