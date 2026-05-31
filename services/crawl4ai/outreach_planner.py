@@ -2166,6 +2166,8 @@ def explicit_social_org_identity(company_l: str, text: str) -> bool:
         return True
     if contains_any(company_l, ("children's home", "childrens home", "charity", "society", "social service")):
         return True
+    if contains_any(text, ("social service agency", "destitute", "active ageing", "senior well-being", "senior wellbeing")):
+        return True
     if "mission" in company_l and contains_any(text, ("nursing home", "resident care", "eldercare", "palliative")):
         return True
     if "foundation" in company_l and not contains_any(company_l, ("healthcare", "medical", "clinic", "dental", "hospital")):
@@ -4770,6 +4772,8 @@ def hia_subject_segment(row: dict[str, Any], classification: dict[str, Any], cop
         return "orthopaedic clinics"
     if "endocrin" in combined or "diabetes" in combined or "thyroid" in combined:
         return "endocrinology clinics"
+    if "dermatology" in combined or "dermatologist" in combined or "skin treatment" in combined:
+        return "dermatology clinics"
     if "oncology" in combined or "cancer" in combined:
         return "oncology clinics"
     if service_type == "specialist_OMS":
@@ -4809,6 +4813,8 @@ def hia_subject_segment_from_placeholders(
         return "orthopaedic clinics"
     if "endocrin" in combined or "diabetes" in combined or "thyroid" in combined:
         return "endocrinology clinics"
+    if "dermatology" in combined or "dermatologist" in combined or "skin treatment" in combined:
+        return "dermatology clinics"
     if "oncology" in combined or "cancer" in combined:
         return "oncology clinics"
     return hia_subject_segment(row, classification, {"email_tier2_context": {"specialty": specialty}})
@@ -4831,6 +4837,8 @@ def hia_email_1_context_lead(row: dict[str, Any], classification: dict[str, Any]
         return "For an endocrinology clinic managing diabetes, thyroid, and long-term condition records"
     if subtype == "oncology":
         return "For a specialist clinic managing oncology treatment records, patient reports, and vendor systems"
+    if subtype == "dermatology":
+        return "For a dermatology clinic managing skin consultation notes, treatment records, clinical images, and appointment details"
     if service_type == "dental":
         return "For a dental clinic managing patient appointments, imaging files, and dental records"
     if service_type == "GP_OMS":
@@ -4857,6 +4865,89 @@ def pdpa_high_sensitivity_context_line(row: dict[str, Any], data_type: str) -> s
             "a breach does not just expose one person, it can expose their family's health predispositions."
         )
     return ""
+
+
+def pdpa_email_1_context_line_from_data(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    data_type: str,
+) -> str:
+    text = primary_profile_source_text(row)
+    data = safe_tier2_text(data_type, 220).rstrip(".")
+    combined = f"{text} {data}".lower()
+    high_sensitivity = pdpa_high_sensitivity_context_line(row, data)
+    if high_sensitivity:
+        return high_sensitivity
+    if "cancer" in combined or "oncology" in combined:
+        return (
+            "Cancer-support records, care-service notes, beneficiary details, and donor contacts sit at the "
+            "higher end of PDPA sensitivity - the safeguards evidence bar for organisations handling them is "
+            "higher than most assume."
+        )
+    if any(term in combined for term in ("social service agency", "destitute", "senior well-being", "senior wellbeing", "active ageing", "eldercare")):
+        return (
+            "Senior-care records, beneficiary details, family contacts, volunteer data, and donation records sit at "
+            "the higher end of PDPA sensitivity - the safeguards evidence bar for care organisations is higher "
+            "than most assume."
+        )
+    if "counselling" in combined or "counseling" in combined or "psychology" in combined or "psychotherapy" in combined:
+        return (
+            "Mental health therapy and counselling records are among the most sensitive categories under PDPA - "
+            "the evidence bar for organisations handling them is higher than most assume."
+        )
+    if "autism" in combined or "aba" in combined or "children" in combined and "therapy" in combined:
+        return (
+            "Children's therapy records and autism assessments sit at the higher end of PDPA sensitivity - "
+            "the evidence bar for organisations handling them is higher than most assume."
+        )
+    if "physio" in combined or "rehabilitation" in combined:
+        if any(term in combined for term in ("prenatal", "post-operative", "post operative", "chronic pain")):
+            return (
+                "Chronic pain, prenatal care, and post-operative rehabilitation records span patients at "
+                "particularly vulnerable stages - PDPA sets a steeper evidence bar for organisations handling "
+                "this kind of personal data."
+            )
+        return (
+            "Injury assessments, treatment histories, and rehabilitation progress records are exactly the kind "
+            "of personal data PDPA sets a higher evidence bar for - and for a physio practice, the obligation "
+            "goes beyond having a privacy policy."
+        )
+    if classification.get("data_type_signal") in {"health_information", "patient_data"} or classification.get("entity_type_guess") in {"clinic", "healthcare_provider"}:
+        return (
+            "Patient appointment details, consultation notes, treatment records, and staff access records sit at "
+            "the higher end of PDPA sensitivity - the safeguards evidence bar for organisations handling them is "
+            "higher than most assume."
+        )
+    if (
+        "beneficiary" in combined
+        or "volunteer" in combined
+        or "donor" in combined
+        or classification.get("entity_type_guess") in {"charity", "social_service", "npo"}
+    ):
+        return (
+            "Beneficiary records, volunteer data, donor contacts, and care-service notes sit at the higher end "
+            "of PDPA sensitivity - the safeguards evidence bar for care organisations is higher than most assume."
+        )
+    if is_sports_youth_training_operator(combined):
+        return (
+            "Player records, parent contacts, medical declarations, and training attendance are personal data "
+            "PDPA sets a higher evidence bar for - sports academies need to show safeguards, not just a privacy notice."
+        )
+    if has_education_pdpa_context(combined):
+        return (
+            "Student records, parent contacts, attendance data, and learning-support notes sit at the higher end "
+            "of PDPA sensitivity - the safeguards evidence bar for education providers is higher than most assume."
+        )
+    if data and data.lower() != "personal data":
+        return (
+            f"{upper_first_for_sentence(data)} sit at the higher end of PDPA sensitivity - the safeguards evidence "
+            "bar for organisations handling them is higher than most assume."
+        )
+    return (
+        "Personal data under PDPA is not just a policy issue - the practical question is whether access, backups, "
+        "updates, and incident response can be evidenced when needed."
+    )
 
 
 def pdpa_subject_segment(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[str, bool]:
@@ -4918,28 +5009,13 @@ def email_context_line_placeholder(
             return f"{hia_email_1_context_lead(row, classification, data)}, {lower_first_for_clause(sentence)}"
         return hia_email_1_context_line_from_data(row, classification, data)
     descriptor = data if data != "personal data" else "personal data"
-    high_sensitivity = pdpa_high_sensitivity_context_line(row, descriptor)
-    if high_sensitivity:
-        return high_sensitivity
-    specialty = compact(email_specialty_placeholder(row, classification, copy_brief))
-    if specialty and specialty != "organisation":
-        lead = f"For {company}, {specialty}, "
-    else:
-        lead = f"For {company}, "
     if consequence:
         sentence = consequence
         if not sentence.endswith("."):
             sentence = f"{sentence}."
         if compact(tier2.get("source")) == "llm" and "PDPA" in sentence:
             return upper_first_for_sentence(sentence)
-        if lead and not sentence.startswith(("PDPA", "HIA")):
-            sentence = lower_first_for_clause(sentence)
-        return f"{lead}{sentence}"
-    return (
-        f"{lead}{descriptor[:1].lower() + descriptor[1:]} raises a PDPA safeguards question: "
-        "PDPA is the legal responsibility, and the hard part is usually proving safeguards - "
-        f"whether {company} can evidence access, backups, updates and incident response."
-    )
+    return pdpa_email_1_context_line_from_data(row, classification, copy_brief, descriptor)
 
 
 def email_service_line_placeholder(classification: dict[str, Any]) -> str:
@@ -6633,6 +6709,8 @@ def specialist_subtype(text: str) -> str:
         return "rheumatology"
     if any(term in text for term in ("urology", "urologist", "urocare", "prostate", "bladder", "kidney cancer", "men's reproductive", "mens reproductive")):
         return "urology"
+    if any(term in text for term in ("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser")):
+        return "dermatology"
     if any(term in text[:700] for term in ("surgery", "surgeon", "surgical", "thoracic")):
         return "surgery"
     if any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
@@ -6647,8 +6725,6 @@ def specialist_subtype(text: str) -> str:
         return "pain"
     if re.search(r"\b(?:ophthalmology|ophthalmologist|vision|cataract|retina|lasik|optometry)\b|eye clinic", text):
         return "eye"
-    if any(term in text for term in ("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser")):
-        return "dermatology"
     if any(term in text for term in ("surgery", "surgeon", "surgical", "operation", "consent", "post-operative")):
         return "surgery"
     return ""

@@ -280,6 +280,108 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("family's health predispositions", body)
         self.assertNotIn("appointment, enquiry, customer and staff records", body)
 
+    def test_pdpa_physio_email_leads_with_data_risk_not_business_description(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Ace Physio and Sports",
+                "selected_contact_name": "Vineet Bansal",
+                "website_content": (
+                    "Singapore physiotherapy and sports rehabilitation practice offering injury assessments, "
+                    "treatment histories, rehabilitation progress tracking, appointments and patient records. "
+                )
+                * 4,
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "PDPA - what Ace Physio and Sports needs to be able to show")
+        self.assertIn("Injury assessments, treatment histories, and rehabilitation progress records", body)
+        self.assertIn("PDPA sets a higher evidence bar", body)
+        self.assertNotIn("For Ace Physio and Sports, an organisation handling", body)
+        self.assertNotIn("through its healthcare-facing operations", body)
+
+    def test_pdpa_cancer_support_email_prefers_cancer_risk_over_counselling_signal(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "365 Cancer Prevention Society",
+                "selected_contact_name": "Alicia Ang",
+                "website_content": (
+                    "Cancer prevention charity and care organisation providing counselling, cancer support, "
+                    "beneficiary services, donor contacts, volunteers and care-service notes. "
+                )
+                * 4,
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertIn("Cancer-support records, care-service notes, beneficiary details, and donor contacts", body)
+        self.assertNotIn("Mental health therapy and counselling records", body)
+
+    def test_pdpa_senior_social_service_does_not_use_physio_copy(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "4s.org.sg",
+                "company_homepage_name": "Enhancing Senior Well-Being",
+                "website_content": (
+                    "Social service agency enhancing senior well-being through active ageing, care and support "
+                    "for destitute seniors. The organisation manages beneficiaries, family contacts, volunteers "
+                    "and donation records. "
+                )
+                * 3,
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertIn("Senior-care records, beneficiary details, family contacts", body)
+        self.assertNotIn("physio practice", body)
+        self.assertNotIn("rehabilitation progress records", body)
+
+    def test_hia_dermatology_subject_does_not_become_oncology_from_skin_cancer(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "About Dermatology",
+                "company_homepage_name": "About Dermatology Clinic",
+                "selected_contact_name": "Dr Melissa Tan Wee Ping",
+                "selected_contact_role": "Dermatologist",
+                "website_content": (
+                    "Dermatology specialist clinic treating skin conditions, acne, eczema, skin cancer, "
+                    "skin surgery, paediatric dermatology, laser treatment, appointments and patient records. "
+                )
+                * 4,
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what dermatology clinics need documented")
+        self.assertIn("For a dermatology clinic managing skin consultation notes", body)
+        self.assertNotIn("oncology clinics", plan.emails["email_1"]["chosen_subject"])
+
+    def test_pdpa_health_clinic_copy_does_not_use_care_organisation_records(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "A Clinic For Women",
+                "company_homepage_name": "A Clinic for Women",
+                "selected_contact_name": "Dr Chua Yang",
+                "selected_contact_role": "Doctor",
+                "website_content": (
+                    "Women's clinic founded by a doctor providing fertility evaluation, ultrasound scan services, "
+                    "women's health consultations, appointments and patient records. "
+                )
+                * 3,
+            },
+            programmes=[],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        if plan.classification["pressure_type"] == "pdpa_safeguards":
+            self.assertIn("Patient appointment details, consultation notes, treatment records", body)
+            self.assertNotIn("Beneficiary records, volunteer data, donor contacts", body)
+
     def test_pdpa_tier2_context_can_rescue_generic_counselling_copy_brief(self):
         extracted = {
             "specialty": "counselling and psychology practice",
@@ -924,7 +1026,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "website_content": "Singapore physiotherapy centre providing sports injury rehabilitation, patient appointments and treatment notes.",
             }
         )
-        self.assertIn("AEVI Sports and Physiotherapy Centre", plan.emails["email_1"]["body"])
+        self.assertIn("physiotherapy", plan.emails["email_1"]["chosen_subject"])
         self.assertNotIn("AEVI SPORTS AND PHYSIOTHERAPY CENTRE", plan.emails["email_1"]["body"])
 
     def test_hia_low_confidence_marks_review_before_deadline_claim(self):
@@ -1579,31 +1681,31 @@ class OutreachPlannerTests(unittest.TestCase):
             (
                 "Training Centre",
                 "Education and training provider handling student, parent, staff and enrolment records.",
-                "education/training services handling student, parent, staff or enrolment records",
+                "Student records, parent contacts, attendance data",
                 "education data checklist",
             ),
             (
                 "Talent Search Pte Ltd",
                 "Recruitment firm handling candidate records, payroll data, employee records and client records.",
-                "HR/recruitment services handling candidate, employee and client records",
+                "Candidate profiles, employee records",
                 "HR data safeguards checklist",
             ),
             (
                 "Account Admin Pte Ltd",
                 "Accounting, finance and admin services handling client financial records, payroll and business records.",
-                "admin/accounting/finance services handling client financial or business records",
+                "Client financial records, business records",
                 "client data safeguards checklist",
             ),
             (
                 "Retail Support Pte Ltd",
                 "Retail e-commerce customer service operations handling customer orders, support and payment-related records.",
-                "customer-facing operations handling customer, order, support and payment-related records",
+                "Customer contact data, order history",
                 "customer data checklist",
             ),
             (
                 "Care Volunteers Society",
                 "Charity social service organisation handling beneficiary, volunteer, donor and staff data.",
-                "care/community-service setting handling beneficiary, volunteer, donor and staff data",
+                "Beneficiary records, volunteer data, donor contacts",
                 "care-organisation checklist",
             ),
         ]
@@ -1666,7 +1768,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
         self.assertIn(plan.emails["email_1"]["chosen_subject"], {"data protection evidence", "evidence checklist", "data evidence"})
-        self.assertIn("data-protection / operations contact route", plan.emails["email_1"]["body"])
+        self.assertIn("access records", plan.emails["email_1"]["body"])
+        self.assertIn("incident evidence", plan.emails["email_1"]["body"])
         self.assertRegex(plan.emails["email_1"]["body"], r"proof|evidence")
 
     def test_data_protection_owner_titles_use_evidence_angle(self):
@@ -1681,7 +1784,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 )
                 self.assertEqual(plan.classification["campaign_track"], "dpo_evidence")
                 self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
-                self.assertIn("data-protection / operations contact route", plan.emails["email_1"]["body"])
+                self.assertIn("access records", plan.emails["email_1"]["body"])
+                self.assertIn("incident evidence", plan.emails["email_1"]["body"])
                 self.assertRegex(plan.emails["email_1"]["body"], r"proof|evidence")
                 self.assertNotIn("is responsible for compliance", plan.emails["email_1"]["body"])
 
@@ -2108,7 +2212,13 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(plan.copy_brief["email_cta"], plan.emails["email_1"]["body"])
                 email1_lines = [line for line in plan.emails["email_1"]["body"].splitlines() if line.strip()]
                 email1_first = email1_lines[1] if o.generic_greeting_stands_alone(email1_lines[0]) else email1_lines[0]
-                self.assertRegex(email1_first, r"(?:, |^)(?:I noticed|saw that|looks like|had a quick look at|For |for |Does |does )")
+                self.assertRegex(
+                    email1_first,
+                    r"(?:, |^)(?:I noticed|saw that|looks like|had a quick look at|For |for |Does |does |"
+                    r"Student records|Player records|Beneficiary records|Candidate profiles|Customer contact data|"
+                    r"Client financial records|Personal data|Business partner data|Employee data|"
+                    r"Injury assessments|Mental health therapy|Children's therapy records|Genomic and genetic data)",
+                )
                 self.assertNotIn("from the site", email1_first.lower())
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
@@ -3277,8 +3387,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
         brief = plan.copy_brief
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("care/community-service", plan.emails["email_1"]["body"])
-        self.assertIn("beneficiary, volunteer, donor and staff data", plan.emails["email_1"]["body"])
+        self.assertIn("Beneficiary records, volunteer data, donor contacts", plan.emails["email_1"]["body"])
         self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
         self.assertIn("evidence bar", plan.emails["email_1"]["body"])
         self.assertIn("beneficiary", plan.emails["email_3"]["body"])
@@ -3508,7 +3617,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,\n\n"))
-        self.assertIn("Acme Services", plan.emails["email_1"]["body"])
+        self.assertIn("Acme Services", plan.emails["email_1"]["chosen_subject"])
         self.assertNotIn("Acme Services Pte Ltd", plan.emails["email_1"]["body"])
         self.assertTrue(plan.emails["email_2"]["body"].startswith("Hello team,\n\n"))
         self.assertTrue(plan.emails["email_3"]["body"].startswith("Hello team,\n\n"))
