@@ -2088,11 +2088,17 @@ def contact_is_doctor(row: dict[str, Any]) -> bool:
     name = contact_name_text(row)
     if not valid_person_contact_name(name):
         return False
-    if row.get("_contact_doctor_verified") is True:
-        return True
     if contact_name_has_doctor_title(name):
         return True
     if contact_role_indicates_doctor(row):
+        return True
+    role_text = compact(row.get("selected_contact_title") or row.get("selected_contact_role")).lower()
+    if re.search(
+        r"\b(marketing|business development|sales|fundraising|communications?|partnerships?|finance|hr|human resources?|admin|operations?|ceo|chief executive|executive director|manager)\b",
+        role_text,
+    ):
+        return False
+    if row.get("_contact_doctor_verified") is True:
         return True
     return text_links_person_to_doctor(row, doctor_evidence_text(row))
 
@@ -4971,6 +4977,8 @@ def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]
     )
     if contains_ce_excluded_obligation_terms(enforcement_consequence):
         enforcement_consequence = fallback.get("enforcement_consequence", "")
+    if re.search(r"\bncss\b|loss of funding|funding loss|compliance audit", enforcement_consequence, re.I):
+        enforcement_consequence = fallback.get("enforcement_consequence", "")
     confidence = compact(value.get("confidence")).lower()
     if confidence not in {"low", "medium", "high"}:
         confidence = fallback.get("confidence", "medium")
@@ -5043,7 +5051,11 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
         sanitized["sensitivity_consequence"] = fallback["sensitivity_consequence"]
         sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
         sanitized["confidence"] = "medium"
-    if email_track_placeholder(classification) in {"pdpa", "ncss"} and "hia" in sanitized["enforcement_consequence"].lower():
+    if email_track_placeholder(classification) in {"pdpa", "ncss"} and re.search(
+        r"\bhia\b|health information act|\bncss\b|loss of funding|funding loss|compliance audit",
+        sanitized["enforcement_consequence"],
+        re.I,
+    ):
         sanitized["enforcement_consequence"] = fallback["enforcement_consequence"]
     return sanitized
 
@@ -6998,6 +7010,13 @@ def public_signal_summary(
 def copy_brief_ready(classification: dict[str, Any], copy_brief: dict[str, Any]) -> bool:
     if classification.get("pressure_type") == "not_ready":
         return False
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    if (
+        safe_tier2_text(tier2.get("specialty"))
+        and safe_tier2_text(tier2.get("data_type"), 220)
+        and safe_tier2_text(tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"), 260)
+    ):
+        return True
     required = ("email_personalisation_signal", "email_problem_statement", "email_mechanism_statement", "email_cta")
     if not all(compact(copy_brief.get(field)) for field in required):
         return False

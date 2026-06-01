@@ -80,6 +80,16 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(o.first_name_from_contact(row), "Aaron")
         self.assertEqual(o.email_greeting(row), "Hi Dr Tan,")
 
+    def test_non_clinical_contact_role_blocks_doctor_greeting(self):
+        row = {
+            "selected_contact_name": "Alicia Ang",
+            "selected_contact_role": "Marketing Manager",
+            "_contact_doctor_context_text": "Dr Alicia Ang profile from an unrelated search result.",
+            "_contact_doctor_verified": True,
+        }
+
+        self.assertEqual(o.email_greeting(row), "Hi Alicia,")
+
     def test_generic_greeting_uses_own_paragraph(self):
         self.assertEqual(
             o.followup_sentence("Hello team,", "just tying this back to my earlier note."),
@@ -309,6 +319,35 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertIn(plan.copy_brief["email_1_placeholders"]["email_data_type"], plan.emails["email_2"]["body"])
 
+    def test_pdpa_tier2_placeholders_can_generate_email_when_copy_brief_is_thin(self):
+        extracted = {
+            "specialty": "genomics company",
+            "data_type": "genomic data",
+            "sensitivity_consequence": "Genomic data exposes family health predispositions, not just the individual.",
+            "enforcement_consequence": "For genomic data, the significant-harm threshold is lower and PDPC scrutiny moves faster.",
+            "confidence": "medium",
+            "source_url": "https://1010genome.com/",
+            "evidence": [{"quote": "genomics", "source_field": "website_content"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            plan = o.plan_outreach(
+                {
+                    "company_name": "1010Genome",
+                    "selected_contact_name": "John Taylor",
+                    "selected_contact_role": "Business Development Manager",
+                    "validated_email": "john@1010genome.com",
+                    "website_content": "Genomics, sequencing and bioinformatics services.",
+                    "best_url": "https://1010genome.com/",
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertNotEqual(plan.emails["email_1"]["chosen_subject"], "not ready")
+        self.assertIn("Genomic", plan.emails["email_1"]["body"])
+
     def test_tier2_context_rejects_non_ce_pdpa_obligations(self):
         fallback = {
             "specialty": "genomics",
@@ -335,6 +374,30 @@ class OutreachPlannerTests(unittest.TestCase):
 
         self.assertEqual(sanitized["website_detail_consequence"], fallback["website_detail_consequence"])
         self.assertFalse(o.contains_ce_excluded_obligation_terms(sanitized["website_detail_consequence"]))
+
+    def test_ncss_tier2_context_rejects_funding_audit_enforcement_claims(self):
+        fallback = {
+            "specialty": "cancer support organisation",
+            "data_type": "cancer patient records",
+            "sensitivity_consequence": "Cancer patient records carry a lower significant-harm threshold under PDPA.",
+            "enforcement_consequence": "For cancer patient records, significant-harm scrutiny arrives faster after a breach or complaint.",
+            "website_detail_consequence": "Cancer patient records carry a lower significant-harm threshold under PDPA.",
+            "confidence": "medium",
+            "source": "deterministic",
+        }
+        sanitized = o.sanitize_email_tier2_context(
+            {
+                "specialty": "cancer support organisation",
+                "data_type": "cancer patient records",
+                "sensitivity_consequence": "Cancer patient records contain deeply personal health information requiring rigorous access controls",
+                "enforcement_consequence": "Breach of cancer records could trigger NCSS compliance audits and loss of funding",
+                "confidence": "high",
+                "source": "llm",
+            },
+            fallback,
+        )
+
+        self.assertEqual(sanitized["enforcement_consequence"], fallback["enforcement_consequence"])
 
     def test_pdpa_physio_email_leads_with_data_risk_not_business_description(self):
         plan = o.plan_outreach(
