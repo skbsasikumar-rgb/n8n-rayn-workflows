@@ -15,6 +15,11 @@ except ImportError:  # pragma: no cover - service runtime imports modules from c
     from funding_programs import FundingMatch, match_programmes
 
 
+NCSS_SOCIAL_SERVICE_PRESSURE = "ncss_social_service"
+PDPA_LIKE_PRESSURE_TYPES = {"pdpa_safeguards", NCSS_SOCIAL_SERVICE_PRESSURE}
+SENDABLE_PRESSURE_TYPES = {"hia_regulatory", "pdpa_safeguards", NCSS_SOCIAL_SERVICE_PRESSURE}
+
+
 PROVIDER_ACCOUNT_ERROR_PATTERNS = (
     "provider account error",
     "provider_account_error",
@@ -91,10 +96,11 @@ User input:
 First decide the pressure type:
 - HIA regulatory pressure
 - PDPA personal-data safeguard pressure
+- NCSS social-service support pressure, only after deterministic NCSS member-directory verification
 - Customer/procurement trust pressure
 - Funding/budget pressure
 
-Use HIA regulatory pressure when HIA evidence is medium/high. Use PDPA personal-data safeguard pressure when the organisation handles personal data and HIA is not the primary trigger. Use customer/procurement trust pressure when B2B, SaaS, outsourcing, education, finance, HR/recruitment, professional-services, vendor or enterprise-facing evidence is present. Use not_ready when the evidence does not support any outreach track.
+Use HIA regulatory pressure when HIA evidence is medium/high. Use PDPA personal-data safeguard pressure when the organisation handles personal data and HIA is not the primary trigger. Use NCSS social-service support pressure only when deterministic funding matching confirms the organisation is in the NCSS member directory; otherwise keep social-service agencies on PDPA safeguards. Use customer/procurement trust pressure when B2B, SaaS, outsourcing, education, finance, HR/recruitment, professional-services, vendor or enterprise-facing evidence is present. Use not_ready when the evidence does not support any outreach track.
 
 Return strict JSON:
 {
@@ -104,7 +110,7 @@ Return strict JSON:
   "sme_likelihood": "likely|possible|unlikely|unknown",
   "npo_likelihood": "likely|possible|unlikely|unknown",
   "charity_or_social_service_likelihood": "likely|possible|unlikely|unknown",
-        "pressure_type": "hia_regulatory|pdpa_safeguards|not_ready",
+        "pressure_type": "hia_regulatory|pdpa_safeguards|ncss_social_service|not_ready",
   "pressure_reason": "",
   "outreach_trigger_signal": "",
   "outreach_trigger_source_url": "",
@@ -112,7 +118,7 @@ Return strict JSON:
   "data_type_signal": "patient_data|health_information|resident_data|beneficiary_data|customer_data|employee_data|student_data|financial_data|business_partner_data|unknown",
   "problem_area": "access_control|data_mapping|offboarding|backup|patching|malware_protection|incident_response|vendor_management|staff_awareness|evidence_collection|hia_readiness|pdpa_safeguards|unknown",
   "problem_hypothesis": "",
-  "value_asset_offer": "hia_readiness_map|clinic_access_checklist|solo_gp_checklist|pdpa_safeguards_checklist|data_access_map|offboarding_checklist|cyber_essentials_readiness_checklist|funding_route_summary|security_evidence_checklist",
+  "value_asset_offer": "hia_readiness_map|clinic_access_checklist|solo_gp_checklist|pdpa_safeguards_checklist|care_organisation_safeguards_checklist|data_access_map|offboarding_checklist|cyber_essentials_readiness_checklist|funding_route_summary|security_evidence_checklist",
   "hia_relevant": false,
   "hia_relevance_score": 0,
   "hia_confidence": "low|medium|high",
@@ -168,7 +174,8 @@ Rules:
 - Email 3 gives a diagnostic tied to the same problem.
 - Email 4 closes the loop.
 - For HIA rows, lead with HIA timeline / regulatory readiness. Mention Cyber Essentials only as a practical first baseline. Do not say Cyber Essentials completes HIA compliance.
-- For non-HIA rows, lead with PDPA / personal-data safeguards. Say Cyber Essentials supports the security-safeguards side of PDPA readiness. Do not say Cyber Essentials alone equals PDPA compliance.
+- For NCSS social-service rows, lead with PDPA / personal-data safeguards for beneficiary, donor, volunteer or staff data, then mention NCSS TSS only when funding_claim_safe is true.
+- For other non-HIA rows, lead with PDPA / personal-data safeguards. Say Cyber Essentials supports the security-safeguards side of PDPA readiness. Do not say Cyber Essentials alone equals PDPA compliance.
 - For DPO, compliance, privacy, operations, admin, or HR contacts, lead with data-protection evidence ownership across IT, HR, vendors and operations.
 - For B2B rows, lead with customer security evidence and trust. Position Cyber Essentials as reusable proof.
 - Do not invent eligibility.
@@ -1547,6 +1554,80 @@ def funding_claim_send_safe(funding: FundingMatch, copy_brief: dict[str, Any], c
     return True
 
 
+def funding_is_verified_ncss_tss(funding: FundingMatch) -> bool:
+    if funding.funding_status != "verified_match":
+        return False
+    program = compact(funding.primary_funding_program).lower()
+    if "ncss" not in program and "transformation sustainability" not in program and "tss" not in program:
+        return False
+    return any(
+        compact(item.get("ncss_member_name")) and compact(item.get("verification_status")) == "verified_current"
+        for item in (funding.matched or [])
+        if isinstance(item, dict)
+    )
+
+
+def apply_ncss_social_service_pressure(classification: dict[str, Any], funding: FundingMatch) -> None:
+    if classification.get("manual_classification_override"):
+        return
+    if not funding_is_verified_ncss_tss(funding):
+        return
+    if compact(classification.get("entity_type_guess")) not in {"npo", "charity", "social_service"}:
+        return
+    if (
+        classification.get("pressure_type") == "hia_regulatory"
+        and compact(classification.get("hia_official_service_type"))
+        and compact(classification.get("hia_confidence")) in {"medium", "high"}
+    ):
+        return
+
+    evidence = dict(classification.get("classification_evidence_json") or {})
+    evidence["selected_track_before_ncss"] = compact(evidence.get("selected_track"))
+    evidence["selected_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    evidence["ncss_verified_member"] = True
+    evidence["ncss_member_name"] = compact((funding.matched or [{}])[0].get("ncss_member_name") if funding.matched else "")
+    evidence["ncss_member_source_url"] = compact((funding.matched or [{}])[0].get("ncss_member_source_url") if funding.matched else "")
+    evidence["ncss_primary_funding_program"] = funding.primary_funding_program
+
+    classification["classification_evidence_json"] = evidence
+    classification["classification_confidence"] = "high"
+    classification["campaign_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    classification["primary_email_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    classification["secondary_email_track"] = ""
+    classification["pressure_type"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    classification["pressure_reason"] = (
+        "Verified NCSS member-directory match; use the social-service support route while keeping PDPA safeguards as the legal/data-risk framing."
+    )
+    classification["outreach_trigger_signal"] = classification["pressure_reason"]
+    classification["outreach_trigger_confidence"] = "high"
+    classification["problem_area"] = "pdpa_safeguards"
+    classification["value_asset_offer"] = "care_organisation_safeguards_checklist"
+    classification["regulatory_applicability"] = ["PDPA"]
+    classification["pdpa_relevant"] = True
+    classification["pdpa_reason"] = (
+        "NCSS membership changes the support/funding route, but beneficiary, donor, volunteer and staff data remains framed under PDPA safeguards."
+    )
+    classification["recommended_first_cert"] = "Cyber Essentials"
+    classification["recommended_cert_path"] = (
+        "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check TSS fit for eligible consultancy or digitalisation support."
+    )
+    classification["certification_reason"] = certification_reason(NCSS_SOCIAL_SERVICE_PRESSURE)
+    classification["certification_fit_score"] = max(int(classification.get("certification_fit_score") or 0), 82)
+    classification["classification_review_status"] = "not_needed"
+    classification["classification_review_reason"] = ""
+    classification["problem_hypothesis"] = build_problem_hypothesis(
+        NCSS_SOCIAL_SERVICE_PRESSURE,
+        compact(classification.get("data_type_signal")) or "beneficiary_data",
+        "pdpa_safeguards",
+    )
+    certification_evidence = dict(classification.get("certification_evidence_json") or {})
+    certification_evidence["pressure_type"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    certification_evidence["primary_email_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    certification_evidence["selected_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
+    certification_evidence["ncss_primary_funding_program"] = funding.primary_funding_program
+    classification["certification_evidence_json"] = certification_evidence
+
+
 def value_fallback_email_2(
     row: dict[str, Any],
     emails: dict[str, Any],
@@ -1753,7 +1834,7 @@ def infer_hia_clinic_size(row: dict[str, Any], classification: dict[str, Any], c
 def enrichment_quality(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> tuple[int, list[str]]:
     flags: list[str] = []
     score = 0
-    if classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards"}:
+    if classification.get("pressure_type") in SENDABLE_PRESSURE_TYPES:
         score += 2
     else:
         flags.append("no_supported_pressure")
@@ -1804,7 +1885,7 @@ def blocking_enrichment_flags(flags: list[str], classification: dict[str, Any], 
         "weak_service_evidence_needs_review",
     }
     result = [flag for flag in flags if flag in blocking]
-    if "missing_data_systems" in flags and (classification.get("pressure_type") in {"hia_regulatory", "pdpa_safeguards"} and score < 7):
+    if "missing_data_systems" in flags and (classification.get("pressure_type") in SENDABLE_PRESSURE_TYPES and score < 7):
         result.append("missing_data_systems")
     if (
         classification.get("pressure_type") == "hia_regulatory"
@@ -3502,6 +3583,10 @@ MANUAL_PRESSURE_TYPE_ALIASES = {
     "hia": "hia_regulatory",
     "hia_regulatory": "hia_regulatory",
     "healthcare": "hia_regulatory",
+    "ncss": NCSS_SOCIAL_SERVICE_PRESSURE,
+    "ncss_tss": NCSS_SOCIAL_SERVICE_PRESSURE,
+    "ncss_social_service": NCSS_SOCIAL_SERVICE_PRESSURE,
+    "social_service": NCSS_SOCIAL_SERVICE_PRESSURE,
     "pdpa": "pdpa_safeguards",
     "pdpa_safeguards": "pdpa_safeguards",
     "personal_data": "pdpa_safeguards",
@@ -3525,6 +3610,8 @@ def manual_pressure_type_for(row: dict[str, Any]) -> str:
 def output_email_track(track: str, pressure_type: str) -> str:
     if pressure_type == "hia_regulatory":
         return "hia_regulatory"
+    if pressure_type == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return NCSS_SOCIAL_SERVICE_PRESSURE
     if pressure_type == "pdpa_safeguards":
         return "pdpa_safeguards"
     return "not_ready"
@@ -3567,6 +3654,35 @@ def apply_manual_pressure_override(row: dict[str, Any], classification: dict[str
         classification["recommended_cert_path"] = "Start with HIA readiness mapping, then use Cyber Essentials as a practical cybersecurity/data-security baseline."
         classification["certification_reason"] = certification_reason("hia_regulatory")
         classification["pdpa_safeguard_angle"] = "access_control"
+    elif override == NCSS_SOCIAL_SERVICE_PRESSURE:
+        classification["regulatory_applicability"] = ["PDPA"]
+        classification["pressure_reason"] = "Manual review selected the verified NCSS social-service support route."
+        classification["outreach_trigger_signal"] = classification["pressure_reason"]
+        classification["outreach_trigger_confidence"] = "high"
+        classification["problem_area"] = "pdpa_safeguards"
+        if classification.get("data_type_signal") in {"", "unknown", None}:
+            classification["data_type_signal"] = "beneficiary_data"
+        if classification.get("personal_data_intensity") in {"", "low", "unknown", None}:
+            classification["personal_data_intensity"] = "medium"
+        classification["problem_hypothesis"] = build_problem_hypothesis(
+            NCSS_SOCIAL_SERVICE_PRESSURE,
+            classification.get("data_type_signal", "beneficiary_data"),
+            "pdpa_safeguards",
+        )
+        classification["value_asset_offer"] = "care_organisation_safeguards_checklist"
+        classification["hia_relevant"] = False
+        classification["hia_relevance_score"] = 0
+        classification["hia_confidence"] = "low"
+        classification["hia_scope_reason"] = "Manual review selected NCSS social-service support instead of HIA."
+        classification["hia_official_service_type"] = ""
+        classification["hia_official_service_label"] = ""
+        classification["hia_timeline_batch_guess"] = "unknown"
+        classification["hia_deadline_claim_safe"] = False
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = "NCSS changes the support/funding route, but beneficiary, donor, volunteer and staff data remains framed under PDPA safeguards."
+        classification["recommended_cert_path"] = "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check TSS fit for eligible consultancy or digitalisation support."
+        classification["certification_reason"] = certification_reason(NCSS_SOCIAL_SERVICE_PRESSURE)
+        classification["pdpa_safeguard_angle"] = "cyber_essentials_baseline"
     else:
         classification["regulatory_applicability"] = ["PDPA"]
         classification["pressure_reason"] = "Manual review selected PDPA safeguards as the outreach pressure."
@@ -3623,7 +3739,7 @@ def classification_review_reason_for(row: dict[str, Any], classification: dict[s
         ) in {"GP_OMS", "specialist_OMS", "diagnostic", "allied_health"}:
             return "hia_requires_review_social_service_or_charity_scope"
         return ""
-    if pressure == "pdpa_safeguards":
+    if pressure in PDPA_LIKE_PRESSURE_TYPES:
         if selected_track == "customer_trust" and personal_intensity not in {"medium", "high"} and data_type in {"", "unknown"}:
             return "pdpa_requires_review_customer_trust_only"
         if compact(classification.get("classification_confidence")) == "low":
@@ -3981,6 +4097,8 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
 def build_problem_hypothesis(pressure_type: str, data_type: str, problem_area: str) -> str:
     if pressure_type == "customer_trust":
         pressure_type = "pdpa_safeguards"
+    if pressure_type == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "The practical gap is likely proving safeguards for beneficiary, volunteer, donor and staff data while checking whether NCSS TSS support fits."
     if pressure_type == "hia_regulatory":
         return "The practical gap is likely mapping HIA cybersecurity/data-security duties into access, backup, patching, incident and evidence checks."
     if pressure_type == "not_ready":
@@ -3995,6 +4113,8 @@ def certification_reason(pressure_type: str) -> str:
         pressure_type = "pdpa_safeguards"
     if pressure_type == "hia_regulatory":
         return "Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness; it is not HIA compliance."
+    if pressure_type == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "Cyber Essentials supports PDPA safeguard evidence; NCSS TSS is the social-service support route, not a compliance claim."
     if pressure_type == "not_ready":
         return "No certification path should be pitched until stronger evidence is available."
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
@@ -4130,6 +4250,8 @@ def email_variant_track(classification: dict[str, Any]) -> str:
         return "dpo_evidence"
     pressure = compact(classification.get("pressure_type"))
     if pressure == "customer_trust":
+        return "pdpa_safeguards"
+    if pressure == NCSS_SOCIAL_SERVICE_PRESSURE:
         return "pdpa_safeguards"
     if pressure in {"hia_regulatory", "pdpa_safeguards"}:
         return pressure
@@ -4438,6 +4560,8 @@ def build_email_1_chain(
 
 
 def email_track_placeholder(classification: dict[str, Any]) -> str:
+    if compact(classification.get("pressure_type")) == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "ncss"
     track = email_variant_track(classification)
     if track == "hia_regulatory":
         return "hia"
@@ -4520,7 +4644,7 @@ def deterministic_website_detail_consequence(
             "the patient records you hold are exactly what the Health Information Act (HIA) targets - "
             "access logs, vendor NDAs, backups and MOH reporting need documented evidence from 2027"
         )
-    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+    if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         if data and data != "personal data":
             return f"{data} sit at the higher end of PDPA sensitivity - the safeguards evidence bar for organisations handling them is higher than most assume"
         return "the personal data you hold falls under PDPA safeguards - the evidence bar is higher than most assume"
@@ -4660,7 +4784,7 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
                 count=1,
                 flags=re.I,
             )
-    if email_track_placeholder(classification) == "pdpa" and "hia" in sanitized["website_detail_consequence"].lower():
+    if email_track_placeholder(classification) in {"pdpa", "ncss"} and "hia" in sanitized["website_detail_consequence"].lower():
         sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
         sanitized["confidence"] = "medium"
     return sanitized
@@ -5024,6 +5148,10 @@ def email_1_subject_from_placeholders(
         segment, plural = pdpa_subject_segment(row, classification, copy_brief)
         verb = "need" if plural else "needs"
         return f"PDPA - what {segment} {verb} to be able to show"
+    if compact(placeholders.get("email_track")) == "ncss":
+        segment, plural = pdpa_subject_segment(row, classification, copy_brief)
+        verb = "need" if plural else "needs"
+        return f"NCSS TSS - what {segment} {verb} to be able to show"
     return compact(placeholders.get("email_subject")) or "readiness checklist"
 
 
@@ -5335,7 +5463,7 @@ def build_value_fallback_email_2_placeholders(
     slots: dict[str, str],
     ps: str | None = None,
 ) -> dict[str, Any]:
-    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+    if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         data_type = compact(copy_brief.get("sensitive_data_examples")) or compact(classification.get("data_type_signal")).replace("_", " ")
         data_type = data_type.rstrip(" .;,:")
         data_type = data_type or "this kind of personal data"
@@ -5776,7 +5904,7 @@ def non_hia_email_2_sentence_slots(
             "route_fit": f"For {data_type}, that distinction matters because the evidence has to pre-date the problem.",
         }
     else:
-        if classification.get("pressure_type") == "pdpa_safeguards":
+        if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES:
             baseline_options = {
                 "pdpa_before_breach": "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards.",
                 "pdpc_before_after": "The uncomfortable PDPA point is the before-and-after distinction: safeguard evidence needs to exist before a breach, complaint or audit.",
@@ -6159,6 +6287,7 @@ def serper_company_context_queries(row: dict[str, Any], classification: dict[str
     pressure = compact(classification.get("pressure_type"))
     base_terms = {
         "hia_regulatory": "Singapore HCSA licensee healthcare clinic patient appointments services",
+        NCSS_SOCIAL_SERVICE_PRESSURE: "Singapore NCSS member social service agency beneficiaries volunteers donors PDPA safeguards",
         "pdpa_safeguards": "Singapore services personal data operations",
         "customer_trust": "Singapore company services clients security",
     }.get(pressure, "Singapore company services")
@@ -6172,6 +6301,8 @@ def serper_company_context_queries(row: dict[str, Any], classification: dict[str
             terms = "Singapore registration programme conference training attendees"
         elif pressure == "hia_regulatory":
             terms = "Singapore healthcare clinic appointments patient services"
+        elif pressure == NCSS_SOCIAL_SERVICE_PRESSURE:
+            terms = "Singapore NCSS member social service beneficiaries volunteers donors"
         else:
             terms = "Singapore registration services clients personal data"
     domain_hint = ""
@@ -6441,6 +6572,9 @@ def serper_context_observation(row: dict[str, Any], classification: dict[str, An
             return f"{company} handles education or training operations."
         if any(term in text for term in ("charity", "social service", "beneficiary", "care", "community")):
             return f"{company} operates care or community-service operations."
+    if classification.get("pressure_type") == NCSS_SOCIAL_SERVICE_PRESSURE:
+        if any(term in text for term in ("ncss", "charity", "social service", "beneficiary", "volunteer", "donor", "community")):
+            return f"{company} operates as a social-service or community-care organisation."
     return ""
 
 
@@ -7262,6 +7396,8 @@ def segment_asset(row: dict[str, Any], classification: dict[str, Any], clinic_pr
         return "security evidence checklist"
     if classification.get("campaign_track") == "dpo_evidence":
         return "evidence checklist"
+    if classification.get("pressure_type") == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "care-organisation safeguards checklist"
     if classification.get("pressure_type") == "pdpa_safeguards":
         return "safeguards checklist"
     if service_type == "dental":
@@ -7484,6 +7620,8 @@ def subject_pair(row: dict[str, Any], classification: dict[str, Any], copy_brief
         else:
             subject = "security evidence"
         return subject, f"Re: {subject}"
+    if pressure == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "NCSS social-service safeguards", "Re: NCSS social-service safeguards"
     if pressure == "pdpa_safeguards":
         if "hr" in asset:
             subject = "HR data safeguards"
@@ -7624,7 +7762,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         mechanism = "Cyber Essentials gives a simple reusable evidence baseline."
         signal = trust_context["signal"]
         email_2_diagnostic = trust_context["diagnostic"]
-    elif pressure == "pdpa_safeguards":
+    elif pressure in PDPA_LIKE_PRESSURE_TYPES:
         email_2_diagnostic = ""
         if classification.get("campaign_track") == "dpo_evidence":
             personal_data = f"{data_type} handled across IT, HR, vendors and operations."
@@ -7638,10 +7776,13 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             personal_data = "beneficiary, volunteer, donor and staff data handled through care and community operations."
             sensitive_examples = "beneficiary records, volunteer data, donor contacts, staff records and care-service notes."
             systems = "case or resident records, volunteer lists, donor/contact databases, email, file shares, backups and incident contacts."
-            asset = "care-organisation checklist"
-            cta = "Worth sending the care-organisation checklist?"
+            asset = "care-organisation safeguards checklist"
+            cta = "Worth sending the care-organisation safeguards checklist?"
             signal = f"{company} appears to operate in a care/community-service setting handling beneficiary, volunteer, donor and staff data."
-            problem = "PDPA is the legal responsibility. The hard part is usually proving safeguards for beneficiary, volunteer, donor and staff data."
+            if pressure == NCSS_SOCIAL_SERVICE_PRESSURE:
+                problem = "PDPA remains the legal responsibility. The NCSS angle is the support route; the practical gap is proving safeguards for beneficiary, volunteer, donor and staff data."
+            else:
+                problem = "PDPA is the legal responsibility. The hard part is usually proving safeguards for beneficiary, volunteer, donor and staff data."
         else:
             pdpa_context = pdpa_variant_context(company, text, entity, data_type)
             personal_data = pdpa_context["personal_data"]
@@ -7652,11 +7793,19 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             signal = pdpa_context["signal"]
             problem = pdpa_context["problem"]
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
-        regulatory = "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
+        regulatory = (
+            "PDPA remains the legal obligation; NCSS TSS is the support route for verified social-service agencies."
+            if pressure == NCSS_SOCIAL_SERVICE_PRESSURE
+            else "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
+        )
         hia_angle = "Do not lead with HIA unless healthcare evidence is medium or high confidence."
         pdpa_angle = "Cyber Essentials supports the security-safeguards side of PDPA readiness by turning reasonable protection into practical controls and evidence across assets, access, malware protection, patching, backups and incident response."
         trust_angle = "Clear safeguard evidence also helps customers, partners, donors, insurers and internal teams trust how data is handled."
-        timeline = "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards before a customer, partner or incident review asks for proof."
+        timeline = (
+            "No HIA deadline is being used; urgency comes from PDPA safeguard evidence and checking the verified NCSS support route while it is available."
+            if pressure == NCSS_SOCIAL_SERVICE_PRESSURE
+            else "No specific external deadline was identified; urgency comes from being able to evidence reasonable safeguards before a customer, partner or incident review asks for proof."
+        )
         if classification.get("campaign_track") == "dpo_evidence":
             mechanism = "Cyber Essentials helps turn that into a simple security baseline and evidence set."
         else:
@@ -7705,7 +7854,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
     elif pressure == "pdpa_safeguards" and classification.get("campaign_track") == "dpo_evidence":
         why_now_line = "Data-protection evidence usually sits across more than one team."
         proof_line = "Cyber Essentials helps turn that into a simple security baseline and evidence set."
-    elif pressure == "pdpa_safeguards":
+    elif pressure in PDPA_LIKE_PRESSURE_TYPES:
         why_now_line = "PDPA makes those safeguards worth having in evidence, not just in intention."
         proof_line = "Cyber Essentials gives a simple baseline for access, backups, updates, malware controls and incident response."
     elif pressure == "customer_trust":
@@ -8190,7 +8339,7 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_non_hia_pricing_claim")
     if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
         flags.append("llm_email_2_rewrite_forbidden_compliance_claim")
-    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+    if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         if re.search(r"cyber essentials.{0,50}(?:structured approach to|approach to).{0,30}pdpa.{0,30}(?:legal )?obligations", body_l):
             flags.append("llm_email_2_rewrite_pdpa_obligation_overclaim")
         if re.search(r"cyber essentials.{0,30}pdpa compliance framework", body_l):
@@ -9256,6 +9405,7 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     classification = classify_row(row)
     row = add_contact_doctor_context_if_needed(row, classification)
     funding = match_programmes({**row, **classification}, programmes=programmes)
+    apply_ncss_social_service_pressure(classification, funding)
     copy_brief = build_copy_brief(row, classification, funding)
     copy_brief = apply_company_context_search(row, classification, copy_brief)
     copy_brief["email_tier2_context"] = build_email_tier2_context(row, classification, copy_brief)

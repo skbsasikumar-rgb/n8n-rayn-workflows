@@ -996,7 +996,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "diagnostic")
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
 
-    def test_thin_social_service_row_uses_serper_for_pdpa_track(self):
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_thin_social_service_row_uses_serper_for_ncss_track(self, mock_ncss_directory):
+        mock_ncss_directory.return_value = {"montfortcare": "Montfort Care"}
         original_fetch = o.fetch_serper_company_context
         original_key = os.environ.get("SERPER_API_KEY")
         os.environ["SERPER_API_KEY"] = "test-key"
@@ -1034,9 +1036,10 @@ class OutreachPlannerTests(unittest.TestCase):
             else:
                 os.environ["SERPER_API_KEY"] = original_key
 
-        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
         self.assertFalse(plan.classification["hia_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
+        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
 
     def test_email_display_company_name_strips_legal_suffix_and_location(self):
         self.assertEqual(
@@ -1127,7 +1130,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertFalse(plan.classification["hia_relevant"])
 
-    def test_cancer_prevention_charity_screening_without_clinic_stays_pdpa(self):
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_cancer_prevention_charity_screening_uses_verified_ncss_track(self, mock_ncss_directory):
+        mock_ncss_directory.return_value = {"365cancerprevention": "365 CANCER PREVENTION SOCIETY"}
         plan = o.plan_outreach(
             {
                 "Id": 304,
@@ -1142,12 +1147,20 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
-        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
+        self.assertEqual(plan.classification["primary_email_track"], "ncss_social_service")
+        self.assertEqual(plan.funding.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertEqual(plan.funding.funding_status, "verified_match")
+        self.assertEqual(o.build_noco_patch({"Id": 304}, plan)["email_track"], "ncss")
         self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
         self.assertFalse(plan.classification["hia_relevant"])
+        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
+        self.assertIn("80% co-funding", plan.emails["email_1"]["body"])
         self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
 
-    def test_social_service_counselling_without_hcsa_license_stays_pdpa(self):
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_social_service_counselling_without_hcsa_license_uses_ncss_not_hia(self, mock_ncss_directory):
+        mock_ncss_directory.return_value = {"365cancerprevention": "365 CANCER PREVENTION SOCIETY"}
         plan = o.plan_outreach(
             {
                 "Id": 305,
@@ -1162,7 +1175,7 @@ class OutreachPlannerTests(unittest.TestCase):
             }
         )
         self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
-        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
         self.assertFalse(plan.classification["hia_relevant"])
         self.assertEqual(plan.classification["hia_official_service_type"], "")
         self.assertEqual(plan.classification["regulatory_applicability"], ["PDPA"])
@@ -1759,7 +1772,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Care Volunteers Society",
                 "Charity social service organisation handling beneficiary, volunteer, donor and staff data.",
                 "Beneficiary records, volunteer data, donor contacts",
-                "care-organisation checklist",
+                "care-organisation safeguards checklist",
             ),
         ]
         for company, content, profile, asset in cases:
@@ -3485,9 +3498,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("PDPA", brief["pdpa_obligation_angle"])
         self.assertIn("backups", brief["data_systems_likely"])
         self.assertIn("incident", brief["data_systems_likely"])
-        self.assertEqual(brief["email_asset_offer"], "care-organisation checklist")
+        self.assertEqual(brief["email_asset_offer"], "care-organisation safeguards checklist")
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("Worth sending the care-organisation checklist?", plan.emails["email_1"]["body"])
+        self.assertIn("Worth sending the care-organisation safeguards checklist?", plan.emails["email_1"]["body"])
 
     def test_amaris_clinic_hia_fixture(self):
         plan = o.plan_outreach(

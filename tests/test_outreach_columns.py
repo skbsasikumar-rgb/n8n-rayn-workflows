@@ -268,6 +268,13 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("not_ready", options)
         self.assertIn("ready_for_review", options)
 
+    def test_ncss_track_options_match_planner_outputs(self):
+        self.assertIn("ncss_social_service", self.module.SELECT_OPTIONS["pressure_type"])
+        self.assertIn("ncss_social_service", self.module.SELECT_OPTIONS["manual_pressure_type"])
+        self.assertIn("ncss_social_service", self.module.SELECT_OPTIONS["primary_email_track"])
+        self.assertIn("ncss", self.module.SELECT_OPTIONS["email_track"])
+        self.assertIn("care_organisation_safeguards_checklist", self.module.SELECT_OPTIONS["value_asset_offer"])
+
     def test_official_hia_service_options_match_taxonomy(self):
         options = self.module.SELECT_OPTIONS["hia_official_service_type"]
         self.assertEqual(
