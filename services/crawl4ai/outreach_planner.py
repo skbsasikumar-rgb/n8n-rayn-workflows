@@ -10053,7 +10053,10 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
         copy_brief,
         emails,
     )
-    if not strict_generation_used:
+    strict_generation_attempted = isinstance(emails.get("llm_email_generation"), dict) and bool(
+        emails["llm_email_generation"].get("attempted")
+    )
+    if not strict_generation_used and not strict_generation_attempted:
         emails, rewrite_flags = maybe_rewrite_email_1_with_llm(row, classification, funding, copy_brief, emails)
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
     flags = list(dict.fromkeys(flags + rewrite_flags))
