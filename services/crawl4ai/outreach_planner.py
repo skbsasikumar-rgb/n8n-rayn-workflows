@@ -673,6 +673,10 @@ SPECIALIST_SERVICE_TERMS = (
     "anaesthesia",
     "spine pain",
     "injections",
+    "psych medicine",
+    "psychiatric medicine",
+    "psychiatry clinic",
+    "psychiatric clinic",
     "psychiatry",
     "psychiatrist",
     "ophthalmology",
@@ -2844,10 +2848,32 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neurology",
             "neurosurgery",
             "neuroscience",
+            "psych medicine",
+            "psychiatric medicine",
+            "psychiatry clinic",
+            "psychiatric clinic",
             "psychiatry",
             "psychiatrist",
         )
     )
+    psychiatry_specialist_signal = contains_any(
+        primary_text,
+        (
+            "psych medicine",
+            "psychiatric medicine",
+            "psychiatry clinic",
+            "psychiatric clinic",
+            "psychiatry",
+            "psychiatrist",
+        ),
+    )
+    if psychiatry_specialist_signal and contains_any(
+        primary_text,
+        ("clinic", "patient", "appointment", "consultation", "treatment", "medical doctor", "medical doctors", "psychiatrist"),
+    ):
+        primary_specialist = True
+        primary_gp = False
+        primary_allied = False
     weak_specialist_only = contains_any(primary_text, WEAK_SPECIALIST_HIA_TERMS) and not contains_any(
         primary_text,
         (
@@ -2921,6 +2947,10 @@ def infer_hia(row: dict[str, Any], text: str) -> dict[str, Any]:
             "neurology",
             "neurosurgery",
             "neuroscience",
+            "psych medicine",
+            "psychiatric medicine",
+            "psychiatry clinic",
+            "psychiatric clinic",
             "psychiatry",
             "psychiatrist",
         )
@@ -6711,6 +6741,7 @@ SPECIALIST_SERVICE_SUMMARIES = (
     (("endocrinology", "diabetes", "thyroid"), "endocrinology care"),
     (("orthopaedic", "orthopedic", "sports"), "orthopaedic / sports medicine"),
     (("urology", "robotic"), "urology care"),
+    (("psych medicine", "psychiatric medicine", "psychiatry", "psychiatrist"), "psychiatry / mental-health medical care"),
     (("brain", "spine", "nerve", "neurology", "neurosurgery"), "brain, spine and nerve care"),
     (("surgery", "surgeon", "surgical", "operation", "consent", "post-operative"), "surgical care"),
     (("specialist",), "specialist care"),
@@ -6732,6 +6763,8 @@ def specialist_subtype(text: str) -> str:
         return "urology"
     if any(term in text for term in ("dermatology", "dermatologist", "skin", "acne", "eczema", "mole", "laser")):
         return "dermatology"
+    if any(term in text for term in ("psych medicine", "psychiatric medicine", "psychiatry", "psychiatrist")):
+        return "psychiatry"
     if any(term in text[:700] for term in ("surgery", "surgeon", "surgical", "thoracic")):
         return "surgery"
     if any(term in text for term in ("cancer centre", "cancer center", "cancer care", "oncology", "radiation")):
@@ -6911,6 +6944,10 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
             "brain, spine and nerve",
         )
     )
+    psychiatry_profile_signal = contains_any(
+        primary_source_l,
+        ("psych medicine", "psychiatric medicine", "psychiatry clinic", "psychiatric clinic", "psychiatry", "psychiatrist"),
+    )
 
     if service_type == "diagnostic":
         guess = "diagnostic_lab"
@@ -6927,7 +6964,7 @@ def infer_clinic_profile(row: dict[str, Any], classification: dict[str, Any], te
     elif any(term in primary_source_l for term in ("holding company", "holdings", "public healthcare institutions", "healthcare institutions")):
         guess = "healthcare_group"
         add_evidence("healthcare holding or group terms")
-    elif any(term in primary_source_l for term in ("daycare", "day care", "elderly", "elders", "senior care")):
+    elif not psychiatry_profile_signal and any(term in primary_source_l for term in ("daycare", "day care", "elderly", "elders", "senior care")):
         guess = "elder_daycare"
         add_evidence("elder day-care or senior-care terms")
     elif service_type == "allied_health" and any(
@@ -7077,6 +7114,7 @@ def prospect_facing_profile_phrase(
             "endocrinology": "a specialist-led endocrinology clinic",
             "orthopaedic": "a specialist-led orthopaedic / sports medicine clinic",
             "neuroscience": "a specialist-led neuroscience provider",
+            "psychiatry": "a specialist-led clinic for psychiatry / mental-health medical care",
         }
         if subtype in subtype_phrases:
             return subtype_phrases[subtype]
@@ -7156,6 +7194,8 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
             return "endocrinology consultation notes, diabetes/thyroid care records, referrals, appointment details and vendor systems"
         if subtype == "orthopaedic":
             return "orthopaedic consultation notes, imaging/referral records, treatment plans, appointment details and vendor systems"
+        if subtype == "psychiatry":
+            return "psychiatric consultation notes, treatment records, appointment details and vendor systems"
         return "consultation notes, patient reports, treatment records, vendor systems"
     if profile_guess == "dental" or service_type == "dental":
         return "patient records, imaging files, appointment details, dental software"

@@ -261,6 +261,30 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("dermatology", body.lower())
         self.assertNotIn("skin and aesthetic", body.lower())
 
+    def test_hia_psych_medicine_uses_psychiatry_profile_not_gp_fallback(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Adelphi Psych Medicine Clinic",
+                "company_homepage_name": "Adelphi Psych Medicine Clinic",
+                "selected_contact_name": "John Bosco Lee",
+                "selected_contact_email": "dr.john@adelphipsych.sg",
+                "validated_email": "dr.john@adelphipsych.sg",
+                "email_validation_status": "sendable",
+                "website_content": (
+                    "Psych medicine clinic led by psychiatrists and medical doctors. "
+                    "The clinic manages psychiatric consultations, treatment records, appointments and patient records."
+                ),
+            },
+            programmes=[verified_program()],
+        )
+
+        body = plan.emails["email_1"]["body"]
+        self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
+        self.assertEqual(plan.automation_decision, "auto_send_eligible")
+        self.assertIn("psychiatric consultation notes", body.lower())
+        self.assertIn("Health Information Act (HIA)", body)
+        self.assertNotIn("For a GP clinic", body)
+
     def test_pdpa_genomic_email_uses_high_sensitivity_family_risk(self):
         plan = o.plan_outreach(
             {
