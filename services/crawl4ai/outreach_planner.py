@@ -250,7 +250,7 @@ Return strict JSON only. Do not add facts, claims, pricing, eligibility, locatio
 Rules:
 - Rewrite Email 1 and Email 2 only.
 - Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 lightly ties back to the earlier note.
-- Email 3 will carry the final close-loop SaaS/LMS point, so do not overload Email 2.
+- Email 3 will carry the final close-loop timing point, so do not overload Email 2.
 - Keep the same recipient addressing style from each deterministic email.
 - Keep the exact greeting implied by payload.recipient_greeting. Do not add, remove, or guess "Dr".
 - Keep every approved fact: company hook, problem, mechanism, CTA, asset, HIA/PDPA track, and support-route caution.
@@ -280,19 +280,17 @@ Email 2 rules:
 - Keep the same proper greeting from the deterministic email, for example "Hi Samuel," or "Hello team,".
 - Do not use first-name dash openings such as "Samuel - ".
 - Open by tying back to the earlier note, not by restarting the pitch.
-- For HIA tracks, do not question whether Cyber Essentials is right. State that the useful check clarifies the Cyber Essentials work needed for the HIA cyber/data-security side.
-- For non-HIA tracks, explain Cyber Essentials briefly as a practical cybersecurity baseline for access, backups, updates, malware protection and incident response, then say the useful check is whether that route fits.
-- For PDPA/DPO tracks, do not say Cyber Essentials is a structured approach to PDPA legal obligations, a PDPA compliance framework, or a replacement for PDPA. Say PDPA is the legal obligation, and Cyber Essentials helps structure the security-safeguards/evidence side.
+- Add exactly one new piece of information versus Email 1.
+- For HIA tracks, the new information is the 2-hour initial report to MOH once a cybersecurity incident or data breach is assessed as notifiable. Make clear this needs a tested incident plan, not good intentions.
+- For PDPA/DPO tracks, the new information is that PDPC scrutiny turns on safeguards documented before a breach, complaint or audit, not evidence written afterwards.
+- Keep Cyber Essentials secondary; Email 2 is about the risk that makes the checklist worth sending, not another funding or route pitch.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
-- Use 4 or 5 short paragraphs separated by blank lines.
-- Keep each non-p.s. paragraph short. Do not merge the useful check, HIA route/scope, and sizing/support line into one long paragraph.
-- Keep the CTA in its own short paragraph before the p.s.
-- Keep the main body to 3 or 4 short paragraphs before the p.s.
-- Keep the p.s. exactly as the payload field email_2_required_ps.
-- Treat email_2_required_ps as immutable: copy it once, exactly, as the last paragraph. Do not paraphrase it, split it, add another p.s., or move it earlier.
+- Use 3 or 4 short paragraphs separated by blank lines.
+- Keep the CTA in its own short paragraph.
+- Do not add a p.s. unless the deterministic email already has one.
 - For PDPA/DPO/non-HIA tracks, do not use a price-focused p.s.; do not mention pricing, cost, endpoint count, funding, urgency, or "priced near the lower end".
-- Prefer 65-90 words including the p.s. Hard limit: Email 2 under 95 words.
+- Prefer 50-80 words. Hard limit: Email 2 under 95 words.
 - If you cannot keep Email 2 under 95 words, stay close to the deterministic Email 2 structure and cut extra explanation.
 
 Return:
@@ -1600,7 +1598,7 @@ def value_fallback_email_3(row: dict[str, Any], emails: dict[str, Any], asset: s
 
 
 def email_3_mode_for(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> str:
-    return "funding" if funding_claim_send_safe(funding, copy_brief, classification) else "value_fallback"
+    return "risk_followup" if funding_claim_send_safe(funding, copy_brief, classification) else "value_fallback"
 
 
 def funding_followup_mode_for(funding: FundingMatch, copy_brief: dict[str, Any], classification: dict[str, Any]) -> str:
@@ -2083,6 +2081,19 @@ def hia_window_label(classification: dict[str, Any]) -> str:
     if classification.get("hia_deadline_claim_safe") and batch and batch != "unknown":
         return batch.replace(" - ", " ")
     return "HIA timelines starting from 2027"
+
+
+def hia_deadline_date_label(classification: dict[str, Any]) -> str:
+    if not classification.get("hia_deadline_claim_safe"):
+        return ""
+    batch = compact(classification.get("hia_timeline_batch_guess")).lower()
+    if "sep 2027" in batch:
+        return "September 2027"
+    if "sep 2028" in batch:
+        return "September 2028"
+    if "mar 2030" in batch:
+        return "March 2030"
+    return ""
 
 
 def hia_problem_prefix(classification: dict[str, Any]) -> str:
@@ -5190,9 +5201,7 @@ EMAIL_2_VALUE_PS = EMAIL_2_HIA_VALUE_PS
 
 
 def email_2_required_ps(classification: dict[str, Any] | None = None) -> str:
-    if classification and classification.get("pressure_type") == "hia_regulatory":
-        return EMAIL_2_HIA_VALUE_PS
-    return EMAIL_2_PDPA_VALUE_PS
+    return ""
 
 EMAIL_3_PLATFORM_LINE = (
     "If it becomes useful later, the SaaS/LMS platform helps teams get certified, "
@@ -5241,24 +5250,19 @@ def build_hia_email_2_placeholders(
     pricing_mode: str,
     funding_safe: bool,
 ) -> dict[str, Any]:
-    route_line = slots.get("route_line") or (
-        "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side."
-    )
-    sizing_line = email_2_sizing_line(pricing_mode)
-    if funding_safe and slots.get("conditional_funding"):
-        sizing_line = compact(f"{sizing_line} {slots['conditional_funding']}")
     placeholders = {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "email_2_tieback_line": sentence_after_standalone_greeting(
-            slots.get("opening_line") or "just tying this back to my earlier note."
+            slots.get("opening_line") or "following up on the HIA readiness map from my earlier note."
         ),
         "email_2_check_line": slots.get("check_line")
-        or "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles.",
-        "email_2_route_line": compact(f"{route_line} {sizing_line}"),
-        "email_2_cta_line": slots.get("cta") or "Worth sending the short map?",
-        "email_2_ps_line": EMAIL_2_HIA_VALUE_PS,
+        or "The rule that catches clinics off guard is the initial report to MOH within 2 hours once an incident is assessed as notifiable.",
+        "email_2_route_line": slots.get("route_line")
+        or "That needs a tested incident plan: who checks access evidence, who contacts vendors, and who reports before the clock starts.",
+        "email_2_cta_line": slots.get("cta") or "Can I send the HIA readiness checklist?",
+        "email_2_ps_line": "",
     }
     return placeholders
 
@@ -5271,21 +5275,25 @@ def build_funding_email_2_placeholders(
     caveat: str,
     ps: str | None = None,
 ) -> dict[str, Any]:
-    claim_line = compact(f"{funding_line}{caveat}")
-    route_line = (
-        f"Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response. {claim_line}"
-        if claim_line
-        else "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
-    )
+    if classification.get("pressure_type") == "hia_regulatory":
+        check_line = "The rule that catches clinics off guard is the initial report to MOH within 2 hours once an incident is assessed as notifiable."
+        route_line = "That needs a tested incident plan: who checks access evidence, who contacts vendors, and who reports before the clock starts."
+        cta = "Can I send the HIA readiness checklist?"
+    else:
+        data_type = compact(copy_brief.get("sensitive_data_examples")) or "this kind of personal data"
+        data_type = data_type.rstrip(" .;,:")
+        check_line = "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards."
+        route_line = f"For {data_type}, that means access, backup and incident evidence needs to exist before anyone asks for it."
+        cta = "Worth sending the personal data safeguards checklist?"
     return {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
-        "email_2_tieback_line": "Just tying this back to my earlier note.",
-        "email_2_check_line": route_line,
-        "email_2_route_line": "The useful check is whether that route fits, and what evidence or team training needs to stay current.",
-        "email_2_cta_line": "Worth sending the short map?",
-        "email_2_ps_line": ps or email_2_required_ps(classification),
+        "email_2_tieback_line": "Following up on the same point.",
+        "email_2_check_line": check_line,
+        "email_2_route_line": route_line,
+        "email_2_cta_line": cta,
+        "email_2_ps_line": ps if ps is not None else email_2_required_ps(classification),
     }
 
 
@@ -5297,6 +5305,22 @@ def build_value_fallback_email_2_placeholders(
     slots: dict[str, str],
     ps: str | None = None,
 ) -> dict[str, Any]:
+    if classification.get("pressure_type") == "pdpa_safeguards" or classification.get("campaign_track") == "dpo_evidence":
+        data_type = compact(copy_brief.get("sensitive_data_examples")) or compact(classification.get("data_type_signal")).replace("_", " ")
+        data_type = data_type.rstrip(" .;,:")
+        data_type = data_type or "this kind of personal data"
+        default_second = (
+            "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before "
+            "the incident, not written afterwards."
+        )
+        default_fit = (
+            f"For {data_type}, that means access, backup and incident evidence needs to exist before anyone asks for it."
+        )
+        default_cta = "Worth sending the personal data safeguards checklist?"
+    else:
+        default_second = "The useful risk is whether access, backup and incident evidence exists before anyone asks for it."
+        default_fit = f"If the {asset_name} helps map that quickly, I can send it over."
+        default_cta = "Worth sending the checklist?"
     return {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
@@ -5304,12 +5328,10 @@ def build_value_fallback_email_2_placeholders(
         "email_2_tieback_line": sentence_after_standalone_greeting(
             slots.get("opening_line") or "just tying this back to my earlier note."
         ),
-        "email_2_check_line": slots.get("second_line")
-        or "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response.",
-        "email_2_route_line": slots.get("fit_line")
-        or f"The useful check is whether that support route fits the {asset_name}, and what evidence or team training needs to stay current.",
-        "email_2_cta_line": slots.get("cta") or "Worth sending the short map?",
-        "email_2_ps_line": ps or email_2_required_ps(classification),
+        "email_2_check_line": slots.get("second_line") or default_second,
+        "email_2_route_line": slots.get("fit_line") or default_fit,
+        "email_2_cta_line": slots.get("cta") or default_cta,
+        "email_2_ps_line": ps if ps is not None else email_2_required_ps(classification),
     }
 
 
@@ -5321,38 +5343,33 @@ def build_email_3_placeholders(
 ) -> dict[str, Any]:
     if classification.get("pressure_type") == "hia_regulatory":
         route_line = slots.get("route_line") or (
-            "For HIA, the Cyber Essentials work still comes back to systems, evidence and team training on the HIA cyber/data-security side."
+            "Your HIA batch deadline is closer than it looks; most clinics need 6-8 weeks to pull evidence, test the incident plan and close gaps."
         )
     else:
-        route_line = slots.get("route_line") or "If Cyber Essentials is not the right next step now, no worries."
+        route_line = slots.get("route_line") or "There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight."
+    value_line = slots["value_line"] if "value_line" in slots else EMAIL_3_PLATFORM_LINE
     return {
         "email_3_greeting_line": email_greeting(row),
         "email_3_track": email_track_placeholder(classification),
         "email_3_mode": compact(copy_brief.get("email_3_mode") or copy_brief.get("email_2_mode")),
         "email_3_close_loop_line": sentence_after_standalone_greeting(slots.get("close_line") or "closing the loop here."),
         "email_3_route_line": route_line,
-        "email_3_platform_line": slots.get("value_line") or EMAIL_3_PLATFORM_LINE,
+        "email_3_platform_line": value_line,
         "email_3_cta_line": slots.get("cta") or "Worth keeping this for later?",
     }
 
 
 def funding_email_2_body_fixed(prefix: str, funding_line: str, caveat: str, ps: str | None = None) -> str:
-    ps = ps or EMAIL_2_HIA_VALUE_PS
-    first_line = followup_sentence(prefix, "just tying this back to my earlier note.")
-    claim_line = compact(f"{funding_line}{caveat}")
+    first_line = followup_sentence(prefix, "following up on the same safeguards-evidence point.")
     second_line = (
-        f"Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response. {claim_line}"
-        if claim_line
-        else "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
+        "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented "
+        "before the incident, not written afterwards."
     )
-    fit_line = "The useful check is whether that route fits, and what evidence or team training needs to stay current."
-    return (
-        f"{first_line}\n\n"
-        f"{second_line}\n\n"
-        f"{fit_line}\n\n"
-        "Worth sending the short map?\n\n"
-        f"{ps}"
-    )
+    fit_line = "That means access, backup and incident evidence needs to exist before anyone asks for it."
+    parts = [first_line, second_line, fit_line, "Worth sending the personal data safeguards checklist?"]
+    if ps:
+        parts.append(ps)
+    return "\n\n".join(part for part in parts if compact(part))
 
 
 def hia_pricing_email_2_body(
@@ -5364,54 +5381,35 @@ def hia_pricing_email_2_body(
     slots = slots or {}
     first_line = followup_sentence(
         prefix,
-        slots.get("opening_line") or "just tying this back to my earlier note.",
+        slots.get("opening_line") or "following up on the HIA readiness map from my earlier note.",
     )
     check_line = slots.get("check_line") or (
-        "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles."
+        "The rule that catches clinics off guard is the initial report to MOH within 2 hours once an incident is assessed as notifiable."
     )
-    if pricing_mode == "small_clinic_starting_price":
-        sizing_line = "For smaller clinics, support still depends on route, users and endpoint count."
-    elif pricing_mode == "group_or_larger_sizing_needed":
-        sizing_line = "For group or larger setups, support still depends on route, users and endpoint count."
-    else:
-        sizing_line = "For smaller clinics or larger setups, support still depends on route, users and endpoint count."
     scope_line = slots.get("route_line") or (
-        "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side."
+        "That needs a tested incident plan: who checks access evidence, who contacts vendors, and who reports before the clock starts."
     )
-    scope_line = compact(f"{scope_line} {sizing_line}")
-    if funding_safe and slots.get("conditional_funding"):
-        scope_line = compact(f"{scope_line} {slots['conditional_funding']}")
-    cta = slots.get("cta") or "Worth sending the short map?"
-    return (
-        f"{first_line}\n\n"
-        f"{check_line}\n\n"
-        f"{scope_line}\n\n"
-        f"{cta}\n\n"
-        f"{EMAIL_2_HIA_VALUE_PS}"
-    )
+    cta = slots.get("cta") or "Can I send the HIA readiness checklist?"
+    return "\n\n".join(part for part in (first_line, check_line, scope_line, cta) if compact(part))
 
 
 def value_fallback_body_fixed(prefix: str, asset_name: str, slots: dict[str, str] | None = None, ps: str | None = None) -> str:
     slots = slots or {}
-    ps = ps or EMAIL_2_PDPA_VALUE_PS
     first_line = followup_sentence(
         prefix,
         slots.get("opening_line") or "just tying this back to my earlier note.",
     )
     second_line = slots.get("second_line") or (
-        "Cyber Essentials is a practical baseline for access, backups, updates, malware protection and incident response."
+        "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards."
     )
     fit_line = slots.get("fit_line") or (
-        f"The useful check is whether that support route fits the {asset_name}, and what evidence or team training needs to stay current."
+        f"If the {asset_name} helps map access, backup and incident evidence before anyone asks for it, I can send it over."
     )
-    cta = slots.get("cta") or "Worth sending the short map?"
-    return (
-        f"{first_line}\n\n"
-        f"{second_line}\n\n"
-        f"{fit_line}\n\n"
-        f"{cta}\n\n"
-        f"{ps}"
-    )
+    cta = slots.get("cta") or "Worth sending the personal data safeguards checklist?"
+    parts = [first_line, second_line, fit_line, cta]
+    if ps:
+        parts.append(ps)
+    return "\n\n".join(part for part in parts if compact(part))
 
 
 def diagnostic_email_3_body_fixed(diagnostic: str, slots: dict[str, str] | None = None, prefix: str = "") -> str:
@@ -5433,13 +5431,13 @@ def email_3_close_loop_body_fixed(
     first_line = followup_sentence(prefix, slots.get("close_line") or "closing the loop here.")
     if classification.get("pressure_type") == "hia_regulatory":
         route_line = slots.get("route_line") or (
-            "For HIA, the Cyber Essentials work still comes back to systems, evidence and team training on the HIA cyber/data-security side."
+            "Your HIA batch deadline is closer than it looks; most clinics need 6-8 weeks to pull evidence, test the incident plan and close gaps."
         )
     else:
-        route_line = slots.get("route_line") or "If Cyber Essentials is not the right next step now, no worries."
-    value_line = slots.get("value_line") or EMAIL_3_PLATFORM_LINE
+        route_line = slots.get("route_line") or "There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight."
+    value_line = slots["value_line"] if "value_line" in slots else EMAIL_3_PLATFORM_LINE
     cta = slots.get("cta") or "Worth keeping this for later?"
-    return f"{first_line}\n\n{route_line}\n\n{value_line}\n\n{cta}"
+    return "\n\n".join(part for part in (first_line, route_line, value_line, cta) if compact(part))
 
 
 def close_loop_body_fixed(prefix: str, close_loop_line: str) -> str:
@@ -5548,8 +5546,8 @@ def hia_email_2_sentence_slots(
             2,
             "opening_line",
             {
-                "tie_back": "just tying this back to the HIA readiness map.",
-                "link_back": "linking this back to the HIA readiness map.",
+                "tie_back": "following up on the HIA readiness map from my earlier note.",
+                "link_back": "linking this back to the HIA readiness map from my earlier note.",
                 "same_hia_point": "following up on the same HIA readiness map.",
             },
         ),
@@ -5559,13 +5557,13 @@ def hia_email_2_sentence_slots(
             metadata,
             "email_2",
             2,
-            "check_line",
-            {
-                "patient_data_map": "The useful check is whether patient data can be mapped across systems, vendors, backups, access owners and incident roles.",
-                "records_map": "The useful check is whether patient records, vendor systems, backups, access owners and incident roles can be mapped cleanly.",
-                "evidence_map": "The useful check is whether patient-data evidence is clear across systems, vendors, backups, access owners and incident roles.",
-            },
-        ),
+                "check_line",
+                {
+                    "two_hour_report": "The rule that catches clinics off guard is the initial report to MOH within 2 hours once an incident is assessed as notifiable.",
+                    "moh_clock": "The uncomfortable rule is the 2-hour MOH reporting clock once a cybersecurity incident or data breach is assessed as notifiable.",
+                    "reporting_window": "The specific HIA risk is the 2-hour initial report to MOH; the clock starts once the incident is assessed as notifiable.",
+                },
+            ),
         "route_line": choose_sentence_slot(
             row,
             classification,
@@ -5574,9 +5572,9 @@ def hia_email_2_sentence_slots(
             2,
             "route_line",
             {
-                "hia_cyber_data_route": "That clarifies the Cyber Essentials work needed on the HIA cyber/data-security side.",
-                "hia_side_scope": "That keeps Cyber Essentials tied to the HIA cyber/data-security side, not a generic checklist.",
-                "hia_evidence_route": "That is the practical route into Cyber Essentials for the HIA cyber/data-security side.",
+                "tested_plan": "That needs a tested incident plan: who checks access evidence, who contacts vendors, and who reports before the clock starts.",
+                "not_intentions": "That is not a good-intentions exercise; roles, vendor contacts, access logs and escalation steps need to be tested first.",
+                "before_clock": "That only works if access evidence, vendor escalation and reporting roles are clear before the clock starts.",
             },
         ),
         "sizing_line": choose_sentence_slot(
@@ -5681,9 +5679,9 @@ def hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "short_map": "Worth sending the short map?",
-                "send_short_map": "Should I send the short map?",
-                "hia_route": "Worth checking the HIA route?",
+                "short_map": "Can I send the HIA readiness checklist?",
+                "send_short_map": "Should I send the HIA readiness checklist?",
+                "hia_route": "Worth sending the HIA readiness checklist?",
             },
         ),
     }
@@ -5709,13 +5707,21 @@ def non_hia_email_2_sentence_slots(
     classification: dict[str, Any],
     metadata: dict[str, dict[str, str]],
     asset_name: str,
+    copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, str]:
+    copy_brief = copy_brief or {}
     track = email_variant_track(classification)
     company = email_display_company_name(row)
+    data_type = compact(copy_brief.get("sensitive_data_examples")) or compact(classification.get("data_type_signal")).replace("_", " ")
+    data_type = data_type.rstrip(" .;,:")
+    if classification.get("entity_type_guess") in {"npo", "charity", "social_service"} and "beneficiar" in lower_blob(row):
+        data_type = "beneficiary records"
+    if data_type.lower() in {"", "unknown", "personal data"}:
+        data_type = "this kind of personal data"
     opening_options = {
-        "tie_back": "just tying this back to my earlier note.",
-        "link_back": "linking this back to my earlier note.",
-        "same_thread": "following up on the same security-evidence point.",
+        "tie_back": "following up on the PDPA point from my earlier note.",
+        "link_back": "linking this back to the PDPA point from my earlier note.",
+        "same_thread": "following up on the same safeguards-evidence point.",
     }
     if track == "customer_trust":
         baseline_options = {
@@ -5730,32 +5736,32 @@ def non_hia_email_2_sentence_slots(
         }
     elif track == "dpo_evidence":
         baseline_options = {
-            "pdpa_legal_security_side": "PDPA is the legal obligation; Cyber Essentials gives the security-safeguards side a practical structure: access, backups, updates, malware protection and incident response.",
-            "pdpa_not_replaced": "Cyber Essentials does not replace PDPA; it gives the protection side a practical evidence structure for access, backups, updates, malware protection and incident response.",
-            "pdpa_evidence_route": "For PDPA, the obligation is legal; Cyber Essentials helps organise safeguard evidence around access, backups, updates, malware protection and incident response.",
+            "pdpa_before_breach": "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards.",
+            "pdpc_before_after": "The uncomfortable PDPA point is the before-and-after distinction: safeguard evidence needs to exist before a breach, complaint or audit.",
+            "documented_before": "PDPC scrutiny is harder when safeguards only get documented after the incident; the evidence needs to pre-date the problem.",
         }
         fit_options = {
-            "pdpa_evidence": f"For {company}, the useful check is whether that support route fits the {asset_name} and team training that need to stay current.",
-            "evidence_map": f"For {company}, the useful check is what security-safeguard evidence, support route and team training would need to stay current.",
-            "route_fit": f"For {company}, the useful check is whether the support route fits the evidence already sitting across teams and tools.",
+            "pdpa_evidence": f"For {data_type}, that means access, backup and incident evidence needs to exist before anyone asks for it.",
+            "evidence_map": f"For {data_type}, the checklist is useful only if it maps what proof already exists and what is missing.",
+            "route_fit": f"For {data_type}, that distinction matters because the evidence has to pre-date the problem.",
         }
     else:
         if classification.get("pressure_type") == "pdpa_safeguards":
             baseline_options = {
-                "pdpa_legal_security_side": "PDPA is the legal obligation; Cyber Essentials gives the security-safeguards side a practical structure: access, backups, updates, malware protection and incident response.",
-                "pdpa_not_replaced": "Cyber Essentials does not replace PDPA; it gives the protection side a practical evidence structure for access, backups, updates, malware protection and incident response.",
-                "pdpa_evidence_route": "For PDPA, the obligation is legal; Cyber Essentials helps organise safeguard evidence around access, backups, updates, malware protection and incident response.",
+                "pdpa_before_breach": "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards.",
+                "pdpc_before_after": "The uncomfortable PDPA point is the before-and-after distinction: safeguard evidence needs to exist before a breach, complaint or audit.",
+                "documented_before": "PDPC scrutiny is harder when safeguards only get documented after the incident; the evidence needs to pre-date the problem.",
             }
         else:
             baseline_options = {
-                "practical_baseline": "Cyber Essentials is a practical cybersecurity baseline for access, backups, updates, malware protection and incident response.",
-                "baseline_controls": "Cyber Essentials keeps the cyber baseline practical: access, backups, updates, malware protection and incident response.",
-                "simple_baseline": "Cyber Essentials is a simple cybersecurity baseline for access control, backups, updates, malware protection and incident response.",
+                "practical_baseline": "The useful risk is whether access, backup and incident evidence exists before anyone asks for it.",
+                "baseline_controls": "The uncomfortable part is having access, backup and incident evidence ready before a complaint or audit.",
+                "simple_baseline": "The practical check is whether safeguard evidence already exists before there is pressure to produce it.",
             }
         fit_options = {
-            "general_fit": f"For {company}, the useful check is whether that support route fits the {asset_name}, and what evidence or team training would need to stay current.",
-            "proof_and_training": f"For {company}, the useful check is what proof, support route and team training would need to stay current.",
-            "route_scope": f"For {company}, the useful check is whether the support route fits the {asset_name} and existing evidence.",
+            "general_fit": f"For {data_type}, that means access, backup and incident evidence needs to exist before anyone asks for it.",
+            "proof_and_training": f"For {data_type}, the checklist is useful only if it maps what proof already exists and what is missing.",
+            "route_scope": f"For {data_type}, that distinction matters because the evidence has to pre-date the problem.",
         }
     return {
         "opening_line": choose_sentence_slot(row, classification, metadata, "email_2", 2, "opening_line", opening_options),
@@ -5785,9 +5791,9 @@ def non_hia_email_2_sentence_slots(
             2,
             "cta",
             {
-                "short_map": "Worth sending the short map?",
-                "send_short_map": "Should I send the short map?",
-                "route_scope": "Worth checking the route and scope?",
+                "short_map": "Worth sending the personal data safeguards checklist?",
+                "send_short_map": "Should I send the personal data safeguards checklist?",
+                "route_scope": "Worth sending the safeguards checklist?",
             },
         ),
     }
@@ -5805,6 +5811,7 @@ def email_3_sentence_slots(
     records_text = compact(records) or "patient-data evidence"
     asset_name = compact(asset) or "checklist"
     if classification.get("pressure_type") == "hia_regulatory":
+        deadline = hia_deadline_date_label(classification) or "the listed HIA deadline"
         return {
             "close_line": choose_sentence_slot(
                 row,
@@ -5815,8 +5822,8 @@ def email_3_sentence_slots(
                 "close_line",
                 {
                     "closing_loop": "closing the loop here.",
-                    "last_note": "last note from me on this.",
-                    "leave_it_here": "I will leave this here.",
+                    "last_note": "last note from me on HIA timing.",
+                    "leave_it_here": "I will leave this here on HIA timing.",
                 },
             ),
             "route_line": choose_sentence_slot(
@@ -5827,9 +5834,9 @@ def email_3_sentence_slots(
                 3,
                 "route_line",
                 {
-                    "hia_systems_training": f"For HIA, the Cyber Essentials work still comes back to {records_text}, backups, incidents, evidence and team training on the HIA cyber/data-security side.",
-                    "hia_not_one_off": f"For HIA, the Cyber Essentials route is not just a certificate; {records_text}, backups, incidents and team training need to stay current.",
-                    "hia_ongoing": f"The HIA cyber/data-security side still needs {records_text}, backups, incidents, evidence and team training to be kept current after certification.",
+                    "deadline_window": f"Your HIA batch deadline is {deadline}. For {records_text}, most clinics need 6-8 weeks to pull access evidence, check backups, test how incidents are reported, and close gaps.",
+                    "six_week_window": f"Your HIA batch deadline is {deadline}. For {records_text}, even focused clinics usually need 6-8 weeks to get access evidence, backups and incident steps ready.",
+                    "timing_note": f"Your HIA batch deadline is {deadline}. For {records_text}, most clinics still need 6-8 weeks for evidence cleanup, checks on backups and testing how incidents are handled.",
                 },
             ),
             "value_line": choose_sentence_slot(
@@ -5840,9 +5847,9 @@ def email_3_sentence_slots(
                 3,
                 "value_line",
                 {
-                    "platform_core": EMAIL_3_PLATFORM_LINE,
-                    "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: get certified, stay certified, and keep internal procedures/training in one place.",
-                    "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform helps teams get certified, stay certified, and keep procedures/training in one place.",
+                    "platform_core": "",
+                    "ongoing_platform": "",
+                    "beyond_prep": "",
                 },
             ),
             "cta": choose_sentence_slot(
@@ -5853,35 +5860,41 @@ def email_3_sentence_slots(
                 3,
                 "cta",
                 {
-                    "keep_later": "Worth keeping this for later?",
-                    "leave_with_you": "Should I leave this with you?",
-                    "useful_later": "Useful to keep on file?",
+                    "keep_later": "Should I leave the HIA readiness checklist with you, or close the loop?",
+                    "leave_with_you": "Should I leave the HIA readiness checklist with you, or close the loop?",
+                    "useful_later": "Worth keeping the HIA readiness checklist on file?",
                 },
             ),
         }
+    data_type = compact(classification.get("data_type_signal")).replace("_", " ") or records_text
+    data_type = data_type.rstrip(" .;,:")
+    if classification.get("entity_type_guess") in {"npo", "charity", "social_service"} and "beneficiar" in lower_blob(row):
+        data_type = "beneficiary records"
+    if data_type.lower() in {"unknown", "personal data"}:
+        data_type = "this kind of personal data"
     if track == "customer_trust":
         route_options = {
-            "common_question": "If the timing is not right now, no worries; the same common customer security question still comes back to evidence and team training.",
-            "customer_reviews": "If the route is not a fit right now, no worries; each common customer security question still comes back to evidence and training.",
-            "security_proof": "If that route is not the right next step now, no worries; a common customer security question still needs evidence and training to stay current.",
+            "common_question": f"There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight. For {data_type}, that risk is real.",
+            "customer_reviews": f"No fixed PDPA date forces the issue, but a breach, complaint or audit can change the priority overnight. For {data_type}, that risk is real.",
+            "security_proof": f"If the timing is not right now, no worries; a breach, complaint or audit can still make this urgent overnight for {data_type}.",
         }
     elif classification.get("entity_type_guess") in {"npo", "charity", "social_service"}:
         route_options = {
-            "beneficiary_data": f"If the route is not a fit right now, no worries; the {asset_name} still helps keep beneficiary, volunteer and staff data evidence clear.",
-            "community_records": f"If the timing is not right now, no worries; the {asset_name} can still help map beneficiary and staff evidence later.",
-            "resident_data": f"If that route is not the right next step now, no worries; beneficiary and resident data evidence still needs to stay current.",
+            "beneficiary_data": f"There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight. For {data_type}, that risk is real.",
+            "community_records": f"No fixed PDPA date forces the issue, but a complaint, audit or breach can change the priority overnight. For {data_type}, that risk is real.",
+            "resident_data": f"For {data_type}, there is no fixed PDPA deadline; a breach or complaint can make the evidence gap urgent overnight.",
         }
     elif track == "dpo_evidence":
         route_options = {
-            "safeguards_evidence": f"If the route is not a fit right now, no worries; the {asset_name} still helps keep safeguard evidence and training clear.",
-            "pdpa_proof": f"If the timing is not right now, no worries; the {asset_name} is still a practical way to map evidence and training.",
-            "route_not_fit": f"If Cyber Essentials is not the right next step now, no worries; the {asset_name} can still keep security evidence tidy.",
+            "safeguards_evidence": f"For {data_type}, there is no fixed PDPA deadline; a breach, complaint or audit can make the safeguard evidence urgent overnight.",
+            "pdpa_proof": f"No fixed PDPA date forces the issue, but a breach, complaint or audit can make this urgent overnight. For {data_type}, that risk is real.",
+            "route_not_fit": f"There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight. For {data_type}, that risk is real.",
         }
     else:
         route_options = {
-            "not_right_now": f"If Cyber Essentials is not the right next step now, no worries; the {asset_name} can still help later.",
-            "route_not_fit": f"If the route is not a fit right now, no worries; the {asset_name} is still a useful reference.",
-            "timing_not_right": f"If the timing is not right now, no worries; the {asset_name} can stay as a future reference.",
+            "not_right_now": f"For {data_type}, there is no fixed PDPA deadline; a breach, complaint or audit can make the safeguard evidence urgent overnight.",
+            "route_not_fit": f"No fixed PDPA date forces the issue, but a breach, complaint or audit can change the priority overnight. For {data_type}, that risk is real.",
+            "timing_not_right": f"There is no fixed PDPA deadline, but a breach, complaint or audit can make this urgent overnight. For {data_type}, that risk is real.",
         }
     return {
         "close_line": choose_sentence_slot(
@@ -5914,9 +5927,9 @@ def email_3_sentence_slots(
             3,
             "value_line",
             {
-                "platform_core": EMAIL_3_PLATFORM_LINE,
-                "ongoing_platform": "The SaaS/LMS platform is there for the ongoing part: get certified, stay certified, and keep internal procedures/training in one place.",
-                "beyond_prep": "Beyond evidence prep, the SaaS/LMS platform helps teams get certified, stay certified, and keep procedures/training in one place.",
+                "platform_core": "",
+                "ongoing_platform": "",
+                "beyond_prep": "",
             },
         ),
         "cta": choose_sentence_slot(
@@ -5926,13 +5939,13 @@ def email_3_sentence_slots(
             "email_3",
             3,
             "cta",
-            {
-                "keep_later": "Worth keeping this for later?",
-                "leave_with_you": "Should I leave this with you?",
-                "useful_later": "Useful to keep on file?",
-            },
-        ),
-    }
+                {
+                    "keep_later": "Should I leave the personal-data safeguards checklist with you, or close the loop?",
+                    "leave_with_you": "Should I leave the personal-data safeguards checklist with you, or close the loop?",
+                    "useful_later": "Worth keeping the personal-data safeguards checklist on file?",
+                },
+            ),
+        }
 
 
 def email_4_sentence_slots(row: dict[str, Any], classification: dict[str, Any], metadata: dict[str, dict[str, str]], asset: str) -> dict[str, str]:
@@ -7694,9 +7707,9 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "proof_line": proof_line,
         "cta_line": cta_line,
         "human_email_style": "short_plain_low_cta",
-        "email_2_mode": "funding" if funding_safe else "value_fallback",
-        "funding_followup_mode": "funding" if funding_safe else "value_fallback",
-        "email_3_mode": "funding" if funding_safe else "value_fallback",
+        "email_2_mode": "risk_followup" if funding_safe else "value_fallback",
+        "funding_followup_mode": "risk_followup" if funding_safe else "value_fallback",
+        "email_3_mode": "risk_followup" if funding_safe else "value_fallback",
         "email_personalisation_signal": signal,
         "email_personalisation_quote": compact(row.get("company_homepage_name") or row.get("website_content"))[:220],
         "email_personalisation_source_url": source_url,
@@ -7841,8 +7854,8 @@ def generate_email_sequence(
         email3_placeholders = build_email_3_placeholders(row, classification, copy_brief, email3_slots)
         copy_brief["email_3_placeholders"] = email3_placeholders
         email3_body = email_3_body_from_placeholders(email3_placeholders)
-        if classification["pressure_type"] == "hia_regulatory" and compact(copy_brief.get("pricing_email_2_mode")) != "no_price_claim":
-            hia_pricing_subjects = {"A": "HIA funding route", "B": "support route", "C": "cost check"}
+        if classification["pressure_type"] == "hia_regulatory":
+            hia_pricing_subjects = {"A": "2-hour MOH reporting", "B": "incident reporting plan", "C": "HIA reporting clock"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
             email2_subject = hia_pricing_subjects[email2_subject_key]
             email2_subject_options = list(hia_pricing_subjects.values())
@@ -7861,28 +7874,12 @@ def generate_email_sequence(
                 funding_claim_send_safe(funding, copy_brief, classification),
             )
             email2_body = email_2_body_from_placeholders(email2_placeholders)
-        elif funding_claim_send_safe(funding, copy_brief, classification):
-            subject_key, email2_subject, email2_subject_options = chosen_subject_variant(row, classification, copy_brief, 2, "Cyber Essentials funding")
-            funding_line = funding.funding_claim_line
-            if classification["pressure_type"] == "hia_regulatory" and subject_key == "A":
-                email2_subject = "HIA / cyber funding"
-                email2_subject_options = list(dict.fromkeys([email2_subject, *email2_subject_options]))
-            caveat = "" if "subject to programme confirmation" in funding_line.lower() else "\n\nThis is subject to programme confirmation."
-            email2_placeholders = build_funding_email_2_placeholders(
-                row,
-                classification,
-                copy_brief,
-                funding_line,
-                caveat,
-                email_2_required_ps(classification),
-            )
-            email2_body = email_2_body_from_placeholders(email2_placeholders)
         else:
-            fallback_subjects = {"A": "support route", "B": "funding fit", "C": "cost check"}
+            fallback_subjects = {"A": "PDPA evidence timing", "B": "before the breach", "C": "safeguards evidence"}
             subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
             email2_subject = fallback_subjects[subject_key]
             email2_subject_options = list(fallback_subjects.values())
-            email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset)
+            email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset, copy_brief)
             email2_placeholders = build_value_fallback_email_2_placeholders(
                 row,
                 classification,
@@ -8109,14 +8106,16 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_paragraph_shape")
     if any(len(part.split()) > 42 for part in paragraphs[:-1]):
         flags.append("llm_email_2_rewrite_long_paragraph")
-    if required_ps not in body:
+    if required_ps and required_ps not in body:
         flags.append("llm_email_2_rewrite_missing_value_ps")
     ps_lines = [compact(line) for line in body.splitlines() if compact(line).lower().startswith("p.s.")]
     if re.search(r"\bP\.S\.\s*\d", body):
         flags.append("llm_email_2_rewrite_broken_ps")
-    if body.count(required_ps) != 1 or ps_lines != [required_ps]:
+    if required_ps and (body.count(required_ps) != 1 or ps_lines != [required_ps]):
         flags.append("llm_email_2_rewrite_changed_value_ps")
-    if classification.get("pressure_type") != "hia_regulatory" and EMAIL_2_HIA_VALUE_PS in body:
+    if not required_ps and ps_lines:
+        flags.append("llm_email_2_rewrite_unexpected_ps")
+    if classification.get("pressure_type") != "hia_regulatory" and EMAIL_2_HIA_VALUE_PS and EMAIL_2_HIA_VALUE_PS in body:
         flags.append("llm_email_2_rewrite_wrong_track_ps")
     if "from the site" in body_l:
         flags.append("llm_email_2_rewrite_from_site")
@@ -8455,28 +8454,7 @@ def enforce_funding_claim_email(
     classification: dict[str, Any] | None = None,
     copy_brief: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if classification is not None and copy_brief is not None and not funding_claim_send_safe(funding, copy_brief, classification):
-        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"), classification, copy_brief)
-    claim = trim_text(funding.funding_claim_line)
-    if not claim:
-        return value_fallback_email_2(row, emails, (copy_brief or {}).get("email_asset_offer"), classification, copy_brief)
-    email2 = emails.get("email_2") or {}
-    existing_body = trim_text(email2.get("body"))
-    caveat_count = existing_body.lower().count("subject to programme confirmation")
-    useful_line = "The useful first step is to check the route before lining up readiness work."
-    if claim.lower() in existing_body.lower() and funding_only_email(existing_body, claim) and caveat_count <= 1 and useful_line.lower() in existing_body.lower():
-        return emails
-    prefix = email_comma_greeting(row)
-    subject = "HIA / cyber funding" if classification and classification.get("pressure_type") == "hia_regulatory" else compact(email2.get("chosen_subject")) or "Cyber Essentials funding"
-    caveat = "" if "subject to programme confirmation" in claim.lower() else "\n\nThis is subject to programme confirmation."
-    body = funding_email_2_body_fixed(prefix, claim, caveat, email_2_required_ps(classification))
-    emails = {**emails}
-    emails["email_2"] = {
-        "subject_options": list(email2.get("subject_options") or [subject]),
-        "chosen_subject": subject,
-        "body": body,
-        "word_count": word_count(body),
-    }
+    # Funding now belongs in Email 1; later touches stay risk-led.
     return emails
 
 
@@ -8639,6 +8617,8 @@ def pricing_email_quality_flags(body: str, classification: dict[str, Any], copy_
             flags.append("non_hia_pricing_claim")
         return flags
 
+    if compact(copy_brief.get("email_2_mode")) != "pricing":
+        return flags
     pricing_mode = compact(copy_brief.get("pricing_email_2_mode"))
     if pricing_mode in {"", "no_price_claim"}:
         return flags
