@@ -2030,6 +2030,44 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(patch_result["audit_report"]["email_1_llm_rewritten"])
         self.assertTrue(patch_result["audit_report"]["email_2_llm_rewritten"])
 
+    def test_strict_email_generation_runs_once_per_sequence_email(self):
+        calls = []
+
+        def fake_generate(payload):
+            calls.append(payload)
+            return {
+                "subject": payload["deterministic_subject"],
+                "body": payload["deterministic_body"],
+            }
+
+        with patch.object(o, "strict_email_generation_enabled", return_value=True), patch.object(
+            o, "call_strict_email_generation_llm", side_effect=fake_generate
+        ), patch.object(o, "call_email_1_rewrite_llm") as old_rewrite:
+            plan = o.plan_outreach(
+                {
+                    "Id": 1901,
+                    "company_name": "Example Dental Clinic",
+                    "selected_contact_name": "Dr Tan",
+                    "selected_contact_role": "Medical Doctor",
+                    "validated_email": "dr@example.com",
+                    "website_content": (
+                        "Singapore dental clinic with dentists, oral surgery, implants, extractions, "
+                        "x-ray imaging, appointments and patient records. "
+                    )
+                    * 4,
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertEqual([call["email_position"] for call in calls], [1, 2, 3])
+        self.assertIn("sensitivity_consequence", calls[0]["strict_placeholders"])
+        self.assertIn("enforcement_consequence", calls[1]["strict_placeholders"])
+        self.assertEqual("March 2030", calls[2]["strict_placeholders"]["hia_batch_deadline"])
+        self.assertTrue(plan.emails["llm_email_generation"]["used"])
+        self.assertTrue(plan.emails["llm_email_1_rewrite"]["used"])
+        self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
+        old_rewrite.assert_not_called()
+
     def test_email_1_llm_rewrite_rejects_one_paragraph_output(self):
         def one_paragraph(payload):
             return {
