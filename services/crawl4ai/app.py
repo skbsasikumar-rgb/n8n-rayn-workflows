@@ -1132,6 +1132,11 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/planner-version")
+async def planner_version() -> dict[str, str]:
+    return {"planner_version": "strict-placeholder-smoke-20260601"}
+
+
 @app.get("/runtime-diagnostics")
 async def runtime_diagnostics() -> dict[str, Any]:
     return {
