@@ -2196,6 +2196,19 @@ def hia_deadline_date_label(classification: dict[str, Any]) -> str:
     return ""
 
 
+def hia_subject_deadline_label(classification: dict[str, Any]) -> str:
+    if not classification.get("hia_deadline_claim_safe"):
+        return "HIA"
+    batch = compact(classification.get("hia_timeline_batch_guess")).lower()
+    if "sep 2027" in batch:
+        return "HIA Batch 1 (Sep 2027)"
+    if "sep 2028" in batch:
+        return "HIA Batch 2 (Sep 2028)"
+    if "mar 2030" in batch:
+        return "HIA Batch 3 (Mar 2030)"
+    return "HIA"
+
+
 def hia_problem_prefix(classification: dict[str, Any]) -> str:
     return "With Health Information Act (HIA) readiness becoming more urgent for healthcare providers,"
 
@@ -5300,7 +5313,8 @@ def email_1_subject_from_placeholders(
     if classification.get("campaign_track") == "dpo_evidence":
         return "data protection evidence"
     if compact(placeholders.get("email_track")) == "hia":
-        return f"HIA 2027 - what {hia_subject_segment_from_placeholders(row, classification, placeholders)} need documented"
+        hia_label = hia_subject_deadline_label(classification)
+        return f"{hia_label} - what {hia_subject_segment_from_placeholders(row, classification, placeholders)} need documented"
     if compact(placeholders.get("email_track")) == "pdpa":
         segment, plural = pdpa_subject_segment(row, classification, copy_brief)
         verb = "need" if plural else "needs"

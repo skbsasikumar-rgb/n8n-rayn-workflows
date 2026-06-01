@@ -179,7 +179,7 @@ class OutreachPlannerTests(unittest.TestCase):
             )
 
         body = plan.emails["email_1"]["body"]
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what cardiology clinics need documented")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what cardiology clinics need documented")
         self.assertIn("Health Information Act (HIA) targets exactly the patient data you hold", body)
         self.assertIn("access logs, vendor NDAs, backups", body)
         self.assertIn("MOH incident reporting", body)
@@ -236,7 +236,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         body = plan.emails["email_1"]["body"]
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what rheumatology clinics need documented")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what rheumatology clinics need documented")
         self.assertIn("For a rheumatology clinic managing long-term autoimmune and chronic condition records", body)
         self.assertNotIn("covering chronic-condition care", body)
         self.assertNotIn("skin and aesthetic treatments", body)
@@ -256,7 +256,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         body = plan.emails["email_1"]["body"]
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what urology specialist clinics need documented")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 1 (Sep 2027) - what urology specialist clinics need documented")
         self.assertIn("For a urology specialist clinic managing prostate, bladder, kidney, and men's reproductive health records", body)
         self.assertNotIn("dermatology", body.lower())
         self.assertNotIn("skin and aesthetic", body.lower())
@@ -441,7 +441,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         body = plan.emails["email_1"]["body"]
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what dermatology clinics need documented")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what dermatology clinics need documented")
         self.assertIn("For a dermatology clinic managing skin consultation notes", body)
         self.assertNotIn("oncology clinics", plan.emails["email_1"]["chosen_subject"])
 
@@ -4200,7 +4200,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
         self.assertIn("a specialist-led rheumatology clinic", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("consultation notes, treatment records, referrals, appointment details", plan.emails["email_3"]["body"])
-        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA 2027 - what rheumatology clinics need documented")
+        self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what rheumatology clinics need documented")
         self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_heart_and_generic_specialist_words_do_not_override_better_clinic_routes(self):
