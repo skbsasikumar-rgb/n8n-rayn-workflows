@@ -1159,6 +1159,25 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
 
     @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
+    def test_verified_ncss_match_keeps_funding_line_on_thin_social_service_context(self, mock_ncss_directory):
+        mock_ncss_directory.return_value = {"365cancerprevention": "365 CANCER PREVENTION SOCIETY"}
+        plan = o.plan_outreach(
+            {
+                "Id": 306,
+                "company_name": "365 Cancer Prevention Society",
+                "website_content": "365 Cancer Prevention Society serves the community through education and volunteer programmes.",
+                "validated_email": "alicia.ang@365cps.org.sg",
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
+        self.assertEqual(plan.classification["entity_type_confidence"], "high")
+        self.assertEqual(plan.funding.funding_confidence, "high")
+        self.assertTrue(plan.copy_brief["funding_claim_safe"])
+        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
+        self.assertIn("80% co-funding", plan.emails["email_1"]["body"])
+
+    @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
     def test_social_service_counselling_without_hcsa_license_uses_ncss_not_hia(self, mock_ncss_directory):
         mock_ncss_directory.return_value = {"365cancerprevention": "365 CANCER PREVENTION SOCIETY"}
         plan = o.plan_outreach(

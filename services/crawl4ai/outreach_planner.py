@@ -1590,6 +1590,7 @@ def apply_ncss_social_service_pressure(classification: dict[str, Any], funding: 
     evidence["ncss_primary_funding_program"] = funding.primary_funding_program
 
     classification["classification_evidence_json"] = evidence
+    classification["entity_type_confidence"] = "high"
     classification["classification_confidence"] = "high"
     classification["campaign_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
     classification["primary_email_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
@@ -1615,6 +1616,8 @@ def apply_ncss_social_service_pressure(classification: dict[str, Any], funding: 
     classification["certification_fit_score"] = max(int(classification.get("certification_fit_score") or 0), 82)
     classification["classification_review_status"] = "not_needed"
     classification["classification_review_reason"] = ""
+    funding.funding_confidence = "high"
+    funding.funding_human_review_required = False
     classification["problem_hypothesis"] = build_problem_hypothesis(
         NCSS_SOCIAL_SERVICE_PRESSURE,
         compact(classification.get("data_type_signal")) or "beneficiary_data",
