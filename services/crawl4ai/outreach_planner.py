@@ -8861,6 +8861,8 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
     if classification.get("pressure_type") == "hia_regulatory":
         if not hia_email_1_names_health_information_act(body):
             flags.append("llm_email_1_rewrite_missing_health_information_act_name")
+        if len(re.findall(r"\bHealth Information Act\s*\(HIA\)", body, flags=re.I)) > 1:
+            flags.append("llm_email_1_rewrite_repeated_health_information_act_name")
         hia_pos = body_l.find("hia")
         ce_pos = body_l.find("cyber essentials")
         if hia_pos < 0 or hia_pos > 400 or (ce_pos >= 0 and hia_pos > ce_pos):

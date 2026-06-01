@@ -2162,6 +2162,42 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["llm_email_2_rewrite"]["used"])
         old_rewrite.assert_not_called()
 
+    def test_strict_hia_generation_rejects_repeated_full_hia_name(self):
+        def fake_generate(payload):
+            if payload["email_position"] == 1:
+                return {
+                    "subject": payload["deterministic_subject"],
+                    "body": (
+                        "Hi Dr Tan,\n\n"
+                        "For a dental clinic, surgical records fall squarely under the Health Information Act (HIA), "
+                        "surgical dental records expose clinical history, making a Health Information Act (HIA) breach especially sensitive.\n\n"
+                        f"{payload['strict_placeholders']['funding_line']}\n\n"
+                        "Can I send the HIA readiness checklist?"
+                    ),
+                }
+            return {
+                "subject": payload["deterministic_subject"],
+                "body": payload["deterministic_body"],
+            }
+
+        with patch.object(o, "strict_email_generation_enabled", return_value=True), patch.object(
+            o, "call_strict_email_generation_llm", side_effect=fake_generate
+        ), patch.object(o, "call_email_1_rewrite_llm", return_value=None):
+            plan = o.plan_outreach(
+                {
+                    "company_name": "Example Dental Clinic",
+                    "selected_contact_name": "Dr Tan",
+                    "selected_contact_role": "Medical Doctor",
+                    "validated_email": "dr@example.com",
+                    "website_content": "Dental clinic with implants, extractions, imaging, appointments and patient records.",
+                },
+                programmes=[verified_program()],
+            )
+
+        self.assertFalse(plan.emails["llm_email_generation"]["used"])
+        self.assertIn("llm_email_1_rewrite_repeated_health_information_act_name", plan.emails["llm_email_generation"]["flags"])
+        self.assertEqual(len(o.re.findall(r"Health Information Act\s*\(HIA\)", plan.emails["email_1"]["body"])), 1)
+
     def test_email_1_llm_rewrite_rejects_one_paragraph_output(self):
         def one_paragraph(payload):
             return {
