@@ -8552,6 +8552,251 @@ def call_email_1_rewrite_llm(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
+STRICT_EMAIL_GENERATION_PROMPT = """You assemble one cold outreach email for RAYN Secure.
+All personalised content is pre-provided. Return strict JSON only.
+
+INPUTS:
+- strict_placeholders contains exactly: salutation, company_name, specialty, data_type, sensitivity_consequence, enforcement_consequence, hia_batch_deadline, funding_line.
+- email_track is hia, pdpa, or ncss.
+- email_position is 1, 2, or 3.
+- template is the only allowed structure.
+
+Rules:
+- Do not invent facts, classifications, services, deadlines, funding, or eligibility.
+- Use the provided placeholders exactly as the source of truth.
+- Email 1 uses sensitivity_consequence and funding_line only.
+- Email 2 uses enforcement_consequence only.
+- Email 3 uses hia_batch_deadline only for HIA.
+- Never re-extract or rename data_type.
+- Never describe the company's services back to them.
+- Never mention consent, purpose limitation, data subject rights, or notification obligations in Cyber Essentials context.
+- Cyber Essentials covers access control, backups, anti-malware, secure configuration, updates, and incident response.
+- If NCSS funding is mentioned, write "NCSS Tech-and-GO!" only.
+- Under 100 words. If over, trim only at complete sentence boundaries.
+- One CTA only.
+- No preamble.
+
+Return:
+{
+  "subject": "",
+  "body": ""
+}
+"""
+
+
+def strict_email_generation_enabled(row: dict[str, Any]) -> bool:
+    if os.getenv("OUTREACH_STRICT_EMAIL_GENERATION_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    if truthy(row.get("disable_llm_humaniser")) or truthy(row.get("disable_llm_humanizer")) or truthy(row.get("disable_llm_rewrite")):
+        return False
+    if truthy(row.get("skip_openrouter")):
+        return False
+    if not sendable_email(row) and not row.get("copy_qa_mode"):
+        return False
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+
+
+def strict_email_generation_template(email_track: str, position: int) -> str:
+    if email_track == "hia":
+        templates = {
+            1: (
+                "Subject: keep deterministic_subject unless clearly broken.\n"
+                "Body: greeting alone; sensitivity_consequence; Cyber Essentials service line plus funding_line; CTA: Can I send the HIA readiness checklist?"
+            ),
+            2: (
+                "Subject: Re: use deterministic_subject or the 2-hour MOH reporting point.\n"
+                "Body: greeting alone; enforcement_consequence; exact CE connector; CTA: Happy to share the checklist if useful."
+            ),
+            3: (
+                "Subject: Closing the loop - HIA deadline hia_batch_deadline.\n"
+                "Body: greeting alone; Last note from me.; deadline sentence using hia_batch_deadline and 6-8 weeks; CTA: Checklist is free and takes 10 minutes. Reply anytime.; signoff: All the best."
+            ),
+        }
+    else:
+        templates = {
+            1: (
+                "Subject: keep deterministic_subject unless clearly broken.\n"
+                "Body: greeting alone; sensitivity_consequence; Cyber Essentials service line plus funding_line; CTA: Worth sending the personal data safeguards checklist?"
+            ),
+            2: (
+                "Subject: Re: use deterministic_subject or how PDPC weighs enforcement.\n"
+                "Body: greeting alone; enforcement_consequence; exact CE connector; CTA: Happy to share the checklist if timing's better now."
+            ),
+            3: (
+                "Subject: Closing the loop - company_name.\n"
+                "Body: greeting alone; Last note from me.; no fixed PDPA deadline but risk sentence using data_type; CTA: Checklist is free and takes 10 minutes. Reply anytime.; signoff: All the best."
+            ),
+        }
+    return templates.get(position, "")
+
+
+def strict_generation_placeholders(row: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, str]:
+    p1 = copy_brief.get("email_1_placeholders") if isinstance(copy_brief.get("email_1_placeholders"), dict) else {}
+    return {
+        "salutation": compact(p1.get("salutation") or p1.get("recipient_salutation")),
+        "company_name": compact(p1.get("company_name") or p1.get("company_display_name") or email_display_company_name(row)),
+        "specialty": compact(p1.get("specialty") or p1.get("email_specialty")),
+        "data_type": compact(p1.get("data_type") or p1.get("email_data_type")),
+        "sensitivity_consequence": compact(p1.get("sensitivity_consequence") or p1.get("email_sensitivity_consequence") or p1.get("website_detail_consequence")),
+        "enforcement_consequence": compact(p1.get("enforcement_consequence") or p1.get("email_enforcement_consequence")),
+        "hia_batch_deadline": compact(p1.get("hia_batch_deadline")),
+        "funding_line": compact(p1.get("funding_line") or p1.get("email_funding_line")),
+    }
+
+
+def strict_email_generation_payload(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    emails: dict[str, Any],
+    position: int,
+) -> dict[str, Any]:
+    key = f"email_{position}"
+    deterministic = emails.get(key) if isinstance(emails.get(key), dict) else {}
+    track = email_track_placeholder(classification)
+    return {
+        "strict_placeholders": strict_generation_placeholders(row, copy_brief),
+        "email_track": track,
+        "email_position": position,
+        "deterministic_subject": compact(deterministic.get("chosen_subject")),
+        "deterministic_body": strip_trailing_signature(deterministic.get("body") or ""),
+        "template": strict_email_generation_template(track, position),
+        "exact_ce_connector": EMAIL_2_CE_CONNECTOR,
+        "final_cta": EMAIL_3_FINAL_CTA,
+    }
+
+
+def call_strict_email_generation_llm(payload: dict[str, Any]) -> dict[str, Any] | None:
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": os.getenv(
+                    "OUTREACH_EMAIL_GENERATION_MODEL",
+                    os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash")),
+                ).strip(),
+                "temperature": float(os.getenv("OUTREACH_EMAIL_GENERATION_TEMPERATURE", "0.25")),
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {"role": "system", "content": STRICT_EMAIL_GENERATION_PROMPT},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                ],
+            },
+            timeout=float(os.getenv("OUTREACH_EMAIL_GENERATION_TIMEOUT_SECONDS", "20")),
+        )
+        raise_for_openrouter_account_error(response, "strict email generation")
+        response.raise_for_status()
+        choices = response.json().get("choices") or []
+        content = choices[0].get("message", {}).get("content", "") if choices else ""
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except ProviderAccountError:
+        raise
+    except Exception:
+        return None
+
+
+def strict_email_generation_static_flags(
+    candidate: dict[str, Any],
+    original: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+) -> list[str]:
+    flags: list[str] = []
+    body1 = candidate["email_1"].get("body", "")
+    body2 = candidate["email_2"].get("body", "")
+    body3 = candidate["email_3"].get("body", "")
+    flags += email_1_rewrite_static_flags(body1, original["email_1"].get("body", ""), classification)
+    flags += email_2_rewrite_static_flags(body2, original["email_2"].get("body", ""), classification, frozen_email_data_type(copy_brief, classification, ""))
+    body3_l = compact(body3).lower()
+    if not body3 or word_count(body3) > 100:
+        flags.append("llm_email_3_generation_length")
+    if duplicate_sentence_keys(body3):
+        flags.append("llm_email_3_generation_duplicate_sentence")
+    if cyber_essentials_scope_overreach(body3):
+        flags.append("llm_email_3_generation_ce_scope_overreach")
+    if classification.get("pressure_type") == "hia_regulatory":
+        deadline = compact(strict_generation_placeholders({}, copy_brief).get("hia_batch_deadline")).lower()
+        if deadline and deadline not in body3_l:
+            flags.append("llm_email_3_generation_missing_hia_deadline")
+    if "close the loop" in body3_l and "reply anytime" not in body3_l:
+        flags.append("llm_email_3_generation_binary_close_loop")
+    return list(dict.fromkeys(flags))
+
+
+def _strict_generation_apply_result(
+    original: dict[str, Any],
+    position: int,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    key = f"email_{position}"
+    subject = compact(result.get("subject") or original[key].get("chosen_subject"))
+    body = finalize_email_body(strip_trailing_signature(result.get("body") or ""))
+    return {
+        **(original.get(key) or {}),
+        "chosen_subject": subject,
+        "subject_options": _email_rewrite_subject_options(subject, original.get(key) or {}),
+        "body": body,
+        "word_count": word_count(body),
+    }
+
+
+def maybe_generate_strict_email_sequence_with_llm(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+    copy_brief: dict[str, Any],
+    emails: dict[str, Any],
+) -> tuple[dict[str, Any], list[str], bool]:
+    if not strict_email_generation_enabled(row):
+        return emails, [], False
+    original = sanitize_email_sequence(emails)
+    candidate = {**original}
+    raw_results: dict[str, Any] = {}
+    for position in (1, 2, 3):
+        payload = strict_email_generation_payload(row, classification, copy_brief, original, position)
+        result = call_strict_email_generation_llm(payload)
+        if not isinstance(result, dict):
+            original["llm_email_generation"] = {"attempted": True, "used": False, "reason": f"email_{position}_llm_error_or_empty"}
+            return original, [], False
+        raw_results[f"email_{position}"] = result
+        candidate[f"email_{position}"] = _strict_generation_apply_result(original, position, result)
+    score, gate_flags, _ = quality_gate(row, classification, funding, candidate, copy_brief)
+    reject_flags = list(
+        dict.fromkeys(
+            strict_email_generation_static_flags(candidate, original, classification, copy_brief)
+            + severe_flags(gate_flags)
+            + [flag for flag in gate_flags if flag.startswith("email_")]
+        )
+    )
+    if score < 7 or reject_flags:
+        original["llm_email_generation"] = {
+            "attempted": True,
+            "used": False,
+            "reason": "qa_rejected",
+            "flags": reject_flags,
+            "model": os.getenv("OUTREACH_EMAIL_GENERATION_MODEL", os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash"))).strip(),
+        }
+        return original, [], False
+    metadata = {
+        "attempted": True,
+        "used": True,
+        "reason": "qa_passed",
+        "model": os.getenv("OUTREACH_EMAIL_GENERATION_MODEL", os.getenv("OUTREACH_EMAIL_1_REWRITE_MODEL", os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash"))).strip(),
+        "positions": [1, 2, 3],
+    }
+    candidate["llm_email_generation"] = metadata
+    candidate["llm_email_1_rewrite"] = metadata
+    candidate["llm_email_2_rewrite"] = metadata
+    candidate["llm_email_3_generation"] = metadata
+    return candidate, [], True
+
+
 def email_1_rewrite_static_flags(body: str, deterministic_body: str, classification: dict[str, Any]) -> list[str]:
     flags: list[str] = []
     body_l = compact(body).lower()
@@ -9757,7 +10002,15 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     copy_brief["funding_followup_mode"] = mode
     copy_brief["email_3_mode"] = mode
     emails = generate_email_sequence(row, classification, funding, copy_brief)
-    emails, rewrite_flags = maybe_rewrite_email_1_with_llm(row, classification, funding, copy_brief, emails)
+    emails, rewrite_flags, strict_generation_used = maybe_generate_strict_email_sequence_with_llm(
+        row,
+        classification,
+        funding,
+        copy_brief,
+        emails,
+    )
+    if not strict_generation_used:
+        emails, rewrite_flags = maybe_rewrite_email_1_with_llm(row, classification, funding, copy_brief, emails)
     score, flags, send_ready = quality_gate(row, classification, funding, emails, copy_brief)
     flags = list(dict.fromkeys(flags + rewrite_flags))
     enrichment_score, enrichment_flags = enrichment_quality(row, classification, copy_brief)
