@@ -7707,7 +7707,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         "proof_line": proof_line,
         "cta_line": cta_line,
         "human_email_style": "short_plain_low_cta",
-        "email_2_mode": "risk_followup" if funding_safe else "value_fallback",
+        "email_2_mode": "value_fallback",
         "funding_followup_mode": "risk_followup" if funding_safe else "value_fallback",
         "email_3_mode": "risk_followup" if funding_safe else "value_fallback",
         "email_personalisation_signal": signal,
@@ -9391,6 +9391,17 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "certification_fit_score": c["certification_fit_score"],
         "certification_evidence_json": json_dumps(c["certification_evidence_json"]),
         **f.to_patch_fields(),
+        "funding_cta_asset": (
+            f.funding_cta_asset
+            if f.funding_cta_asset
+            in {
+                "funding_route_summary",
+                "funding_checklist",
+                "hia_support_route_summary",
+                "cyber_essentials_support_summary",
+            }
+            else "funding_route_summary"
+        ),
         "funding_programs_matched_json": json_dumps(f.matched),
         "funding_programs_possible_json": json_dumps(f.possible),
         "funding_programs_not_applicable_json": json_dumps(f.not_applicable),
@@ -9488,8 +9499,8 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "automation_advisory_flags_json": json_dumps(plan.automation_advisory_flags),
         "contact_send_mode": plan.contact_send_mode,
         "contact_identity_confidence": plan.contact_identity_confidence,
-        "email_2_mode": plan.email_2_mode,
-        "funding_followup_mode": plan.funding_followup_mode,
+        "email_2_mode": "funding" if plan.email_2_mode == "funding" else "value_fallback",
+        "funding_followup_mode": "funding" if plan.funding_followup_mode == "funding" else "value_fallback",
         "email_3_mode": plan.email_3_mode,
         "enrichment_quality_score": plan.enrichment_quality_score,
         "enrichment_quality_flags": json_dumps(plan.enrichment_quality_flags),
