@@ -2288,6 +2288,16 @@ def cyber_essentials_scope_overreach(body: str) -> bool:
     )
 
 
+def contains_ce_excluded_obligation_terms(value: str) -> bool:
+    text = compact(value).lower()
+    return bool(
+        re.search(
+            r"\b(consent(?: management)?|purpose limitation|data subject rights?|notification obligations?|data breach notification safeguards?)\b",
+            text,
+        )
+    )
+
+
 def lower_blob(row: dict[str, Any]) -> str:
     parts = [
         row.get("company_name", ""),
@@ -3374,6 +3384,7 @@ Task:
 - Do not invent services, diagnoses, data types, funding, deadlines, or regulatory scope.
 - Keep values short and usable inside an email sentence.
 - If evidence is thin, return conservative generic values and confidence low.
+- Do not mention consent, purpose limitation, data subject rights, or notification obligations. The email sequence is about Cyber Essentials evidence, which covers access control, backups, anti-malware, secure configuration, updates, and incident response.
 
 For HIA:
 - specialty should be the service area, e.g. "GP clinic", "endocrinology", "breast surgery", "dental clinic".
@@ -4826,6 +4837,8 @@ def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]
     specialty = safe_tier2_text(value.get("specialty")) or fallback.get("specialty", "")
     data_type = safe_tier2_text(value.get("data_type"), 220) or fallback.get("data_type", "")
     consequence = clean_tier2_consequence_text(value.get("website_detail_consequence")) or fallback.get("website_detail_consequence", "")
+    if contains_ce_excluded_obligation_terms(consequence):
+        consequence = fallback.get("website_detail_consequence", "")
     confidence = compact(value.get("confidence")).lower()
     if confidence not in {"low", "medium", "high"}:
         confidence = fallback.get("confidence", "medium")
@@ -5264,6 +5277,8 @@ def email_context_line_placeholder(
     data = compact(data_type).rstrip(".")
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
     consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
+    if contains_ce_excluded_obligation_terms(consequence):
+        consequence = ""
     if classification.get("pressure_type") == "hia_regulatory":
         if compact(tier2.get("source")) != "llm":
             return hia_email_1_context_line_from_data(row, classification, data)

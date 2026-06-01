@@ -309,6 +309,33 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertIn(plan.copy_brief["email_1_placeholders"]["email_data_type"], plan.emails["email_2"]["body"])
 
+    def test_tier2_context_rejects_non_ce_pdpa_obligations(self):
+        fallback = {
+            "specialty": "genomics",
+            "data_type": "genomic data",
+            "website_detail_consequence": (
+                "Genomic data sits at the higher end of PDPA sensitivity - the safeguards evidence bar "
+                "for organisations handling it is higher than most assume"
+            ),
+            "confidence": "medium",
+            "source": "deterministic",
+        }
+        sanitized = o.sanitize_email_tier2_context(
+            {
+                "specialty": "genomics",
+                "data_type": "genomic data",
+                "website_detail_consequence": (
+                    "Genomic data requires consent, purpose limitation and data breach notification safeguards under PDPA"
+                ),
+                "confidence": "high",
+                "source": "llm",
+            },
+            fallback,
+        )
+
+        self.assertEqual(sanitized["website_detail_consequence"], fallback["website_detail_consequence"])
+        self.assertFalse(o.contains_ce_excluded_obligation_terms(sanitized["website_detail_consequence"]))
+
     def test_pdpa_physio_email_leads_with_data_risk_not_business_description(self):
         plan = o.plan_outreach(
             {
