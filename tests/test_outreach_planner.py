@@ -348,6 +348,37 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotEqual(plan.emails["email_1"]["chosen_subject"], "not ready")
         self.assertIn("Genomic", plan.emails["email_1"]["body"])
 
+    def test_pdpa_tier2_sequence_passes_quality_with_reply_anytime_email_3(self):
+        extracted = {
+            "specialty": "genomics company",
+            "data_type": "genomic data",
+            "sensitivity_consequence": "Genomic data exposes family health predispositions, not just the individual.",
+            "enforcement_consequence": "For genomic data, the significant-harm threshold is lower and PDPC scrutiny moves faster.",
+            "confidence": "medium",
+            "source_url": "https://1010genome.com/",
+            "evidence": [{"quote": "genomics", "source_field": "website_content"}],
+        }
+        with patch.object(o, "email_tier2_extraction_enabled", return_value=True), patch.object(
+            o, "call_email_tier2_extraction_llm", return_value=extracted
+        ):
+            plan = o.plan_outreach(
+                {
+                    "company_name": "1010Genome",
+                    "selected_contact_name": "John Taylor",
+                    "selected_contact_role": "Business Development Manager",
+                    "validated_email": "john@1010genome.com",
+                    "email_validation_status": "sendable",
+                    "website_content": "Genomics, sequencing and bioinformatics services.",
+                    "best_url": "https://1010genome.com/",
+                },
+            )
+
+        self.assertGreaterEqual(plan.quality_score, 7)
+        self.assertEqual(plan.quality_flags, [])
+        self.assertEqual(plan.automation_decision, "auto_send_eligible")
+        self.assertEqual(plan.emails["email_3"]["chosen_subject"], "Closing the loop - 1010Genome")
+        self.assertIn("Reply anytime.", plan.emails["email_3"]["body"])
+
     def test_tier2_context_rejects_non_ce_pdpa_obligations(self):
         fallback = {
             "specialty": "genomics",

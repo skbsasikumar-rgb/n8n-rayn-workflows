@@ -5708,6 +5708,19 @@ def email_3_body_from_placeholders(placeholders: dict[str, Any]) -> str:
     return "\n\n".join(part for part in parts if part)
 
 
+def email_3_subject_from_placeholders(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    placeholders: dict[str, Any],
+) -> str:
+    if compact(placeholders.get("email_3_track")) == "hia":
+        deadline = hia_deadline_date_label(classification) or compact(placeholders.get("hia_batch_deadline"))
+        if deadline:
+            return f"Closing the loop - HIA deadline {deadline}"
+        return "Closing the loop - HIA readiness"
+    return f"Closing the loop - {email_display_company_name(row)}"
+
+
 def email_2_sizing_line(pricing_mode: str) -> str:
     if pricing_mode == "small_clinic_starting_price":
         return "For smaller clinics, scope still depends on route and endpoint count."
@@ -8352,6 +8365,8 @@ def generate_email_sequence(
         email3_placeholders = build_email_3_placeholders(row, classification, copy_brief, email3_slots)
         copy_brief["email_3_placeholders"] = email3_placeholders
         email3_body = email_3_body_from_placeholders(email3_placeholders)
+        email3_subject = email_3_subject_from_placeholders(row, classification, email3_placeholders)
+        email3_subject_options = list(dict.fromkeys([email3_subject, *email3_subject_options]))[:4]
         if classification["pressure_type"] == "hia_regulatory":
             hia_pricing_subjects = {"A": "2-hour MOH reporting", "B": "incident reporting plan", "C": "HIA reporting clock"}
             email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
@@ -8391,7 +8406,6 @@ def generate_email_sequence(
             email2_subject = fallback_email2["chosen_subject"]
             email2_subject_options = fallback_email2["subject_options"]
         copy_brief["email_2_placeholders"] = email2_placeholders
-        email3_subject = diagnostic_subject
         _, email4_subject, email4_subject_options = chosen_subject_variant(row, classification, copy_brief, 4, "close the loop?")
         email4_slots = email_4_sentence_slots(row, classification, sentence_slots, asset)
         email4_body = close_loop_body_fixed(close_loop_prefix, email4_slots["close_loop"])
@@ -9628,7 +9642,7 @@ def generic_inbox_greeting_ok(row: dict[str, Any], emails: dict[str, Any]) -> bo
     return True
 
 
-ACTIVE_EMAIL_KEYS = ("email_1", "email_2")
+ACTIVE_EMAIL_KEYS = ("email_1", "email_2", "email_3")
 ALL_EMAIL_KEYS = ("email_1", "email_2", "email_3", "email_4")
 DISABLED_FOLLOWUP_EMAIL = {"subject_options": [], "chosen_subject": "", "body": "", "word_count": 0}
 
@@ -9841,9 +9855,18 @@ def quality_gate(
         score += 2
     if classification.get("recommended_first_cert") != "unknown":
         score += 1
-    if funding.funding_status == "verified_match":
+    email1_funding_line = ""
+    if has_copy_brief:
+        p1 = copy_brief.get("email_1_placeholders") if isinstance(copy_brief.get("email_1_placeholders"), dict) else {}
+        email1_funding_line = compact(p1.get("email_funding_line") or p1.get("funding_line"))
+    if funding.funding_status == "verified_match" or (email1_funding_line and email1_funding_line in emails["email_1"]["body"]):
         score += 1
-    if all(emails[key]["body"].count("?") >= 1 for key in ("email_1", "email_2", "email_3", "email_4")):
+    email3_body_l = emails["email_3"]["body"].lower()
+    if (
+        emails["email_1"]["body"].count("?") >= 1
+        and emails["email_2"]["body"].count("?") >= 1
+        and (emails["email_3"]["body"].count("?") >= 1 or "reply anytime" in email3_body_l or "just reply" in email3_body_l)
+    ):
         score += 1
     if not any(phrase in blob for phrase in ("hope you are well", "leading provider", "unlock growth")):
         score += 1
