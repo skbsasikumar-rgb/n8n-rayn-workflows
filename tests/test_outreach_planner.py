@@ -534,11 +534,16 @@ class OutreachPlannerTests(unittest.TestCase):
 
         self.assertEqual(patch_payload["email_specialty"], "endocrinology")
         self.assertEqual(patch_payload["email_data_type"], "diabetes and thyroid records")
+        self.assertIn("records your clinic holds", patch_payload["email_sensitivity_consequence"])
+        self.assertIn("Health Information Act (HIA)", patch_payload["email_sensitivity_consequence"])
+        self.assertIn("2-hour MOH reporting clock", patch_payload["email_enforcement_consequence"])
         self.assertIn("records your clinic holds", patch_payload["website_detail_consequence"])
         self.assertEqual(patch_payload["email_context_confidence"], "high")
         self.assertEqual(patch_payload["email_context_source_url"], "https://soon.example/")
         self.assertEqual(patch_payload["email_tier2_source"], "llm")
         self.assertIn('"specialty":"endocrinology"', patch_payload["email_tier2_extraction_json"])
+        self.assertIn('"sensitivity_consequence"', patch_payload["email_tier2_extraction_json"])
+        self.assertIn('"enforcement_consequence"', patch_payload["email_tier2_extraction_json"])
         self.assertIn("records your clinic holds", patch_payload["email_1_body"])
 
     def test_email_1_placeholder_patch_fields_are_stored(self):

@@ -148,6 +148,8 @@ OUTREACH_COLUMNS: list[OutreachColumn] = [
     OutreachColumn("email_context_line", "LongText", "text", "420px"),
     OutreachColumn("email_context_confidence", "SingleSelect", "text"),
     OutreachColumn("email_context_source_url", "URL", "text"),
+    OutreachColumn("email_sensitivity_consequence", "LongText", "text", "420px"),
+    OutreachColumn("email_enforcement_consequence", "LongText", "text", "420px"),
     OutreachColumn("website_detail_consequence", "LongText", "text", "420px"),
     OutreachColumn("email_tier2_source", "SingleLineText", "text"),
     OutreachColumn("email_tier2_extraction_json", "LongText", "text", "420px"),

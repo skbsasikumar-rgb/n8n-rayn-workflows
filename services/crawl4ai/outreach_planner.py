@@ -260,6 +260,9 @@ Return strict JSON only. Do not add facts, claims, pricing, eligibility, locatio
 
 Rules:
 - Rewrite Email 1 and Email 2 only.
+- Treat payload.strict_placeholders as the only allowed source of personalised content:
+  salutation, company_name, specialty, data_type, sensitivity_consequence, enforcement_consequence, hia_batch_deadline, funding_line.
+- The LLM's job is assembly and tone only. Do not infer new specialty, data_type, consequences, funding, deadlines, HIA status, or PDPA status.
 - Keep Email 1 and Email 2 linked: Email 1 opens the pain. Email 2 starts with one new risk/evidence point directly.
 - Email 3 will carry the final close-loop timing point, so do not overload Email 2.
 - Keep the same recipient addressing style from each deterministic email.
@@ -280,6 +283,8 @@ Rules:
 
 Email 1 rules:
 - Use the resolved fields in payload.email_1_placeholders. Do not create new placeholder values.
+- Use payload.strict_placeholders.sensitivity_consequence in Email 1 only.
+- Use payload.strict_placeholders.funding_line in Email 1 only. It is mandatory unless empty.
 - Use 4 or 5 short paragraphs separated by blank lines: greeting alone, context line, Cyber Essentials service line, optional approved funding line, tiny CTA only.
 - Paragraph 1 must be exactly the approved greeting line.
 - Paragraph 2 must keep the approved context/data-type meaning and read like a specific risk/evidence sentence, not a generic compliance sentence.
@@ -295,6 +300,7 @@ Email 1 rules:
 Email 2 rules:
 - This is the second touch, not the final close.
 - Use the resolved fields in payload.email_2_placeholders. Do not create new placeholder values or add new business logic.
+- Use payload.strict_placeholders.enforcement_consequence in Email 2 only.
 - Keep the same proper greeting from the deterministic email, for example "Hi Samuel," or "Hello team,".
 - Do not use first-name dash openings such as "Samuel - ".
 - Never start with "Following up", "Linking this back", "Just tying this back", or any meta-commentary. Start with the enforcement/risk point directly.
@@ -3395,28 +3401,47 @@ EMAIL_TIER2_EXTRACTION_PROMPT = """You extract reusable cold-email placeholders 
 Use only the provided website_content and Serper/search context. Return strict JSON only.
 
 Task:
-- Extract the prospect-specific service/specialty, data type, and one consequence line.
+- Extract the prospect-specific specialty, one data type, and two consequence lines.
 - Do not decide HIA vs PDPA. The route is already provided.
 - Do not invent services, diagnoses, data types, funding, deadlines, or regulatory scope.
 - Keep values short and usable inside an email sentence.
 - If evidence is thin, return conservative generic values and confidence low.
 - Do not mention consent, purpose limitation, data subject rights, or notification obligations. The email sequence is about Cyber Essentials evidence, which covers access control, backups, anti-malware, secure configuration, updates, and incident response.
 
-For HIA:
-- specialty should be the service area, e.g. "GP clinic", "endocrinology", "breast surgery", "dental clinic".
-- data_type should name the records, e.g. "diabetes and thyroid records", "oncology treatment records", "patient appointment and consultation records".
-- website_detail_consequence should be one email-ready clause/sentence connecting the data to HIA evidence, e.g. "the patient data you hold is exactly what the Health Information Act (HIA) targets - access logs, vendor NDAs, backups, and MOH incident reporting all need documented evidence by the applicable batch deadline".
+specialty:
+- Return a 2-3 word phrase describing the type of organisation or clinical specialty.
+- Examples: "dental clinic", "genomics company", "elderly care charity", "orthopaedic specialist", "cancer support organisation".
+- No company name. No adjectives like "leading" or "trusted".
+- If unclear, return "healthcare organisation".
 
-For PDPA:
-- specialty should be the operating context, e.g. "ABA therapy", "football academy", "charity operations".
-- data_type should name the personal data, e.g. "children's therapy records", "student and parent records", "beneficiary and volunteer records".
-- website_detail_consequence should be one email-ready clause/sentence connecting the data to PDPA safeguards, e.g. "children's therapy records and autism assessments sit at the higher end of PDPA sensitivity - the evidence bar for organisations handling them is higher than most assume".
+data_type:
+- Identify the single most sensitive category of personal data they hold.
+- Pick ONE only. Never list multiple categories.
+- Must be a data category, not a system or process.
+- Examples: "genomic data", "cancer patient records", "elderly care records", "children's therapy records", "surgical and imaging records".
+- If unclear, return "patient records".
+
+sensitivity_consequence:
+- This is the Email 1 hook sentence. Write ONE sentence explaining why data_type held by specialty carries higher sensitivity under the provided email_track.
+- Do NOT describe what the organisation does.
+- Lead with the consequence or risk, not a business-description mirror.
+- Must feel specific to the data type, not generic.
+- Under 20 words.
+- For HIA, spell "Health Information Act (HIA)" at least once when possible.
+
+enforcement_consequence:
+- This is the Email 2 specificity line. Write ONE sentence explaining why data_type makes enforcement stakes higher.
+- Add new information, not a repeat of sensitivity_consequence.
+- For PDPA: focus on significant harm threshold or speed of PDPC scrutiny.
+- For HIA: focus on the 2-hour MOH reporting clock or why the data type is specifically targeted.
+- Under 20 words.
 
 Return:
 {
   "specialty": "",
   "data_type": "",
-  "website_detail_consequence": "",
+  "sensitivity_consequence": "",
+  "enforcement_consequence": "",
   "confidence": "low|medium|high",
   "source_url": "",
   "evidence": [{"quote": "", "source_field": "", "reason": ""}]
@@ -4813,6 +4838,50 @@ def deterministic_website_detail_consequence(
     return ""
 
 
+def deterministic_sensitivity_consequence(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    data_type: str,
+) -> str:
+    if email_track_placeholder(classification) == "not_ready":
+        return ""
+    data = safe_tier2_text(data_type, 220).rstrip(" .;,:") or "patient records"
+    if classification.get("pressure_type") == "hia_regulatory":
+        if "dental" in data.lower():
+            return "Surgical dental records fall squarely under the Health Information Act (HIA) evidence scope."
+        return f"{data[:1].upper() + data[1:]} fall squarely under the Health Information Act (HIA) evidence scope."
+    if "genomic" in data.lower() or "genetic" in data.lower():
+        return "Genomic data exposes family health predispositions, not just the individual."
+    if "cancer" in data.lower():
+        return "Cancer patient records carry a lower significant-harm threshold under PDPA."
+    if "elderly" in data.lower():
+        return "Elderly care records carry higher sensitivity because vulnerable people and families are exposed."
+    if "children" in data.lower() or "child" in data.lower():
+        return "Children's records carry higher PDPA sensitivity because vulnerable minors are exposed."
+    return f"{data[:1].upper() + data[1:]} carry a higher PDPA evidence bar than most assume."
+
+
+def deterministic_enforcement_consequence(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    copy_brief: dict[str, Any],
+    data_type: str,
+) -> str:
+    if email_track_placeholder(classification) == "not_ready":
+        return ""
+    data = safe_tier2_text(data_type, 220).rstrip(" .;,:") or "this data"
+    if classification.get("pressure_type") == "hia_regulatory":
+        return "The 2-hour MOH reporting clock requires a tested incident plan before a breach happens."
+    if "genomic" in data.lower() or "genetic" in data.lower():
+        return "For genomic data, the significant-harm threshold is lower and PDPC scrutiny moves faster."
+    if "cancer" in data.lower():
+        return "For cancer patient records, significant-harm scrutiny arrives faster after a breach or complaint."
+    if "elderly" in data.lower():
+        return "For elderly care records, PDPC scrutiny can arrive before teams expect it."
+    return f"For {data}, documented safeguards before the incident matter more than post-breach fixes."
+
+
 def tier2_extraction_payload(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
     search_context = copy_brief.get("company_context_search") if isinstance(copy_brief.get("company_context_search"), dict) else {}
     return {
@@ -4888,9 +4957,20 @@ def clean_tier2_consequence_text(value: str) -> str:
 def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     specialty = safe_tier2_text(value.get("specialty")) or fallback.get("specialty", "")
     data_type = safe_tier2_text(value.get("data_type"), 220) or fallback.get("data_type", "")
-    consequence = clean_tier2_consequence_text(value.get("website_detail_consequence")) or fallback.get("website_detail_consequence", "")
-    if contains_ce_excluded_obligation_terms(consequence):
-        consequence = fallback.get("website_detail_consequence", "")
+    sensitivity_consequence = (
+        clean_tier2_consequence_text(value.get("sensitivity_consequence"))
+        or clean_tier2_consequence_text(value.get("website_detail_consequence"))
+        or fallback.get("sensitivity_consequence", "")
+        or fallback.get("website_detail_consequence", "")
+    )
+    if contains_ce_excluded_obligation_terms(sensitivity_consequence):
+        sensitivity_consequence = fallback.get("sensitivity_consequence", "") or fallback.get("website_detail_consequence", "")
+    enforcement_consequence = (
+        clean_tier2_consequence_text(value.get("enforcement_consequence"))
+        or fallback.get("enforcement_consequence", "")
+    )
+    if contains_ce_excluded_obligation_terms(enforcement_consequence):
+        enforcement_consequence = fallback.get("enforcement_consequence", "")
     confidence = compact(value.get("confidence")).lower()
     if confidence not in {"low", "medium", "high"}:
         confidence = fallback.get("confidence", "medium")
@@ -4899,7 +4979,9 @@ def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]
     return {
         "specialty": specialty,
         "data_type": data_type,
-        "website_detail_consequence": consequence,
+        "sensitivity_consequence": sensitivity_consequence,
+        "enforcement_consequence": enforcement_consequence,
+        "website_detail_consequence": sensitivity_consequence,
         "confidence": confidence,
         "source_url": source_url,
         "evidence": evidence[:5] if isinstance(evidence, list) else [],
@@ -4920,10 +5002,14 @@ def email_data_type_placeholder_no_tier2(row: dict[str, Any], classification: di
 def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
     specialty = email_specialty_placeholder_no_tier2(row, classification, copy_brief)
     data_type = email_data_type_placeholder_no_tier2(row, classification, copy_brief)
+    sensitivity_consequence = deterministic_sensitivity_consequence(row, classification, copy_brief, data_type)
+    enforcement_consequence = deterministic_enforcement_consequence(row, classification, copy_brief, data_type)
     fallback = {
         "specialty": safe_tier2_text(specialty),
         "data_type": safe_tier2_text(data_type, 220),
-        "website_detail_consequence": deterministic_website_detail_consequence(row, classification, copy_brief, data_type),
+        "sensitivity_consequence": sensitivity_consequence,
+        "enforcement_consequence": enforcement_consequence,
+        "website_detail_consequence": sensitivity_consequence or deterministic_website_detail_consequence(row, classification, copy_brief, data_type),
         "confidence": "medium",
         "source_url": compact(copy_brief.get("email_personalisation_source_url") or first_source_url(row)),
         "evidence": [],
@@ -4936,21 +5022,29 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
         return {**fallback, "source": "deterministic_llm_unavailable"}
     sanitized = sanitize_email_tier2_context({**extracted, "source": "llm"}, fallback)
     if email_track_placeholder(classification) == "hia":
-        consequence_l = sanitized["website_detail_consequence"].lower()
+        consequence_l = sanitized["sensitivity_consequence"].lower()
         if "hia" not in consequence_l and "health information act" not in consequence_l:
+            sanitized["sensitivity_consequence"] = fallback["sensitivity_consequence"]
             sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
             sanitized["confidence"] = "medium"
-        elif not re.search(r"\bHealth Information Act\s*\(HIA\)", sanitized["website_detail_consequence"], re.I):
-            sanitized["website_detail_consequence"] = re.sub(
+        elif not re.search(r"\bHealth Information Act\s*\(HIA\)", sanitized["sensitivity_consequence"], re.I):
+            sanitized["sensitivity_consequence"] = re.sub(
                 r"\bHIA\b",
                 "Health Information Act (HIA)",
-                sanitized["website_detail_consequence"],
+                sanitized["sensitivity_consequence"],
                 count=1,
                 flags=re.I,
             )
-    if email_track_placeholder(classification) in {"pdpa", "ncss"} and "hia" in sanitized["website_detail_consequence"].lower():
+            sanitized["website_detail_consequence"] = sanitized["sensitivity_consequence"]
+        enforcement_l = sanitized["enforcement_consequence"].lower()
+        if "moh" not in enforcement_l and "hia" not in enforcement_l and "2-hour" not in enforcement_l:
+            sanitized["enforcement_consequence"] = fallback["enforcement_consequence"]
+    if email_track_placeholder(classification) in {"pdpa", "ncss"} and "hia" in sanitized["sensitivity_consequence"].lower():
+        sanitized["sensitivity_consequence"] = fallback["sensitivity_consequence"]
         sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
         sanitized["confidence"] = "medium"
+    if email_track_placeholder(classification) in {"pdpa", "ncss"} and "hia" in sanitized["enforcement_consequence"].lower():
+        sanitized["enforcement_consequence"] = fallback["enforcement_consequence"]
     return sanitized
 
 
@@ -4959,7 +5053,7 @@ def apply_email_tier2_context_to_copy_brief(
     copy_brief: dict[str, Any],
 ) -> dict[str, Any]:
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
-    consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
+    consequence = safe_tier2_text(tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"), 260)
     data_type = safe_tier2_text(tier2.get("data_type"), 220)
     if not consequence:
         return copy_brief
@@ -5335,7 +5429,7 @@ def email_context_line_placeholder(
     company = email_display_company_name(row)
     data = compact(data_type).rstrip(".")
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
-    consequence = safe_tier2_text(tier2.get("website_detail_consequence"), 260)
+    consequence = safe_tier2_text(tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"), 260)
     if contains_ce_excluded_obligation_terms(consequence):
         consequence = ""
     if classification.get("pressure_type") == "hia_regulatory":
@@ -5427,19 +5521,30 @@ def build_email_1_placeholders(
     context_line = email_context_line_placeholder(row, classification, copy_brief, data_type)
     source_url = compact(email1_chain.get("source_url") or copy_brief.get("email_personalisation_source_url") or first_source_url(row))
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    sensitivity_consequence = compact(tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"))
+    enforcement_consequence = compact(tier2.get("enforcement_consequence"))
     placeholders = {
+        "salutation": greeting_label,
+        "company_name": email_display_company_name(row),
+        "specialty": email_specialty_placeholder(row, classification, copy_brief),
+        "data_type": data_type,
+        "sensitivity_consequence": sensitivity_consequence,
+        "enforcement_consequence": enforcement_consequence,
+        "funding_line": email_funding_line_placeholder(funding, copy_brief, classification),
         "recipient_salutation": greeting_label,
         "email_greeting_line": greeting_line,
         "company_display_name": email_display_company_name(row),
         "email_track": email_track_placeholder(classification),
         "funding_program": compact(funding.primary_funding_program),
-        "hia_batch_deadline": compact(classification.get("hia_timeline_batch_guess")),
+        "hia_batch_deadline": hia_deadline_date_label(classification) if email_track_placeholder(classification) == "hia" else "",
         "email_specialty": email_specialty_placeholder(row, classification, copy_brief),
         "email_data_type": data_type,
         "email_context_line": context_line,
         "email_context_confidence": compact(tier2.get("confidence") or email1_chain.get("confidence")) or "medium",
         "email_context_source_url": compact(tier2.get("source_url")) or source_url,
-        "website_detail_consequence": compact(tier2.get("website_detail_consequence")),
+        "email_sensitivity_consequence": sensitivity_consequence,
+        "email_enforcement_consequence": enforcement_consequence,
+        "website_detail_consequence": sensitivity_consequence,
         "email_tier2_source": compact(tier2.get("source")) or "deterministic",
         "email_tier2_extraction_json": json_dumps(tier2) if tier2 else "",
         "email_service_line": email_service_line_placeholder(classification),
@@ -5560,10 +5665,19 @@ EMAIL_3_PLATFORM_LINE = (
 )
 
 
+def sentence_line(value: Any) -> str:
+    text = compact(value)
+    if not text:
+        return ""
+    if re.search(r"[.!?]$", text):
+        return text
+    return f"{text}."
+
+
 def email_2_body_from_placeholders(placeholders: dict[str, Any]) -> str:
     parts = [
         compact(placeholders.get("email_2_greeting_line")),
-        compact(placeholders.get("email_2_check_line")),
+        sentence_line(placeholders.get("email_2_check_line")),
         compact(placeholders.get("email_2_route_line")),
         compact(placeholders.get("email_2_cta_line")),
         compact(placeholders.get("email_2_ps_line")),
@@ -5598,12 +5712,15 @@ def build_hia_email_2_placeholders(
     pricing_mode: str,
     funding_safe: bool,
 ) -> dict[str, Any]:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     placeholders = {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "email_2_tieback_line": "",
-        "email_2_check_line": slots.get("check_line")
+        "email_2_check_line": enforcement
+        or slots.get("check_line")
         or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours.",
         "email_2_route_line": EMAIL_2_CE_CONNECTOR,
         "email_2_cta_line": slots.get("cta") or "Can I send the HIA readiness checklist?",
@@ -5620,13 +5737,15 @@ def build_funding_email_2_placeholders(
     caveat: str,
     ps: str | None = None,
 ) -> dict[str, Any]:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     if classification.get("pressure_type") == "hia_regulatory":
-        check_line = "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours."
+        check_line = enforcement or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours."
         route_line = EMAIL_2_CE_CONNECTOR
         cta = "Can I send the HIA readiness checklist?"
     else:
         data_type = frozen_email_data_type(copy_brief, classification)
-        check_line = f"When PDPC reviews a PDPA breach, complaint or audit, they look first at whether safeguards were documented before the incident - not put in place after. For {data_type}, that distinction matters."
+        check_line = enforcement or f"When PDPC reviews a PDPA breach, complaint or audit, they look first at whether safeguards were documented before the incident - not put in place after. For {data_type}, that distinction matters."
         route_line = EMAIL_2_CE_CONNECTOR
         cta = "Worth sending the personal data safeguards checklist?"
     return {
@@ -5650,12 +5769,15 @@ def build_value_fallback_email_2_placeholders(
     slots: dict[str, str],
     ps: str | None = None,
 ) -> dict[str, Any]:
+    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
+    enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         data_type = frozen_email_data_type(copy_brief, classification)
         default_second = (
             f"When PDPC reviews a PDPA breach, complaint or audit, they look first at whether safeguards were documented before the incident - "
             f"not put in place after. For {data_type}, that distinction matters."
         )
+        default_second = enforcement or default_second
         default_fit = EMAIL_2_CE_CONNECTOR
         default_cta = "Worth sending the personal data safeguards checklist?"
     else:
@@ -8336,6 +8458,17 @@ def email_1_rewrite_payload(
     email1 = emails.get("email_1") or {}
     email2 = emails.get("email_2") or {}
     funding_safe = funding_claim_send_safe(funding, copy_brief, classification)
+    p1 = copy_brief.get("email_1_placeholders") if isinstance(copy_brief.get("email_1_placeholders"), dict) else {}
+    strict_placeholders = {
+        "salutation": compact(p1.get("salutation") or p1.get("recipient_salutation")),
+        "company_name": compact(p1.get("company_name") or p1.get("company_display_name") or email_display_company_name(row)),
+        "specialty": compact(p1.get("specialty") or p1.get("email_specialty")),
+        "data_type": compact(p1.get("data_type") or p1.get("email_data_type")),
+        "sensitivity_consequence": compact(p1.get("sensitivity_consequence") or p1.get("email_sensitivity_consequence") or p1.get("website_detail_consequence")),
+        "enforcement_consequence": compact(p1.get("enforcement_consequence") or p1.get("email_enforcement_consequence")),
+        "hia_batch_deadline": compact(p1.get("hia_batch_deadline")),
+        "funding_line": compact(p1.get("funding_line") or p1.get("email_funding_line")),
+    }
     return {
         "company_name": email_display_company_name(row),
         "first_name": first_name_from_contact(compact(row.get("selected_contact_name"))),
@@ -8357,6 +8490,7 @@ def email_1_rewrite_payload(
         "approved_problem": compact(copy_brief.get("email_problem_statement")),
         "approved_mechanism": compact(copy_brief.get("email_mechanism_statement")),
         "approved_cta": compact(copy_brief.get("email_cta")),
+        "strict_placeholders": strict_placeholders,
         "email_1_placeholders": copy_brief.get("email_1_placeholders", {}),
         "email_2_placeholders": copy_brief.get("email_2_placeholders", {}),
         "email_3_placeholders": copy_brief.get("email_3_placeholders", {}),
@@ -9851,6 +9985,8 @@ def build_noco_patch(row: dict[str, Any], plan: OutreachPlan) -> dict[str, Any]:
         "email_context_line": p.get("email_context_line", ""),
         "email_context_confidence": p.get("email_context_confidence", ""),
         "email_context_source_url": p.get("email_context_source_url", ""),
+        "email_sensitivity_consequence": p.get("email_sensitivity_consequence", p.get("sensitivity_consequence", "")),
+        "email_enforcement_consequence": p.get("email_enforcement_consequence", p.get("enforcement_consequence", "")),
         "website_detail_consequence": p.get("website_detail_consequence", ""),
         "email_tier2_source": p.get("email_tier2_source", ""),
         "email_tier2_extraction_json": p.get("email_tier2_extraction_json", ""),
