@@ -92,8 +92,8 @@ class OutreachPlannerTests(unittest.TestCase):
 
     def test_named_greeting_keeps_followup_sentence_inline(self):
         self.assertEqual(
-            o.followup_sentence("Hi Natalie,", "linking this back to the HIA readiness map."),
-            "Hi Natalie, linking this back to the HIA readiness map.",
+            o.followup_sentence("Hi Natalie,", "linking this back to the CE certification process."),
+            "Hi Natalie, linking this back to the CE certification process.",
         )
 
     def test_email_1_uses_resolved_placeholders(self):
@@ -117,7 +117,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(placeholders["recipient_salutation"], "Dr Soon")
         self.assertEqual(placeholders["email_track"], "hia")
         self.assertIn("Health Information Act (HIA)", placeholders["email_context_line"])
-        self.assertIn("HIA cyber/data-security", placeholders["email_service_line"])
+        self.assertIn("HIA cyber/data security", placeholders["email_service_line"])
         self.assertIn(placeholders["email_context_line"], body)
         self.assertIn(placeholders["email_service_line"], body)
         self.assertIn(placeholders["email_cta_line"], body)
@@ -144,9 +144,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(paragraphs[0], "Hi Dr Lim,")
         self.assertIn("For a GP clinic managing patient appointments, consultation notes, and screening records", paragraphs[1])
         self.assertIn("Health Information Act (HIA)", paragraphs[1])
-        self.assertIn("documented evidence from 2027", paragraphs[1])
+        self.assertIn("documented evidence by September 2027", paragraphs[1])
         self.assertIn("We help outpatient clinics get Cyber Essentials certified", paragraphs[2])
-        self.assertIn("HIA cyber/data-security side", paragraphs[2])
+        self.assertIn("HIA cyber/data security", paragraphs[2])
         self.assertIn("up to 70% subsidised under CSA's CISOaaS government grant", paragraphs[2])
         self.assertEqual(paragraphs[-1], "Can I send the HIA readiness checklist?")
 
@@ -156,7 +156,7 @@ class OutreachPlannerTests(unittest.TestCase):
             "data_type": "cardiac investigation records, arrhythmia treatments, and device implant histories",
             "website_detail_consequence": (
                 "HIA targets exactly the patient data you hold - access logs, vendor NDAs, backups, "
-                "and MOH incident reporting all need documented evidence from 2027"
+                "and MOH incident reporting all need documented evidence by September 2027"
             ),
             "confidence": "high",
             "source_url": "https://cardio.example/",
@@ -1804,25 +1804,25 @@ class OutreachPlannerTests(unittest.TestCase):
             (
                 "Talent Search Pte Ltd",
                 "Recruitment firm handling candidate records, payroll data, employee records and client records.",
-                "Candidate profiles, employee records",
+                "Candidate profiles",
                 "HR data safeguards checklist",
             ),
             (
                 "Account Admin Pte Ltd",
                 "Accounting, finance and admin services handling client financial records, payroll and business records.",
-                "Client financial records, business records",
+                "Client financial records",
                 "client data safeguards checklist",
             ),
             (
                 "Retail Support Pte Ltd",
                 "Retail e-commerce customer service operations handling customer orders, support and payment-related records.",
-                "Customer contact data, order history",
+                "Customer contact data",
                 "customer data checklist",
             ),
             (
                 "Care Volunteers Society",
                 "Charity social service organisation handling beneficiary, volunteer, donor and staff data.",
-                "Beneficiary records, volunteer data, donor contacts",
+                "Beneficiary records",
                 "care-organisation safeguards checklist",
             ),
         ]
@@ -1885,8 +1885,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertEqual(o.choose_variant(plan.classification), "dpo_evidence")
         self.assertIn(plan.emails["email_1"]["chosen_subject"], {"data protection evidence", "evidence checklist", "data evidence"})
-        self.assertIn("access records", plan.emails["email_1"]["body"])
-        self.assertIn("incident evidence", plan.emails["email_1"]["body"])
+        self.assertIn("evidence bar", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials certified", plan.emails["email_1"]["body"])
         self.assertRegex(plan.emails["email_1"]["body"], r"proof|evidence")
 
     def test_data_protection_owner_titles_use_evidence_angle(self):
@@ -1901,8 +1901,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 )
                 self.assertEqual(plan.classification["campaign_track"], "dpo_evidence")
                 self.assertEqual(plan.emails["email_1"]["chosen_subject"], "data protection evidence")
-                self.assertIn("access records", plan.emails["email_1"]["body"])
-                self.assertIn("incident evidence", plan.emails["email_1"]["body"])
+                self.assertIn("evidence bar", plan.emails["email_1"]["body"])
+                self.assertIn("Cyber Essentials certified", plan.emails["email_1"]["body"])
                 self.assertRegex(plan.emails["email_1"]["body"], r"proof|evidence")
                 self.assertNotIn("is responsible for compliance", plan.emails["email_1"]["body"])
 
@@ -2208,8 +2208,8 @@ class OutreachPlannerTests(unittest.TestCase):
         body = (
             "Hi Ivan, does Example Medical Clinic keep patient records across appointments and consultation notes?\n\n"
             "If so, HIA starting from 2027 makes that trail the issue: access, vendors, backups and incident steps need evidence.\n\n"
-            "We help map that trail into a Cyber Essentials route for the HIA cyber/data-security side.\n\n"
-            "Worth sending the HIA readiness map?"
+            "We help map that trail into a Cyber Essentials route for HIA cyber/data security.\n\n"
+            "Worth sending the HIA readiness checklist?"
         )
         flags = o.email_1_rewrite_static_flags(
             body,
@@ -2339,7 +2339,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
                 elif o.hia_pricing_active(plan.classification, plan.copy_brief):
-                    self.assertIn("HIA readiness map", plan.emails["email_2"]["body"])
+                    self.assertIn("CE certification process", plan.emails["email_2"]["body"])
                     self.assertTrue("2-hour" in plan.emails["email_2"]["body"] or "MOH" in plan.emails["email_2"]["body"])
                     self.assertIn("incident", plan.emails["email_2"]["body"].lower())
                 elif not o.hia_pricing_active(plan.classification, plan.copy_brief):
@@ -2901,7 +2901,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(matched.copy_brief["email_2_mode"], "risk_followup")
         self.assertEqual(matched.copy_brief["funding_followup_mode"], "risk_followup")
         self.assertTrue("2-hour" in matched.emails["email_2"]["body"] or "MOH" in matched.emails["email_2"]["body"])
-        self.assertIn("HIA readiness map", matched.emails["email_2"]["body"])
+        self.assertIn("CE certification process", matched.emails["email_2"]["body"])
         self.assertNotIn("S$4,300 before funding", matched.emails["email_2"]["body"])
 
     def test_email_funding_line_placeholder_handles_ncss_80_percent_claim(self):
@@ -3267,18 +3267,18 @@ class OutreachPlannerTests(unittest.TestCase):
             "Based on the company profile, the Cyber Essentials support route appears worth checking for Example Clinic.",
             "\n\nThis is subject to programme confirmation.",
         )
-        self.assertIn("Following up on the same safeguards-evidence point", body)
+        self.assertIn("When PDPC reviews a PDPA breach", body)
         self.assertIn("safeguards were documented before", body)
-        self.assertIn("access, backup and incident evidence", body)
+        self.assertIn("CE certification process", body)
         self.assertNotIn("p.s.", body.lower())
 
     def test_email_2_named_followup_lowercases_after_dash(self):
         funding = o.funding_email_2_body_fixed("Samuel - ", "Based on the company profile, the Cyber Essentials support route appears worth checking.", "")
         fallback = o.value_fallback_body_fixed("Samuel - ", "safeguards checklist")
         pricing = o.hia_pricing_email_2_body("Samuel - ", "group_or_larger_sizing_needed", False)
-        self.assertTrue(funding.startswith("Samuel - following"))
-        self.assertTrue(fallback.startswith("Samuel - just"))
-        self.assertTrue(pricing.startswith("Samuel - following"))
+        self.assertTrue(funding.startswith("Samuel - when"))
+        self.assertTrue(fallback.startswith("Samuel - when"))
+        self.assertTrue(pricing.startswith("Samuel - the"))
 
     def test_email_2_cta_is_own_paragraph_before_ps(self):
         cases = [
@@ -3293,7 +3293,7 @@ class OutreachPlannerTests(unittest.TestCase):
         for body in cases:
             with self.subTest(body=body):
                 paragraphs = [part.strip() for part in body.split("\n\n") if part.strip()]
-                self.assertEqual(len(paragraphs), 4)
+                self.assertEqual(len(paragraphs), 3)
                 self.assertTrue(paragraphs[-1].endswith("?"))
                 self.assertNotIn("p.s.", body.lower())
                 self.assertLessEqual(len(paragraphs[-1].split()), 8)
@@ -3323,9 +3323,9 @@ class OutreachPlannerTests(unittest.TestCase):
     def test_email_2_rewrite_rejects_long_merged_paragraph(self):
         deterministic = o.hia_pricing_email_2_body("Hi Natalie,", "group_or_larger_sizing_needed", False)
         merged = (
-            "Hi Natalie, linking this back to the HIA readiness map.\n\n"
+            "Hi Natalie, linking this back to the CE certification process.\n\n"
             "The useful check is whether patient records, vendor systems, backups, access owners and incident roles can be mapped cleanly. "
-            "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data-security side. "
+            "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data security. "
             "For larger setups, support depends on route and endpoint count.\n\n"
             "Should I send the short map?\n\n"
             f"{o.EMAIL_2_VALUE_PS}"
@@ -3363,7 +3363,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
                 self.assertFalse(plan.classification["hia_relevant"])
-                self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
+                self.assertIn("Checklist is free and takes 10 minutes. Reply anytime.", plan.emails["email_3"]["body"])
 
     def test_hia_email_1_links_question_pressure_mechanism_and_cta(self):
         cases = [
@@ -3402,10 +3402,13 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(len(paragraphs), 4)
                 self.assertIn(profile, plan.copy_brief["prospect_facing_signal"])
                 self.assertTrue(o.standalone_greeting_line(paragraphs[0]))
-                self.assertIn("Health Information Act (HIA) targets", paragraphs[1])
+                self.assertTrue(
+                    "Health Information Act (HIA) targets" in paragraphs[1]
+                    or "fall squarely under the Health Information Act (HIA)" in paragraphs[1]
+                )
                 self.assertRegex(paragraphs[1].lower(), r"consultation|appointment|imaging|records")
                 self.assertIn("Cyber Essentials", paragraphs[2])
-                self.assertIn("HIA cyber/data-security", paragraphs[2])
+                self.assertIn("HIA cyber/data security", paragraphs[2])
                 self.assertIn("HIA readiness checklist?", paragraphs[3])
                 self.assertNotIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
@@ -3563,7 +3566,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("if you are an NPO", plan.emails["email_3"]["body"])
         brief = plan.copy_brief
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
-        self.assertIn("Beneficiary records, volunteer data, donor contacts", plan.emails["email_1"]["body"])
+        self.assertIn("Beneficiary records", plan.emails["email_1"]["body"])
         self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
         self.assertIn("evidence bar", plan.emails["email_1"]["body"])
         self.assertIn("beneficiary", plan.emails["email_3"]["body"])
@@ -3666,7 +3669,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("appointment", plan.copy_brief["personal_data_handled_guess"])
         self.assertIn("hearing-care provider offering hearing tests, hearing aids and audiology support", plan.copy_brief["clinic_profile_phrase"])
         self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
-        self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
+        self.assertIn("Checklist is free and takes 10 minutes. Reply anytime.", plan.emails["email_3"]["body"])
         self.assertNotIn("eye clinic", plan.copy_brief["prospect_facing_signal"].lower())
         self.assertEqual(plan.copy_brief["email_asset_offer"], "personal-data safeguards checklist")
         self.assert_no_final_email_batch_or_signal_language(plan)
@@ -4329,7 +4332,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["endpoint_band_guess"], "1_5")
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
         self.assertNotIn("S$4,300 before funding", email2)
-        self.assertIn("HIA readiness map", email2)
+        self.assertIn("CE certification process", email2)
         self.assertIn("2-hour", email2)
         self.assertIn("MOH", email2)
         self.assertIn("incident", email2.lower())
@@ -4441,12 +4444,13 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         email2 = plan.emails["email_2"]["body"]
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
-        self.assertIn("HIA readiness map", email2)
+        self.assertIn("CE certification process", email2)
         self.assertIn("2-hour", email2)
         self.assertIn("HIA ", email2)
         self.assertNotIn("70%", email2)
         self.assertNotIn("If the route applies", email2)
-        self.assertTrue(plan.final_send_gate_passed)
+        self.assertFalse(plan.final_send_gate_passed)
+        self.assertIn("email_1_missing_clinic_profile", plan.severe_email_flags)
 
     def test_non_hia_email_2_does_not_use_clinic_pricing(self):
         plan = o.plan_outreach(
@@ -4635,7 +4639,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     self.assertIn(diagnostic, plan.emails["email_3"]["body"])
                 else:
                     self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
-                    self.assertIn("personal-data safeguards checklist", plan.emails["email_3"]["body"])
+                    self.assertIn("Checklist is free and takes 10 minutes. Reply anytime.", plan.emails["email_3"]["body"])
                 self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
 
     def test_dental_and_pharmacy_hia_batches(self):

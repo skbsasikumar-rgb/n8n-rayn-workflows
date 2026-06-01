@@ -848,8 +848,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         )
 
     def test_email_rewrite_prompt_requires_hia_cyber_data_security_in_email_1(self):
-        self.assertIn("HIA cyber/data-security side", planner.EMAIL_1_REWRITE_PROMPT)
-        self.assertIn("Email 1 paragraph 3", planner.EMAIL_1_REWRITE_PROMPT)
+        self.assertIn("HIA cyber/data security", planner.EMAIL_1_REWRITE_PROMPT)
+        self.assertIn("Never use the word \"side\"", planner.EMAIL_1_REWRITE_PROMPT)
 
 
 class InstantlyBackfillScriptTests(unittest.TestCase):
