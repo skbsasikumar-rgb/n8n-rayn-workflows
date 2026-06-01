@@ -137,7 +137,7 @@ class FundingProgramTests(unittest.TestCase):
         self.assertEqual(members[normalize_member_key("4S")], "4S")
 
     @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
-    def test_ncss_member_gets_verified_tss_80_percent_claim(self, fetch_directory):
+    def test_ncss_member_gets_verified_tech_and_go_80_percent_claim(self, fetch_directory):
         fetch_directory.return_value = {
             normalize_member_key("365 CANCER PREVENTION SOCIETY"): "365 CANCER PREVENTION SOCIETY",
         }
@@ -154,7 +154,7 @@ class FundingProgramTests(unittest.TestCase):
         )
 
         self.assertEqual(match.funding_status, "verified_match")
-        self.assertEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertEqual(match.primary_funding_program, "NCSS Tech-and-GO!")
         self.assertIn("up to 80% co-funding", match.funding_claim_line)
         self.assertFalse(match.funding_human_review_required)
         self.assertEqual(match.matched[0]["ncss_member_name"], "365 CANCER PREVENTION SOCIETY")
@@ -177,7 +177,7 @@ class FundingProgramTests(unittest.TestCase):
             programmes=PROGRAMMES,
         )
 
-        self.assertNotEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertNotEqual(match.primary_funding_program, "NCSS Tech-and-GO!")
         self.assertNotIn("80%", match.funding_claim_line)
 
     @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
@@ -198,7 +198,7 @@ class FundingProgramTests(unittest.TestCase):
         )
 
         self.assertEqual(match.funding_status, "verified_match")
-        self.assertEqual(match.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertEqual(match.primary_funding_program, "NCSS Tech-and-GO!")
         self.assertEqual(match.matched[0]["ncss_member_name"], "4S")
 
 

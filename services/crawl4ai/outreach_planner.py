@@ -174,7 +174,7 @@ Rules:
 - Email 3 gives a diagnostic tied to the same problem.
 - Email 4 closes the loop.
 - For HIA rows, lead with HIA timeline / regulatory readiness. Mention Cyber Essentials only as a practical first baseline. Do not say Cyber Essentials completes HIA compliance.
-- For NCSS social-service rows, lead with PDPA / personal-data safeguards for beneficiary, donor, volunteer or staff data, then mention NCSS TSS only when funding_claim_safe is true.
+- For NCSS social-service rows, lead with PDPA / personal-data safeguards for beneficiary, donor, volunteer or staff data, then mention NCSS Tech-and-GO! only when funding_claim_safe is true.
 - For other non-HIA rows, lead with PDPA / personal-data safeguards. Say Cyber Essentials supports the security-safeguards side of PDPA readiness. Do not say Cyber Essentials alone equals PDPA compliance.
 - For DPO, compliance, privacy, operations, admin, or HR contacts, lead with data-protection evidence ownership across IT, HR, vendors and operations.
 - For B2B rows, lead with customer security evidence and trust. Position Cyber Essentials as reusable proof.
@@ -211,6 +211,10 @@ FORBIDDEN_PHRASES = (
     "you will be hacked",
     "hia = cem",
     "cyber essentials makes you pdpa compliant",
+    "cyber essentials covers consent",
+    "cyber essentials covers purpose limitation",
+    "cyber essentials covers data subject rights",
+    "cyber essentials covers notification obligations",
     "fully hia compliant with cyber essentials",
     "transform your security",
     "unlock growth",
@@ -266,6 +270,11 @@ Rules:
 - Use simple words and short sentences.
 - No marketing copy. No hype. No meeting ask.
 - No "from the site".
+- Cyber Essentials scope is access control, backups, anti-malware, secure configuration, updates and incident response. Never present Cyber Essentials as covering consent, purpose limitation, data subject rights or notification obligations.
+- The data type used in Email 2 must match payload.email_1_placeholders.email_data_type exactly. Do not re-extract or rename it.
+- If the NCSS grant is mentioned, call it "NCSS Tech-and-GO!" only. Never use the old TSS name.
+- Do not repeat the same sentence twice in an email.
+- If trimming for length, remove complete sentences only. Never cut mid-word or mid-sentence.
 - Avoid: dive into, unleash, game-changing, revolutionary, transformative, leverage, optimize, unlock potential, unlock the secrets.
 
 Email 1 rules:
@@ -1610,7 +1619,7 @@ def apply_ncss_social_service_pressure(classification: dict[str, Any], funding: 
     )
     classification["recommended_first_cert"] = "Cyber Essentials"
     classification["recommended_cert_path"] = (
-        "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check TSS fit for eligible consultancy or digitalisation support."
+        "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check NCSS Tech-and-GO! fit for eligible consultancy or digitalisation support."
     )
     classification["certification_reason"] = certification_reason(NCSS_SOCIAL_SERVICE_PRESSURE)
     classification["certification_fit_score"] = max(int(classification.get("certification_fit_score") or 0), 82)
@@ -2190,6 +2199,93 @@ def hia_problem_prefix(classification: dict[str, Any]) -> str:
 
 def trim_text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def sentence_parts(text: str) -> list[str]:
+    text = compact(text)
+    if not text:
+        return []
+    parts = re.findall(r"[^.!?]+[.!?]+(?:[\"')\]]+)?|[^.!?]+$", text)
+    return [compact(part) for part in parts if compact(part)]
+
+
+def sentence_key(sentence: str) -> str:
+    sentence = compact(sentence).lower()
+    sentence = re.sub(r"^[\"'([{]+|[\"')\]}]+$", "", sentence)
+    sentence = re.sub(r"[^a-z0-9]+", " ", sentence)
+    return compact(sentence)
+
+
+def duplicate_sentence_keys(body: str) -> list[str]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for paragraph in body.split("\n\n"):
+        for sentence in sentence_parts(paragraph):
+            key = sentence_key(sentence)
+            if len(key.split()) < 4:
+                continue
+            if key in seen and key not in duplicates:
+                duplicates.append(key)
+            seen.add(key)
+    return duplicates
+
+
+def dedupe_repeated_sentences(body: str) -> str:
+    seen: set[str] = set()
+    paragraphs: list[str] = []
+    for paragraph in body.split("\n\n"):
+        kept: list[str] = []
+        for sentence in sentence_parts(paragraph):
+            key = sentence_key(sentence)
+            if len(key.split()) >= 4 and key in seen:
+                continue
+            kept.append(sentence)
+            if len(key.split()) >= 4:
+                seen.add(key)
+        joined = " ".join(kept)
+        if joined:
+            paragraphs.append(joined)
+    return "\n\n".join(paragraphs)
+
+
+def trim_body_to_sentence_boundary(body: str, limit: int = 100) -> str:
+    body = dedupe_repeated_sentences(body)
+    if word_count(body) <= limit:
+        return body
+    paragraphs = [sentence_parts(paragraph) for paragraph in body.split("\n\n")]
+    def render() -> str:
+        return "\n\n".join(" ".join(sentences) for sentences in paragraphs if sentences)
+
+    while word_count(render()) > limit:
+        removed = False
+        for index in range(len(paragraphs) - 1, -1, -1):
+            if not paragraphs[index]:
+                continue
+            if index == 0 and standalone_greeting_line(" ".join(paragraphs[index])):
+                continue
+            if index == len(paragraphs) - 1 and len(paragraphs[index]) == 1:
+                continue
+            paragraphs[index].pop()
+            removed = True
+            break
+        if not removed:
+            break
+    return render()
+
+
+def finalize_email_body(body: str, limit: int = 100) -> str:
+    body = strip_trailing_signature(trim_text(body))
+    body = dedupe_repeated_sentences(body)
+    return trim_body_to_sentence_boundary(body, limit)
+
+
+def cyber_essentials_scope_overreach(body: str) -> bool:
+    text = compact(body).lower()
+    forbidden = r"(?:consent(?: management)?|purpose limitation|data subject rights?|notification obligations?)"
+    return bool(
+        re.search(rf"cyber essentials.{{0,180}}{forbidden}", text)
+        or re.search(rf"{forbidden}.{{0,180}}cyber essentials", text)
+    )
 
 
 def lower_blob(row: dict[str, Any]) -> str:
@@ -3683,7 +3779,7 @@ def apply_manual_pressure_override(row: dict[str, Any], classification: dict[str
         classification["hia_deadline_claim_safe"] = False
         classification["pdpa_relevant"] = True
         classification["pdpa_reason"] = "NCSS changes the support/funding route, but beneficiary, donor, volunteer and staff data remains framed under PDPA safeguards."
-        classification["recommended_cert_path"] = "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check TSS fit for eligible consultancy or digitalisation support."
+        classification["recommended_cert_path"] = "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check NCSS Tech-and-GO! fit for eligible consultancy or digitalisation support."
         classification["certification_reason"] = certification_reason(NCSS_SOCIAL_SERVICE_PRESSURE)
         classification["pdpa_safeguard_angle"] = "cyber_essentials_baseline"
     else:
@@ -4101,7 +4197,7 @@ def build_problem_hypothesis(pressure_type: str, data_type: str, problem_area: s
     if pressure_type == "customer_trust":
         pressure_type = "pdpa_safeguards"
     if pressure_type == NCSS_SOCIAL_SERVICE_PRESSURE:
-        return "The practical gap is likely proving safeguards for beneficiary, volunteer, donor and staff data while checking whether NCSS TSS support fits."
+        return "The practical gap is likely proving safeguards for beneficiary, volunteer, donor and staff data while checking whether NCSS Tech-and-GO! support fits."
     if pressure_type == "hia_regulatory":
         return "The practical gap is likely mapping HIA cybersecurity/data-security duties into access, backup, patching, incident and evidence checks."
     if pressure_type == "not_ready":
@@ -4117,7 +4213,7 @@ def certification_reason(pressure_type: str) -> str:
     if pressure_type == "hia_regulatory":
         return "Cyber Essentials is a practical first baseline for HIA cybersecurity/data-security readiness; it is not HIA compliance."
     if pressure_type == NCSS_SOCIAL_SERVICE_PRESSURE:
-        return "Cyber Essentials supports PDPA safeguard evidence; NCSS TSS is the social-service support route, not a compliance claim."
+        return "Cyber Essentials supports PDPA safeguard evidence; NCSS Tech-and-GO! is the social-service support route, not a compliance claim."
     if pressure_type == "not_ready":
         return "No certification path should be pitched until stronger evidence is available."
     return "Cyber Essentials supports the security-safeguards side of PDPA readiness; it does not make the organisation PDPA compliant."
@@ -5154,7 +5250,7 @@ def email_1_subject_from_placeholders(
     if compact(placeholders.get("email_track")) == "ncss":
         segment, plural = pdpa_subject_segment(row, classification, copy_brief)
         verb = "need" if plural else "needs"
-        return f"NCSS TSS - what {segment} {verb} to be able to show"
+        return f"PDPA - what {segment} {verb} to be able to show"
     return compact(placeholders.get("email_subject")) or "readiness checklist"
 
 
@@ -5216,11 +5312,9 @@ def email_funding_line_placeholder(
         "ncss" in line.lower()
         or "transformation sustainability" in line.lower()
         or "tss" in line.lower()
+        or "tech-and-go" in line.lower()
     ):
-        return (
-            "NCSS TSS can support eligible social-service consultancy or digitalisation work at "
-            "up to 80% co-funding, subject to programme requirements."
-        )
+        return "The consultancy is 80% subsidised under NCSS Tech-and-GO!."
     return ""
 
 
@@ -5256,6 +5350,7 @@ def build_email_1_placeholders(
     greeting_label = contact_greeting_label(row) or "team"
     greeting_line = email_greeting(row)
     data_type = email_data_type_placeholder(row, classification, copy_brief)
+    copy_brief["frozen_email_data_type"] = data_type
     context_line = email_context_line_placeholder(row, classification, copy_brief, data_type)
     source_url = compact(email1_chain.get("source_url") or copy_brief.get("email_personalisation_source_url") or first_source_url(row))
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
@@ -5280,6 +5375,23 @@ def build_email_1_placeholders(
         "email_role_frame": email_role_frame_placeholder(row, classification),
     }
     return placeholders
+
+
+def frozen_email_data_type(
+    copy_brief: dict[str, Any],
+    classification: dict[str, Any] | None = None,
+    fallback: str = "this kind of personal data",
+) -> str:
+    email1_placeholders = copy_brief.get("email_1_placeholders") if isinstance(copy_brief.get("email_1_placeholders"), dict) else {}
+    data_type = compact(copy_brief.get("frozen_email_data_type") or email1_placeholders.get("email_data_type"))
+    if not data_type:
+        data_type = compact(copy_brief.get("sensitive_data_examples"))
+    if not data_type and classification:
+        data_type = compact(classification.get("data_type_signal")).replace("_", " ")
+    data_type = data_type.rstrip(" .;,:")
+    if data_type.lower() in {"", "unknown", "personal data"}:
+        return fallback
+    return data_type
 
 
 def email_1_body_from_placeholders(placeholders: dict[str, Any]) -> str:
@@ -5441,8 +5553,7 @@ def build_funding_email_2_placeholders(
         route_line = "That needs a tested incident plan: who checks access evidence, who contacts vendors, and who reports before the clock starts."
         cta = "Can I send the HIA readiness checklist?"
     else:
-        data_type = compact(copy_brief.get("sensitive_data_examples")) or "this kind of personal data"
-        data_type = data_type.rstrip(" .;,:")
+        data_type = frozen_email_data_type(copy_brief, classification)
         check_line = "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before the incident, not written afterwards."
         route_line = f"For {data_type}, that means access, backup and incident evidence needs to exist before anyone asks for it."
         cta = "Worth sending the personal data safeguards checklist?"
@@ -5450,6 +5561,7 @@ def build_funding_email_2_placeholders(
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "email_2_data_type": data_type if "data_type" in locals() else "",
         "email_2_tieback_line": "Following up on the same point.",
         "email_2_check_line": check_line,
         "email_2_route_line": route_line,
@@ -5467,9 +5579,7 @@ def build_value_fallback_email_2_placeholders(
     ps: str | None = None,
 ) -> dict[str, Any]:
     if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
-        data_type = compact(copy_brief.get("sensitive_data_examples")) or compact(classification.get("data_type_signal")).replace("_", " ")
-        data_type = data_type.rstrip(" .;,:")
-        data_type = data_type or "this kind of personal data"
+        data_type = frozen_email_data_type(copy_brief, classification)
         default_second = (
             "The PDPA point PDPC checks in a breach, complaint or audit is whether safeguards were documented before "
             "the incident, not written afterwards."
@@ -5486,6 +5596,7 @@ def build_value_fallback_email_2_placeholders(
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
+        "email_2_data_type": data_type if "data_type" in locals() else "",
         "email_2_tieback_line": sentence_after_standalone_greeting(
             slots.get("opening_line") or "just tying this back to my earlier note."
         ),
@@ -5873,12 +5984,7 @@ def non_hia_email_2_sentence_slots(
     copy_brief = copy_brief or {}
     track = email_variant_track(classification)
     company = email_display_company_name(row)
-    data_type = compact(copy_brief.get("sensitive_data_examples")) or compact(classification.get("data_type_signal")).replace("_", " ")
-    data_type = data_type.rstrip(" .;,:")
-    if classification.get("entity_type_guess") in {"npo", "charity", "social_service"} and "beneficiar" in lower_blob(row):
-        data_type = "beneficiary records"
-    if data_type.lower() in {"", "unknown", "personal data"}:
-        data_type = "this kind of personal data"
+    data_type = frozen_email_data_type(copy_brief, classification)
     opening_options = {
         "tie_back": "following up on the PDPA point from my earlier note.",
         "link_back": "linking this back to the PDPA point from my earlier note.",
@@ -6027,10 +6133,8 @@ def email_3_sentence_slots(
                 },
             ),
         }
-    data_type = compact(classification.get("data_type_signal")).replace("_", " ") or records_text
+    data_type = records_text
     data_type = data_type.rstrip(" .;,:")
-    if classification.get("entity_type_guess") in {"npo", "charity", "social_service"} and "beneficiar" in lower_blob(row):
-        data_type = "beneficiary records"
     if data_type.lower() in {"unknown", "personal data"}:
         data_type = "this kind of personal data"
     if track == "customer_trust":
@@ -7797,7 +7901,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
             problem = pdpa_context["problem"]
         complexity = "medium" if classification.get("personal_data_intensity") in {"medium", "high"} else "unknown"
         regulatory = (
-            "PDPA remains the legal obligation; NCSS TSS is the support route for verified social-service agencies."
+            "PDPA remains the legal obligation; NCSS Tech-and-GO! is the support route for verified social-service agencies."
             if pressure == NCSS_SOCIAL_SERVICE_PRESSURE
             else "PDPA is the legal obligation to protect personal data with reasonable security arrangements."
         )
@@ -8041,7 +8145,11 @@ def generate_email_sequence(
             "data_pressure": email1_placeholders["email_data_type"],
         }
         email1_body = email_1_body_from_placeholders(email1_placeholders)
-        records = hia_email_1_records(row, classification, copy_brief) if classification["pressure_type"] == "hia_regulatory" else ""
+        records = (
+            hia_email_1_records(row, classification, copy_brief)
+            if classification["pressure_type"] == "hia_regulatory"
+            else frozen_email_data_type(copy_brief, classification)
+        )
         email3_slots = email_3_sentence_slots(row, classification, sentence_slots, company, records, asset)
         email3_placeholders = build_email_3_placeholders(row, classification, copy_brief, email3_slots)
         copy_brief["email_3_placeholders"] = email3_placeholders
@@ -8130,6 +8238,7 @@ def generate_email_sequence(
         "quality_notes": [],
     }
     for key in ALL_EMAIL_KEYS:
+        emails[key]["body"] = finalize_email_body(emails[key]["body"])
         emails[key]["word_count"] = word_count(emails[key]["body"])
     emails["sentence_slot_metadata"] = email_sequence_sentence_slot_metadata(row, classification, copy_brief, sentence_slots)
     emails["style_metadata"] = {
@@ -8194,6 +8303,7 @@ def email_1_rewrite_payload(
         "email_1_placeholders": copy_brief.get("email_1_placeholders", {}),
         "email_2_placeholders": copy_brief.get("email_2_placeholders", {}),
         "email_3_placeholders": copy_brief.get("email_3_placeholders", {}),
+        "frozen_email_data_type": frozen_email_data_type(copy_brief, classification, ""),
         "clinic_profile_phrase": compact(copy_brief.get("clinic_profile_phrase")),
         "asset": compact(copy_brief.get("email_asset_offer")),
         "email_1_required_hia_phrase": "Health Information Act (HIA)" if classification.get("pressure_type") == "hia_regulatory" else "",
@@ -8213,6 +8323,8 @@ def email_1_rewrite_payload(
             "Do not say Cyber Essentials equals PDPA compliance.",
             "Do not mention funding unless funding_claim_safe is true.",
             "Do not invent company facts, locations, headcount, pricing, or eligibility.",
+            "Do not connect Cyber Essentials to consent, purpose limitation, data subject rights, or notification obligations.",
+            "If NCSS funding is mentioned, use NCSS Tech-and-GO! only; never use the old TSS name.",
         ],
     }
 
@@ -8273,6 +8385,10 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_1_rewrite_mentions_rayn")
     if any(phrase in body_l for phrase in AI_GIVEAWAY_PHRASES):
         flags.append("llm_email_1_rewrite_ai_phrase")
+    if duplicate_sentence_keys(body):
+        flags.append("llm_email_1_rewrite_duplicate_sentence")
+    if cyber_essentials_scope_overreach(body):
+        flags.append("llm_email_1_rewrite_ce_scope_overreach")
     if classification.get("pressure_type") == "hia_regulatory":
         if not hia_email_1_names_health_information_act(body):
             flags.append("llm_email_1_rewrite_missing_health_information_act_name")
@@ -8287,7 +8403,12 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
     return flags
 
 
-def email_2_rewrite_static_flags(body: str, deterministic_body: str, classification: dict[str, Any]) -> list[str]:
+def email_2_rewrite_static_flags(
+    body: str,
+    deterministic_body: str,
+    classification: dict[str, Any],
+    frozen_data_type: str = "",
+) -> list[str]:
     flags: list[str] = []
     body_l = compact(body).lower()
     paragraphs = [compact(part) for part in body.split("\n\n") if compact(part)]
@@ -8315,6 +8436,10 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
         flags.append("llm_email_2_rewrite_mentions_rayn")
     if any(phrase in body_l for phrase in AI_GIVEAWAY_PHRASES):
         flags.append("llm_email_2_rewrite_ai_phrase")
+    if duplicate_sentence_keys(body):
+        flags.append("llm_email_2_rewrite_duplicate_sentence")
+    if cyber_essentials_scope_overreach(body):
+        flags.append("llm_email_2_rewrite_ce_scope_overreach")
     if re.search(r"\bnext question is usually cost\b|\bquick fit check before\b", body_l):
         flags.append("llm_email_2_rewrite_old_cost_followup")
     if re.match(r"^[A-Z][A-Za-z.'-]{1,40} - ", body):
@@ -8343,6 +8468,9 @@ def email_2_rewrite_static_flags(body: str, deterministic_body: str, classificat
     if re.search(r"cyber essentials (?:makes|gets|keeps|ensures).{0,40}(?:compliant|compliance)", body_l):
         flags.append("llm_email_2_rewrite_forbidden_compliance_claim")
     if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
+        frozen = compact(frozen_data_type).rstrip(" .;,:").lower()
+        if frozen and frozen not in {"this kind of personal data", "personal data"} and frozen not in body_l:
+            flags.append("llm_email_2_rewrite_changed_data_type")
         if re.search(r"cyber essentials.{0,50}(?:structured approach to|approach to).{0,30}pdpa.{0,30}(?:legal )?obligations", body_l):
             flags.append("llm_email_2_rewrite_pdpa_obligation_overclaim")
         if re.search(r"cyber essentials.{0,30}pdpa compliance framework", body_l):
@@ -8418,7 +8546,12 @@ def _email_rewrite_reject_flags(
     body2 = candidate["email_2"].get("body", "")
     static_flags = email_1_rewrite_static_flags(body1, original["email_1"].get("body", ""), classification)
     if has_email_2:
-        static_flags += email_2_rewrite_static_flags(body2, original["email_2"].get("body", ""), classification)
+        static_flags += email_2_rewrite_static_flags(
+            body2,
+            original["email_2"].get("body", ""),
+            classification,
+            frozen_email_data_type(copy_brief, classification, ""),
+        )
     score, gate_flags, _ = quality_gate(row, classification, funding, candidate, copy_brief)
     reject_flags = list(
         dict.fromkeys(
@@ -8485,6 +8618,9 @@ def _email_rewrite_retry_feedback(
                 "Cut extra explanation before the p.s.; the p.s. already carries the scope/value point.",
                 "Make Email 1 specific; do not weaken the company hook.",
                 "Do not add funding percentages, grants, exact prices, or eligibility unless already present in the deterministic email and marked safe.",
+                "Do not mention consent, purpose limitation, data subject rights, or notification obligations as Cyber Essentials scope.",
+                "Keep Email 2's data type exactly the same as payload.frozen_email_data_type.",
+                "If NCSS funding appears, write NCSS Tech-and-GO! only.",
             ],
             "rejected_candidate": {
                 "email_1": _email_rewrite_candidate_snapshot(
@@ -8618,7 +8754,7 @@ def normalize_llm_email_sequence(candidate: Any) -> dict[str, Any]:
         subject_options = item.get("subject_options")
         if not isinstance(subject_options, list):
             subject_options = [subject] if subject else []
-        body = strip_trailing_signature(body)
+        body = finalize_email_body(body)
         emails[key] = {
             "subject_options": [compact(option) for option in subject_options if compact(option)],
             "chosen_subject": subject,
@@ -8632,7 +8768,7 @@ def sanitize_email_sequence(emails: dict[str, Any]) -> dict[str, Any]:
     sanitized = {**emails}
     for key in ("email_1", "email_2", "email_3", "email_4"):
         item = dict(sanitized.get(key) or {})
-        body = strip_trailing_signature(item.get("body", ""))
+        body = finalize_email_body(item.get("body", ""))
         item["body"] = body
         item["word_count"] = word_count(body)
         sanitized[key] = item
@@ -9160,10 +9296,16 @@ def quality_gate(
         if phrase in blob:
             flags.append(f"style_banned_phrase:{phrase}")
 
-    limits = {"email_1": 85, "email_2": 105}
+    limits = {"email_1": 100, "email_2": 100, "email_3": 100}
     for key, limit in limits.items():
-        if emails[key]["word_count"] > limit:
+        if emails.get(key, {}).get("word_count", 0) > limit:
             flags.append(f"{key}_too_long")
+    for key in ("email_1", "email_2", "email_3"):
+        body = (emails.get(key) or {}).get("body", "")
+        if duplicate_sentence_keys(body):
+            flags.append(f"{key}_duplicate_sentence")
+        if cyber_essentials_scope_overreach(body):
+            flags.append(f"{key}_cyber_essentials_scope_overreach")
 
     funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
     hia_pricing = hia_pricing_active(classification, copy_brief)
@@ -9269,6 +9411,12 @@ SEVERE_EMAIL_FLAGS = {
     "email_1_missing_health_information_act_name",
     "email_2_missing_funding_claim_line",
     "email_2_not_funding_only",
+    "email_1_duplicate_sentence",
+    "email_2_duplicate_sentence",
+    "email_3_duplicate_sentence",
+    "email_1_cyber_essentials_scope_overreach",
+    "email_2_cyber_essentials_scope_overreach",
+    "email_3_cyber_essentials_scope_overreach",
     "hia_pricing_missing_endpoint_caveat",
     "hia_pricing_exact_price_without_small_clinic_context",
     "hia_pricing_percentage_missing_caveat",

@@ -13,6 +13,7 @@ CONFIDENCE_ORDER = {"low": 0, "medium": 1, "high": 2}
 VERIFIED_CURRENT = "verified_current"
 NCSS_MEMBER_DIRECTORY_URL = "https://maps.gov.sg/ncss-members"
 NCSS_TSS_SOURCE_URL = "https://www.ncss.gov.sg/grants/organisation-development/transformation-sustainability-scheme/"
+NCSS_TECH_AND_GO_PROGRAMME_NAME = "NCSS Tech-and-GO!"
 NCSS_MEMBERSHIP_SOURCE_URL = "https://www.ncss.gov.sg/about-us/ncss-membership/"
 NCSS_MEMBER_SNAPSHOT_PATH = Path(__file__).with_name("ncss_members_snapshot.json")
 _NCSS_MEMBER_CACHE: dict[str, Any] = {"loaded_at": 0.0, "members": {}}
@@ -78,16 +79,16 @@ class FundingMatch:
 PROGRAMMES: list[FundingProgram] = [
     FundingProgram(
         programme_id="ncss_tss_member_digitalisation_support",
-        programme_name="NCSS Transformation Sustainability Scheme (TSS)",
-        framework_or_regime="NCSS TSS",
+        programme_name=NCSS_TECH_AND_GO_PROGRAMME_NAME,
+        framework_or_regime=NCSS_TECH_AND_GO_PROGRAMME_NAME,
         relevant_entity_types=["npo", "charity", "social_service"],
         relevant_industries=["all", "social_service"],
         benefit_summary=(
-            "NCSS TSS supports eligible social service agencies for consultancy, digital projects, "
+            "NCSS Tech-and-GO! supports eligible social service agencies for consultancy, digital projects, "
             "and project implementation support."
         ),
         email_safe_claim_template=(
-            "The NCSS member directory lists {{company_name}}; the Transformation Sustainability Scheme "
+            "The NCSS member directory lists {{company_name}}; NCSS Tech-and-GO! "
             "appears worth checking for eligible consultancy or digitalisation support, subject to programme requirements."
         ),
         do_not_claim=["guaranteed funding", "automatic eligibility", "full cost covered"],
@@ -96,7 +97,7 @@ PROGRAMMES: list[FundingProgram] = [
         verification_status=VERIFIED_CURRENT,
         exact_claim_allowed_in_email=True,
         exact_claim_text=(
-            "NCSS states TSS funding is available to social service agencies across three components, "
+            "NCSS states Tech-and-GO! funding is available to social service agencies across three components, "
             "at up to 80% co-funding."
         ),
         use_in_email_when=(
@@ -487,7 +488,7 @@ def match_programmes(row: dict[str, Any], programmes: list[FundingProgram] | Non
             "hia_support_route_summary"
             if primary.framework_or_regime == "HIA readiness"
             else "ncss_tss_route_summary"
-            if primary.framework_or_regime == "NCSS TSS"
+            if primary.framework_or_regime == NCSS_TECH_AND_GO_PROGRAMME_NAME
             else "funding_route_summary"
         ),
         funding_confidence=confidence,

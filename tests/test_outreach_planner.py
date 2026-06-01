@@ -303,6 +303,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Genomic and genetic data is among the most sensitive personal data categories under PDPA", body)
         self.assertIn("family's health predispositions", body)
         self.assertNotIn("appointment, enquiry, customer and staff records", body)
+        self.assertEqual(
+            plan.copy_brief["email_2_placeholders"]["email_2_data_type"],
+            plan.copy_brief["email_1_placeholders"]["email_data_type"],
+        )
+        self.assertIn(plan.copy_brief["email_1_placeholders"]["email_data_type"], plan.emails["email_2"]["body"])
 
     def test_pdpa_physio_email_leads_with_data_risk_not_business_description(self):
         plan = o.plan_outreach(
@@ -1039,7 +1044,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
         self.assertFalse(plan.classification["hia_relevant"])
         self.assertIn("PDPA", plan.emails["email_1"]["body"])
-        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
+        self.assertIn("NCSS Tech-and-GO!", plan.emails["email_1"]["body"])
 
     def test_email_display_company_name_strips_legal_suffix_and_location(self):
         self.assertEqual(
@@ -1149,13 +1154,13 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn(plan.classification["entity_type_guess"], {"charity", "social_service"})
         self.assertEqual(plan.classification["pressure_type"], "ncss_social_service")
         self.assertEqual(plan.classification["primary_email_track"], "ncss_social_service")
-        self.assertEqual(plan.funding.primary_funding_program, "NCSS Transformation Sustainability Scheme (TSS)")
+        self.assertEqual(plan.funding.primary_funding_program, "NCSS Tech-and-GO!")
         self.assertEqual(plan.funding.funding_status, "verified_match")
         self.assertEqual(o.build_noco_patch({"Id": 304}, plan)["email_track"], "ncss")
         self.assertEqual(plan.classification["hia_service_type_guess"], "unknown")
         self.assertFalse(plan.classification["hia_relevant"])
-        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
-        self.assertIn("80% co-funding", plan.emails["email_1"]["body"])
+        self.assertIn("NCSS Tech-and-GO!", plan.emails["email_1"]["body"])
+        self.assertIn("80% subsidised", plan.emails["email_1"]["body"])
         self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
 
     @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
@@ -1174,8 +1179,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["entity_type_confidence"], "high")
         self.assertEqual(plan.funding.funding_confidence, "high")
         self.assertTrue(plan.copy_brief["funding_claim_safe"])
-        self.assertIn("NCSS TSS", plan.emails["email_1"]["body"])
-        self.assertIn("80% co-funding", plan.emails["email_1"]["body"])
+        self.assertIn("NCSS Tech-and-GO!", plan.emails["email_1"]["body"])
+        self.assertIn("80% subsidised", plan.emails["email_1"]["body"])
 
     @patch("services.crawl4ai.funding_programs.fetch_ncss_member_directory")
     def test_social_service_counselling_without_hcsa_license_uses_ncss_not_hia(self, mock_ncss_directory):
@@ -2876,7 +2881,7 @@ class OutreachPlannerTests(unittest.TestCase):
         funding = FundingMatch(
             funding_status="verified_match",
             funding_relevant=True,
-            primary_funding_program="NCSS Transformation Sustainability Scheme (TSS)",
+            primary_funding_program="NCSS Tech-and-GO!",
             matched=[
                 {
                     "verification_status": "verified_current",
@@ -2884,7 +2889,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 }
             ],
             funding_claim_line=(
-                "NCSS states TSS funding is available to social service agencies across three components, "
+                "NCSS states Tech-and-GO! funding is available to social service agencies across three components, "
                 "at up to 80% co-funding."
             ),
             funding_confidence="high",
@@ -2896,10 +2901,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 {"funding_claim_safe": True},
                 {"entity_type_confidence": "high"},
             ),
-            (
-                "NCSS TSS can support eligible social-service consultancy or digitalisation work at "
-                "up to 80% co-funding, subject to programme requirements."
-            ),
+            "The consultancy is 80% subsidised under NCSS Tech-and-GO!.",
         )
 
     def test_send_readiness_distinguishes_gate_from_draft_mode(self):
@@ -3488,6 +3490,34 @@ class OutreachPlannerTests(unittest.TestCase):
         emails["email_1"]["word_count"] = o.word_count(emails["email_1"]["body"])
         _, flags, send_ready = o.quality_gate({"company_name": "Example Clinic"}, classification, funding, emails)
         self.assertIn("forbidden_phrase:fully hia compliant with cyber essentials", flags)
+        self.assertFalse(send_ready)
+
+    def test_email_body_finalizer_dedupes_and_trims_at_sentence_boundary(self):
+        repeated = "This sentence should only appear once."
+        long_sentence = " ".join(["extra"] * 80) + "."
+        body = f"Hi John,\n\n{repeated} {repeated}\n\n{long_sentence}\n\nWorth sending the checklist?"
+
+        finalized = o.finalize_email_body(body, limit=30)
+
+        self.assertEqual(finalized.count(repeated), 1)
+        self.assertLessEqual(o.word_count(finalized), 30)
+        self.assertTrue(finalized.endswith("?"))
+        self.assertNotIn(long_sentence[:-1], finalized)
+
+    def test_quality_gate_rejects_duplicate_sentence_and_ce_scope_overreach(self):
+        classification = o.classify_row({"company_name": "Example Pte Ltd", "website_content": "customer data"})
+        funding = o.plan_outreach({"company_name": "Example Pte Ltd", "website_content": "customer data"}).funding
+        emails = o.generate_email_sequence({"company_name": "Example Pte Ltd"}, classification, funding)
+        duplicate = "That evidence needs to exist before anyone asks for it."
+        emails["email_2"]["body"] = (
+            f"Hi team,\n\nCyber Essentials covers consent management.\n\n{duplicate} {duplicate}\n\nWorth sending the checklist?"
+        )
+        emails["email_2"]["word_count"] = o.word_count(emails["email_2"]["body"])
+
+        _, flags, send_ready = o.quality_gate({"company_name": "Example Pte Ltd"}, classification, funding, emails)
+
+        self.assertIn("email_2_duplicate_sentence", flags)
+        self.assertIn("email_2_cyber_essentials_scope_overreach", flags)
         self.assertFalse(send_ready)
 
     def test_sree_narayana_social_service_fixture(self):
