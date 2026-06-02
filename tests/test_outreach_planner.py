@@ -466,7 +466,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
 
         body = plan.emails["email_1"]["body"]
-        self.assertIn("Cancer-support records, care-service notes, beneficiary details, and donor contacts", body)
+        self.assertIn("Cancer patient records carry real sensitivity under PDPA", body)
         self.assertNotIn("Mental health therapy and counselling records", body)
 
     def test_pdpa_senior_social_service_does_not_use_physio_copy(self):
@@ -486,7 +486,7 @@ class OutreachPlannerTests(unittest.TestCase):
 
         body = plan.emails["email_1"]["body"]
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
-        self.assertIn("Senior-care records, beneficiary details, family contacts", body)
+        self.assertIn("Elderly care records sit at the higher end of PDPA sensitivity", body)
         self.assertNotIn("physio practice", body)
         self.assertNotIn("rehabilitation progress records", body)
 
@@ -628,17 +628,17 @@ class OutreachPlannerTests(unittest.TestCase):
 
         self.assertEqual(patch_payload["email_specialty"], "endocrinology")
         self.assertEqual(patch_payload["email_data_type"], "diabetes and thyroid records")
-        self.assertIn("records your clinic holds", patch_payload["email_sensitivity_consequence"])
+        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["email_sensitivity_consequence"])
         self.assertIn("Health Information Act (HIA)", patch_payload["email_sensitivity_consequence"])
         self.assertIn("2-hour MOH reporting clock", patch_payload["email_enforcement_consequence"])
-        self.assertIn("records your clinic holds", patch_payload["website_detail_consequence"])
-        self.assertEqual(patch_payload["email_context_confidence"], "high")
+        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["website_detail_consequence"])
+        self.assertEqual(patch_payload["email_context_confidence"], "medium")
         self.assertEqual(patch_payload["email_context_source_url"], "https://soon.example/")
         self.assertEqual(patch_payload["email_tier2_source"], "llm")
         self.assertIn('"specialty":"endocrinology"', patch_payload["email_tier2_extraction_json"])
         self.assertIn('"sensitivity_consequence"', patch_payload["email_tier2_extraction_json"])
         self.assertIn('"enforcement_consequence"', patch_payload["email_tier2_extraction_json"])
-        self.assertIn("records your clinic holds", patch_payload["email_1_body"])
+        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["email_1_body"])
 
     def test_email_1_placeholder_patch_fields_are_stored(self):
         result = o.plan_and_patch(
@@ -663,7 +663,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Cyber Essentials certified", patch["email_service_line"])
         self.assertIn("safeguards checklist", patch["email_cta_line"])
         self.assertIn('"email_track":"pdpa"', patch["email_1_placeholders_json"])
-        self.assertIn("safeguards were documented before", patch["email_2_check_line"])
+        self.assertIn("PDPA safeguards were documented before the incident", patch["email_2_check_line"])
         self.assertEqual("", patch["email_2_ps_line"])
         self.assertIn('"email_2_track":"pdpa"', patch["email_2_placeholders_json"])
         self.assertEqual("", patch["email_3_platform_line"])
@@ -2628,6 +2628,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(
             "breach, complaint or audit" in plan.emails["email_2"]["body"]
             or "pre-date the problem" in plan.emails["email_2"]["body"]
+            or "PDPA safeguards were documented before the incident" in plan.emails["email_2"]["body"]
         )
         self.assert_no_email_signatures(plan.emails)
 
@@ -2668,8 +2669,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(partial_funding_patch["email_2_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["funding_followup_mode"], "value_fallback")
         self.assertEqual(partial_funding_patch["email_3_mode"], "value_fallback")
-        self.assertIn("documented before", partial_funding_patch["email_2_body"].lower())
-        self.assertIn("breach, complaint or audit", partial_funding_patch["email_2_body"])
+        self.assertIn("pdpa safeguards were documented before the incident", partial_funding_patch["email_2_body"].lower())
+        self.assertIn("not after", partial_funding_patch["email_2_body"])
         self.assertNotIn("email_2_missing_funding_claim_line", partial_funding_patch["email_quality_flags"])
 
     def test_plan_and_patch_includes_compact_audit_report(self):
@@ -3046,6 +3047,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("you qualify", result["patch"]["email_2_body"].lower())
         self.assertTrue(
             "documented before" in result["patch"]["email_2_body"].lower()
+            or "pdpa safeguards were documented before the incident" in result["patch"]["email_2_body"].lower()
             or "pre-date the problem" in result["patch"]["email_2_body"].lower()
         )
 
@@ -3314,7 +3316,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.quality_flags, [])
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
-        records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+        records = o.highest_sensitivity_email_data_type(
+            o.hia_email_1_records(row, plan.classification, plan.copy_brief),
+            row,
+        )
         self.assertIn(records, plan.emails["email_3"]["body"])
         self.assertIn("backups", plan.emails["email_3"]["body"])
         self.assertIn("incidents", plan.emails["email_3"]["body"])
@@ -3328,7 +3333,7 @@ class OutreachPlannerTests(unittest.TestCase):
         endo_records = o.hia_email_1_records(endocrinology, endo_plan.classification, endo_plan.copy_brief)
         self.assertIn("diabetes/thyroid care records", endo_records)
         self.assertNotIn("oncology/radiation", endo_records)
-        self.assertIn(endo_records, endo_plan.emails["email_3"]["body"])
+        self.assertIn(o.highest_sensitivity_email_data_type(endo_records, endocrinology), endo_plan.emails["email_3"]["body"])
 
         orthopaedic = {
             "company_name": "Artisan Sports & Orthopaedics Clinic",
@@ -3339,7 +3344,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("pain management clinic", ortho_plan.copy_brief["clinic_profile_phrase"])
         ortho_records = o.hia_email_1_records(orthopaedic, ortho_plan.classification, ortho_plan.copy_brief)
         self.assertIn("orthopaedic consultation notes", ortho_records)
-        self.assertIn(ortho_records, ortho_plan.emails["email_3"]["body"])
+        self.assertIn(o.highest_sensitivity_email_data_type(ortho_records, orthopaedic), ortho_plan.emails["email_3"]["body"])
 
     def test_cancer_centre_stays_specialist_when_pharmacy_terms_appear(self):
         row = {
@@ -3511,13 +3516,13 @@ class OutreachPlannerTests(unittest.TestCase):
             {
                 "company_name": "Apax Medical & Aesthetics Clinic",
                 "website_content": "Aesthetic medical clinic with doctors, treatments, consultation, appointments and patient services.",
-                "expected": "consultation records, treatment notes, appointment details, clinic email, vendor systems and backups",
+                "expected": "consultation records",
             },
         ]
         for row in cases:
             with self.subTest(company=row["company_name"]):
                 plan = o.plan_outreach(row, programmes=[verified_program()])
-                self.assertIn(row["expected"].replace(" and backups", ""), plan.emails["email_3"]["body"])
+                self.assertIn(row["expected"], plan.emails["email_3"]["body"])
                 self.assertIn("backups", plan.emails["email_3"]["body"])
                 self.assertIn("incident", plan.emails["email_3"]["body"])
                 self.assertNotIn("email_3_missing_hia_segment_terms", plan.quality_flags)
@@ -3602,6 +3607,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(
             "breach, complaint or audit" in patch["email_2_body"]
             or "pre-date the problem" in patch["email_2_body"]
+            or "PDPA safeguards were documented before the incident" in patch["email_2_body"]
         )
         self.assertEqual(patch["email_2_body"].count("subject to programme confirmation"), 0)
         self.assertNotIn("Best,", patch["email_2_body"])
@@ -3785,8 +3791,6 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
         self.assertIn("HIA readiness checklist?", plan.emails["email_1"]["body"])
         self.assertIn("consultation records", plan.emails["email_3"]["body"])
-        self.assertIn("treatment notes", plan.emails["email_3"]["body"])
-        self.assertIn("clinic email", plan.emails["email_3"]["body"])
         self.assertIn("appointment", brief["data_systems_likely"])
         self.assertIn("backups", brief["data_systems_likely"])
         self.assertIn("vendor", brief["data_systems_likely"])
@@ -4166,7 +4170,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Retail pharmacy and compounding pharmacy with prescriptions, dispensing, compounding and customer services.",
                 },
                 "pharmacy / compounding provider",
-                "prescription, dispensing, compounding, customer and supplier records",
+                "prescription and dispensing records",
                 "pharmacy HIA checklist",
             ),
             (
@@ -4175,7 +4179,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "National Neuroscience Institute provides neurology, neurosurgery and neuroscience care. Patient appointments, specialist reports, pharmacy support and clinical records are handled across services.",
                 },
                 "specialist-led neuroscience provider",
-                "consultation notes, patient reports, treatment records, vendor systems and backups",
+                "neurology patient records",
                 "specialist clinic readiness map",
             ),
             (
@@ -4184,7 +4188,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "National Heart Centre Singapore provides specialist cardiac care, cardiology consultations, cardiac test reports, pharmacy support and clinical records across services.",
                 },
                 "specialist-led heart/cardiology clinic",
-                "consultation notes, cardiac test reports, referrals, appointment details",
+                "cardiac investigation records",
                 "specialist clinic readiness map",
             ),
             (
@@ -4193,7 +4197,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Dental clinic with dentists, patient appointments, imaging files and dental software.",
                 },
                 "dental clinic",
-                "patient records, imaging files, appointment details, dental software and backups",
+                "surgical dental records",
                 "dental readiness map",
             ),
             (
@@ -4202,7 +4206,7 @@ class OutreachPlannerTests(unittest.TestCase):
                     "website_content": "Digestive specialist clinic providing gastroenterology consultations, procedure-related records, specialist appointments and patient reports.",
                 },
                 "provides specialist-led gastroenterology and digestive care",
-                "consultation notes, patient reports, procedure-related records, vendor systems and backups",
+                "procedure records",
                 "specialist clinic readiness map",
             ),
         ]
@@ -4229,43 +4233,43 @@ class OutreachPlannerTests(unittest.TestCase):
                 "Heart Centre",
                 "Specialist heart cardiology clinic offering ECG, echocardiogram, referrals and cardiac consultations.",
                 "a specialist-led heart/cardiology clinic",
-                "cardiac test reports",
+                "cardiac investigation records",
             ),
             (
                 "Pain Management Clinic",
                 "Specialist pain management clinic offering spine pain care, injections, assessment notes and treatment plans.",
                 "a specialist-led pain management clinic",
-                "assessment notes, treatment plans, procedure-related records",
+                "pain treatment records",
             ),
             (
                 "Surgical Clinic",
                 "Specialist surgical clinic led by a surgeon with consent forms, procedure records and post-operative follow-up notes.",
                 "a specialist-led surgical clinic",
-                "consent forms, procedure records, follow-up notes",
+                "procedure records",
             ),
             (
                 "Dermatology Clinic",
                 "Dermatology clinic with dermatologist consultations for skin, acne, eczema, mole checks, laser treatment and clinical images.",
                 "a specialist-led dermatology clinic",
-                "skin consultation notes, treatment records, appointment details, clinical images where used",
+                "skin consultation records",
             ),
             (
                 "Eye Clinic",
                 "Eye ophthalmology clinic with cataract, retina, LASIK, optometry, imaging, prescriptions and referrals.",
                 "a specialist-led eye clinic",
-                "eye examination records, imaging, prescriptions, referrals",
+                "eye examination records",
             ),
             (
                 "Rheumatology Centre",
                 "Rheumatologist specialist clinic offering arthritis and lupus treatment, referrals and consultations.",
                 "a specialist-led rheumatology clinic",
-                "consultation notes, treatment records, referrals, appointment details",
+                "long-term autoimmune records",
             ),
             (
                 "Home Care Provider",
                 "Home care caregiver provider offering home nursing and patient care at home for clients, families and staff.",
                 "a home-care / caregiver provider",
-                "client, patient, caregiver, family and staff records",
+                "home-care records",
             ),
         ]
         for company, content, profile_phrase, diagnostic in cases:
@@ -4372,7 +4376,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
         self.assertIn("a specialist-led rheumatology clinic", plan.copy_brief["prospect_facing_signal"])
-        self.assertIn("consultation notes, treatment records, referrals, appointment details", plan.emails["email_3"]["body"])
+        self.assertIn("long-term autoimmune records", plan.emails["email_3"]["body"])
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what rheumatology clinics need documented")
         self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -4784,7 +4788,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 },
                 "long_term_care",
                 "nursing home",
-                "resident, patient, family, staff and care records",
+                "long-term care records",
                 "hia_regulatory",
             ),
             (
@@ -4795,7 +4799,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 },
                 "specialist_OMS",
                 "provides specialist-led gastroenterology and digestive care",
-                "consultation notes, patient reports, procedure-related records",
+                "procedure records",
                 "hia_regulatory",
             ),
         ]

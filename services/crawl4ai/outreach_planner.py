@@ -1059,7 +1059,15 @@ def shorten_display_company_name(name: str, acronym: str = "") -> str:
 
 
 def email_display_company_name(row: dict[str, Any] | str) -> str:
-    raw = row if isinstance(row, str) else row.get("company_name") or row.get("company_homepage_name")
+    if isinstance(row, str):
+        raw = row
+    else:
+        company_name = compact(row.get("company_name"))
+        homepage_name = compact(row.get("company_homepage_name"))
+        if company_name and re.fullmatch(r"(?:https?://)?[a-z0-9-]+(?:\.[a-z0-9-]+)+/?", company_name, flags=re.I):
+            raw = homepage_name or company_name
+        else:
+            raw = company_name or homepage_name
     name = compact(raw)
     if not name:
         return "your organisation"
@@ -4748,10 +4756,27 @@ def safe_tier2_text(value: Any, limit: int = 180) -> str:
 def highest_sensitivity_email_data_type(value: Any, row: dict[str, Any] | None = None) -> str:
     text = safe_tier2_text(value, 220).rstrip(" .;,:")
     text_l = text.lower()
-    use_profile_fallback = text_l in {"", "unknown", "personal data", "patient data", "patient records", "appointment details"}
-    source = f"{text} {primary_profile_source_text(row or {})}".lower() if use_profile_fallback else text_l
+    generic_record_types = {
+        "",
+        "unknown",
+        "personal data",
+        "patient data",
+        "patient records",
+        "appointment details",
+        "beneficiary records",
+        "client records",
+        "care records",
+        "health information",
+        "medical records",
+        "clinical records",
+        "treatment records",
+    }
+    use_profile_fallback = text_l in generic_record_types or len(text_l.split()) <= 2
+    source = f"{text} {primary_profile_source_text(row or {})}".lower() if use_profile_fallback else f"{text_l} {primary_profile_source_text(row or {})}".lower()
     if any(term in source for term in ("genomic", "genetic", "genome", "sequencing", "bioinformatics")):
         return "genomic data"
+    if any(term in text_l for term in ("diabetes", "thyroid", "endocrinology")):
+        return "diabetes and thyroid records"
     if any(term in source for term in ("cancer", "oncology", "chemotherapy", "radiotherapy", "radiation")):
         return "cancer patient records"
     if any(term in source for term in ("elderly", "eldercare", "senior", "active ageing", "active aging")):
@@ -4760,18 +4785,44 @@ def highest_sensitivity_email_data_type(value: Any, row: dict[str, Any] | None =
         return "children's therapy records"
     if any(term in source for term in ("mental health", "counselling", "counseling", "psychology", "psychotherapy")):
         return "mental health records"
-    if any(term in source for term in ("dental", "implant", "extraction", "oral surgery", "imaging")):
+    if any(term in source for term in ("obstetric", "gynaecolog", "gynecolog", "pregnancy", "fertility", "women's health", "women health")):
+        return "women's health records"
+    if any(term in source for term in ("dental", "implant", "extraction", "oral surgery")) or (
+        "imaging" in source and any(term in source for term in ("dental", "oral", "tooth", "teeth"))
+    ):
         return "surgical dental records"
+    if any(term in text_l for term in ("dispensing", "compounding", "pharmacy")) or (
+        "prescription" in text_l and any(term in text_l for term in ("supplier", "customer"))
+    ):
+        return "prescription and dispensing records"
+    if any(term in source for term in ("orthopaedic", "orthopedic", "sports medicine", "scoliosis", "fracture")):
+        return "orthopaedic surgical records"
+    if any(term in source for term in ("musculoskeletal", "sports injury", "manual therapy")):
+        return "physiotherapy treatment records"
+    if any(term in source for term in ("pain management", "spine pain", "pain care")):
+        return "pain treatment records"
+    if any(term in source for term in ("surgical clinic", "surgeon", "procedure records", "procedure-related")):
+        return "procedure records"
     if any(term in source for term in ("physio", "physiotherapy", "rehabilitation", "chronic pain", "post-operative", "post operative")):
         return "rehabilitation records"
+    if any(term in source for term in ("nursing home", "resident care", "long-term care", "long term care")):
+        return "long-term care records"
+    if any(term in source for term in ("home care", "caregiver", "home nursing")):
+        return "home-care records"
     if any(term in source for term in ("cardiac", "cardiology", "arrhythmia", "heart")):
         return "cardiac investigation records"
+    if any(term in source for term in ("neuroscience", "neurology", "neurosurgery")):
+        return "neurology patient records"
     if any(term in source for term in ("urology", "prostate", "bladder", "kidney")):
         return "urology records"
-    if any(term in source for term in ("orthopaedic", "orthopedic", "spine", "scoliosis", "fracture")):
+    if "spine" in source:
         return "orthopaedic surgical records"
-    if any(term in source for term in ("diabetes", "thyroid", "endocrinology")):
-        return "diabetes and thyroid records"
+    if any(term in source for term in ("rheumatology", "arthritis", "lupus", "autoimmune")):
+        return "long-term autoimmune records"
+    if any(term in source for term in ("dermatology", "skin consultation", "clinical images", "eczema")):
+        return "skin consultation records"
+    if any(term in source for term in ("ophthalmology", "eye examination", "cataract", "retina", "lasik")):
+        return "eye examination records"
     if text:
         parts = re.split(r"\s*(?:,|;|\band\b|\balongside\b|\bplus\b|\bwith\b)\s*", text, maxsplit=1, flags=re.I)
         candidate = compact(parts[0]).rstrip(" .;,:")
@@ -4894,7 +4945,7 @@ def deterministic_enforcement_consequence(
         return "For cancer patient records, significant-harm scrutiny arrives faster after a breach or complaint."
     if "elderly" in data.lower():
         return "For elderly care records, PDPC scrutiny can arrive before teams expect it."
-    return f"For {data}, documented safeguards before the incident matter more than post-breach fixes."
+    return f"For {data}, PDPC weighs whether PDPA safeguards were documented before the incident, not after."
 
 
 def tier2_extraction_payload(row: dict[str, Any], classification: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, Any]:
@@ -4969,6 +5020,31 @@ def clean_tier2_consequence_text(value: str) -> str:
     return compact(text)
 
 
+def hia_email_1_enforcement_leak(value: str) -> bool:
+    text = compact(value).lower()
+    return bool(
+        re.search(
+            r"\b(?:2\s*[- ]?\s*hour|mandatory breach|breach reporting|reporting clock|notifiable breach|initial notification)\b",
+            text,
+        )
+    )
+
+
+def consequence_too_generic_for_data_type(consequence: str, data_type: str) -> bool:
+    text = compact(consequence).lower()
+    data = compact(data_type).lower()
+    if not text or not data:
+        return True
+    if re.match(r"^(?:beneficiary records|personal data|patient records|health information|medical records|clinical records)\b", text):
+        return True
+    signal_words = [
+        token
+        for token in re.findall(r"[a-z][a-z'-]{3,}", data)
+        if token not in {"data", "records", "record", "patient", "patients", "personal", "care", "health"}
+    ]
+    return bool(signal_words) and not any(token in text for token in signal_words[:3])
+
+
 def sanitize_email_tier2_context(value: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     specialty = safe_tier2_text(value.get("specialty")) or fallback.get("specialty", "")
     data_type = safe_tier2_text(value.get("data_type"), 220) or fallback.get("data_type", "")
@@ -5038,9 +5114,24 @@ def build_email_tier2_context(row: dict[str, Any], classification: dict[str, Any
     if not isinstance(extracted, dict):
         return {**fallback, "source": "deterministic_llm_unavailable"}
     sanitized = sanitize_email_tier2_context({**extracted, "source": "llm"}, fallback)
+    normalized_data_type = highest_sensitivity_email_data_type(sanitized.get("data_type"), row) or fallback["data_type"]
+    if normalized_data_type:
+        sanitized["data_type"] = normalized_data_type
+        data_specific_sensitivity = deterministic_sensitivity_consequence(row, classification, copy_brief, normalized_data_type)
+        data_specific_enforcement = deterministic_enforcement_consequence(row, classification, copy_brief, normalized_data_type)
+        if consequence_too_generic_for_data_type(sanitized.get("sensitivity_consequence", ""), normalized_data_type):
+            sanitized["sensitivity_consequence"] = data_specific_sensitivity
+            sanitized["website_detail_consequence"] = data_specific_sensitivity
+            sanitized["confidence"] = "medium"
+        if consequence_too_generic_for_data_type(sanitized.get("enforcement_consequence", ""), normalized_data_type):
+            sanitized["enforcement_consequence"] = data_specific_enforcement
     if email_track_placeholder(classification) == "hia":
         consequence_l = sanitized["sensitivity_consequence"].lower()
-        if "hia" not in consequence_l and "health information act" not in consequence_l:
+        if hia_email_1_enforcement_leak(sanitized["sensitivity_consequence"]):
+            sanitized["sensitivity_consequence"] = fallback["sensitivity_consequence"]
+            sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
+            sanitized["confidence"] = "medium"
+        elif "hia" not in consequence_l and "health information act" not in consequence_l:
             sanitized["sensitivity_consequence"] = fallback["sensitivity_consequence"]
             sanitized["website_detail_consequence"] = fallback["website_detail_consequence"]
             sanitized["confidence"] = "medium"
@@ -5330,15 +5421,13 @@ def pdpa_email_1_context_line_from_data(
         return high_sensitivity
     if "cancer" in combined or "oncology" in combined:
         return (
-            "Cancer-support records, care-service notes, beneficiary details, and donor contacts sit at the "
-            "higher end of PDPA sensitivity - the safeguards evidence bar for organisations handling them is "
-            "higher than most assume."
+            "Cancer patient records carry real sensitivity under PDPA - the safeguards evidence bar for "
+            "organisations handling them is higher than most assume."
         )
     if any(term in combined for term in ("social service agency", "destitute", "senior well-being", "senior wellbeing", "active ageing", "eldercare")):
         return (
-            "Senior-care records, beneficiary details, family contacts, volunteer data, and donation records sit at "
-            "the higher end of PDPA sensitivity - the safeguards evidence bar for care organisations is higher "
-            "than most assume."
+            "Elderly care records sit at the higher end of PDPA sensitivity - vulnerable people and family "
+            "contacts are exposed."
         )
     if "counselling" in combined or "counseling" in combined or "psychology" in combined or "psychotherapy" in combined:
         return (
@@ -5454,15 +5543,6 @@ def email_context_line_placeholder(
     if contains_ce_excluded_obligation_terms(consequence):
         consequence = ""
     if classification.get("pressure_type") == "hia_regulatory":
-        if compact(tier2.get("source")) != "llm":
-            return hia_email_1_context_line_from_data(row, classification, data)
-        if consequence:
-            sentence = consequence
-            if not sentence.endswith("."):
-                sentence = f"{sentence}."
-            if sentence.startswith("Health Information Act"):
-                sentence = f"the {sentence}"
-            return f"{hia_email_1_context_lead(row, classification, data)}, {lower_first_for_clause(sentence)}"
         return hia_email_1_context_line_from_data(row, classification, data)
     descriptor = data if data != "personal data" else "personal data"
     if consequence:
@@ -5542,8 +5622,10 @@ def build_email_1_placeholders(
     context_line = email_context_line_placeholder(row, classification, copy_brief, data_type)
     source_url = compact(email1_chain.get("source_url") or copy_brief.get("email_personalisation_source_url") or first_source_url(row))
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
-    sensitivity_consequence = compact(tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"))
+    sensitivity_consequence = compact(context_line or tier2.get("sensitivity_consequence") or tier2.get("website_detail_consequence"))
     enforcement_consequence = compact(tier2.get("enforcement_consequence"))
+    if enforcement_consequence and consequence_too_generic_for_data_type(enforcement_consequence, data_type):
+        enforcement_consequence = deterministic_enforcement_consequence(row, classification, copy_brief, data_type)
     placeholders = {
         "salutation": greeting_label,
         "company_name": email_display_company_name(row),
@@ -5596,7 +5678,7 @@ def frozen_email_data_type(
 def email_1_body_from_placeholders(placeholders: dict[str, Any]) -> str:
     service_line = compact(placeholders.get("email_service_line"))
     funding_line = compact(placeholders.get("email_funding_line"))
-    if compact(placeholders.get("email_track")) == "hia" and service_line and funding_line:
+    if service_line and funding_line:
         service_line = compact(f"{service_line} {funding_line}")
         funding_line = ""
     parts = [
@@ -5757,7 +5839,7 @@ def build_hia_email_2_placeholders(
         or slots.get("check_line")
         or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours.",
         "email_2_route_line": EMAIL_2_CE_CONNECTOR,
-        "email_2_cta_line": slots.get("cta") or "Can I send the HIA readiness checklist?",
+        "email_2_cta_line": "Happy to share the HIA checklist if useful.",
         "email_2_ps_line": "",
     }
     return placeholders
@@ -5776,12 +5858,14 @@ def build_funding_email_2_placeholders(
     if classification.get("pressure_type") == "hia_regulatory":
         check_line = enforcement or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours."
         route_line = EMAIL_2_CE_CONNECTOR
-        cta = "Can I send the HIA readiness checklist?"
+        cta = "Happy to share the HIA checklist if useful."
     else:
         data_type = frozen_email_data_type(copy_brief, classification)
+        if enforcement and consequence_too_generic_for_data_type(enforcement, data_type):
+            enforcement = deterministic_enforcement_consequence(row, classification, copy_brief, data_type)
         check_line = enforcement or f"When PDPC reviews a PDPA breach, complaint or audit, they look first at whether safeguards were documented before the incident - not put in place after. For {data_type}, that distinction matters."
         route_line = EMAIL_2_CE_CONNECTOR
-        cta = "Worth sending the personal data safeguards checklist?"
+        cta = "Happy to share the personal data safeguards checklist if timing's better now."
     return {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
@@ -5807,13 +5891,15 @@ def build_value_fallback_email_2_placeholders(
     enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         data_type = frozen_email_data_type(copy_brief, classification)
+        if enforcement and consequence_too_generic_for_data_type(enforcement, data_type):
+            enforcement = deterministic_enforcement_consequence(row, classification, copy_brief, data_type)
         default_second = (
             f"When PDPC reviews a PDPA breach, complaint or audit, they look first at whether safeguards were documented before the incident - "
             f"not put in place after. For {data_type}, that distinction matters."
         )
-        default_second = enforcement or default_second
+        default_second = enforcement or slots.get("second_line") or default_second
         default_fit = EMAIL_2_CE_CONNECTOR
-        default_cta = "Worth sending the personal data safeguards checklist?"
+        default_cta = "Happy to share the personal data safeguards checklist if timing's better now."
     else:
         default_second = "The useful risk is whether access, backup and incident evidence exists before anyone asks for it."
         default_fit = f"If the {asset_name} helps map that quickly, I can send it over."
@@ -5824,9 +5910,9 @@ def build_value_fallback_email_2_placeholders(
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "email_2_data_type": data_type if "data_type" in locals() else "",
         "email_2_tieback_line": "",
-        "email_2_check_line": slots.get("second_line") or default_second,
+        "email_2_check_line": default_second,
         "email_2_route_line": default_fit,
-        "email_2_cta_line": slots.get("cta") or default_cta,
+        "email_2_cta_line": default_cta,
         "email_2_ps_line": ps if ps is not None else email_2_required_ps(classification),
     }
 
@@ -6291,6 +6377,7 @@ def email_3_sentence_slots(
     records_text = compact(records) or "patient-data evidence"
     asset_name = compact(asset) or "checklist"
     if classification.get("pressure_type") == "hia_regulatory":
+        records_text = highest_sensitivity_email_data_type(records_text, row) or records_text
         deadline = hia_deadline_date_label(classification) or "the listed HIA deadline"
         return {
             "close_line": choose_sentence_slot(
@@ -7634,11 +7721,11 @@ def hia_email_1_records(row: dict[str, Any], classification: dict[str, Any], cop
         if subtype == "cardiology":
             return "consultation notes, cardiac test reports, referrals, appointment details and vendor systems"
         if subtype == "fertility":
-            return "fertility treatment records, appointment details, lab/report data, consent forms and vendor systems"
+            return "fertility treatment records, appointment details, lab/report data and vendor systems"
         if subtype == "pain":
             return "assessment notes, treatment plans, procedure-related records, appointment details and vendor systems"
         if subtype == "surgery":
-            return "consultation notes, consent forms, procedure records, follow-up notes and vendor systems"
+            return "consultation notes, procedure records, follow-up notes and vendor systems"
         if subtype == "dermatology":
             return "skin consultation notes, treatment records, appointment details, clinical images where used and vendor systems"
         if subtype == "eye":
@@ -8377,10 +8464,17 @@ def generate_email_sequence(
         email3_subject = email_3_subject_from_placeholders(row, classification, email3_placeholders)
         email3_subject_options = list(dict.fromkeys([email3_subject, *email3_subject_options]))[:4]
         if classification["pressure_type"] == "hia_regulatory":
-            hia_pricing_subjects = {"A": "2-hour MOH reporting", "B": "incident reporting plan", "C": "HIA reporting clock"}
-            email2_subject_key = deterministic_option_key_for(row, classification, 2, list(hia_pricing_subjects.keys()))
-            email2_subject = hia_pricing_subjects[email2_subject_key]
-            email2_subject_options = list(hia_pricing_subjects.values())
+            company_subject = email_display_company_name(row)
+            email2_subject = f"Re: {company_subject} - the 2-hour MOH reporting rule"
+            email2_subject_options = list(
+                dict.fromkeys(
+                    [
+                        email2_subject,
+                        "Re: the 2-hour MOH reporting rule",
+                        "Re: HIA incident response",
+                    ]
+                )
+            )
             email2_slots = hia_email_2_sentence_slots(
                 row,
                 classification,
@@ -8397,10 +8491,17 @@ def generate_email_sequence(
             )
             email2_body = email_2_body_from_placeholders(email2_placeholders)
         else:
-            fallback_subjects = {"A": "PDPA evidence timing", "B": "before the breach", "C": "safeguards evidence"}
-            subject_key = deterministic_option_key_for(row, classification, 2, list(fallback_subjects.keys()))
-            email2_subject = fallback_subjects[subject_key]
-            email2_subject_options = list(fallback_subjects.values())
+            company_subject = email_display_company_name(row)
+            email2_subject = f"Re: {company_subject} - how PDPC weighs enforcement"
+            email2_subject_options = list(
+                dict.fromkeys(
+                    [
+                        email2_subject,
+                        "Re: how PDPC weighs enforcement",
+                        "Re: documented safeguards",
+                    ]
+                )
+            )
             email2_slots = non_hia_email_2_sentence_slots(row, classification, sentence_slots, asset, copy_brief)
             email2_placeholders = build_value_fallback_email_2_placeholders(
                 row,
@@ -8646,7 +8747,7 @@ def strict_email_generation_template(email_track: str, position: int) -> str:
                 "Body: greeting alone; sensitivity_consequence; Cyber Essentials service line plus funding_line; CTA: Can I send the HIA readiness checklist?"
             ),
             2: (
-                "Subject: Re: use deterministic_subject or the 2-hour MOH reporting point.\n"
+                "Subject: Re: company_name - the 2-hour MOH reporting rule.\n"
                 "Body: greeting alone; enforcement_consequence; exact CE connector; CTA: Happy to share the checklist if useful."
             ),
             3: (
@@ -8661,8 +8762,8 @@ def strict_email_generation_template(email_track: str, position: int) -> str:
                 "Body: greeting alone; sensitivity_consequence; Cyber Essentials service line plus funding_line; CTA: Worth sending the personal data safeguards checklist?"
             ),
             2: (
-                "Subject: Re: use deterministic_subject or how PDPC weighs enforcement.\n"
-                "Body: greeting alone; enforcement_consequence; exact CE connector; CTA: Happy to share the checklist if timing's better now."
+                "Subject: Re: company_name - how PDPC weighs enforcement.\n"
+                "Body: greeting alone; enforcement_consequence; exact CE connector; CTA: Happy to share the personal data safeguards checklist if timing's better now."
             ),
             3: (
                 "Subject: Closing the loop - company_name.\n"
@@ -8674,12 +8775,18 @@ def strict_email_generation_template(email_track: str, position: int) -> str:
 
 def strict_generation_placeholders(row: dict[str, Any], copy_brief: dict[str, Any]) -> dict[str, str]:
     p1 = copy_brief.get("email_1_placeholders") if isinstance(copy_brief.get("email_1_placeholders"), dict) else {}
+    sensitivity = compact(
+        p1.get("email_context_line")
+        or p1.get("sensitivity_consequence")
+        or p1.get("email_sensitivity_consequence")
+        or p1.get("website_detail_consequence")
+    )
     return {
         "salutation": compact(p1.get("salutation") or p1.get("recipient_salutation")),
         "company_name": compact(p1.get("company_name") or p1.get("company_display_name") or email_display_company_name(row)),
         "specialty": compact(p1.get("specialty") or p1.get("email_specialty")),
         "data_type": compact(p1.get("data_type") or p1.get("email_data_type")),
-        "sensitivity_consequence": compact(p1.get("sensitivity_consequence") or p1.get("email_sensitivity_consequence") or p1.get("website_detail_consequence")),
+        "sensitivity_consequence": sensitivity,
         "enforcement_consequence": compact(p1.get("enforcement_consequence") or p1.get("email_enforcement_consequence")),
         "hia_batch_deadline": compact(p1.get("hia_batch_deadline")),
         "funding_line": compact(p1.get("funding_line") or p1.get("email_funding_line")),
@@ -8872,6 +8979,8 @@ def email_1_rewrite_static_flags(body: str, deterministic_body: str, classificat
             flags.append("llm_email_1_rewrite_missing_health_information_act_name")
         if len(re.findall(r"\bHealth Information Act\s*\(HIA\)", body, flags=re.I)) > 1:
             flags.append("llm_email_1_rewrite_repeated_health_information_act_name")
+        if hia_email_1_enforcement_leak(body):
+            flags.append("llm_email_1_rewrite_hia_email_1_enforcement_leak")
         hia_pos = body_l.find("hia")
         ce_pos = body_l.find("cyber essentials")
         if hia_pos < 0 or hia_pos > 400 or (ce_pos >= 0 and hia_pos > ce_pos):
@@ -8920,6 +9029,8 @@ def email_2_rewrite_static_flags(
         flags.append("llm_email_2_rewrite_duplicate_sentence")
     if cyber_essentials_scope_overreach(body):
         flags.append("llm_email_2_rewrite_ce_scope_overreach")
+    if EMAIL_3_FINAL_CTA.lower() in body_l:
+        flags.append("llm_email_2_rewrite_uses_email_3_cta")
     if re.search(r"\bnext question is usually cost\b|\bquick fit check before\b", body_l):
         flags.append("llm_email_2_rewrite_old_cost_followup")
     if re.match(r"^[A-Z][A-Za-z.'-]{1,40} - ", body):
@@ -9786,6 +9897,15 @@ def quality_gate(
             flags.append(f"{key}_duplicate_sentence")
         if cyber_essentials_scope_overreach(body):
             flags.append(f"{key}_cyber_essentials_scope_overreach")
+    email1_body_for_static = (emails.get("email_1") or {}).get("body", "")
+    email2_body_for_static = (emails.get("email_2") or {}).get("body", "")
+    if classification.get("pressure_type") == "hia_regulatory":
+        if len(re.findall(r"\bHealth Information Act\s*\(HIA\)", email1_body_for_static, flags=re.I)) > 1:
+            flags.append("email_1_repeated_health_information_act_name")
+        if hia_email_1_enforcement_leak(email1_body_for_static):
+            flags.append("email_1_hia_enforcement_leak")
+    if EMAIL_3_FINAL_CTA.lower() in compact(email2_body_for_static).lower():
+        flags.append("email_2_uses_email_3_cta")
 
     funding_followup_mode = funding_followup_mode_for(funding, copy_brief, classification)
     hia_pricing = hia_pricing_active(classification, copy_brief)

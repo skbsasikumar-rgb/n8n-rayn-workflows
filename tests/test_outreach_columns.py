@@ -851,6 +851,119 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("HIA cyber/data security", planner.EMAIL_1_REWRITE_PROMPT)
         self.assertIn("Never use the word \"side\"", planner.EMAIL_1_REWRITE_PROMPT)
 
+    def test_display_company_name_prefers_homepage_name_for_domain_input(self):
+        self.assertEqual(
+            planner.email_display_company_name(
+                {"company_name": "4s.org.sg", "company_homepage_name": "4S"}
+            ),
+            "4S",
+        )
+
+    def test_email_data_type_normalizes_terse_clinical_terms(self):
+        self.assertEqual(
+            planner.highest_sensitivity_email_data_type(
+                "musculoskeletal",
+                {"website_content": "Singapore physiotherapy clinic for sports injuries and rehabilitation."},
+            ),
+            "physiotherapy treatment records",
+        )
+        self.assertEqual(
+            planner.highest_sensitivity_email_data_type(
+                "obstetric",
+                {"website_content": "Singapore women's clinic providing obstetric and gynaecology care."},
+            ),
+            "women's health records",
+        )
+
+    def test_email_2_subjects_and_ctas_follow_current_sequence(self):
+        hia_plan = planner.plan_outreach(
+            {
+                "Id": 881,
+                "company_name": "Example Dental Clinic",
+                "best_url": "https://example.sg/",
+                "website_content": "Singapore dental clinic with dentists, patient treatment and dental imaging records.",
+                "validated_email": "hello@example.sg",
+                "skip_openrouter": True,
+            }
+        )
+        self.assertEqual(
+            hia_plan.emails["email_2"]["chosen_subject"],
+            "Re: Example Dental Clinic - the 2-hour MOH reporting rule",
+        )
+        self.assertNotIn(planner.EMAIL_3_FINAL_CTA, hia_plan.emails["email_2"]["body"])
+
+        pdpa_plan = planner.plan_outreach(
+            {
+                "Id": 882,
+                "company_name": "1010Genome",
+                "best_url": "https://1010genome.sg/",
+                "website_content": "Singapore genomics company handling genetic sequencing, bioinformatics and appointment data.",
+                "validated_email": "hello@1010genome.sg",
+                "skip_openrouter": True,
+            }
+        )
+        self.assertEqual(
+            pdpa_plan.emails["email_2"]["chosen_subject"],
+            "Re: 1010Genome - how PDPC weighs enforcement",
+        )
+        self.assertNotIn(planner.EMAIL_3_FINAL_CTA, pdpa_plan.emails["email_2"]["body"])
+
+    def test_quality_gate_catches_hia_email_1_repeated_name_and_enforcement_leak(self):
+        classification = {
+            "pressure_type": "hia_regulatory",
+            "entity_type_guess": "clinic",
+            "outreach_trigger_signal": "patient_records",
+            "outreach_trigger_confidence": "high",
+            "recommended_first_cert": "cyber_essentials",
+            "hia_service_type_guess": "dental",
+            "hia_deadline_claim_safe": True,
+        }
+        emails = {
+            "email_1": {
+                "body": (
+                    "Hi team,\n\n"
+                    "Health Information Act (HIA) applies here. Health Information Act (HIA) "
+                    "mandatory breach reporting within 2 hours is the issue.\n\n"
+                    "We help dental clinics get Cyber Essentials certified for HIA cyber/data security.\n\n"
+                    "Can I send the HIA readiness checklist?"
+                ),
+                "word_count": 37,
+            },
+            "email_2": {"body": "Hi team,\n\nThe 2-hour MOH reporting clock requires a tested plan.\n\nThat's exactly what the CE certification process produces - independently assessed evidence, not self-declared.\n\nCan I send the HIA readiness checklist?", "word_count": 30},
+            "email_3": {"body": "Hi team,\n\nLast note from me.\n\nChecklist is free and takes 10 minutes. Reply anytime.", "word_count": 15},
+        }
+        _, flags, send_ready = planner.quality_gate(classification, {}, emails)
+        self.assertIn("email_1_repeated_health_information_act_name", flags)
+        self.assertIn("email_1_hia_enforcement_leak", flags)
+        self.assertFalse(send_ready)
+
+    def test_hia_email_records_do_not_include_consent_forms(self):
+        row = {
+            "company_name": "Example Surgical Centre",
+            "website_content": "Singapore surgical clinic with procedure records and specialist doctors.",
+        }
+        classification = {"pressure_type": "hia_regulatory", "hia_service_type_guess": "specialist_OMS"}
+        copy_brief = {"clinic_profile_guess": "specialist_led"}
+        records = planner.hia_email_1_records(row, classification, copy_brief)
+        self.assertNotIn("consent", records.lower())
+
+    def test_generic_ncss_consequence_is_replaced_for_specific_data_type(self):
+        self.assertTrue(
+            planner.consequence_too_generic_for_data_type(
+                "Beneficiary records carry a higher PDPA evidence bar than most assume.",
+                "cancer patient records",
+            )
+        )
+        self.assertEqual(
+            planner.deterministic_sensitivity_consequence(
+                {},
+                {"pressure_type": planner.NCSS_SOCIAL_SERVICE_PRESSURE},
+                {},
+                "cancer patient records",
+            ),
+            "Cancer patient records carry a lower significant-harm threshold under PDPA.",
+        )
+
 
 class InstantlyBackfillScriptTests(unittest.TestCase):
     @classmethod
