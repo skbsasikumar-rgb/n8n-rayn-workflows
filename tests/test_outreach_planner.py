@@ -4925,6 +4925,38 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(classification["hia_official_service_type"], "")
                 self.assertEqual(classification["regulatory_applicability"], ["PDPA"])
 
+    def test_name_only_standalone_physio_routes_to_pdpa_after_empty_scrape(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Activex Physio",
+                "best_url": "https://activexphysio.com/",
+                "website_content": "",
+                "status_reason": "enrichment_transport_timeout_preserved_existing_url",
+                "validated_email": "info@activexphysio.com",
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["classification_review_status"], "not_needed")
+        self.assertNotEqual(plan.emails["email_1"]["chosen_subject"], "not ready")
+
+    def test_name_only_addiction_counselling_routes_to_pdpa_after_empty_scrape(self):
+        plan = o.plan_outreach(
+            {
+                "company_name": "Addictions Recovery Singapore | Drug and Alcohol Rehab Counselling",
+                "best_url": "https://addictionsrecovery.sg/",
+                "website_content": "",
+                "status_reason": "enrichment_transport_timeout_preserved_existing_url",
+                "validated_email": "contact@addictionsrecovery.sg",
+            }
+        )
+
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertFalse(plan.classification["hia_relevant"])
+        self.assertEqual(plan.classification["classification_review_status"], "not_needed")
+        self.assertNotEqual(plan.emails["email_1"]["chosen_subject"], "not ready")
+
     def test_generic_charity_elder_support_does_not_become_hia_contingency_care(self):
         classification = o.classify_row(
             {

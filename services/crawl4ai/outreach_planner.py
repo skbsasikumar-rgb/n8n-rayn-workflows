@@ -4112,6 +4112,15 @@ def classify_row(row: dict[str, Any]) -> dict[str, Any]:
     ):
         hia = force_unconfirmed_hia_scope_pdpa(hia)
     data_type, personal_intensity, sensitive_likelihood = infer_data_signal(text, hia, entity)
+    if (
+        data_type == "unknown"
+        and not compact(row.get("website_content"))
+        and (
+            contains_any(text, NON_HCSA_STANDALONE_ALLIED_TERMS)
+            or contains_any(text, STANDALONE_COUNSELLING_PSYCHOLOGY_TERMS)
+        )
+    ):
+        data_type, personal_intensity, sensitive_likelihood = "health_information", "medium", "medium"
     dpo_owner = is_data_protection_owner(row)
     trust_signal = business_model_trust_signal(text)
     track_scores = score_email_tracks(row, text, entity, hia, data_type, personal_intensity, dpo_owner, trust_signal)
