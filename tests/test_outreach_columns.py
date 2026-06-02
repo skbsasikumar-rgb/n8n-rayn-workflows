@@ -964,6 +964,69 @@ class OutreachColumnContractTests(unittest.TestCase):
             "Cancer patient records carry a lower significant-harm threshold under PDPA.",
         )
 
+    def test_ncss_dementia_records_use_specific_email_1_context(self):
+        line = planner.pdpa_email_1_context_line_from_data(
+            {
+                "company_name": "Apex Harmony Lodge",
+                "company_homepage_name": "Apex Harmony Lodge",
+                "website_content": (
+                    "Social service agency supporting dementia care, memory care, residents, "
+                    "beneficiaries and family contacts."
+                ),
+            },
+            {"pressure_type": planner.NCSS_SOCIAL_SERVICE_PRESSURE, "entity_type_guess": "social_service"},
+            {},
+            "dementia patient records",
+        )
+        self.assertIn("Dementia patient records", line)
+        self.assertNotIn("Beneficiary records, volunteer data, donor contacts", line)
+
+    def test_strict_email_3_generation_rejects_changed_greeting(self):
+        original = {
+            "email_1": {
+                "body": (
+                    "Hello team,\n\n"
+                    "Dementia patient records sit at the higher end of PDPA sensitivity.\n\n"
+                    "We help organisations get Cyber Essentials certified - gap assessment, documentation, and evidence trail.\n\n"
+                    "Worth sending the personal data safeguards checklist?"
+                )
+            },
+            "email_2": {
+                "body": (
+                    "Hello team,\n\n"
+                    "For dementia patient records, PDPC scrutiny can arrive before teams expect it.\n\n"
+                    "That's exactly what the CE certification process produces - independently assessed evidence, not self-declared.\n\n"
+                    "Happy to share the personal data safeguards checklist if timing's better now."
+                )
+            },
+            "email_3": {
+                "body": (
+                    "Hello team,\n\n"
+                    "Closing the loop here.\n\n"
+                    "For dementia patient records, there is no fixed PDPA deadline; a breach or complaint can make the evidence gap urgent overnight.\n\n"
+                    "Checklist is free and takes 10 minutes. Reply anytime."
+                )
+            },
+        }
+        candidate = {
+            **original,
+            "email_3": {
+                "body": (
+                    "team\n\n"
+                    "Last note from me.\n\n"
+                    "For dementia patient records, there is no fixed PDPA deadline; a breach or complaint can make the evidence gap urgent overnight.\n\n"
+                    "Checklist is free and takes 10 minutes. Reply anytime."
+                )
+            },
+        }
+        flags = planner.strict_email_generation_static_flags(
+            candidate,
+            original,
+            {"pressure_type": planner.NCSS_SOCIAL_SERVICE_PRESSURE},
+            {},
+        )
+        self.assertIn("llm_email_3_generation_changed_greeting", flags)
+
 
 class InstantlyBackfillScriptTests(unittest.TestCase):
     @classmethod

@@ -4781,6 +4781,8 @@ def highest_sensitivity_email_data_type(value: Any, row: dict[str, Any] | None =
         return "cancer patient records"
     if any(term in source for term in ("elderly", "eldercare", "senior", "active ageing", "active aging")):
         return "elderly care records"
+    if any(term in source for term in ("dementia", "memory care", "alzheim")):
+        return "dementia patient records"
     if any(term in source for term in ("autism", "aba therapy", "children's therapy", "child therapy")):
         return "children's therapy records"
     if any(term in source for term in ("mental health", "counselling", "counseling", "psychology", "psychotherapy")):
@@ -4923,6 +4925,8 @@ def deterministic_sensitivity_consequence(
         return "Cancer patient records carry a lower significant-harm threshold under PDPA."
     if "elderly" in data.lower():
         return "Elderly care records carry higher sensitivity because vulnerable people and families are exposed."
+    if "dementia" in data.lower():
+        return "Dementia patient records carry higher sensitivity because vulnerable people and families are exposed."
     if "children" in data.lower() or "child" in data.lower():
         return "Children's records carry higher PDPA sensitivity because vulnerable minors are exposed."
     return f"{data[:1].upper() + data[1:]} carry a higher PDPA evidence bar than most assume."
@@ -4945,6 +4949,8 @@ def deterministic_enforcement_consequence(
         return "For cancer patient records, significant-harm scrutiny arrives faster after a breach or complaint."
     if "elderly" in data.lower():
         return "For elderly care records, PDPC scrutiny can arrive before teams expect it."
+    if "dementia" in data.lower():
+        return "For dementia patient records, PDPC scrutiny can arrive before teams expect it."
     return f"For {data}, PDPC weighs whether PDPA safeguards were documented before the incident, not after."
 
 
@@ -5423,6 +5429,11 @@ def pdpa_email_1_context_line_from_data(
         return (
             "Cancer patient records carry real sensitivity under PDPA - the safeguards evidence bar for "
             "organisations handling them is higher than most assume."
+        )
+    if "dementia" in combined:
+        return (
+            "Dementia patient records sit at the higher end of PDPA sensitivity - vulnerable people and family "
+            "contacts are exposed."
         )
     if any(term in combined for term in ("social service agency", "destitute", "senior well-being", "senior wellbeing", "active ageing", "eldercare")):
         return (
@@ -8863,6 +8874,11 @@ def strict_email_generation_static_flags(
     flags += email_1_rewrite_static_flags(body1, original["email_1"].get("body", ""), classification)
     flags += email_2_rewrite_static_flags(body2, original["email_2"].get("body", ""), classification, frozen_email_data_type(copy_brief, classification, ""))
     body3_l = compact(body3).lower()
+    original_body3 = original["email_3"].get("body", "")
+    original_greeting3 = next((compact(part) for part in original_body3.split("\n\n") if compact(part)), "")
+    candidate_greeting3 = next((compact(part) for part in body3.split("\n\n") if compact(part)), "")
+    if original_greeting3 and candidate_greeting3 != original_greeting3:
+        flags.append("llm_email_3_generation_changed_greeting")
     if not body3 or word_count(body3) > 100:
         flags.append("llm_email_3_generation_length")
     if duplicate_sentence_keys(body3):
