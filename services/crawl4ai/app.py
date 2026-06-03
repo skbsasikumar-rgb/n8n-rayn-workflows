@@ -317,6 +317,7 @@ class PublicEnrichmentRequest(BaseModel):
     per_row_page_concurrency: int = Field(default=2, ge=1, le=4)
     row_timeout_seconds: int = Field(default=0, ge=0, le=600)
     allow_low_limits: bool = False
+    allow_cross_domain_redirect: bool = False
 
 
 class ContactSearchRequest(BaseModel):
@@ -1798,6 +1799,7 @@ async def public_enrich_core(
         row_id=request.Id,
         company_name=request.company_name,
         url_picked=request.url_picked,
+        allow_cross_domain_redirect=request.allow_cross_domain_redirect,
     )
     browser_config = public_enrichment.BrowserConfig(
         browser_type="chromium",
@@ -1999,6 +2001,31 @@ def public_enrich_needs_browser_retry(result: dict[str, Any]) -> bool:
     return validation_status == "failed_redirect_loop" or public_enrichment.proxy_retryable_error(error_text)
 
 
+def public_enrich_needs_low_limit_retry(result: dict[str, Any]) -> bool:
+    if not isinstance(result, dict) or result.get("ok"):
+        return False
+    record = result.get("record") if isinstance(result.get("record"), dict) else {}
+    patch = result.get("patch") if isinstance(result.get("patch"), dict) else {}
+    error_text = " ".join(
+        compact_whitespace(value)
+        for value in (
+            result.get("error"),
+            patch.get("last_error"),
+            patch.get("notes"),
+            " ".join(record.get("error_notes") or []) if isinstance(record.get("error_notes"), list) else "",
+        )
+        if value
+    ).lower()
+    if not error_text:
+        return False
+    return (
+        "aborted" in error_text
+        or "timeout" in error_text
+        or "timed out" in error_text
+        or "public_enrich_timeout_after_" in error_text
+    )
+
+
 def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any]:
     request = PublicEnrichmentRequest.model_validate(request_data)
     stage = "deep_retry" if request.enrichment_stage == "deep_retry" else "fast"
@@ -2008,6 +2035,7 @@ def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any
         row_id=request.Id,
         company_name=request.company_name,
         url_picked=request.url_picked,
+        allow_cross_domain_redirect=request.allow_cross_domain_redirect,
     )
     record = asyncio.run(
         public_enrichment.enrich_row(
@@ -2029,6 +2057,81 @@ def run_public_enrich_fast_static(request_data: dict[str, Any]) -> dict[str, Any
         "patch": patch,
         "record": public_enrichment.record_to_json(record),
     }
+
+
+def public_enrich_low_limit_fallback_data(request_data: dict[str, Any]) -> dict[str, Any]:
+    page_limit = min(
+        max(1, int(request_data.get("page_limit") or 1)),
+        max(1, int(os.getenv("PUBLIC_ENRICH_TIMEOUT_FALLBACK_PAGE_LIMIT", "1"))),
+    )
+    page_timeout_ms = min(
+        max(5000, int(request_data.get("page_timeout_ms") or 8000)),
+        max(5000, int(os.getenv("PUBLIC_ENRICH_TIMEOUT_FALLBACK_PAGE_TIMEOUT_MS", "8000"))),
+    )
+    scrape_char_limit = min(
+        max(2000, int(request_data.get("scrape_char_limit") or 60000)),
+        max(2000, int(os.getenv("PUBLIC_ENRICH_TIMEOUT_FALLBACK_SCRAPE_CHARS", "60000"))),
+    )
+    return {
+        **request_data,
+        "allow_low_limits": True,
+        "page_limit": page_limit,
+        "page_timeout_ms": page_timeout_ms,
+        "request_delay_seconds": min(float(request_data.get("request_delay_seconds") or 0.0), 0.1),
+        "scrape_char_limit": scrape_char_limit,
+        "per_row_page_concurrency": 1,
+    }
+
+
+def public_enrich_short_browser_retry_data(request_data: dict[str, Any]) -> dict[str, Any]:
+    page_limit = min(
+        max(1, int(request_data.get("page_limit") or 3)),
+        max(1, int(os.getenv("PUBLIC_ENRICH_BROWSER_RETRY_PAGE_LIMIT", "3"))),
+    )
+    page_timeout_ms = min(
+        max(5000, int(request_data.get("page_timeout_ms") or 10000)),
+        max(5000, int(os.getenv("PUBLIC_ENRICH_BROWSER_RETRY_PAGE_TIMEOUT_MS", "10000"))),
+    )
+    return {
+        **public_enrich_low_limit_fallback_data(request_data),
+        PUBLIC_ENRICH_FORCE_BROWSER_KEY: True,
+        "page_limit": page_limit,
+        "page_timeout_ms": page_timeout_ms,
+    }
+
+
+def annotate_public_enrich_fallback(
+    result: dict[str, Any],
+    *,
+    action: str,
+    reason: str,
+) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return result
+    result["preflight_action"] = action
+    result["preflight_reason"] = reason
+    patch = result.get("patch") if isinstance(result.get("patch"), dict) else {}
+    if patch:
+        notes = compact_whitespace(patch.get("notes") or patch.get("last_error") or "")
+        patch["notes"] = compact_whitespace(f"{notes} {reason}".strip())
+    return result
+
+
+def run_public_enrich_low_limit_fallback(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
+    fallback_data = public_enrich_low_limit_fallback_data(request_data)
+    fallback_timeout = max(
+        30.0,
+        min(
+            float(os.getenv("PUBLIC_ENRICH_TIMEOUT_FALLBACK_TIMEOUT_SECONDS", "75")),
+            max(30.0, timeout_seconds / 2),
+        ),
+    )
+    result = run_public_enrich_isolated(fallback_data, fallback_timeout)
+    return annotate_public_enrich_fallback(
+        result,
+        action="fast_static_timeout_low_limit_fallback",
+        reason=f"Primary public enrichment exceeded {int(timeout_seconds)}s; low-limit fallback used.",
+    )
 
 
 def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: float) -> dict[str, Any]:
@@ -2078,12 +2181,33 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                     timeout=timeout_seconds + 5.0,
                 )
             except asyncio.TimeoutError:
-                return public_enrich_timeout_response(request_data, timeout_seconds)
+                return await asyncio.to_thread(
+                    run_public_enrich_low_limit_fallback,
+                    request_data,
+                    timeout_seconds,
+                )
+            if public_enrich_needs_low_limit_retry(fast_result):
+                return await asyncio.to_thread(
+                    run_public_enrich_low_limit_fallback,
+                    request_data,
+                    timeout_seconds,
+                )
             if public_enrich_needs_browser_retry(fast_result):
-                retry_data = {**request_data, PUBLIC_ENRICH_FORCE_BROWSER_KEY: True}
-                retry_result = await asyncio.to_thread(run_public_enrich_isolated, retry_data, timeout_seconds)
+                retry_data = public_enrich_short_browser_retry_data(request_data)
+                retry_timeout = max(
+                    30.0,
+                    min(
+                        timeout_seconds,
+                        float(os.getenv("PUBLIC_ENRICH_BROWSER_RETRY_TIMEOUT_SECONDS", "75")),
+                    ),
+                )
+                retry_result = await asyncio.to_thread(run_public_enrich_isolated, retry_data, retry_timeout)
                 if isinstance(retry_result, dict):
-                    retry_result["preflight_action"] = "browser_retry_after_static_validation_warning"
+                    annotate_public_enrich_fallback(
+                        retry_result,
+                        action="browser_retry_after_static_validation_warning",
+                        reason="Static validation warning triggered a short bounded browser retry.",
+                    )
                 return retry_result
             return fast_result
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)

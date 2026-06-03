@@ -521,6 +521,7 @@ class InputRow:
     row_id: int | str
     company_name: str
     url_picked: str
+    allow_cross_domain_redirect: bool = False
 
 
 @dataclass
@@ -1043,6 +1044,7 @@ def resolve_redirects(
     start_url: str,
     original_registered_domain: str,
     max_redirects: int,
+    allow_cross_domain_redirect: bool = False,
 ) -> UrlValidationResult:
     current_url = start_url
     redirect_chain: list[dict[str, Any]] = []
@@ -1129,7 +1131,11 @@ def resolve_redirects(
                     url_validation_status="failed_non_org_redirect_target",
                     error=f"redirect target is not an organization website: {next_host}",
                 )
-            if original_registered_domain and registered_domain(next_host) != original_registered_domain:
+            if (
+                original_registered_domain
+                and not allow_cross_domain_redirect
+                and registered_domain(next_host) != original_registered_domain
+            ):
                 return UrlValidationResult(
                     best_url_candidate=start_url,
                     best_url=start_url,
@@ -1183,6 +1189,7 @@ def validate_best_url_candidate(
     session: requests.Session,
     normalization: NormalizationResult,
     max_redirects: int = 8,
+    allow_cross_domain_redirect: bool = False,
 ) -> UrlValidationResult:
     if not normalization.best_url:
         return UrlValidationResult(
@@ -1196,7 +1203,13 @@ def validate_best_url_candidate(
 
     failures: list[UrlValidationResult] = []
     for variant in validation_variants(normalization.best_url):
-        result = resolve_redirects(session, variant, normalization.registered_domain, max_redirects)
+        result = resolve_redirects(
+            session,
+            variant,
+            normalization.registered_domain,
+            max_redirects,
+            allow_cross_domain_redirect=allow_cross_domain_redirect,
+        )
         if result.ok:
             result.best_url_candidate = normalization.best_url
             return result
@@ -3896,7 +3909,11 @@ async def enrich_row(
 
     session = build_requests_session(normalization.best_url)
     validation_started = time.perf_counter()
-    validation = validate_best_url_candidate(session, normalization)
+    validation = validate_best_url_candidate(
+        session,
+        normalization,
+        allow_cross_domain_redirect=row.allow_cross_domain_redirect,
+    )
     timings["validation_ms"] = elapsed_ms(validation_started)
     validation_warning_allowed = can_continue_after_url_validation_warning(validation, normalization)
     if not validation.ok and not validation_warning_allowed:
