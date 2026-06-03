@@ -657,13 +657,14 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("/\\b(502|503|504)\\b/.test(text)", enrichment_code)
         self.assertIn("status: 'failed_retryable'", enrichment_code)
         self.assertIn("enrichment_transport_timeout_retry_required", enrichment_code)
+        self.assertIn("skipped_enrichment_timeout_final", enrichment_code)
         self.assertNotIn("enrichment_transport_timeout_preserved_existing_url", enrichment_code)
         self.assertNotIn("pending_after_preserved_enrichment_timeout", enrichment_code)
         self.assertIn("source.url_picked", enrichment_code)
         self.assertIn("best_url: sourceBestUrl", enrichment_code)
         self.assertIn("email_send_ready: false", enrichment_code)
         self.assertIn("final_send_gate_passed: false", enrichment_code)
-        self.assertIn("error_type: 'enrichment_transport_timeout'", enrichment_code)
+        self.assertIn("error_type: maxAttemptsReached ? 'enrichment_timeout_final' : 'enrichment_transport_timeout'", enrichment_code)
         self.assertIn("finalStatus === 'failed_retryable'", enrichment_code)
         self.assertIn("genericMaxAttemptsReached", enrichment_code)
         self.assertIn("retry_eligible: genericMaxAttemptsReached ? 'false' : 'true'", enrichment_code)
@@ -674,7 +675,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         enrichment_code = next(
             node for node in workflow["nodes"] if node["name"] == "Prepare Public Enrichment"
         )["parameters"]["jsCode"]
-        self.assertIn("page_limit: stage === 'deep_retry' ? 12 : 8", enrichment_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 5 : 3", enrichment_code)
+        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 15000 : 12000", enrichment_code)
+        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 120 : 75", enrichment_code)
         self.assertIn("allow_cross_domain_redirect", enrichment_code)
         self.assertNotIn("? 14 : 8", enrichment_code)
 

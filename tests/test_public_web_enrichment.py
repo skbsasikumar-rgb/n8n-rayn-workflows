@@ -528,11 +528,11 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         prepare_code = nodes["Prepare Public Enrichment"]["parameters"]["jsCode"]
         self.assertIn("enrichment_stage", prepare_code)
         self.assertIn("weak_retry", prepare_code)
-        self.assertIn("page_limit: stage === 'deep_retry' ? 12 : 8", prepare_code)
+        self.assertIn("page_limit: stage === 'deep_retry' ? 5 : 3", prepare_code)
+        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 15000 : 12000", prepare_code)
+        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 120 : 75", prepare_code)
         self.assertNotIn("? 14 : 8", prepare_code)
-        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 20000 : 15000", prepare_code)
         self.assertIn("per_row_page_concurrency: stage === 'deep_retry' ? 2 : 2", prepare_code)
-        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 210 : 120", prepare_code)
         self.assertIn("allow_low_limits: false", prepare_code)
         http_node = nodes["Crawl4AI Public Enrich"]
         self.assertEqual(http_node["parameters"]["options"]["timeout"], 420000)
@@ -666,7 +666,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("status === 'failed_retryable' && isTransportTimeout", patch_code)
         self.assertIn("finalStatus === 'failed_retryable'", patch_code)
         self.assertIn("RAYN_MAX_ENRICHMENT_ATTEMPTS", patch_code)
-        self.assertIn("maxAttemptsReached ? 'enrichment_timeout_max_attempts'", patch_code)
+        self.assertIn("maxAttemptsReached ? 'skipped_enrichment_timeout_final'", patch_code)
         self.assertIn('"enrichment_stage": enrichment_stage', rerun_helper)
         self.assertIn('enrichment_stage = "deep_retry" if should_deep_retry else "fast"', rerun_helper)
         self.assertIn('"enrichment_timeout" not in prior_reason', rerun_helper)

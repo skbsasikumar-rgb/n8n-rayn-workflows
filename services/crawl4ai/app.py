@@ -1084,6 +1084,7 @@ async def ensure_browser(app: FastAPI) -> Browser:
 app = FastAPI(title="Browser Scraper", version="2.0.0")
 
 SCRAPE_CONCURRENCY = max(1, int(os.getenv("CRAWL4AI_MAX_CONCURRENCY", "1")))
+PUBLIC_ENRICH_STATIC_CONCURRENCY = max(1, int(os.getenv("PUBLIC_ENRICH_STATIC_CONCURRENCY", "4")))
 OUTREACH_PLAN_CONCURRENCY = max(1, int(os.getenv("OUTREACH_PLAN_CONCURRENCY", "2")))
 CONTACT_ROW_ASYNC_CONCURRENCY = max(1, int(os.getenv("CONTACT_ROW_ASYNC_CONCURRENCY", "4")))
 _loop_semaphores: dict[tuple[str, int], asyncio.Semaphore] = {}
@@ -1102,6 +1103,10 @@ def loop_semaphore(name: str, limit: int) -> asyncio.Semaphore:
 
 def scrape_semaphore() -> asyncio.Semaphore:
     return loop_semaphore("scrape", SCRAPE_CONCURRENCY)
+
+
+def public_enrich_static_semaphore() -> asyncio.Semaphore:
+    return loop_semaphore("public_enrich_static", PUBLIC_ENRICH_STATIC_CONCURRENCY)
 
 
 def outreach_plan_semaphore() -> asyncio.Semaphore:
@@ -2173,8 +2178,8 @@ def run_public_enrich_isolated(request_data: dict[str, Any], timeout_seconds: fl
 async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
     timeout_seconds = public_enrich_hard_timeout_seconds(request)
     request_data = request.model_dump()
-    async with scrape_semaphore():
-        if public_enrich_is_fast_static_only(request_data):
+    if public_enrich_is_fast_static_only(request_data):
+        async with public_enrich_static_semaphore():
             try:
                 fast_result = await asyncio.wait_for(
                     asyncio.to_thread(run_public_enrich_fast_static, request_data),
@@ -2201,7 +2206,8 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                         float(os.getenv("PUBLIC_ENRICH_BROWSER_RETRY_TIMEOUT_SECONDS", "75")),
                     ),
                 )
-                retry_result = await asyncio.to_thread(run_public_enrich_isolated, retry_data, retry_timeout)
+                async with scrape_semaphore():
+                    retry_result = await asyncio.to_thread(run_public_enrich_isolated, retry_data, retry_timeout)
                 if isinstance(retry_result, dict):
                     annotate_public_enrich_fallback(
                         retry_result,
@@ -2210,6 +2216,7 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                     )
                 return retry_result
             return fast_result
+    async with scrape_semaphore():
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)
 
 
