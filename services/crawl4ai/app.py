@@ -2088,6 +2088,35 @@ def public_enrich_low_limit_fallback_data(request_data: dict[str, Any]) -> dict[
     }
 
 
+def public_enrich_http_first_data(request_data: dict[str, Any]) -> dict[str, Any]:
+    page_limit = min(
+        max(1, int(request_data.get("page_limit") or 3)),
+        max(1, int(os.getenv("PUBLIC_ENRICH_HTTP_FIRST_PAGE_LIMIT", "3"))),
+    )
+    page_timeout_ms = min(
+        max(5000, int(request_data.get("page_timeout_ms") or 12000)),
+        max(5000, int(os.getenv("PUBLIC_ENRICH_HTTP_FIRST_PAGE_TIMEOUT_MS", "12000"))),
+    )
+    scrape_char_limit = min(
+        max(2000, int(request_data.get("scrape_char_limit") or 120000)),
+        max(2000, int(os.getenv("PUBLIC_ENRICH_HTTP_FIRST_SCRAPE_CHARS", "120000"))),
+    )
+    return {
+        **request_data,
+        "enrichment_stage": "fast",
+        "allow_low_limits": True,
+        "page_limit": page_limit,
+        "page_timeout_ms": page_timeout_ms,
+        "request_delay_seconds": min(float(request_data.get("request_delay_seconds") or 0.0), 0.1),
+        "scrape_char_limit": scrape_char_limit,
+        "per_row_page_concurrency": 1,
+        "row_timeout_seconds": min(
+            max(30, int(request_data.get("row_timeout_seconds") or 75)),
+            max(30, int(os.getenv("PUBLIC_ENRICH_HTTP_FIRST_ROW_TIMEOUT_SECONDS", "75"))),
+        ),
+    }
+
+
 def public_enrich_short_browser_retry_data(request_data: dict[str, Any]) -> dict[str, Any]:
     page_limit = min(
         max(1, int(request_data.get("page_limit") or 3)),
@@ -2218,6 +2247,30 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
             return fast_result
     async with scrape_semaphore():
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)
+
+
+@app.post("/public-enrich-http-first")
+async def public_enrich_http_first(request: PublicEnrichmentRequest) -> dict[str, Any]:
+    request_data = public_enrich_http_first_data(request.model_dump())
+    timeout_seconds = min(
+        public_enrich_hard_timeout_seconds(PublicEnrichmentRequest.model_validate(request_data)),
+        float(os.getenv("PUBLIC_ENRICH_HTTP_FIRST_ENDPOINT_TIMEOUT_SECONDS", "85")),
+    )
+    async with public_enrich_static_semaphore():
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(run_public_enrich_fast_static, request_data),
+                timeout=timeout_seconds + 5.0,
+            )
+        except asyncio.TimeoutError:
+            result = public_enrich_timeout_response(request_data, timeout_seconds)
+        if isinstance(result, dict):
+            annotate_public_enrich_fallback(
+                result,
+                action="http_first_static_only",
+                reason="HTTP-first static enrichment endpoint used; Playwright fallback intentionally skipped.",
+            )
+        return result
 
 
 @app.post("/contact-enrich")
