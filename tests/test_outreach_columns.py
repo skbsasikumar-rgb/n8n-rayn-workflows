@@ -682,7 +682,9 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertNotIn("? 14 : 8", enrichment_code)
         http_node = next(node for node in workflow["nodes"] if node["name"] == "Crawl4AI Public Enrich")
         self.assertIn("/public-enrich", http_node["parameters"]["url"])
-        self.assertNotIn("/public-enrich-http-first", http_node["parameters"]["url"])
+        self.assertIn("/public-enrich-http-first", http_node["parameters"]["url"])
+        self.assertIn("RAYN_PUBLIC_ENRICH_HTTP_FIRST", http_node["parameters"]["url"])
+        self.assertIn("stage !== 'deep_retry'", http_node["parameters"]["url"])
 
     def test_contact_search_runs_as_async_row_jobs(self):
         workflow = json.loads(WORKER_WORKFLOW_PATH.read_text())
