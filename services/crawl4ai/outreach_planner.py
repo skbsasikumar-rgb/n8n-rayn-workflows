@@ -3022,6 +3022,9 @@ def standalone_non_hcsa_allied_scope(row: dict[str, Any], text: str, service: st
         return not contains_positive_evidence_term(blob, HCSA_LICENSE_EVIDENCE_TERMS)
     if service in {"GP_OMS", "specialist_OMS"} and contains_any(blob, SPECIFIC_SPECIALIST_SERVICE_TERMS):
         return False
+    official_service = official_hia_service_type(service, blob)
+    if service in {"GP_OMS", "specialist_OMS"} and has_confirmed_hia_scope_evidence(row, blob, service, official_service):
+        return False
     if strong_specialist_clinic_scope(row, text):
         return False
     return not has_allied_hcsa_or_medical_doctor_clinic_evidence(blob)

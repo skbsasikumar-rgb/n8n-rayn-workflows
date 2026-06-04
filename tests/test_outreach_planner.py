@@ -1796,6 +1796,27 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(classification["hia_service_type_guess"], "GP_OMS")
         self.assertNotEqual(classification["hia_service_type_guess"], "hearing_care")
 
+    def test_family_gp_clinic_not_downgraded_by_wellness_or_aesthetic_terms(self):
+        classification = o.classify_row(
+            {
+                "Id": 20525,
+                "company_name": "Assure Family Clinic",
+                "company_homepage_name": "Assure Family Clinic",
+                "website_content": (
+                    "Your Integrated Wellness Centre. National Medical Schemes. "
+                    "Aesthetic Services Health Optimisation Vaccination Statutory Health Checks. "
+                    "Assure Family Clinic provides one-stop GP services for adults, children and babies. "
+                    "Our Doctors include Dr Joanne Koay and Dr Vikneswaran. "
+                    "Patients can book appointments at Assure Family Clinic (Bukit Merah)."
+                ),
+            }
+        )
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "GP_OMS")
+        self.assertEqual(classification["hia_official_service_type"], "outpatient_medical_gp")
+        self.assertEqual(classification["hia_timeline_batch_guess"], "Batch 1 - Sep 2027")
+
     def test_optometry_visioncare_does_not_become_hia_or_social_service(self):
         classification = o.classify_row(
             {
