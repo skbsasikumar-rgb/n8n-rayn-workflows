@@ -279,7 +279,7 @@ Email 2 rules:
 - Add exactly one new piece of information versus Email 1.
 - For HIA tracks, the new information is the 2-hour initial report to MOH once a cybersecurity incident or data breach is assessed as notifiable. Make clear this needs a tested incident plan, not good intentions.
 - For PDPA/DPO tracks, the new information is that PDPC scrutiny turns on safeguards documented before a breach, complaint or audit, not evidence written afterwards.
-- Email 2 must include this connector exactly once: "That's exactly what the CE certification process produces - independently assessed evidence, not self-declared."
+- Email 2 must include this connector exactly once: "That's exactly what the Cyber Essentials certification process produces - independently assessed evidence, not self-declared."
 - Keep Cyber Essentials secondary; Email 2 is about the risk that makes the checklist worth sending, not another funding or route pitch.
 - Do not mention exact funding percentages, grants, or eligibility unless the deterministic email already does and funding_claim_safe is true.
 - Do not mention exact prices. Do not say "second cheapest".
@@ -6080,7 +6080,7 @@ EMAIL_2_PDPA_VALUE_PS = (
 )
 EMAIL_2_VALUE_PS = EMAIL_2_HIA_VALUE_PS
 EMAIL_2_CE_CONNECTOR = (
-    "That's exactly what the CE certification process produces - independently assessed evidence, "
+    "That's exactly what the Cyber Essentials certification process produces - independently assessed evidence, "
     "not self-declared."
 )
 EMAIL_3_FINAL_CTA = "Checklist is free and takes 10 minutes. Reply anytime."
@@ -6711,9 +6711,9 @@ def email_3_sentence_slots(
                 3,
                 "close_line",
                 {
-                    "closing_loop": "closing the loop here.",
-                    "last_note": "last note from me on HIA timing.",
-                    "leave_it_here": "I will leave this here on HIA timing.",
+                    "closing_loop": "last note from me.",
+                    "last_note": "last note from me.",
+                    "leave_it_here": "last note from me.",
                 },
             ),
             "route_line": choose_sentence_slot(
@@ -6793,9 +6793,9 @@ def email_3_sentence_slots(
             3,
             "close_line",
                 {
-                    "closing_loop": "closing the loop here.",
-                    "last_note": "last note from me on this.",
-                    "leave_it_here": "I will leave this here.",
+                    "closing_loop": "last note from me.",
+                    "last_note": "last note from me.",
+                    "leave_it_here": "last note from me.",
                 },
             ),
         "route_line": choose_sentence_slot(

@@ -949,7 +949,7 @@ class OutreachColumnContractTests(unittest.TestCase):
                 ),
                 "word_count": 37,
             },
-            "email_2": {"body": "Hi team,\n\nThe 2-hour MOH reporting clock requires a tested plan.\n\nThat's exactly what the CE certification process produces - independently assessed evidence, not self-declared.\n\nCan I send the HIA readiness checklist?", "word_count": 30},
+            "email_2": {"body": "Hi team,\n\nThe 2-hour MOH reporting clock requires a tested plan.\n\nThat's exactly what the Cyber Essentials certification process produces - independently assessed evidence, not self-declared.\n\nCan I send the HIA readiness checklist?", "word_count": 32},
             "email_3": {"body": "Hi team,\n\nLast note from me.\n\nChecklist is free and takes 10 minutes. Reply anytime.", "word_count": 15},
         }
         _, flags, send_ready = planner.quality_gate(classification, {}, emails)
@@ -1015,7 +1015,7 @@ class OutreachColumnContractTests(unittest.TestCase):
                 "body": (
                     "Hello team,\n\n"
                     "For dementia patient records, PDPC scrutiny can arrive before teams expect it.\n\n"
-                    "That's exactly what the CE certification process produces - independently assessed evidence, not self-declared.\n\n"
+                    "That's exactly what the Cyber Essentials certification process produces - independently assessed evidence, not self-declared.\n\n"
                     "Happy to share the personal data safeguards checklist if timing's better now."
                 )
             },

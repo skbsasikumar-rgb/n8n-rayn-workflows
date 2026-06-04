@@ -102,8 +102,8 @@ class OutreachPlannerTests(unittest.TestCase):
 
     def test_named_greeting_keeps_followup_sentence_inline(self):
         self.assertEqual(
-            o.followup_sentence("Hi Natalie,", "linking this back to the CE certification process."),
-            "Hi Natalie, linking this back to the CE certification process.",
+            o.followup_sentence("Hi Natalie,", "linking this back to the Cyber Essentials certification process."),
+            "Hi Natalie, linking this back to the Cyber Essentials certification process.",
         )
 
     def test_email_1_uses_resolved_placeholders(self):
@@ -2713,7 +2713,7 @@ class OutreachPlannerTests(unittest.TestCase):
                 if plan.email_2_mode == "funding" and not o.hia_pricing_active(plan.classification, plan.copy_brief):
                     self.assertTrue(o.funding_only_email(plan.emails["email_2"]["body"], plan.funding.funding_claim_line))
                 elif o.hia_pricing_active(plan.classification, plan.copy_brief):
-                    self.assertIn("CE certification process", plan.emails["email_2"]["body"])
+                    self.assertIn("Cyber Essentials certification process", plan.emails["email_2"]["body"])
                     self.assertTrue("2-hour" in plan.emails["email_2"]["body"] or "MOH" in plan.emails["email_2"]["body"])
                     self.assertIn("incident", plan.emails["email_2"]["body"].lower())
                 elif not o.hia_pricing_active(plan.classification, plan.copy_brief):
@@ -3277,7 +3277,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(matched.copy_brief["email_2_mode"], "risk_followup")
         self.assertEqual(matched.copy_brief["funding_followup_mode"], "risk_followup")
         self.assertTrue("2-hour" in matched.emails["email_2"]["body"] or "MOH" in matched.emails["email_2"]["body"])
-        self.assertIn("CE certification process", matched.emails["email_2"]["body"])
+        self.assertIn("Cyber Essentials certification process", matched.emails["email_2"]["body"])
         self.assertNotIn("S$4,300 before funding", matched.emails["email_2"]["body"])
 
     def test_email_funding_line_placeholder_handles_ncss_80_percent_claim(self):
@@ -3646,7 +3646,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         self.assertIn("When PDPC reviews a PDPA breach", body)
         self.assertIn("safeguards were documented before", body)
-        self.assertIn("CE certification process", body)
+        self.assertIn("Cyber Essentials certification process", body)
         self.assertNotIn("p.s.", body.lower())
 
     def test_email_2_named_followup_lowercases_after_dash(self):
@@ -3700,7 +3700,7 @@ class OutreachPlannerTests(unittest.TestCase):
     def test_email_2_rewrite_rejects_long_merged_paragraph(self):
         deterministic = o.hia_pricing_email_2_body("Hi Natalie,", "group_or_larger_sizing_needed", False)
         merged = (
-            "Hi Natalie, linking this back to the CE certification process.\n\n"
+            "Hi Natalie, linking this back to the Cyber Essentials certification process.\n\n"
             "The useful check is whether patient records, vendor systems, backups, access owners and incident roles can be mapped cleanly. "
             "That gives a clearer starting point for the Cyber Essentials work needed on the HIA cyber/data security. "
             "For larger setups, support depends on route and endpoint count.\n\n"
@@ -4721,7 +4721,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["endpoint_band_guess"], "1_5")
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
         self.assertNotIn("S$4,300 before funding", email2)
-        self.assertIn("CE certification process", email2)
+        self.assertIn("Cyber Essentials certification process", email2)
         self.assertIn("2-hour", email2)
         self.assertIn("MOH", email2)
         self.assertIn("incident", email2.lower())
@@ -4833,7 +4833,7 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         email2 = plan.emails["email_2"]["body"]
         self.assertEqual(plan.copy_brief["pricing_email_2_mode"], "small_clinic_starting_price")
-        self.assertIn("CE certification process", email2)
+        self.assertIn("Cyber Essentials certification process", email2)
         self.assertIn("2-hour", email2)
         self.assertIn("HIA ", email2)
         self.assertNotIn("70%", email2)
