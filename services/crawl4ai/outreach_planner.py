@@ -74,70 +74,42 @@ def raise_for_openrouter_account_error(response: requests.Response, context: str
         raise ProviderAccountError(f"provider_account_error: {context}: {message}")
 
 
-LLM_CLASSIFICATION_PROMPT = """System:
-You classify Singapore organisations for cyber/data certification outreach. Use only provided evidence. Return strict JSON only. Do not invent facts.
+LLM_CLASSIFICATION_PROMPT = """You are the final Singapore outreach-route classifier for RAYN Secure.
+Use only the provided row evidence, deterministic classification, search context, and funding evidence. Return strict JSON only. Do not invent facts.
 
-User input:
-- company_name
-- website_url
-- website_scrape
-- page_sources
-- services_detected
-- locations_detected
-- leadership_or_team_signals
-- contact_info_detected
-- structured_data_detected
-- industry_guess
-- company_homepage_name
-- parent_company
-- selected_contact_title
-- existing enrichment fields
+Official basis to apply:
+- HIA route: Health Information Act (HIA) applies to licensed healthcare providers / HCSA licensees and approved care providers/users such as retail pharmacies. Use hia_regulatory only when evidence supports a current HCSA licensable healthcare service or an approved HIA/NEHR route.
+- HCSA licensable services include outpatient medical, outpatient dental, outpatient renal dialysis, ambulatory surgical centre, assisted reproduction, acute hospital, community hospital, nursing home, clinical laboratory, radiological service, nuclear medicine, emergency ambulance, medical transport, blood/cord-blood/human-tissue banking.
+- HCSA is service-based, not address-based. A medical-suite address, hospital building, or clinic-directory listing alone is not HIA evidence.
+- Standalone counselling, psychology, psychotherapy, physiotherapy, podiatry, hearing care, audiology, TCM, CAM, wellness, coaching, beauty/aesthetics, or social services are PDPA unless there is explicit evidence of HCSA licensure, a licensed medical/dental clinic, medical doctors/psychiatrists, or another listed HCSA service.
+- PDPA route: use pdpa_safeguards when the organisation likely collects, uses, stores, or discloses identifiable personal data and HIA is not confirmed.
+- NCSS route: use ncss_social_service only when deterministic funding evidence says ncss_verified_member is true. NCSS changes the funding/support track; the legal/data-risk framing remains PDPA safeguards.
+- Use not_ready only when evidence is too thin, non-Singapore, or there is no realistic personal-data handling signal.
 
-First decide the pressure type:
-- HIA regulatory pressure
-- PDPA personal-data safeguard pressure
-- NCSS social-service support pressure, only after deterministic NCSS member-directory verification
-- Customer/procurement trust pressure
-- Funding/budget pressure
-
-Use HIA regulatory pressure when HIA evidence is medium/high. Use PDPA personal-data safeguard pressure when the organisation handles personal data and HIA is not the primary trigger. Use NCSS social-service support pressure only when deterministic funding matching confirms the organisation is in the NCSS member directory; otherwise keep social-service agencies on PDPA safeguards. Use customer/procurement trust pressure when B2B, SaaS, outsourcing, education, finance, HR/recruitment, professional-services, vendor or enterprise-facing evidence is present. Use not_ready when the evidence does not support any outreach track.
+Classification priority:
+1. If HCSA/HIA evidence is concrete and current, route hia_regulatory.
+2. Else if ncss_verified_member is true and the organisation is social-service/charity/NPO-like, route ncss_social_service.
+3. Else if identifiable personal-data handling is likely, route pdpa_safeguards.
+4. Else route not_ready.
 
 Return strict JSON:
 {
-  "entity_type_guess": "sme|npo|charity|social_service|healthcare_provider|clinic|private_company|sole_proprietor|partnership|foreign_entity_sg_ops|unknown",
-  "entity_type_confidence": "low|medium|high",
-  "singapore_registered_guess": true,
-  "sme_likelihood": "likely|possible|unlikely|unknown",
-  "npo_likelihood": "likely|possible|unlikely|unknown",
-  "charity_or_social_service_likelihood": "likely|possible|unlikely|unknown",
-        "pressure_type": "hia_regulatory|pdpa_safeguards|ncss_social_service|not_ready",
+  "pressure_type": "hia_regulatory|pdpa_safeguards|ncss_social_service|not_ready",
+  "classification_confidence": "low|medium|high",
   "pressure_reason": "",
-  "outreach_trigger_signal": "",
-  "outreach_trigger_source_url": "",
-  "outreach_trigger_confidence": "low|medium|high",
   "data_type_signal": "patient_data|health_information|resident_data|beneficiary_data|customer_data|employee_data|student_data|financial_data|business_partner_data|unknown",
-  "problem_area": "access_control|data_mapping|offboarding|backup|patching|malware_protection|incident_response|vendor_management|staff_awareness|evidence_collection|hia_readiness|pdpa_safeguards|unknown",
-  "problem_hypothesis": "",
-  "value_asset_offer": "hia_readiness_map|clinic_access_checklist|solo_gp_checklist|pdpa_safeguards_checklist|care_organisation_safeguards_checklist|data_access_map|offboarding_checklist|cyber_essentials_readiness_checklist|funding_route_summary|security_evidence_checklist",
+  "personal_data_likelihood": "none|low|medium|high",
+  "entity_type_guess": "sme|npo|charity|social_service|healthcare_provider|clinic|private_company|sole_proprietor|partnership|foreign_entity_sg_ops|unknown",
   "hia_relevant": false,
-  "hia_relevance_score": 0,
   "hia_confidence": "low|medium|high",
+  "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|outpatient_renal_dialysis|ambulatory_surgical_centre|unknown",
   "hia_scope_reason": "",
-  "hia_service_type_guess": "GP_OMS|specialist_OMS|dental|retail_pharmacy|diagnostic|hospital|allied_health|hearing_care|long_term_care|HIMS_provider|NEHR_user|unknown",
-  "hia_timeline_batch_guess": "Batch 1 - Sep 2027|Batch 2 - Sep 2028|Batch 3 - Mar 2030|Other CS/DS by Sep 2028|unknown",
-  "hia_deadline_claim_safe": false,
-  "hia_disclaimer_needed": true,
   "pdpa_relevant": true,
   "pdpa_reason": "",
-  "personal_data_intensity": "low|medium|high|unknown",
-  "sensitive_data_likelihood": "low|medium|high|unknown",
-  "pdpa_safeguard_angle": "access_control|data_inventory|vendor_management|breach_response|staff_training|cyber_essentials_baseline|unknown",
-  "recommended_first_cert": "Cyber Essentials|DPE|DPTM|Cyber Trust|HIA readiness|unknown",
-  "recommended_cert_path": "",
-  "certification_reason": "",
-  "certification_fit_score": 0,
-  "evidence": [{"field": "", "quote": "", "source_url": "", "reason": ""}],
-  "confidence": "low|medium|high"
+  "ncss_route_allowed": false,
+  "human_review_required": false,
+  "evidence": [{"quote": "", "source_field": "", "reason": ""}],
+  "rejected_routes": [{"route": "", "reason": ""}]
 }
 """
 
@@ -1655,6 +1627,353 @@ def apply_ncss_social_service_pressure(classification: dict[str, Any], funding: 
     certification_evidence["selected_track"] = NCSS_SOCIAL_SERVICE_PRESSURE
     certification_evidence["ncss_primary_funding_program"] = funding.primary_funding_program
     classification["certification_evidence_json"] = certification_evidence
+
+
+def classification_llm_enabled(row: dict[str, Any] | None = None) -> bool:
+    row = row or {}
+    if truthy(row.get("disable_llm_humaniser")) or truthy(row.get("disable_llm_humanizer")):
+        return False
+    if truthy(row.get("disable_llm_rewrite")):
+        return False
+    if truthy(row.get("skip_openrouter")):
+        return False
+    if os.getenv("OUTREACH_CLASSIFICATION_LLM_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.getenv("OPENROUTER_API_KEY", "").strip())
+
+
+def classification_reasoning_request() -> dict[str, Any] | None:
+    if os.getenv("OUTREACH_CLASSIFICATION_REASONING_ENABLED", "true").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    effort = os.getenv("OUTREACH_CLASSIFICATION_REASONING_EFFORT", "high").strip().lower()
+    if effort not in {"low", "medium", "high", "xhigh"}:
+        effort = "high"
+    return {"effort": effort, "exclude": True}
+
+
+def ncss_funding_evidence(funding: FundingMatch) -> dict[str, Any]:
+    matched = [item for item in (funding.matched or []) if isinstance(item, dict)]
+    member = next((item for item in matched if compact(item.get("ncss_member_name"))), {})
+    return {
+        "ncss_verified_member": funding_is_verified_ncss_tss(funding),
+        "primary_funding_program": funding.primary_funding_program,
+        "funding_status": funding.funding_status,
+        "funding_confidence": funding.funding_confidence,
+        "ncss_member_name": compact(member.get("ncss_member_name")) if member else "",
+        "ncss_member_source_url": compact(member.get("ncss_member_source_url")) if member else "",
+        "ncss_member_match_basis": compact(member.get("ncss_member_match_basis")) if member else "",
+    }
+
+
+def classification_review_payload(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+) -> dict[str, Any]:
+    return {
+        "company_name": row.get("company_name", ""),
+        "company_homepage_name": row.get("company_homepage_name", ""),
+        "website_url": row.get("best_url") or row.get("url_picked") or "",
+        "manual_url_override": row.get("manual_url_override", ""),
+        "website_content": compact(row.get("website_content"))[:7000],
+        "serper_context_text": compact(row.get("_serper_context_text"))[:3500],
+        "preclassification_search_context": row.get("_preclassification_company_context") or {},
+        "hia_search_context": row.get("_hia_serper_context") or {},
+        "services_detected": row.get("services_detected", ""),
+        "locations_detected": row.get("locations_detected", ""),
+        "leadership_or_team_signals": row.get("leadership_or_team_signals", ""),
+        "contact_info_detected": row.get("contact_info_detected", ""),
+        "structured_data_detected": row.get("structured_data_detected", ""),
+        "industry_guess": row.get("industry_guess", ""),
+        "selected_contact_title": row.get("selected_contact_title", ""),
+        "deterministic_classification": {
+            key: classification.get(key)
+            for key in (
+                "pressure_type",
+                "classification_confidence",
+                "primary_email_track",
+                "entity_type_guess",
+                "entity_type_confidence",
+                "data_type_signal",
+                "personal_data_intensity",
+                "sensitive_data_likelihood",
+                "hia_relevant",
+                "hia_confidence",
+                "hia_service_type_guess",
+                "hia_official_service_type",
+                "hia_official_service_label",
+                "hia_scope_reason",
+                "pdpa_relevant",
+                "pdpa_reason",
+            )
+        },
+        "classification_evidence_json": classification.get("classification_evidence_json", {}),
+        "ncss_funding_evidence": ncss_funding_evidence(funding),
+    }
+
+
+def call_classification_route_review_llm(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+) -> dict[str, Any] | None:
+    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not api_key:
+        return None
+    payload: dict[str, Any] = {
+        "model": os.getenv(
+            "OUTREACH_CLASSIFICATION_LLM_MODEL",
+            os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash"),
+        ).strip(),
+        "temperature": float(os.getenv("OUTREACH_CLASSIFICATION_TEMPERATURE", "0")),
+        "response_format": {"type": "json_object"},
+        "messages": [
+            {"role": "system", "content": LLM_CLASSIFICATION_PROMPT},
+            {
+                "role": "user",
+                "content": json.dumps(classification_review_payload(row, classification, funding), ensure_ascii=False),
+            },
+        ],
+    }
+    reasoning = classification_reasoning_request()
+    if reasoning:
+        payload["reasoning"] = reasoning
+    try:
+        response = requests.post(
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1/chat/completions").strip(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=float(os.getenv("OUTREACH_CLASSIFICATION_LLM_TIMEOUT_SECONDS", "24")),
+        )
+        raise_for_openrouter_account_error(response, "classification route review")
+        response.raise_for_status()
+        choices = response.json().get("choices") or []
+        content = choices[0].get("message", {}).get("content", "") if choices else ""
+        content = re.sub(r"^```(?:json)?\s*|\s*```$", "", str(content).strip(), flags=re.IGNORECASE)
+        parsed = json.loads(content)
+        return parsed if isinstance(parsed, dict) else None
+    except ProviderAccountError:
+        raise
+    except Exception:
+        return None
+
+
+def normalize_llm_pressure_type(value: Any) -> str:
+    route = compact(value).lower().replace("-", "_").replace(" ", "_")
+    aliases = {
+        "hia": "hia_regulatory",
+        "pdpa": "pdpa_safeguards",
+        "ncss": NCSS_SOCIAL_SERVICE_PRESSURE,
+        "social_service": NCSS_SOCIAL_SERVICE_PRESSURE,
+        "none": "not_ready",
+        "no_outreach": "not_ready",
+        "nothing": "not_ready",
+    }
+    route = aliases.get(route, route)
+    return route if route in SENDABLE_PRESSURE_TYPES or route == "not_ready" else ""
+
+
+def max_confidence(current: Any, candidate: Any) -> str:
+    order = {"low": 0, "medium": 1, "high": 2}
+    current_text = compact(current) if compact(current) in order else "low"
+    candidate_text = compact(candidate) if compact(candidate) in order else "low"
+    return current_text if order[current_text] >= order[candidate_text] else candidate_text
+
+
+def apply_classification_route_fields(
+    classification: dict[str, Any],
+    route: str,
+    review: dict[str, Any],
+    funding: FundingMatch,
+    row: dict[str, Any],
+) -> None:
+    reason = compact(review.get("pressure_reason")) or compact(review.get("hia_scope_reason")) or classification.get("pressure_reason", "")
+    confidence = compact(review.get("classification_confidence")) or compact(review.get("hia_confidence")) or "medium"
+    if confidence not in {"low", "medium", "high"}:
+        confidence = "medium"
+    data_type = compact(review.get("data_type_signal")) or compact(classification.get("data_type_signal")) or "unknown"
+    entity_type = compact(review.get("entity_type_guess")) or compact(classification.get("entity_type_guess")) or "unknown"
+    if entity_type in {"sme", "npo", "charity", "social_service", "healthcare_provider", "clinic", "private_company", "sole_proprietor", "partnership", "foreign_entity_sg_ops", "unknown"}:
+        classification["entity_type_guess"] = entity_type
+        if confidence in {"medium", "high"}:
+            classification["entity_type_confidence"] = max_confidence(classification.get("entity_type_confidence", "low"), confidence)
+    if data_type:
+        classification["data_type_signal"] = data_type
+
+    classification["pressure_type"] = route
+    classification["campaign_track"] = route
+    classification["primary_email_track"] = output_email_track(route, route)
+    classification["secondary_email_track"] = ""
+    classification["classification_confidence"] = confidence
+    classification["pressure_reason"] = reason
+    classification["outreach_trigger_signal"] = reason
+    classification["outreach_trigger_confidence"] = confidence
+
+    if route == "hia_regulatory":
+        text = lower_blob(row)
+        service = compact(review.get("hia_service_type_guess")) or compact(classification.get("hia_service_type_guess")) or "unknown"
+        official_service = official_hia_service_type(service, text)
+        classification["regulatory_applicability"] = ["HIA", "PDPA"]
+        classification["problem_area"] = "hia_readiness"
+        classification["value_asset_offer"] = "hia_readiness_map"
+        classification["hia_relevant"] = True
+        classification["hia_relevance_score"] = max(int(classification.get("hia_relevance_score") or 0), 85 if confidence == "high" else 75)
+        classification["hia_confidence"] = confidence
+        classification["hia_scope_reason"] = compact(review.get("hia_scope_reason")) or reason
+        classification["hia_service_type_guess"] = service
+        classification["hia_official_service_type"] = official_service
+        classification["hia_official_service_label"] = HIA_OFFICIAL_SERVICE_LABELS.get(official_service, "")
+        classification["hia_timeline_batch_guess"] = HIA_BATCH_BY_OFFICIAL_SERVICE.get(official_service) or HIA_BATCH_BY_SERVICE.get(service, "unknown")
+        classification["hia_deadline_claim_safe"] = classification["hia_timeline_batch_guess"] != "unknown" and confidence in {"medium", "high"}
+        classification["hia_disclaimer_needed"] = True
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = "PDPA may still be relevant, but HIA readiness is the primary pressure."
+        classification["pdpa_safeguard_angle"] = "access_control"
+        classification["recommended_first_cert"] = "Cyber Essentials"
+        classification["recommended_cert_path"] = "Start with HIA readiness mapping, then use Cyber Essentials as a practical cybersecurity/data-security baseline."
+    elif route == NCSS_SOCIAL_SERVICE_PRESSURE:
+        classification["regulatory_applicability"] = ["PDPA"]
+        classification["problem_area"] = "pdpa_safeguards"
+        classification["value_asset_offer"] = "care_organisation_safeguards_checklist"
+        classification["hia_relevant"] = False
+        classification["hia_relevance_score"] = 0
+        classification["hia_confidence"] = "low"
+        classification["hia_scope_reason"] = "Verified NCSS route selected; HIA scope not confirmed."
+        classification["hia_service_type_guess"] = "unknown"
+        classification["hia_official_service_type"] = ""
+        classification["hia_official_service_label"] = ""
+        classification["hia_timeline_batch_guess"] = "unknown"
+        classification["hia_deadline_claim_safe"] = False
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = "NCSS membership changes the support/funding route, but beneficiary, donor, volunteer and staff data remains framed under PDPA safeguards."
+        classification["pdpa_safeguard_angle"] = "cyber_essentials_baseline"
+        classification["recommended_first_cert"] = "Cyber Essentials"
+        classification["recommended_cert_path"] = "Use Cyber Essentials to support PDPA safeguard evidence; for verified NCSS members, check NCSS Tech-and-GO! fit for eligible consultancy or digitalisation support."
+    elif route == "pdpa_safeguards":
+        classification["regulatory_applicability"] = ["PDPA"]
+        classification["problem_area"] = "pdpa_safeguards"
+        classification["value_asset_offer"] = "pdpa_safeguards_checklist"
+        classification["hia_relevant"] = False
+        classification["hia_relevance_score"] = 0
+        classification["hia_confidence"] = "low"
+        classification["hia_scope_reason"] = compact(review.get("hia_scope_reason")) or "OpenRouter classification did not confirm HIA/HCSA scope."
+        classification["hia_service_type_guess"] = "unknown"
+        classification["hia_official_service_type"] = ""
+        classification["hia_official_service_label"] = ""
+        classification["hia_timeline_batch_guess"] = "unknown"
+        classification["hia_deadline_claim_safe"] = False
+        classification["pdpa_relevant"] = True
+        classification["pdpa_reason"] = compact(review.get("pdpa_reason")) or "Organisation likely handles identifiable personal data; Cyber Essentials supports safeguard evidence."
+        classification["pdpa_safeguard_angle"] = "cyber_essentials_baseline"
+        classification["recommended_first_cert"] = "Cyber Essentials"
+        classification["recommended_cert_path"] = "Use Cyber Essentials to support the cybersecurity safeguards and evidence side of PDPA readiness."
+    else:
+        classification["regulatory_applicability"] = []
+        classification["campaign_track"] = "not_ready"
+        classification["primary_email_track"] = "not_ready"
+        classification["problem_area"] = "unknown"
+        classification["value_asset_offer"] = "cyber_essentials_readiness_checklist"
+        classification["hia_relevant"] = False
+        classification["hia_relevance_score"] = 0
+        classification["hia_confidence"] = "low"
+        classification["hia_scope_reason"] = compact(review.get("hia_scope_reason")) or "OpenRouter classification found insufficient HIA evidence."
+        classification["hia_service_type_guess"] = "unknown"
+        classification["hia_official_service_type"] = ""
+        classification["hia_official_service_label"] = ""
+        classification["hia_timeline_batch_guess"] = "unknown"
+        classification["hia_deadline_claim_safe"] = False
+        classification["pdpa_relevant"] = False
+        classification["pdpa_reason"] = compact(review.get("pdpa_reason")) or "OpenRouter classification found insufficient personal-data evidence for outreach."
+        classification["pdpa_safeguard_angle"] = "unknown"
+        classification["recommended_first_cert"] = "unknown"
+        classification["recommended_cert_path"] = "Do not generate outreach until stronger HIA, PDPA or NCSS evidence is available."
+
+    classification["problem_hypothesis"] = build_problem_hypothesis(
+        route,
+        classification.get("data_type_signal", "unknown"),
+        classification.get("problem_area", "unknown"),
+    )
+    classification["certification_reason"] = certification_reason(route)
+    classification["certification_fit_score"] = 82 if route != "not_ready" else 40
+    classification["certification_evidence_json"] = {
+        **(classification.get("certification_evidence_json") or {}),
+        "pressure_type": route,
+        "primary_email_track": classification.get("primary_email_track", ""),
+        "selected_track": route,
+        "llm_classification_route": route,
+    }
+
+
+def apply_classification_route_llm_review(
+    row: dict[str, Any],
+    classification: dict[str, Any],
+    funding: FundingMatch,
+) -> None:
+    if classification.get("manual_classification_override"):
+        return
+    evidence = dict(classification.get("classification_evidence_json") or {})
+    if not classification_llm_enabled(row):
+        evidence["llm_classification_review"] = {
+            "attempted": False,
+            "used": False,
+            "reason": "disabled_or_missing_openrouter_key",
+        }
+        classification["classification_evidence_json"] = evidence
+        return
+    review = call_classification_route_review_llm(row, classification, funding)
+    if not isinstance(review, dict):
+        evidence["llm_classification_review"] = {
+            "attempted": True,
+            "used": False,
+            "reason": "llm_error_or_empty",
+            "model": os.getenv(
+                "OUTREACH_CLASSIFICATION_LLM_MODEL",
+                os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash"),
+            ).strip(),
+        }
+        classification["classification_evidence_json"] = evidence
+        classification["classification_review_status"] = "review_needed"
+        classification["classification_review_reason"] = "OpenRouter classification review failed; deterministic classification retained."
+        return
+
+    requested_route = normalize_llm_pressure_type(review.get("pressure_type") or review.get("route"))
+    ncss_allowed = funding_is_verified_ncss_tss(funding)
+    rejected_routes = list(review.get("rejected_routes") or [])
+    if requested_route == NCSS_SOCIAL_SERVICE_PRESSURE and not ncss_allowed:
+        rejected_routes.append({"route": NCSS_SOCIAL_SERVICE_PRESSURE, "reason": "NCSS route requires deterministic NCSS member-directory verification."})
+        requested_route = "pdpa_safeguards"
+    if requested_route == "hia_regulatory":
+        service = compact(review.get("hia_service_type_guess")) or compact(classification.get("hia_service_type_guess"))
+        official_service = official_hia_service_type(service, lower_blob(row))
+        confidence = compact(review.get("classification_confidence") or review.get("hia_confidence"))
+        if confidence not in {"medium", "high"} or not official_service or not has_confirmed_hia_scope_evidence(row, lower_blob(row), service, official_service):
+            rejected_routes.append({"route": "hia_regulatory", "reason": "HIA route requires medium/high confidence and concrete HCSA/HIA service evidence."})
+            requested_route = "pdpa_safeguards" if compact(review.get("personal_data_likelihood")) in {"medium", "high"} else "not_ready"
+    if not requested_route:
+        requested_route = classification.get("pressure_type") if classification.get("pressure_type") in SENDABLE_PRESSURE_TYPES else "not_ready"
+
+    review = {**review, "rejected_routes": rejected_routes}
+    apply_classification_route_fields(classification, requested_route, review, funding, row)
+    evidence["llm_classification_review"] = {
+        "attempted": True,
+        "used": True,
+        "model": os.getenv(
+            "OUTREACH_CLASSIFICATION_LLM_MODEL",
+            os.getenv("OUTREACH_HIA_LLM_MODEL", "deepseek/deepseek-v4-flash"),
+        ).strip(),
+        "reasoning_effort": os.getenv("OUTREACH_CLASSIFICATION_REASONING_EFFORT", "high").strip().lower(),
+        "requested_route": normalize_llm_pressure_type(review.get("pressure_type") or review.get("route")),
+        "applied_route": requested_route,
+        "ncss_route_allowed": ncss_allowed,
+        "review": review,
+    }
+    classification["classification_evidence_json"] = evidence
+    if truthy(review.get("human_review_required")):
+        classification["classification_review_status"] = "review_needed"
+        classification["classification_review_reason"] = compact(review.get("pressure_reason")) or "OpenRouter classification requested human review."
+    else:
+        classification["classification_review_status"] = "not_needed"
+        classification["classification_review_reason"] = ""
 
 
 def value_fallback_email_2(
@@ -10180,6 +10499,9 @@ def plan_outreach(row: dict[str, Any], programmes: list[Any] | None = None) -> O
     row = add_preclassification_company_context(row)
     classification = classify_row(row)
     row = add_contact_doctor_context_if_needed(row, classification)
+    funding = match_programmes({**row, **classification}, programmes=programmes)
+    apply_ncss_social_service_pressure(classification, funding)
+    apply_classification_route_llm_review(row, classification, funding)
     funding = match_programmes({**row, **classification}, programmes=programmes)
     apply_ncss_social_service_pressure(classification, funding)
     copy_brief = build_copy_brief(row, classification, funding)

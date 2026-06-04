@@ -518,6 +518,147 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
         self.assertFalse(plan.classification["hia_relevant"])
 
+    def test_classification_route_review_openrouter_payload_uses_deepseek_reasoning(self):
+        class FakeResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "pressure_type": "pdpa_safeguards",
+                                        "classification_confidence": "high",
+                                        "pressure_reason": "Handles client personal data but HIA scope is not confirmed.",
+                                        "personal_data_likelihood": "high",
+                                        "entity_type_guess": "private_company",
+                                        "hia_relevant": False,
+                                        "hia_confidence": "low",
+                                        "hia_service_type_guess": "unknown",
+                                        "hia_scope_reason": "No HCSA licensable service evidence.",
+                                        "pdpa_relevant": True,
+                                        "pdpa_reason": "Identifiable client data is likely handled.",
+                                        "ncss_route_allowed": False,
+                                        "human_review_required": False,
+                                        "evidence": [],
+                                        "rejected_routes": [],
+                                    }
+                                )
+                            }
+                        }
+                    ]
+                }
+
+            def raise_for_status(self):
+                return None
+
+        captured = {}
+
+        def fake_post(url, headers, json, timeout):
+            captured["url"] = url
+            captured["payload"] = json
+            return FakeResponse()
+
+        funding = FundingMatch(
+            funding_status="not_applicable",
+            funding_relevant=False,
+            primary_funding_program="",
+        )
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False), patch.object(o.requests, "post", fake_post):
+            review = o.call_classification_route_review_llm(
+                {"company_name": "Example Pte Ltd", "website_content": "Client data and appointment records."},
+                {
+                    "pressure_type": "pdpa_safeguards",
+                    "classification_confidence": "medium",
+                    "classification_evidence_json": {},
+                },
+                funding,
+            )
+
+        self.assertEqual(review["pressure_type"], "pdpa_safeguards")
+        self.assertEqual(captured["payload"]["model"], "deepseek/deepseek-v4-flash")
+        self.assertEqual(captured["payload"]["reasoning"], {"effort": "high", "exclude": True})
+        self.assertIn("HCSA licensable services", captured["payload"]["messages"][0]["content"])
+
+    def test_classification_route_review_demotes_ncss_without_verified_member(self):
+        row = {
+            "company_name": "Example Care",
+            "website_content": "Social care organisation handling beneficiaries, families, volunteers and donors.",
+        }
+        classification = o.classify_row(row)
+        funding = FundingMatch(
+            funding_status="not_applicable",
+            funding_relevant=False,
+            primary_funding_program="",
+        )
+        review = {
+            "pressure_type": "ncss_social_service",
+            "classification_confidence": "high",
+            "pressure_reason": "Appears to be a social-service organisation.",
+            "data_type_signal": "beneficiary_data",
+            "personal_data_likelihood": "high",
+            "entity_type_guess": "social_service",
+            "hia_relevant": False,
+            "hia_confidence": "low",
+            "hia_service_type_guess": "unknown",
+            "hia_scope_reason": "No HCSA evidence.",
+            "pdpa_relevant": True,
+            "pdpa_reason": "Beneficiary data is personal data.",
+            "human_review_required": False,
+            "rejected_routes": [],
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False), patch.object(
+            o, "call_classification_route_review_llm", return_value=review
+        ):
+            o.apply_classification_route_llm_review(row, classification, funding)
+
+        self.assertEqual(classification["pressure_type"], "pdpa_safeguards")
+        llm_evidence = classification["classification_evidence_json"]["llm_classification_review"]
+        self.assertTrue(llm_evidence["used"])
+        self.assertEqual(llm_evidence["requested_route"], "ncss_social_service")
+        self.assertEqual(llm_evidence["applied_route"], "pdpa_safeguards")
+
+    def test_classification_route_review_accepts_confirmed_dental_hia(self):
+        row = {
+            "company_name": "Example Dental",
+            "website_content": "Singapore dental clinic with dentists, extractions, implants, imaging, appointments and patient records.",
+        }
+        classification = o.classify_row(row)
+        funding = FundingMatch(
+            funding_status="not_applicable",
+            funding_relevant=False,
+            primary_funding_program="",
+        )
+        review = {
+            "pressure_type": "hia_regulatory",
+            "classification_confidence": "high",
+            "pressure_reason": "Dental clinic evidence confirms an HCSA licensable service.",
+            "data_type_signal": "patient_data",
+            "personal_data_likelihood": "high",
+            "entity_type_guess": "clinic",
+            "hia_relevant": True,
+            "hia_confidence": "high",
+            "hia_service_type_guess": "dental",
+            "hia_scope_reason": "Website shows dental clinic, dentists, implants and patient records.",
+            "pdpa_relevant": True,
+            "pdpa_reason": "Patient records remain personal data.",
+            "human_review_required": False,
+            "rejected_routes": [],
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_API_KEY": "test-key"}, clear=False), patch.object(
+            o, "call_classification_route_review_llm", return_value=review
+        ):
+            o.apply_classification_route_llm_review(row, classification, funding)
+
+        self.assertEqual(classification["pressure_type"], "hia_regulatory")
+        self.assertTrue(classification["hia_relevant"])
+        self.assertEqual(classification["hia_service_type_guess"], "dental")
+        self.assertEqual(classification["hia_timeline_batch_guess"], "Batch 3 - Mar 2030")
+
     def test_hia_dermatology_subject_does_not_become_oncology_from_skin_cancer(self):
         plan = o.plan_outreach(
             {
