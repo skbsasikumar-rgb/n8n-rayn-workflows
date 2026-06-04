@@ -1007,7 +1007,7 @@ class OutreachColumnContractTests(unittest.TestCase):
                 "body": (
                     "Hello team,\n\n"
                     "Dementia patient records sit at the higher end of PDPA sensitivity.\n\n"
-                    "We help organisations get Cyber Essentials certified - gap assessment, documentation, and evidence trail.\n\n"
+                    "We help organisations get Cyber Essentials certified so safeguard evidence is easier to show.\n\n"
                     "Worth sending the personal data safeguards checklist?"
                 )
             },

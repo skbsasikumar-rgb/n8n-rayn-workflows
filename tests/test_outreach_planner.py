@@ -154,9 +154,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(paragraphs[0], "Hi Dr Lim,")
         self.assertIn("For a GP clinic managing patient appointments, consultation notes, and screening records", paragraphs[1])
         self.assertIn("Health Information Act (HIA)", paragraphs[1])
-        self.assertIn("documented evidence by September 2027", paragraphs[1])
+        self.assertIn("September 2027 readiness work", paragraphs[1])
+        self.assertNotIn("access logs, vendor NDAs, backups", paragraphs[1])
         self.assertIn("We help outpatient clinics get Cyber Essentials certified", paragraphs[2])
         self.assertIn("HIA cyber/data security", paragraphs[2])
+        self.assertNotIn("gap assessment, documentation", paragraphs[2])
         self.assertIn("up to 70% subsidised under CSA's CISOaaS government grant", paragraphs[2])
         self.assertEqual(paragraphs[-1], "Can I send the HIA readiness checklist?")
 
@@ -190,9 +192,10 @@ class OutreachPlannerTests(unittest.TestCase):
 
         body = plan.emails["email_1"]["body"]
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what cardiology clinics need documented")
-        self.assertIn("Health Information Act (HIA) targets exactly the patient data you hold", body)
-        self.assertIn("access logs, vendor NDAs, backups", body)
-        self.assertIn("MOH incident reporting", body)
+        self.assertIn("Health Information Act (HIA)", body)
+        self.assertIn("September 2028 readiness work", body)
+        self.assertNotIn("access logs, vendor NDAs, backups", body)
+        self.assertNotIn("MOH incident reporting", body)
         self.assertIn("Can I send the HIA readiness checklist?", body)
 
     def test_pdpa_email_1_uses_higher_evidence_bar_style_from_tier2(self):
@@ -250,7 +253,9 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("For a rheumatology clinic managing long-term autoimmune and chronic condition records", body)
         self.assertNotIn("covering chronic-condition care", body)
         self.assertNotIn("skin and aesthetic treatments", body)
-        self.assertIn("Health Information Act (HIA) targets exactly the patient data", body)
+        self.assertIn("Health Information Act (HIA)", body)
+        self.assertIn("September 2028 readiness work", body)
+        self.assertNotIn("access logs, vendor NDAs, backups", body)
 
     def test_hia_urology_subject_and_body_use_same_specialty_snapshot(self):
         plan = o.plan_outreach(
@@ -701,7 +706,7 @@ class OutreachPlannerTests(unittest.TestCase):
 
         body = plan.emails["email_1"]["body"]
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what dermatology clinics need documented")
-        self.assertIn("For a dermatology clinic managing skin consultation notes", body)
+        self.assertIn("For a dermatology clinic managing clinical images and skin treatment records", body)
         self.assertNotIn("oncology clinics", plan.emails["email_1"]["chosen_subject"])
         self.assertNotIn("cancer patient records", plan.emails["email_2"]["body"].lower())
         self.assertNotIn("cancer patient records", plan.emails["email_3"]["body"].lower())
@@ -798,17 +803,21 @@ class OutreachPlannerTests(unittest.TestCase):
 
         self.assertEqual(patch_payload["email_specialty"], "endocrinology")
         self.assertEqual(patch_payload["email_data_type"], "diabetes and thyroid records")
-        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["email_sensitivity_consequence"])
+        self.assertIn("Health Information Act (HIA)", patch_payload["email_sensitivity_consequence"])
+        self.assertIn("readiness work", patch_payload["email_sensitivity_consequence"])
         self.assertIn("Health Information Act (HIA)", patch_payload["email_sensitivity_consequence"])
         self.assertIn("2-hour MOH reporting clock", patch_payload["email_enforcement_consequence"])
-        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["website_detail_consequence"])
+        self.assertIn("Health Information Act (HIA)", patch_payload["website_detail_consequence"])
+        self.assertIn("readiness work", patch_payload["website_detail_consequence"])
         self.assertEqual(patch_payload["email_context_confidence"], "medium")
         self.assertEqual(patch_payload["email_context_source_url"], "https://soon.example/")
         self.assertEqual(patch_payload["email_tier2_source"], "llm")
         self.assertIn('"specialty":"endocrinology"', patch_payload["email_tier2_extraction_json"])
         self.assertIn('"sensitivity_consequence"', patch_payload["email_tier2_extraction_json"])
         self.assertIn('"enforcement_consequence"', patch_payload["email_tier2_extraction_json"])
-        self.assertIn("the Health Information Act (HIA) targets exactly the patient data you hold", patch_payload["email_1_body"])
+        self.assertIn("Health Information Act (HIA)", patch_payload["email_1_body"])
+        self.assertIn("readiness work", patch_payload["email_1_body"])
+        self.assertNotIn("access logs, vendor NDAs, backups", patch_payload["email_1_body"])
 
     def test_email_1_placeholder_patch_fields_are_stored(self):
         result = o.plan_and_patch(
@@ -1091,7 +1100,8 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.copy_brief["email_hook_source"], "serper")
         self.assertIn("multi-location or group healthcare operation", plan.copy_brief["first_sentence_context"]["observation"])
         self.assertEqual(plan.emails["context_email_1"]["pressure_bridge"], plan.copy_brief["email_problem_statement"])
-        self.assertIn("Health Information Act (HIA) targets", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("Health Information Act (HIA)", plan.emails["context_email_1"]["pressure_bridge"])
+        self.assertIn("readiness work", plan.emails["context_email_1"]["pressure_bridge"])
         self.assertIn("email_context_line", plan.emails["context_email_1"]["placeholders"])
         self.assertIn("We help", plan.emails["context_email_1"]["mechanism"])
         self.assertEqual(plan.emails["company_context_search"]["source"], "serper")
@@ -2587,7 +2597,7 @@ class OutreachPlannerTests(unittest.TestCase):
         body = (
             "Hello team,\n\n"
             "client therapy records sit at the higher end of PDPA sensitivity.\n\n"
-            "We help organisations get Cyber Essentials certified - gap assessment, documentation, and evidence trail.\n\n"
+            "We help organisations get Cyber Essentials certified so safeguard evidence is easier to show.\n\n"
             "Worth sending the personal data safeguards checklist?"
         )
         flags = o.email_1_rewrite_static_flags(
@@ -3349,8 +3359,9 @@ class OutreachPlannerTests(unittest.TestCase):
         )
         patch = o.patch_with_email_sequence(row, plan.classification, plan.funding, bad_emails, plan.copy_brief)
         self.assertIn("For a GP clinic managing patient appointments", patch["email_1_body"])
-        self.assertIn("Health Information Act (HIA) targets", patch["email_1_body"])
-        self.assertIn("patient data", patch["email_1_body"])
+        self.assertIn("Health Information Act (HIA)", patch["email_1_body"])
+        self.assertIn("readiness work", patch["email_1_body"])
+        self.assertIn("patient-data trail", patch["email_1_body"])
         self.assertNotIn("signals", patch["email_1_body"].lower())
         self.assertIn("HIA", patch["email_1_body"])
         self.assertNotRegex(patch["email_1_body"], r"Batch 1|Batch 2|Batch 3|Sep 2027|Sep 2028|Mar 2030|HIA window")
@@ -3768,10 +3779,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertEqual(len(paragraphs), 4)
                 self.assertIn(profile, plan.copy_brief["prospect_facing_signal"])
                 self.assertTrue(o.standalone_greeting_line(paragraphs[0]))
-                self.assertTrue(
-                    "Health Information Act (HIA) targets" in paragraphs[1]
-                    or "fall squarely under the Health Information Act (HIA)" in paragraphs[1]
-                )
+                self.assertIn("Health Information Act (HIA)", paragraphs[1])
+                self.assertIn("readiness work", paragraphs[1])
                 self.assertRegex(paragraphs[1].lower(), r"consultation|appointment|imaging|records")
                 self.assertIn("Cyber Essentials", paragraphs[2])
                 self.assertIn("HIA cyber/data security", paragraphs[2])
@@ -3972,8 +3981,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertTrue(plan.emails["email_1"]["body"].startswith("Hello team,"))
         self.assertIn("medical/aesthetic clinic with doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertIn("HIA", plan.emails["email_1"]["body"])
-        self.assertIn("gap assessment", plan.emails["email_1"]["body"])
-        self.assertIn("evidence trail", plan.emails["email_1"]["body"])
+        self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
+        self.assertIn("HIA cyber/data security", plan.emails["email_1"]["body"])
+        self.assertNotIn("gap assessment", plan.emails["email_1"]["body"])
+        self.assertNotIn("evidence trail", plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access", plan.emails["email_1"]["body"])
         self.assertNotIn("vendor systems, access, backups, patching, vendors", plan.emails["email_1"]["body"])
         self.assertIn("Cyber Essentials", plan.emails["email_1"]["body"])
@@ -4006,8 +4017,10 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertIn("outpatient medical clinic offering doctor-led consultations", plan.copy_brief["prospect_facing_signal"])
         self.assertNotIn("family clinic", body)
         self.assertIn("HIA", body)
-        self.assertIn("gap assessment", body)
-        self.assertIn("evidence trail", body)
+        self.assertIn("Cyber Essentials", body)
+        self.assertIn("HIA cyber/data security", body)
+        self.assertNotIn("gap assessment", body)
+        self.assertNotIn("evidence trail", body)
         self.assertIn("Cyber Essentials", body)
         self.assertIn("HIA readiness checklist?", body)
         self.assertIn("patient records, appointment details, consultation notes, clinic email, vendor systems", plan.emails["email_3"]["body"])

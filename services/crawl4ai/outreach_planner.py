@@ -260,9 +260,9 @@ Email 1 rules:
 - Use 4 or 5 short paragraphs separated by blank lines: greeting alone, context line, Cyber Essentials service line, optional approved funding line, tiny CTA only.
 - Paragraph 1 must be exactly the approved greeting line.
 - Paragraph 2 must keep the approved context/data-type meaning and read like a specific risk/evidence sentence, not a generic compliance sentence.
-- For HIA, paragraph 2 should keep this shape: provider/service mix + patient data/records + Health Information Act (HIA) + documented evidence by the resolved hia_batch_deadline. Keep access logs, vendor NDAs, backups, and MOH incident reporting if they are already present. Never hardcode "from 2027".
+- For HIA, paragraph 2 should keep this shape: one specific true data/record risk + Health Information Act (HIA) + resolved hia_batch_deadline. Do not list access logs, vendor NDAs, backups, and MOH incident reporting in Email 1.
 - For PDPA, paragraph 2 should keep this shape: specific personal-data type + higher PDPA evidence bar + obligation beyond a privacy policy or higher-than-assumed scrutiny. Do not mention HIA.
-- Paragraph 3 must keep Cyber Essentials as the practical certification path. For HIA, this paragraph must say we help the provider type get Cyber Essentials certified for HIA cyber/data security; wording can vary, but keep HIA, Cyber Essentials, cyber and data security. Never use the word "side" here.
+- Paragraph 3 must be one clean offer sentence. For HIA, say we help the provider type get Cyber Essentials certified for HIA cyber/data security; keep HIA, Cyber Essentials, cyber and data security. Do not add a feature list like gap assessment, documentation, and evidence trail. Never use the word "side" here.
 - Email 1 funding_line is mandatory. Never drop it. If funding_tier is empty, keep the CISOaaS funding line.
 - Final paragraph is the CTA only.
 - For HIA, Email 1 must spell out Health Information Act (HIA) before later using HIA. Keep HIA before Cyber Essentials and keep HIA cyber/data security in Email 1 paragraph 3.
@@ -5218,8 +5218,8 @@ def deterministic_website_detail_consequence(
     if classification.get("pressure_type") == "hia_regulatory":
         deadline = hia_deadline_date_label(classification) or "the applicable HIA batch deadline"
         return (
-            "the patient records you hold are exactly what the Health Information Act (HIA) targets - "
-            f"access logs, vendor NDAs, backups and MOH reporting need documented evidence by {deadline}"
+            "the patient records you hold are exactly the kind of data the Health Information Act (HIA) brings "
+            f"into {deadline} readiness work"
         )
     if classification.get("pressure_type") in PDPA_LIKE_PRESSURE_TYPES or classification.get("campaign_track") == "dpo_evidence":
         if data and data != "personal data":
@@ -5698,11 +5698,11 @@ def hia_email_1_context_lead(row: dict[str, Any], classification: dict[str, Any]
     if subtype == "endocrinology":
         return "For an endocrinology clinic managing diabetes, thyroid, and long-term condition records"
     if subtype == "oncology":
-        return "For a specialist clinic managing oncology treatment records, patient reports, and vendor systems"
+        return "For a specialist clinic managing oncology treatment records and patient reports"
     if subtype == "dermatology":
-        return "For a dermatology clinic managing skin consultation notes, treatment records, clinical images, and appointment details"
+        return "For a dermatology clinic managing clinical images and skin treatment records"
     if service_type == "dental":
-        return "For a dental clinic, surgical records - implants, extractions, and imaging - fall squarely under the Health Information Act (HIA)"
+        return "For a dental clinic, surgical records - implants, extractions, and imaging - carry clear clinical sensitivity"
     if service_type == "GP_OMS":
         return "For a GP clinic managing patient appointments, consultation notes, and screening records"
     provider = hia_provider_label_for_service(classification).rstrip("s")
@@ -5716,12 +5716,10 @@ def hia_email_1_context_line_from_data(row: dict[str, Any], classification: dict
     deadline = hia_deadline_date_label(classification) or "the applicable HIA batch deadline"
     if compact(classification.get("hia_service_type_guess")) == "dental":
         return (
-            f"{lead}, with access logs, vendor NDAs, backups, and MOH incident reporting all needing "
-            f"documented evidence by {deadline}."
+            f"{lead}; the Health Information Act (HIA) makes that data trail part of the {deadline} readiness work."
         )
     return (
-        f"{lead}, the Health Information Act (HIA) targets exactly the patient data you hold - "
-        f"access logs, vendor NDAs, backups, and MOH incident reporting all need documented evidence by {deadline}."
+        f"{lead}, the Health Information Act (HIA) makes that patient-data trail part of the {deadline} readiness work."
     )
 
 
@@ -5890,14 +5888,10 @@ def email_context_line_placeholder(
 def email_service_line_placeholder(classification: dict[str, Any]) -> str:
     if classification.get("pressure_type") == "hia_regulatory":
         provider_label = hia_provider_label_for_service(classification)
-        return (
-            f"We help {provider_label} get Cyber Essentials certified for HIA cyber/data security - "
-            "gap assessment, documentation, and evidence trail."
-        )
-    return (
-        "We help organisations get Cyber Essentials certified - gap assessment, documentation, "
-        "and evidence trail."
-    )
+        return f"We help {provider_label} get Cyber Essentials certified for HIA cyber/data security."
+    if classification.get("pressure_type") == NCSS_SOCIAL_SERVICE_PRESSURE:
+        return "We help social-service organisations get Cyber Essentials certified for PDPA safeguard evidence."
+    return "We help organisations get Cyber Essentials certified so safeguard evidence is easier to show."
 
 
 def email_funding_line_placeholder(
@@ -6379,16 +6373,16 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
     }
     if track == "hia_regulatory":
         problem_options = {
-            "hia_messy_evidence": "If so, the Health Information Act (HIA) makes that trail the issue: access, vendors, backups and incident steps need evidence by the applicable batch deadline.",
-            "hia_getting_closer": "If so, the Health Information Act (HIA) makes that harder to leave informal: access, vendors, backups and incident ownership need evidence by the applicable batch deadline.",
-            "hia_prep_access_backup": "If so, the Health Information Act (HIA) means proving who can access those records, where backups sit, which vendors touch them and who owns incident steps.",
+            "hia_messy_evidence": "If so, the Health Information Act (HIA) makes that patient-data trail part of the applicable batch-readiness work.",
+            "hia_getting_closer": "If so, the Health Information Act (HIA) makes that patient-data trail harder to leave informal.",
+            "hia_prep_access_backup": "If so, the Health Information Act (HIA) turns that patient-data trail into a readiness issue.",
             "hia_readiness_evidence": "If so, the Health Information Act (HIA) makes the messy part evidence around that trail.",
-            "hia_real_for_providers": "If so, the Health Information Act (HIA) makes the cleanup about that data trail: access, vendors, backups and incident ownership.",
+            "hia_real_for_providers": "If so, the Health Information Act (HIA) makes the cleanup about that patient-data trail.",
         }
         mechanism_options = {
-            "decent_cyber_data_baseline": "We help map that trail into Cyber Essentials certification for HIA cyber/data security: gap assessment, documentation and evidence trail.",
-            "practical_cyber_data_baseline": "We help map that trail into Cyber Essentials certification for HIA cyber/data security: gap assessment, documentation and evidence trail.",
-            "controls_evidence_baseline": "We help turn that into a Cyber Essentials evidence route for HIA cyber/data security: gap assessment, documentation and evidence trail.",
+            "decent_cyber_data_baseline": "We help providers get Cyber Essentials certified for HIA cyber/data security.",
+            "practical_cyber_data_baseline": "We help turn that into Cyber Essentials certification for HIA cyber/data security.",
+            "controls_evidence_baseline": "We help map that into Cyber Essentials certification for HIA cyber/data security.",
         }
     elif track == "dpo_evidence":
         problem_options = {
@@ -6397,9 +6391,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "intent_vs_proof": "The issue is usually not intent. It is proving the trail around that data.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and evidence trail for the security-safeguards side.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified for the security-safeguards side.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side.",
         }
     elif track == "customer_trust":
         problem_options = {
@@ -6408,9 +6402,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "reusable_security_evidence": "The useful thing is having that proof ready before customers ask.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and reusable evidence trail.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified so the security evidence is easier to reuse.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side.",
         }
     else:
         problem_options = {
@@ -6419,9 +6413,9 @@ def email_1_sentence_slots(row: dict[str, Any], classification: dict[str, Any], 
             "day_to_day_protection": "PDPA is the legal responsibility. The tricky part is showing how that data is protected day to day.",
         }
         mechanism_options = {
-            "simple_security_baseline": "We help organisations get Cyber Essentials certified: gap assessment, documentation and evidence trail for the security-safeguards side.",
-            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path: gap assessment, documentation and evidence trail.",
-            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side: gap assessment, documentation and evidence trail.",
+            "simple_security_baseline": "We help organisations get Cyber Essentials certified for the security-safeguards side.",
+            "practical_evidence_set": "We help turn that into a practical Cyber Essentials certification path.",
+            "security_safeguards_baseline": "We help organise that around Cyber Essentials certification for the security-safeguards side.",
         }
     return {
         "observation_opener": choose_sentence_slot(row, classification, metadata, "email_1", 1, "observation_opener", observation_opener_options),
@@ -8482,7 +8476,7 @@ def build_copy_brief(row: dict[str, Any], classification: dict[str, Any], fundin
         asset = segment_asset(row, classification, clinic_profile)
         cta = hia_email_1_cta(row, classification, asset)
         problem = hia_problem_statement(row, classification, clinic_profile)
-        mechanism = "We help map that trail into Cyber Essentials certification for HIA cyber/data security: gap assessment, documentation and evidence trail."
+        mechanism = "We help providers get Cyber Essentials certified for HIA cyber/data security."
         profile_phrase = clinic_profile.get("clinic_profile_phrase") or prospect_facing_profile_phrase(clinic_profile, row, classification, {})
         if clinic_profile.get("clinic_profile_guess") == "specialist_led" and "gastroenterology and digestive care" in profile_phrase:
             signal = f"{company} appears to provide specialist-led gastroenterology and digestive care."
