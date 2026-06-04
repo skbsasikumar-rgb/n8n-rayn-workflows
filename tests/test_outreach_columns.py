@@ -331,10 +331,12 @@ class OutreachColumnContractTests(unittest.TestCase):
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
         self.assertIn("(automation_decision,blank)", url_expr)
         self.assertIn("manualOverridePending", url_expr)
+        self.assertIn("manual_overrides", url_expr)
         self.assertIn("(manual_pressure_type,notblank)", url_expr)
         self.assertIn("(classification_review_status,neq,reviewed)", url_expr)
         self.assertIn("(instantly_sync_status,neq,synced)", url_expr)
         self.assertIn("(instantly_sync_status,neq,skipped)", url_expr)
+        self.assertNotIn("~and((automation_decision,blank)~or(", url_expr)
         self.assertNotIn("(email_1_subject,blank)", url_expr)
         self.assertNotIn("(contact_search_status,notblank)", url_expr)
         self.assertIn("(contact_search_status,eq,contact_not_found)", url_expr)
@@ -347,7 +349,7 @@ class OutreachColumnContractTests(unittest.TestCase):
     def test_workflow_fetch_does_not_refetch_suppressed_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
-        self.assertIn("~and((automation_decision,blank)~or(", url_expr)
+        self.assertIn("manualOverrides ? manualOverridePending : '~and(automation_decision,blank)'", url_expr)
         self.assertIn("(classification_review_status,neq,reviewed)", url_expr)
         self.assertNotIn("~and(email_1_subject,blank)", url_expr)
 
@@ -1104,6 +1106,8 @@ class InstantlyWorkflowContractTests(unittest.TestCase):
         self.assertIn("retry_failed: true", js_code)
         self.assertIn("/webhook/rayn-contact-search-batch", js_code)
         self.assertIn("/webhook/rayn-cold-email-planner", js_code)
+        self.assertIn("manual_classification_override_planner_tick", js_code)
+        self.assertIn("manual_overrides: true", js_code)
         self.assertIn("controller_phase: controllerPhase", js_code)
         self.assertIn("minuteBucket", js_code)
         self.assertIn("controllerPhase === 'all'", js_code)

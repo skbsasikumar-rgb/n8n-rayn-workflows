@@ -703,6 +703,11 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what dermatology clinics need documented")
         self.assertIn("For a dermatology clinic managing skin consultation notes", body)
         self.assertNotIn("oncology clinics", plan.emails["email_1"]["chosen_subject"])
+        self.assertNotIn("cancer patient records", plan.emails["email_2"]["body"].lower())
+        self.assertNotIn("cancer patient records", plan.emails["email_3"]["body"].lower())
+        self.assertIn("2-hour", plan.emails["email_2"]["body"])
+        self.assertIn("MOH", plan.emails["email_2"]["body"])
+        self.assertIn("Your HIA batch deadline is September 2028", plan.emails["email_3"]["body"])
 
     def test_pdpa_health_clinic_copy_does_not_use_care_organisation_records(self):
         plan = o.plan_outreach(
@@ -3481,10 +3486,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.quality_flags, [])
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.classification["hia_official_service_type"], "outpatient_medical_specialist")
-        records = o.highest_sensitivity_email_data_type(
-            o.hia_email_1_records(row, plan.classification, plan.copy_brief),
-            row,
-        )
+        records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
         self.assertIn(records, plan.emails["email_3"]["body"])
         self.assertIn("backups", plan.emails["email_3"]["body"])
         self.assertIn("incidents", plan.emails["email_3"]["body"])
@@ -3498,7 +3500,7 @@ class OutreachPlannerTests(unittest.TestCase):
         endo_records = o.hia_email_1_records(endocrinology, endo_plan.classification, endo_plan.copy_brief)
         self.assertIn("diabetes/thyroid care records", endo_records)
         self.assertNotIn("oncology/radiation", endo_records)
-        self.assertIn(o.highest_sensitivity_email_data_type(endo_records, endocrinology), endo_plan.emails["email_3"]["body"])
+        self.assertIn(endo_records, endo_plan.emails["email_3"]["body"])
 
         orthopaedic = {
             "company_name": "Artisan Sports & Orthopaedics Clinic",
@@ -3509,7 +3511,7 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertNotIn("pain management clinic", ortho_plan.copy_brief["clinic_profile_phrase"])
         ortho_records = o.hia_email_1_records(orthopaedic, ortho_plan.classification, ortho_plan.copy_brief)
         self.assertIn("orthopaedic consultation notes", ortho_records)
-        self.assertIn(o.highest_sensitivity_email_data_type(ortho_records, orthopaedic), ortho_plan.emails["email_3"]["body"])
+        self.assertIn(ortho_records, ortho_plan.emails["email_3"]["body"])
 
     def test_cancer_centre_stays_specialist_when_pharmacy_terms_appear(self):
         row = {
@@ -4385,7 +4387,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertIn(observation.replace("provides ", "provide "), plan.copy_brief["prospect_facing_signal"])
                 if "pharmacy" not in observation:
                     self.assertNotIn("pharmacy / compounding provider", plan.emails["email_1"]["body"])
-                self.assertIn(diagnostic.replace(" and backups", ""), plan.emails["email_3"]["body"])
+                records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+                self.assertIn(records.replace(" and backups", ""), plan.emails["email_3"]["body"])
                 self.assertIn("backups", plan.emails["email_3"]["body"])
                 self.assertEqual(plan.copy_brief["email_asset_offer"], asset)
                 self.assertIn("HIA readiness checklist?", plan.emails["email_1"]["body"])
@@ -4442,7 +4445,9 @@ class OutreachPlannerTests(unittest.TestCase):
                 plan = o.plan_outreach({"company_name": company, "website_content": content}, programmes=[verified_program()])
                 self.assertEqual(plan.classification["pressure_type"], "hia_regulatory")
                 self.assertIn(profile_phrase, plan.copy_brief["prospect_facing_signal"])
-                self.assertIn(diagnostic, plan.emails["email_3"]["body"])
+                row = {"company_name": company, "website_content": content}
+                expected_records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+                self.assertIn(expected_records, plan.emails["email_3"]["body"])
                 self.assert_no_final_email_batch_or_signal_language(plan)
 
     def test_far_down_service_terms_do_not_override_primary_profile(self):
@@ -4541,7 +4546,15 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(plan.classification["hia_service_type_guess"], "specialist_OMS")
         self.assertEqual(plan.classification["campaign_track"], "hia_regulatory")
         self.assertIn("a specialist-led rheumatology clinic", plan.copy_brief["prospect_facing_signal"])
-        self.assertIn("long-term autoimmune records", plan.emails["email_3"]["body"])
+        expected_records = o.hia_email_1_records(
+            {
+                "company_name": "Asia Arthritis & Rheumatology Centre",
+                "website_content": "# Asia Arthritis & Rheumatology Centre - Rheumatologist | Lupus Treatment Singapore\nhttps://aarc.sg/",
+            },
+            plan.classification,
+            plan.copy_brief,
+        )
+        self.assertIn(expected_records, plan.emails["email_3"]["body"])
         self.assertEqual(plan.emails["email_1"]["chosen_subject"], "HIA Batch 2 (Sep 2028) - what rheumatology clinics need documented")
         self.assert_no_final_email_batch_or_signal_language(plan)
 
@@ -4978,7 +4991,8 @@ class OutreachPlannerTests(unittest.TestCase):
                 self.assertNotIn("signals", plan.emails["email_1"]["body"].lower())
                 if pressure_type == "hia_regulatory":
                     self.assertIn("HIA", plan.emails["email_1"]["body"])
-                    self.assertIn(diagnostic, plan.emails["email_3"]["body"])
+                    expected_records = o.hia_email_1_records(row, plan.classification, plan.copy_brief)
+                    self.assertIn(expected_records, plan.emails["email_3"]["body"])
                 else:
                     self.assertNotIn("Health Information Act", plan.emails["email_1"]["body"])
                     self.assertIn("Checklist is free and takes 10 minutes. Reply anytime.", plan.emails["email_3"]["body"])

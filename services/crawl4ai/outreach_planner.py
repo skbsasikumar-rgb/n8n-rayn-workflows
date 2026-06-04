@@ -6158,15 +6158,12 @@ def build_hia_email_2_placeholders(
     pricing_mode: str,
     funding_safe: bool,
 ) -> dict[str, Any]:
-    tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
-    enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     placeholders = {
         "email_2_greeting_line": email_greeting(row),
         "email_2_track": email_track_placeholder(classification),
         "email_2_mode": compact(copy_brief.get("email_2_mode") or copy_brief.get("funding_followup_mode")),
         "email_2_tieback_line": "",
-        "email_2_check_line": enforcement
-        or slots.get("check_line")
+        "email_2_check_line": slots.get("check_line")
         or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours.",
         "email_2_route_line": EMAIL_2_CE_CONNECTOR,
         "email_2_cta_line": "Happy to share the HIA checklist if useful.",
@@ -6186,7 +6183,7 @@ def build_funding_email_2_placeholders(
     tier2 = copy_brief.get("email_tier2_context") if isinstance(copy_brief.get("email_tier2_context"), dict) else {}
     enforcement = safe_tier2_text(tier2.get("enforcement_consequence"), 220)
     if classification.get("pressure_type") == "hia_regulatory":
-        check_line = enforcement or "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours."
+        check_line = "The rule most clinics underestimate is the 2-hour MOH reporting clock - once a breach is assessed as notifiable, the initial notification to MOH is due within 2 hours."
         route_line = EMAIL_2_CE_CONNECTOR
         cta = "Happy to share the HIA checklist if useful."
     else:
@@ -6707,7 +6704,6 @@ def email_3_sentence_slots(
     records_text = compact(records) or "patient-data evidence"
     asset_name = compact(asset) or "checklist"
     if classification.get("pressure_type") == "hia_regulatory":
-        records_text = highest_sensitivity_email_data_type(records_text, row) or records_text
         deadline = hia_deadline_date_label(classification) or "the listed HIA deadline"
         return {
             "close_line": choose_sentence_slot(
