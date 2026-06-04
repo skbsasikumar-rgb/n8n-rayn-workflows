@@ -330,6 +330,11 @@ class OutreachColumnContractTests(unittest.TestCase):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
         self.assertIn("(automation_decision,blank)", url_expr)
+        self.assertIn("manualOverridePending", url_expr)
+        self.assertIn("(manual_pressure_type,notblank)", url_expr)
+        self.assertIn("(classification_review_status,neq,reviewed)", url_expr)
+        self.assertIn("(instantly_sync_status,neq,synced)", url_expr)
+        self.assertIn("(instantly_sync_status,neq,skipped)", url_expr)
         self.assertNotIn("(email_1_subject,blank)", url_expr)
         self.assertNotIn("(contact_search_status,notblank)", url_expr)
         self.assertIn("(contact_search_status,eq,contact_not_found)", url_expr)
@@ -342,7 +347,8 @@ class OutreachColumnContractTests(unittest.TestCase):
     def test_workflow_fetch_does_not_refetch_suppressed_rows(self):
         workflow = json.loads(WORKFLOW_PATH.read_text())
         url_expr = next(node for node in workflow["nodes"] if node["name"] == "Get Outreach Rows")["parameters"]["url"]
-        self.assertIn("~and(automation_decision,blank)", url_expr)
+        self.assertIn("~and((automation_decision,blank)~or(", url_expr)
+        self.assertIn("(classification_review_status,neq,reviewed)", url_expr)
         self.assertNotIn("~and(email_1_subject,blank)", url_expr)
 
     def test_cold_email_workflow_is_deterministic_only(self):

@@ -659,6 +659,30 @@ class OutreachPlannerTests(unittest.TestCase):
         self.assertEqual(classification["hia_service_type_guess"], "dental")
         self.assertEqual(classification["hia_timeline_batch_guess"], "Batch 3 - Mar 2030")
 
+    def test_manual_pressure_type_reroutes_not_ready_without_openrouter_review(self):
+        row = {
+            "company_name": "Example Holdings",
+            "best_url": "https://example.test/",
+            "validated_email": "team@example.test",
+            "manual_pressure_type": "PDPA",
+            "website_content": "Singapore holding company website with sparse public detail.",
+        }
+
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "test-key", "OUTREACH_STRICT_EMAIL_GENERATION_ENABLED": "false"},
+            clear=False,
+        ), patch.object(o, "call_classification_route_review_llm") as review_call, patch.object(
+            o, "email_tier2_extraction_enabled", return_value=False
+        ), patch.object(o, "email_1_llm_rewrite_enabled", return_value=False):
+            plan = o.plan_outreach(row, programmes=[verified_program()])
+
+        review_call.assert_not_called()
+        self.assertEqual(plan.classification["pressure_type"], "pdpa_safeguards")
+        self.assertTrue(plan.classification["manual_classification_override"])
+        self.assertEqual(plan.classification["classification_review_status"], "reviewed")
+        self.assertEqual(plan.classification["primary_email_track"], "pdpa_safeguards")
+
     def test_hia_dermatology_subject_does_not_become_oncology_from_skin_cancer(self):
         plan = o.plan_outreach(
             {
