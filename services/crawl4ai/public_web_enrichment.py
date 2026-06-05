@@ -1233,9 +1233,21 @@ def validate_best_url_candidate(
 def can_continue_after_url_validation_warning(
     validation: UrlValidationResult,
     normalization: NormalizationResult,
+    *,
+    allow_manual_override: bool = False,
 ) -> bool:
     if validation.ok or not normalization.best_url or not validation.best_url:
         return False
+    if allow_manual_override:
+        blocked_statuses = {
+            "failed_no_candidate",
+            "failed_no_variants",
+            "failed_non_org_redirect_target",
+            "failed_invalid_redirect_target",
+            "failed_redirect_without_location",
+        }
+        if validation.url_validation_status not in blocked_statuses:
+            return True
     if not same_registered_domain(normalization.best_url, validation.best_url):
         return False
     if validation.url_validation_status == "failed_redirect_loop":
@@ -3915,7 +3927,11 @@ async def enrich_row(
         allow_cross_domain_redirect=row.allow_cross_domain_redirect,
     )
     timings["validation_ms"] = elapsed_ms(validation_started)
-    validation_warning_allowed = can_continue_after_url_validation_warning(validation, normalization)
+    validation_warning_allowed = can_continue_after_url_validation_warning(
+        validation,
+        normalization,
+        allow_manual_override=row.allow_cross_domain_redirect,
+    )
     if not validation.ok and not validation_warning_allowed:
         error_text = validation.error or validation.url_validation_status
         return stamp(EnrichmentRecord(

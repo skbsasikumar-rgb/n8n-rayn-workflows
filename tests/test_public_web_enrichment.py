@@ -618,6 +618,7 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("public_enrich_static_semaphore", source)
         self.assertIn('@app.post("/public-enrich-http-first")', source)
         self.assertIn("public_enrich_http_first_data", source)
+        self.assertIn('"failed_request_error"', source)
         self.assertIn("http_first_static_only", source)
         self.assertIn("Playwright fallback intentionally skipped", source)
         self.assertIn("force_browser_primary=bool", source)
@@ -666,6 +667,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("statusReason.includes('thin_content')", prepare_code)
         self.assertIn("row.homepage_root_url || row.best_url || row.url_picked", prepare_code)
         self.assertIn("matched_url: matchedUrl", prepare_code)
+        self.assertIn("const manualUrl = String(row.manual_url_override || '').trim()", prepare_code)
+        self.assertIn("allow_cross_domain_redirect: Boolean(manualUrl)", prepare_code)
         self.assertIn("row.status_reason, row.error_type", prepare_code)
         self.assertIn("const timeoutRetry = statusReason.includes('enrichment_timeout') || statusReason.includes('enrichment_transport_timeout')", prepare_code)
         self.assertIn("const retryEscalates = attemptCount > 1 && !timeoutRetry && !statusReason.includes('processing:crawl')", prepare_code)
@@ -916,6 +919,45 @@ class PublicWebEnrichmentTests(unittest.TestCase):
 
         self.assertFalse(p.can_continue_after_url_validation_warning(cross_domain, normalization))
         self.assertFalse(p.can_continue_after_url_validation_warning(not_found, normalization))
+
+    def test_manual_override_treats_validation_failure_as_warning(self):
+        normalization = p.NormalizationResult(
+            best_url="https://clinic.example/",
+            hostname="clinic.example",
+            registered_domain="clinic.example",
+        )
+        not_found = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://clinic.example/",
+            http_status=404,
+            redirect_chain=[],
+            url_validation_status="failed_http_status",
+            error="final HTTP status 404 is not crawlable",
+        )
+        non_org_redirect = p.UrlValidationResult(
+            best_url_candidate="https://clinic.example/",
+            best_url="https://clinic.example/",
+            http_status=302,
+            redirect_chain=[],
+            url_validation_status="failed_non_org_redirect_target",
+            error="redirect target is not an organization website: facebook.com",
+        )
+
+        self.assertFalse(p.can_continue_after_url_validation_warning(not_found, normalization))
+        self.assertTrue(
+            p.can_continue_after_url_validation_warning(
+                not_found,
+                normalization,
+                allow_manual_override=True,
+            )
+        )
+        self.assertFalse(
+            p.can_continue_after_url_validation_warning(
+                non_org_redirect,
+                normalization,
+                allow_manual_override=True,
+            )
+        )
 
 
 if __name__ == "__main__":

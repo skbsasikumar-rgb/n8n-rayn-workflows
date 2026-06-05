@@ -104,7 +104,11 @@ CHALLENGE_HINTS = (
     "verify you are human",
 )
 PUBLIC_ENRICH_FORCE_BROWSER_KEY = "_force_browser_primary"
-PUBLIC_ENRICH_BROWSER_RETRY_STATUSES = {"failed_http_status", "failed_redirect_loop"}
+PUBLIC_ENRICH_BROWSER_RETRY_STATUSES = {
+    "failed_http_status",
+    "failed_redirect_loop",
+    "failed_request_error",
+}
 
 ICP_HINTS = (
     "clinic",
@@ -2003,7 +2007,7 @@ def public_enrich_needs_browser_retry(result: dict[str, Any]) -> bool:
         return True
     if validation_status not in PUBLIC_ENRICH_BROWSER_RETRY_STATUSES:
         return False
-    return validation_status == "failed_redirect_loop" or public_enrichment.proxy_retryable_error(error_text)
+    return validation_status in {"failed_redirect_loop", "failed_request_error"} or public_enrichment.proxy_retryable_error(error_text)
 
 
 def public_enrich_needs_low_limit_retry(result: dict[str, Any]) -> bool:

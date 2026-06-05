@@ -687,11 +687,13 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 15000 : 12000", enrichment_code)
         self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 120 : 75", enrichment_code)
         self.assertIn("allow_cross_domain_redirect", enrichment_code)
+        self.assertIn("Boolean(manualUrl)", enrichment_code)
         self.assertNotIn("? 14 : 8", enrichment_code)
         http_node = next(node for node in workflow["nodes"] if node["name"] == "Crawl4AI Public Enrich")
         self.assertIn("/public-enrich", http_node["parameters"]["url"])
         self.assertIn("/public-enrich-http-first", http_node["parameters"]["url"])
         self.assertIn("RAYN_PUBLIC_ENRICH_HTTP_FIRST", http_node["parameters"]["url"])
+        self.assertIn("manualOverride ? '/public-enrich'", http_node["parameters"]["url"])
         self.assertIn("stage !== 'deep_retry'", http_node["parameters"]["url"])
 
     def test_contact_search_runs_as_async_row_jobs(self):
