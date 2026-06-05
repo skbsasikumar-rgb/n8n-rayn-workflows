@@ -484,6 +484,8 @@ class OutreachColumnContractTests(unittest.TestCase):
         self.assertIn("if (isAlreadyInSendPipeline(row)) return false", js_code)
         self.assertIn("manual_url_override: manualUrl", js_code)
         self.assertIn("allow_cross_domain_redirect: Boolean(manualUrl)", js_code)
+        self.assertIn("const manualRows = eligibleRows.filter(isManualUrlOverride)", js_code)
+        self.assertIn("manualRows.length ? manualRows.slice(0, 1) : eligibleRows", js_code)
         self.assertIn("send_provider: String(row.send_provider || '').trim()", js_code)
         self.assertIn("instantly_sync_status: String(row.instantly_sync_status || '').trim()", js_code)
         self.assertIn("canonicalDomain(manualUrl)", js_code)

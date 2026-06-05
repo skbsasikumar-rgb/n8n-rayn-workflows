@@ -659,6 +659,8 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("isManualUrlOverride", rows_to_enrichment_code)
         self.assertIn("normalizeManualUrl", rows_to_enrichment_code)
         self.assertIn("manual_url_override: manualUrl", rows_to_enrichment_code)
+        self.assertIn("const manualRows = eligibleRows.filter(isManualUrlOverride)", rows_to_enrichment_code)
+        self.assertIn("manualRows.length ? manualRows.slice(0, 1) : eligibleRows", rows_to_enrichment_code)
         self.assertEqual(workflow["connections"]["Patch URL Picked"]["main"], [[]])
 
     def test_workflow_keeps_sparse_successes_completed(self):
