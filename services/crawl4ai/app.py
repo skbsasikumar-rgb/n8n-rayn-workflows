@@ -2224,12 +2224,6 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                     request_data,
                     timeout_seconds,
                 )
-            if public_enrich_needs_low_limit_retry(fast_result):
-                return await asyncio.to_thread(
-                    run_public_enrich_low_limit_fallback,
-                    request_data,
-                    timeout_seconds,
-                )
             if public_enrich_needs_browser_retry(fast_result):
                 retry_data = public_enrich_short_browser_retry_data(request_data)
                 retry_timeout = max(
@@ -2248,6 +2242,12 @@ async def public_enrich(request: PublicEnrichmentRequest) -> dict[str, Any]:
                         reason="Static validation warning triggered a short bounded browser retry.",
                     )
                 return retry_result
+            if public_enrich_needs_low_limit_retry(fast_result):
+                return await asyncio.to_thread(
+                    run_public_enrich_low_limit_fallback,
+                    request_data,
+                    timeout_seconds,
+                )
             return fast_result
     async with scrape_semaphore():
         return await asyncio.to_thread(run_public_enrich_isolated, request_data, timeout_seconds)

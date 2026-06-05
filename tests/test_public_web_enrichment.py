@@ -611,6 +611,10 @@ class PublicWebEnrichmentTests(unittest.TestCase):
         self.assertIn("PUBLIC_ENRICH_FORCE_BROWSER_KEY", source)
         self.assertIn("public_enrich_needs_low_limit_retry", source)
         self.assertIn('"aborted" in error_text', source)
+        self.assertLess(
+            source.index("if public_enrich_needs_browser_retry(fast_result):"),
+            source.index("if public_enrich_needs_low_limit_retry(fast_result):"),
+        )
         self.assertIn("allow_cross_domain_redirect: bool = False", source)
         self.assertIn("public_enrich_needs_browser_retry", source)
         self.assertIn("browser_retry_after_static_validation_warning", source)
