@@ -683,11 +683,13 @@ class OutreachColumnContractTests(unittest.TestCase):
         enrichment_code = next(
             node for node in workflow["nodes"] if node["name"] == "Prepare Public Enrichment"
         )["parameters"]["jsCode"]
-        self.assertIn("page_limit: stage === 'deep_retry' ? 5 : 3", enrichment_code)
-        self.assertIn("page_timeout_ms: stage === 'deep_retry' ? 15000 : 12000", enrichment_code)
-        self.assertIn("row_timeout_seconds: stage === 'deep_retry' ? 120 : 75", enrichment_code)
+        self.assertIn("page_limit: manualOverride ? 1 : (stage === 'deep_retry' ? 5 : 3)", enrichment_code)
+        self.assertIn("page_timeout_ms: manualOverride ? 8000 : (stage === 'deep_retry' ? 15000 : 12000)", enrichment_code)
+        self.assertIn("row_timeout_seconds: manualOverride ? 180 : (stage === 'deep_retry' ? 120 : 75)", enrichment_code)
         self.assertIn("allow_cross_domain_redirect", enrichment_code)
         self.assertIn("Boolean(manualUrl)", enrichment_code)
+        self.assertIn("page_limit: manualOverride ? 1", enrichment_code)
+        self.assertIn("row_timeout_seconds: manualOverride ? 180", enrichment_code)
         self.assertNotIn("? 14 : 8", enrichment_code)
         http_node = next(node for node in workflow["nodes"] if node["name"] == "Crawl4AI Public Enrich")
         self.assertIn("/public-enrich", http_node["parameters"]["url"])
